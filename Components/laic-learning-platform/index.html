@@ -21,6 +21,31 @@
           -webkit-overflow-scrolling: touch;
           overscroll-behavior: contain;
         }
+        /* Embedded viewer (/o/<id>, e.g. the mobile app's WebView). It renders
+           before the Content Studio shell, so the mobile guards above never
+           reach it — content that overshoots the viewport would scroll the
+           whole page sideways with no way to tell what caused it. */
+        .cs-embed-root {
+          max-width: 100vw;
+          overflow-x: hidden;
+        }
+        .cs-embed-root img,
+        .cs-embed-root video,
+        .cs-embed-root iframe,
+        .cs-embed-root table,
+        .cs-embed-root pre {
+          max-width: 100%;
+        }
+        /* Long unbroken strings (URLs, bidding notation) are a common source of
+           sideways scroll in authored prose. */
+        .cs-embed-root p,
+        .cs-embed-root li,
+        .cs-embed-root h1,
+        .cs-embed-root h2,
+        .cs-embed-root h3 {
+          overflow-wrap: anywhere;
+        }
+        .cs-embed-root pre { overflow-x: auto; }
       </style>
       
     </head>

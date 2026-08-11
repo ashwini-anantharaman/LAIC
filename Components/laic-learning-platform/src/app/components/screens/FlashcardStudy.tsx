@@ -717,10 +717,11 @@ export function FlashcardStudy({
   const currentSched = cardIdx != null ? schedules[cardIdx] : undefined;
 
   return (
-    <div className="flex flex-col h-full min-h-[72vh]">
-      {/* Top bar */}
-      <div className="flex items-center gap-3 px-5 py-3">
-        <div className="relative">
+    <div className="flex flex-col h-full min-h-[60vh] sm:min-h-[72vh]">
+      {/* Top bar. Wraps on narrow screens: the mode label alone is ~190px, so
+          three children in one row cannot fit a phone without clipping. */}
+      <div className="flex flex-wrap items-center gap-y-2 gap-x-3 px-3 sm:px-5 py-3">
+        <div className="relative min-w-0">
           <button onClick={() => { setModeOpen((v) => !v); setMenuOpen(false); }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl border transition-all"
             style={{ background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(0,0,0,0.1)', fontSize: 13, fontWeight: 600, color: '#0B1220' }}>
@@ -744,8 +745,10 @@ export function FlashcardStudy({
           )}
         </div>
 
-        {/* Progress: dots for standard/bookmarks; retention bar for adaptive modes */}
-        <div className="flex-1 flex items-center justify-center overflow-hidden px-2">
+        {/* Progress: dots for standard/bookmarks; retention bar for adaptive
+            modes. On a phone this takes its own full-width row — squeezed into
+            the control row it collapsed to a sliver and clipped mid-word. */}
+        <div className="order-last w-full sm:order-none sm:w-auto sm:flex-1 flex items-center justify-center min-w-0 sm:px-2">
           {isAdaptive ? (
             <RetentionHub hub={hub} large={false} variant={paletteMode} />
           ) : (
@@ -780,7 +783,7 @@ export function FlashcardStudy({
                 <ChevronLeft size={16} />
               </button>
             )}
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', minWidth: isAdaptive ? 70 : 42, textAlign: 'center' }}>
+            <span className="whitespace-nowrap" style={{ fontSize: 12.5, fontWeight: 600, color: '#374151', textAlign: 'center' }}>
               {isAdaptive
                 ? (waiting ? 'Caught up' : `${hub.dueNow} due`)
                 : (total === 0 ? '0 / 0' : `${safePos + 1} / ${total}`)}
@@ -801,7 +804,7 @@ export function FlashcardStudy({
       </div>
 
       {/* Card area */}
-      <div className="flex-1 flex flex-col items-center justify-center px-5 pb-2">
+      <div className="flex-1 flex flex-col items-center justify-center px-3 sm:px-5 pb-2">
         {waiting ? (
           <div className="flex flex-col items-center text-center py-14 px-4" style={{ maxWidth: 440 }}>
             <div className="w-14 h-14 rounded-full flex items-center justify-center mb-4" style={{ background: 'rgba(37,99,235,0.1)' }}>
@@ -929,7 +932,9 @@ export function FlashcardStudy({
                 style={{
                   position: 'relative',
                   width: '100%',
-                  minHeight: 300,
+                  // Fluid: a fixed 300 plus the header and rating rows ran the
+                  // card under the app's tab bar on a phone.
+                  minHeight: 'clamp(180px, 38vh, 300px)',
                   transformStyle: 'preserve-3d',
                   transition: 'transform 0.55s cubic-bezier(0.4, 0.2, 0.2, 1)',
                   transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
@@ -937,11 +942,11 @@ export function FlashcardStudy({
               >
                 {/* Front (prompt) */}
                 <div
-                  className="rounded-[20px] flex items-center justify-center px-8 py-6"
+                  className="rounded-[20px] flex items-center justify-center px-4 sm:px-8 py-5 sm:py-6"
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    minHeight: 300,
+                    minHeight: 'clamp(180px, 38vh, 300px)',
                     background: '#fff',
                     boxShadow: '0 10px 34px -14px rgba(30,50,80,0.28)',
                     border: '1px solid rgba(0,0,0,0.05)',
@@ -959,11 +964,11 @@ export function FlashcardStudy({
                 </div>
                 {/* Back (answer) */}
                 <div
-                  className="rounded-[20px] flex items-center justify-center px-8 py-6"
+                  className="rounded-[20px] flex items-center justify-center px-4 sm:px-8 py-5 sm:py-6"
                   style={{
                     position: 'absolute',
                     inset: 0,
-                    minHeight: 300,
+                    minHeight: 'clamp(180px, 38vh, 300px)',
                     background: '#fff',
                     boxShadow: '0 10px 34px -14px rgba(30,50,80,0.28)',
                     border: '1px solid rgba(0,0,0,0.05)',
@@ -1126,7 +1131,7 @@ function RetentionHub({ hub, large, variant }: {
 function RateButton({ n, label, sub, color, icon, onClick }: { n: number; label: string; sub?: string; color: string; icon: React.ReactNode; onClick: () => void }) {
   return (
     <button onClick={onClick} className="relative flex flex-col items-center justify-center rounded-xl text-white transition-transform hover:-translate-y-0.5"
-      style={{ background: color, minWidth: 128, padding: '10px 14px' }}>
+      style={{ background: color, minWidth: 104, padding: '10px 12px' }}>
       <span className="absolute top-1 left-1.5" style={{ fontSize: 10, fontWeight: 700, opacity: 0.85 }}>{n}</span>
       <span className="mb-0.5">{icon}</span>
       <span style={{ fontSize: 12.5, fontWeight: 700 }}>{label}</span>
