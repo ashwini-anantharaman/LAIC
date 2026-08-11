@@ -10,7 +10,7 @@ import type {
   ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
   AssignmentContent, DrillContent, LearningObject, BridgeTableContent,
 } from '../../../lib/types';
-import { readBridgeConfig } from '../../../lib/tutorialV2/bridgeEmbed';
+import { challengeSummary, readBridgeConfig } from '../../../lib/tutorialV2/bridgeEmbed';
 import { resolveLearningObject } from '../../../lib/objectUrls';
 import { getVersion, objectFromVersion } from '../../../lib/objectVersionsStore';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
@@ -256,11 +256,26 @@ export function GlossarySidebar({
   );
 }
 
+/**
+ * How many things in this tutorial can be got right — the denominator of the
+ * cumulative pass.
+ *
+ * A CHALLENGE BLOCK COUNTS ITS BOARDS. It resolves board by board exactly as a
+ * quiz resolves question by question (BridgeEmbedBlock reports the same
+ * `onResolvedChange` shape), so a lesson of four boards and six questions is
+ * out of ten and the banner needs no second kind of arithmetic. A plain table
+ * block counts nothing: there is nothing to be right about.
+ */
 function countQuizQuestionsInBlocks(blocks: Block[]): number {
   let n = 0;
   for (const b of blocks) {
     if (b.type === 'quiz') n += ((b.content as QuizContent)?.questions || []).length;
     else if (b.type === 'question') n += 1;
+    else if (b.type === 'bridge-table') {
+      const c = readBridgeConfig(b.content || {});
+      const boards = challengeSummary(c.challenge);
+      if (c.kind === 'challenge' && boards) n += boards.boards;
+    }
   }
   return n;
 }
@@ -1143,7 +1158,15 @@ function BlockRenderer({
       // author set arrives here and anything a older block lacks falls back.
       const c = (block.content || {}) as BridgeTableContent;
       return (
-        <BridgeEmbedBlock config={readBridgeConfig(c)} caption={c.caption} readOnly />
+        <BridgeEmbedBlock
+          config={readBridgeConfig(c)}
+          caption={c.caption}
+          readOnly
+          // A challenge reports completion and its mark down the same wire a
+          // quiz does; a table block simply never calls it.
+          onResolvedChange={quizProps?.onResolvedChange}
+          resultKeyPrefix={block.id}
+        />
       );
     }
     case 'bridge-play':

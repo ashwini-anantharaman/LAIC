@@ -2,16 +2,20 @@
  * Bridge Platform components, embeddable as tutorial blocks.
  *
  * The Bridge Platform is a SEPARATE application (Next.js, its own pnpm
- * workspace, its own server routes). Its table is not a component this Vite
- * build could import: PlayTable pulls in @bridge/engine and @bridge/events, and
- * even with those bundled it would have no session to render, because the board
- * state comes from Bridge's own server. So a Bridge component arrives here the
- * way a live thing from another origin always does — in an iframe.
+ * workspace, its own server routes) — but its table is no longer trapped
+ * inside it. @bridge/table-embed carries the real PlayTable plus the real game
+ * law as ONE ES module whose only runtime dependency is React, so a Bridge
+ * component arrives here as a component, vendored into src/vendor/bridge-table
+ * and mounted directly. No iframe, no origin, no session.
  *
- * That is also what makes the thumbnail rule cheap to keep. A block holds a URL
- * and nothing else; nothing is fetched, no frame is created and no Bridge code
- * runs until a reader activates it. A tutorial with six table blocks costs six
- * divs, not six live tables.
+ * The thumbnail rule is what keeps that cheap. A dormant block is a drawn
+ * preview and nothing else: the module is behind a dynamic import, so nothing
+ * is fetched and no engine runs until a reader activates it. A tutorial with
+ * six bridge blocks costs six divs, not six live tables.
+ *
+ * THIS MODULE IS THE MAPPING, and it is deliberately import-free: it is loaded
+ * eagerly by draftModel and the reader, so pulling the vendored bundle in here
+ * for a type or a helper would put 200kB of table in the main chunk.
  *
  * Adding another Bridge component later is one entry in BRIDGE_EMBEDS.
  */
@@ -24,15 +28,23 @@ export const BRIDGE_ORIGIN: string =
   'https://nexus-bridge-79lkq4.vercel.app';
 
 /**
- * The MODE of a Bridge block — one block, three shapes, chosen on the first row
+ * The MODE of a Bridge block — one block, two shapes, chosen on the first row
  * of Configure. There is deliberately not a block type per shape: an author who
- * has laid out a lesson and then wants the drill instead of the table should
- * change a chip, not delete a block and add another one in the right place.
+ * has laid out a lesson and then wants the challenge instead of the table
+ * should change a chip, not delete a block and add another one in the right
+ * place.
+ *
+ * WHAT HAPPENED TO `drill` AND `diagram` (owner, 2026-08-10). Both are
+ * superseded by the challenge, which does what they did and keeps score: a
+ * bidding-only challenge IS the drill (bid the board, your contract beside
+ * BEN's) with a mark at the end, and a challenge board with all four hands up
+ * is the diagram, playable. Two modes that could not report progress have been
+ * replaced by one that can.
  *
  * Each mode is a component in @bridge/table-embed, and each answers only its own
- * settings — a drill has no skin, a diagram has no robot pace.
+ * settings — a challenge has no single-board seed, a table has no board list.
  */
-export type BridgeEmbedKind = 'table' | 'drill' | 'diagram';
+export type BridgeEmbedKind = 'table' | 'challenge';
 
 export interface BridgeEmbedDef {
   kind: BridgeEmbedKind;
@@ -55,28 +67,23 @@ export const BRIDGE_EMBEDS: readonly BridgeEmbedDef[] = [
     ratio: 4 / 3,
   },
   {
-    kind: 'drill',
-    label: 'Bidding drill',
-    blurb: 'Hands to bid, one at a time, with BEN’s call beside yours.',
-    path: '/bridge/table2/demo',
-    // A drill is column-shaped and sizes to its content; the ratio is only the
-    // thumbnail's, which is why it is wider and shorter than the table's.
-    ratio: 16 / 9,
-  },
-  {
-    kind: 'diagram',
-    label: 'Deal diagram',
-    blurb: 'A deal to look at. Nothing to play.',
-    path: '/bridge/table2/demo',
-    // HandViewer's own design stage (1976 × 1232), so the board never letterboxes.
-    ratio: 1976 / 1232,
+    kind: 'challenge',
+    label: 'Bridge challenge',
+    blurb: 'Boards to play in sequence, your line beside BEN\u2019s. Scored.',
+    path: '/bridge/challenges',
+    // The challenge carries the table plus a strip above it, so it wants the
+    // same shape with a little more height than the bare board.
+    ratio: 5 / 4,
   },
 ];
 
 export const BRIDGE_MODES: readonly { id: BridgeEmbedKind; label: string; hint: string }[] = [
-  { id: 'table', label: 'Playable table', hint: 'The full board — bid it and play it out' },
-  { id: 'drill', label: 'Bidding drill', hint: 'One hand at a time: make a call, compare with BEN' },
-  { id: 'diagram', label: 'Deal diagram', hint: 'A static deal to look at — no interaction' },
+  { id: 'table', label: 'Playable table', hint: 'One board \u2014 bid it and play it out. Nothing is scored.' },
+  {
+    id: 'challenge',
+    label: 'Challenge',
+    hint: 'Boards in sequence against BEN, scored \u2014 the learner\u2019s progress reports back',
+  },
 ];
 
 export function bridgeEmbedDef(kind: string | undefined): BridgeEmbedDef {
@@ -122,25 +129,42 @@ export type BridgeVul = 'none' | 'ns' | 'ew' | 'both';
 export type BridgeHandLayout = 'row' | 'fan';
 export type BridgeBidPad = 'grid' | 'columns';
 
-/** One problem in a drill: a board, and the author's word on it. */
-export interface BridgeDrillHand {
-  /** The deal, derived deterministically — same seed, same hand, every reader. */
-  seed: number;
-  /** Shown with the feedback, under the comparison with BEN. */
-  note: string;
+/**
+ * THE CHALLENGE DRAFT, as it travels through this module: opaque.
+ *
+ * The real shape is @bridge/table-embed's `SoloChallengeDraft` — a title, a
+ * format, a scoring mode, the boards with their seeds/dealer/seat/packs, and
+ * the table-control overrides. It is NOT restated here, and that is deliberate:
+ * this module is imported eagerly by draftModel and the reader, so importing
+ * the vendored bundle for its types would drag 200kB of table into the main
+ * chunk (the same reason `dealFromSeed` below is a mirror). A second hand-typed
+ * copy of the draft would be worse still — it would be a copy that can drift
+ * from the component that actually reads it.
+ *
+ * So the mapping carries it structurally and the PACKAGE validates it:
+ * `normalizeDraft`, inside the lazy chunk, is the authority on what a stored
+ * draft means, and it fills every gap with the wizard's own default.
+ */
+export interface BridgeChallengeDraft {
+  /** The boards. A draft with none is not a challenge — see readChallengeDraft. */
+  boards: unknown[];
+  /** Read for the thumbnail and the outline row. See `challengeSummary`. */
+  title?: unknown;
+  format?: unknown;
 }
 
 /**
  * Everything an author can choose about a Bridge block.
  *
- * ONE config for all three modes, not one per mode. The four things that are
- * true of every shape — the board, who the learner is, who deals, who is
- * vulnerable — are shared fields, so switching mode keeps the deal the author
- * chose instead of resetting it. Only the mode-specific knobs are separate, and
- * the panel shows a mode only its own.
+ * ONE config for both modes, not one per mode. The look and the pace are true
+ * of a felt table whichever mode drew it, so they are shared fields and
+ * switching mode keeps them. What is NOT shared is the board: a table has one
+ * (`seed`, `humanSeat`, `dealer`, `vul`), a challenge has a list of them inside
+ * its own draft — so switching to the challenge does not throw the table's
+ * board away, and switching back finds it where it was.
  */
 export interface BridgeEmbedConfig {
-  /** The MODE: 'table' | 'drill' | 'diagram'. */
+  /** The MODE: 'table' | 'challenge'. */
   kind: string;
   /** The deal, derived deterministically so every reader sees one board. */
   seed: number;
@@ -156,10 +180,12 @@ export interface BridgeEmbedConfig {
   showCoach: boolean;
   /** Pause before a robot acts, so a board can be followed. */
   robotDelayMs: number;
-  /** drill: the hands, in the order the learner meets them. */
-  drillHands: BridgeDrillHand[];
-  /** diagram: the whole board, or one seat's hand on its own. */
-  diagramShow: 'all' | BridgeSeat;
+  /**
+   * challenge: the whole authored challenge. Null until the author has been
+   * through the wizard once — a challenge block with no draft is an unfinished
+   * block, and it says so rather than inventing boards.
+   */
+  challenge: BridgeChallengeDraft | null;
 }
 
 export const BRIDGE_SKINS: readonly { id: string; label: string }[] = [
@@ -191,18 +217,6 @@ export const BRIDGE_PACES: readonly { id: number; label: string }[] = [
   { id: 900, label: 'Slow' },
 ];
 
-/** Which seats a diagram can show — the whole board, or one hand. */
-export const BRIDGE_DIAGRAM_SHOWS: readonly { id: 'all' | BridgeSeat; label: string }[] = [
-  { id: 'all', label: 'All four hands' },
-  { id: 'N', label: 'North only' },
-  { id: 'E', label: 'East only' },
-  { id: 'S', label: 'South only' },
-  { id: 'W', label: 'West only' },
-];
-
-/** More than this and a drill is a test, not a drill. */
-export const BRIDGE_DRILL_MAX_HANDS = 12;
-
 /** What a Bridge block looks like before the author touches anything. */
 export const BRIDGE_EMBED_DEFAULTS: BridgeEmbedConfig = {
   kind: 'table',
@@ -217,8 +231,7 @@ export const BRIDGE_EMBED_DEFAULTS: BridgeEmbedConfig = {
   showAllHands: false,
   showCoach: false,
   robotDelayMs: 350,
-  drillHands: [],
-  diagramShow: 'all',
+  challenge: null,
 };
 
 function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
@@ -227,25 +240,22 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 
 const SEAT_IDS = ['N', 'E', 'S', 'W'] as const;
 const VUL_IDS = ['none', 'ns', 'ew', 'both'] as const;
-const KIND_IDS = ['table', 'drill', 'diagram'] as const;
+const KIND_IDS = ['table', 'challenge'] as const;
 
 /**
- * The drill's hands, out of whatever a part or a block carries. An array of
- * objects has to survive JSON both ways, so it is validated rather than trusted:
- * a seed that is not a number, a note that is not a string, or a list longer than
- * the cap cannot reach the drill.
+ * The challenge draft, out of whatever a part or a block carries.
+ *
+ * The ONLY thing checked here is that it could be one: an object with a
+ * non-empty `boards` array. Every field inside it is the package's business —
+ * see BridgeChallengeDraft — and re-validating them here would be a second
+ * spec of the same object, free to disagree with the first. Anything else
+ * becomes null, which the block renders as "not configured yet".
  */
-function readDrillHands(raw: unknown): BridgeDrillHand[] {
-  if (!Array.isArray(raw)) return [];
-  const out: BridgeDrillHand[] = [];
-  for (const item of raw) {
-    if (out.length >= BRIDGE_DRILL_MAX_HANDS) break;
-    const h = (item && typeof item === 'object' ? item : {}) as Record<string, unknown>;
-    const seed = h.seed;
-    if (typeof seed !== 'number' || !Number.isFinite(seed)) continue;
-    out.push({ seed: Math.floor(seed), note: typeof h.note === 'string' ? h.note : '' });
-  }
-  return out;
+function readChallengeDraft(raw: unknown): BridgeChallengeDraft | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const d = raw as Record<string, unknown>;
+  if (!Array.isArray(d.boards) || d.boards.length === 0) return null;
+  return d as unknown as BridgeChallengeDraft;
 }
 
 /**
@@ -260,7 +270,7 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
   const seed = pick('embedSeed', 'seed');
   const delay = pick('embedRobotDelayMs', 'robotDelayMs');
   const seedNum = typeof seed === 'number' && Number.isFinite(seed) ? seed : BRIDGE_EMBED_DEFAULTS.seed;
-  const drillHands = readDrillHands(pick('embedDrillHands', 'drillHands'));
+  const challenge = readChallengeDraft(pick('embedChallenge', 'challenge'));
   return {
     kind: oneOf(pick('embedKind', 'kind'), KIND_IDS, 'table'),
     seed: seedNum,
@@ -276,14 +286,9 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
     showCoach: !!pick('embedShowCoach', 'showCoach'),
     robotDelayMs:
       typeof delay === 'number' && Number.isFinite(delay) ? delay : BRIDGE_EMBED_DEFAULTS.robotDelayMs,
-    // A drill with no hands is a broken block, so an empty list falls back to the
-    // block's own board — one hand is a small drill, none is nothing to do.
-    drillHands: drillHands.length ? drillHands : [{ seed: seedNum, note: '' }],
-    diagramShow: oneOf(
-      pick('embedDiagramShow', 'diagramShow'),
-      ['all', ...SEAT_IDS] as const,
-      BRIDGE_EMBED_DEFAULTS.diagramShow,
-    ),
+    // No fallback: a challenge with no boards is an unconfigured block, and a
+    // block that quietly invented four is a block the author never authored.
+    challenge,
   };
 }
 
@@ -291,8 +296,8 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
  * config → the `embed*` fields of an editor part.
  *
  * `label` rides along because the mode names the block: change the mode and the
- * part's label in the editor's list has to follow, or a drill sits in the outline
- * calling itself "Bridge table". Every hop that writes part fields calls this, so
+ * part's label in the editor's list has to follow, or a challenge sits in the
+ * outline calling itself "Bridge table". Every hop that writes part fields calls this, so
  * the label cannot fall out of step in one of them.
  */
 export function configToPartFields(c: BridgeEmbedConfig): Partial<TutorialV2Part> {
@@ -309,8 +314,7 @@ export function configToPartFields(c: BridgeEmbedConfig): Partial<TutorialV2Part
     embedShowAllHands: c.showAllHands,
     embedShowCoach: c.showCoach,
     embedRobotDelayMs: c.robotDelayMs,
-    embedDrillHands: c.drillHands,
-    embedDiagramShow: c.diagramShow,
+    embedChallenge: c.challenge,
   };
 }
 
@@ -328,9 +332,28 @@ export function configToBlockContent(c: BridgeEmbedConfig, caption: string) {
     showAllHands: c.showAllHands,
     showCoach: c.showCoach,
     robotDelayMs: c.robotDelayMs,
-    drillHands: c.drillHands,
-    diagramShow: c.diagramShow,
+    challenge: c.challenge,
     caption,
+  };
+}
+
+/**
+ * What a stored challenge draft SAYS, for a thumbnail and an outline row: its
+ * title, how many boards, and what a board asks for. Read structurally for the
+ * same reason the draft is carried structurally — the package owns the shape,
+ * and this is the one place that peeks at it.
+ */
+export function challengeSummary(draft: BridgeChallengeDraft | null): {
+  title: string;
+  boards: number;
+  biddingOnly: boolean;
+} | null {
+  if (!draft) return null;
+  const title = typeof draft.title === 'string' ? draft.title.trim() : '';
+  return {
+    title: title || 'Challenge',
+    boards: Array.isArray(draft.boards) ? draft.boards.length : 0,
+    biddingOnly: draft.format === 'bidding-only',
   };
 }
 

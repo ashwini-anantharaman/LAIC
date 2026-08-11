@@ -876,7 +876,7 @@ export type BlockContent =
  * gaps from `BRIDGE_EMBED_DEFAULTS`.
  */
 export interface BridgeTableContent {
-  /** The MODE: 'table' (playable), 'drill' (bid one hand at a time), 'diagram'. */
+  /** The MODE: 'table' (one playable board) or 'challenge' (boards, scored). */
   kind?: string;
   /** The deal, derived deterministically so every reader sees the same board. */
   seed?: number;
@@ -891,10 +891,11 @@ export interface BridgeTableContent {
   bidPad?: 'grid' | 'columns';
   showCoach?: boolean;
   robotDelayMs?: number;
-  /** drill mode: the hands the learner bids, in order. */
-  drillHands?: { seed: number; note: string }[];
-  /** diagram mode: the whole board, or one seat's hand. */
-  diagramShow?: 'all' | 'N' | 'E' | 'S' | 'W';
+  /**
+   * challenge mode: the authored challenge — @bridge/table-embed's own
+   * `SoloChallengeDraft`. Opaque here; the package validates it.
+   */
+  challenge?: unknown;
 }
 
 export interface Block {

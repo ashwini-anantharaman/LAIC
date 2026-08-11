@@ -1,18 +1,24 @@
 /**
  * A Bridge Platform component inside a tutorial — dormant until asked for.
  *
- * ONE BLOCK, THREE MODES. The mode is the first setting inside Configure, and it
+ * ONE BLOCK, TWO MODES. The mode is the first setting inside Configure, and it
  * chooses which component out of @bridge/table-embed this block mounts:
  *
- *  · table   — the playable board. Bid it, play it, BEN takes the other seats.
- *  · drill   — hands in sequence, one call each, BEN's call shown beside the
- *              learner's. Column-shaped, so it sits in a strip of prose.
- *  · diagram — a deal as a record. Nothing to press.
+ *  · table     — one playable board. Bid it, play it, BEN takes the other
+ *                seats. Nothing is scored and nothing is reported.
+ *  · challenge — the boards an author set, played in sequence against BEN,
+ *                with the learner's line beside BEN's and a mark at the end.
  *
- * Not three block types: an author who has placed a block and then wants the
- * drill instead should change a chip, not delete and re-add in the right spot.
- * Each mode answers only its own settings, and every one of them round-trips
- * through lib/tutorialV2/bridgeEmbed.ts — the single mapping module.
+ * The challenge REPLACED the drill and the diagram (owner, 2026-08-10). It does
+ * what both did — a bidding-only challenge is the drill, a challenge board with
+ * the hands up is the diagram — and unlike either of them it can tell the
+ * platform how the learner did, through the same `onResolvedChange` contract a
+ * quiz uses. Two modes that could not report progress became one that does.
+ *
+ * Not two block types: an author who has placed a block and then wants the
+ * challenge instead should change a chip, not delete and re-add in the right
+ * spot. Every setting round-trips through lib/tutorialV2/bridgeEmbed.ts — the
+ * single mapping module.
  *
  * Two states, and the distinction is the whole point:
  *
@@ -20,46 +26,46 @@
  *    is not in the tree, so nothing is fetched, no engine runs and BEN is never
  *    called. Six of these on a page cost six divs.
  *  · LIVE. On activate, the component mounts and the real thing runs. Close
- *    unmounts it, which stops it rather than merely hiding it — and for a drill
- *    that also means its prefetch stops.
+ *    unmounts it, which stops it rather than merely hiding it — and for a
+ *    challenge that also stops BEN's silent reference line.
  *
  * The preview is drawn here rather than screenshotted so it can never go stale
  * against the real table, costs no network, and says WHICH MODE this block is:
- * a collapsed drill must not look like a collapsed table. The one exception to
- * dormancy is `diagram`, which has nothing to start — see the stage below.
+ * a collapsed challenge must not look like a collapsed table.
  *
  * For an AUTHOR there is a third thing: a Configure disclosure under the
- * thumbnail, collapsed by default. The resting state is deliberately still just
- * the thumbnail and a caption — the knobs are one click away, not in the way.
- * It never renders for a reader (`readOnly`).
+ * thumbnail, collapsed by default. In challenge mode that disclosure holds the
+ * Bridge Platform's own create wizard — the same one, minus the invites step,
+ * because a tutorial challenge is always solo. It never renders for a reader
+ * (`readOnly`).
  */
 
-import { Suspense, lazy, useCallback, useRef, useState } from 'react';
-import { ChevronDown, Dices, Play, Plus, Settings2, Trash2, X } from 'lucide-react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, Dices, Play, Settings2, X } from 'lucide-react';
 import {
-  BRIDGE_DIAGRAM_SHOWS,
-  BRIDGE_DRILL_MAX_HANDS,
   BRIDGE_MODES,
   BRIDGE_PACES,
   BRIDGE_SEATS,
   BRIDGE_SKINS,
   BRIDGE_VULS,
   bridgeEmbedDef,
+  challengeSummary,
   dealFromSeed,
   handPoints,
   handSuits,
   rollBridgeSeed,
-  type BridgeCard,
+  type BridgeChallengeDraft,
   type BridgeEmbedConfig,
   type BridgeSeat,
 } from '../../../../lib/tutorialV2/bridgeEmbed';
+import type { QuizResolveStatus } from '../McqClusterExperience';
 import type { BridgeDecide } from '../../../../vendor/bridge-table/table-embed.js';
 
 // The table is a COMPONENT, not a site in a frame — @bridge/table-embed carries
 // the real PlayTable plus the real game law in one 26kB-gzipped module whose only
 // runtime dependency is React. Loaded through ONE dynamic import so a dormant
 // block costs nothing: the chunk is not fetched until a reader opens something.
-// All three modes come out of the same module, so this is one chunk, once.
+// Both modes come out of the same module, so this is one chunk, once.
 //
 // EVERY reference to it has to be dynamic or the split does not happen. It did
 // not: `createBenDecider` was imported statically here, and Rollup puts a module
@@ -70,8 +76,8 @@ import type { BridgeDecide } from '../../../../vendor/bridge-table/table-embed.j
 const tableEmbed = () => import('../../../../vendor/bridge-table/table-embed.js');
 
 const BridgeTable = lazy(async () => ({ default: (await tableEmbed()).BridgeTable }));
-const BiddingDrill = lazy(async () => ({ default: (await tableEmbed()).BiddingDrill }));
-const DealDiagram = lazy(async () => ({ default: (await tableEmbed()).DealDiagram }));
+const ChallengePlayer = lazy(async () => ({ default: (await tableEmbed()).ChallengePlayer }));
+const ChallengeCreator = lazy(async () => ({ default: (await tableEmbed()).ChallengeCreator }));
 
 /** Where BEN answers. Override with VITE_BEN_ENDPOINT. */
 const BEN_ENDPOINT =
@@ -167,12 +173,13 @@ function TablePreview({ skin, fan: fanned }: Readonly<{ skin: string; fan: boole
 }
 
 /**
- * A miniature of the DRILL: one hand panel and a bid pad. A collapsed drill must
- * not look like a collapsed table — the thumbnail is the only thing an author
- * scanning a long lesson sees, so it has to say which of the three this is.
+ * A miniature of the CHALLENGE: the dark strip with its progress rule, a felt
+ * board under it, and the row of board squares. A collapsed challenge must not
+ * look like a collapsed table — the thumbnail is the only thing an author
+ * scanning a long lesson sees, so it has to say which of the two this is.
  */
-function DrillPreview() {
-  const bars = [72, 54, 40, 62];
+function ChallengePreview({ skin, boards }: Readonly<{ skin: string; boards: number }>) {
+  const n = Math.max(1, Math.min(8, boards || 1));
   return (
     <div
       aria-hidden
@@ -180,90 +187,54 @@ function DrillPreview() {
         position: 'relative',
         width: '100%',
         height: '100%',
-        background: 'linear-gradient(160deg, #f7f8fa 0%, #e8ebf0 100%)',
+        background: SKIN_FELT[skin] || SKIN_FELT.bbo,
         display: 'flex',
-        gap: '5%',
-        padding: '9% 7% 13%',
-        alignItems: 'stretch',
-        boxSizing: 'border-box',
+        flexDirection: 'column',
       }}
     >
+      {/* the challenge strip — its bottom border IS the progress rule */}
       <div
         style={{
-          flex: '1 1 0',
-          background: '#fff',
-          border: '1px solid rgba(0,0,0,0.14)',
-          borderRadius: 3,
-          padding: '4% 6%',
-          boxShadow: '0 1px 3px rgba(0,0,0,0.16)',
+          flex: 'none',
+          height: '13%',
+          background: '#0e1a1c',
           display: 'flex',
-          flexDirection: 'column',
-          justifyContent: 'space-evenly',
+          alignItems: 'center',
+          gap: 5,
+          padding: '0 6%',
+          position: 'relative',
         }}
       >
-        {['♠', '♥', '♦', '♣'].map((g, i) => (
-          <div key={g} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ fontSize: 10, lineHeight: 1, color: i === 1 || i === 2 ? '#C02020' : '#1b2a3a' }}>
-              {g}
-            </span>
-            <span
-              style={{
-                height: 4,
-                width: `${bars[i]}%`,
-                borderRadius: 2,
-                background: 'rgba(0,0,0,0.16)',
-              }}
-            />
-          </div>
-        ))}
+        <span style={{ height: 4, width: '34%', borderRadius: 2, background: 'rgba(255,255,255,0.42)' }} />
+        <span style={{ height: 4, width: '18%', borderRadius: 2, background: 'rgba(255,255,255,0.16)' }} />
+        <span style={{ flex: 1 }} />
+        <span style={{ height: 8, width: '16%', borderRadius: 2, background: 'rgba(255,255,255,0.14)' }} />
+        <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 2, background: 'rgba(255,255,255,0.10)' }}>
+          <span style={{ display: 'block', height: '100%', width: '38%', background: '#0d707c' }} />
+        </span>
       </div>
-      <div
-        style={{
-          flex: '0 0 40%',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(5, 1fr)',
-          gridTemplateRows: 'repeat(7, 1fr)',
-          gap: 2,
-        }}
-      >
-        {Array.from({ length: 35 }, (_, i) => (
+      <div style={{ flex: 1, position: 'relative' }}>
+        <span style={{ position: 'absolute', left: '34%', top: '8%', width: '32%', height: '16%', borderRadius: 2, background: 'rgba(255,255,255,0.86)' }} />
+        <span style={{ position: 'absolute', left: '6%', top: '38%', width: '24%', height: '16%', borderRadius: 2, background: 'rgba(255,255,255,0.7)' }} />
+        <span style={{ position: 'absolute', left: '70%', top: '38%', width: '24%', height: '16%', borderRadius: 2, background: 'rgba(255,255,255,0.7)' }} />
+        <span style={{ position: 'absolute', left: '30%', top: '66%', width: '40%', height: '17%', borderRadius: 2, background: '#fff' }} />
+      </div>
+      {/* the board squares, one per board */}
+      <div style={{ flex: 'none', display: 'flex', gap: 3, padding: '0 6% 5%' }}>
+        {Array.from({ length: n }, (_, i) => (
           <span
             key={i}
             style={{
-              background: i % 5 === 0 ? 'rgba(47,92,143,0.24)' : 'rgba(0,0,0,0.075)',
-              borderRadius: 1.5,
+              flex: 'none',
+              width: 12,
+              height: 12,
+              borderRadius: 3,
+              background: i === 0 ? '#0d707c' : 'rgba(255,255,255,0.20)',
+              border: '1px solid rgba(255,255,255,0.24)',
             }}
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-/** A miniature of the DIAGRAM — four panels round a board card, on the baize. */
-function DiagramPreview() {
-  const panel = (extra: React.CSSProperties) => (
-    <span
-      style={{
-        position: 'absolute',
-        background: '#cbcbcb',
-        borderRadius: 1,
-        boxShadow: '0 1px 2px rgba(0,0,0,0.3)',
-        ...extra,
-      }}
-    />
-  );
-  return (
-    <div
-      aria-hidden
-      style={{ position: 'relative', width: '100%', height: '100%', background: '#016700' }}
-    >
-      {panel({ left: '35%', top: '5%', width: '30%', height: '26%' })}
-      {panel({ left: '3%', top: '37%', width: '30%', height: '26%' })}
-      {panel({ left: '67%', top: '37%', width: '30%', height: '26%' })}
-      {panel({ left: '35%', top: '69%', width: '30%', height: '26%' })}
-      {panel({ left: '3%', top: '5%', width: '26%', height: '26%', background: '#fff' })}
-      {panel({ left: '67%', top: '5%', width: '30%', height: '26%', background: '#99cccc' })}
     </div>
   );
 }
@@ -368,33 +339,14 @@ function BoardSummary({ seed, seat }: Readonly<{ seed: number; seat: BridgeSeat 
   );
 }
 
-/**
- * The same hand, tight enough for a repeated row: "♠AK94 ♥QJ5 ♦83 ♣K72 · 12".
- * A drill has up to twelve of these, so the spaced-out BoardSummary would be a
- * wall; ten is T, as it is on every hand record ever printed.
- */
-function CompactHand({ cards }: Readonly<{ cards: BridgeCard[] }>) {
-  return (
-    <span className="flex flex-wrap items-baseline gap-x-2" style={{ fontSize: 12, minWidth: 0 }}>
-      {handSuits(cards).map((s) => (
-        <span key={s.suit} style={{ whiteSpace: 'nowrap' }}>
-          <span style={{ color: RED_SUITS.has(s.suit) ? '#C02020' : '#1b2a3a' }}>{s.symbol}</span>
-          <span style={{ color: '#111827', fontVariantNumeric: 'tabular-nums' }}>
-            {s.ranks.replace(/ /g, '').replace(/10/g, 'T')}
-          </span>
-        </span>
-      ))}
-      <span style={{ fontSize: 11, color: '#9AA3AF' }}>{handPoints(cards)} HCP</span>
-    </span>
-  );
-}
-
 export function BridgeEmbedBlock({
   config,
   caption,
   onChangeCaption,
   onChangeConfig,
   readOnly,
+  onResolvedChange,
+  resultKeyPrefix = '',
 }: Readonly<{
   /** The author's choices, already normalised by `readBridgeConfig`. */
   config: BridgeEmbedConfig;
@@ -403,59 +355,105 @@ export function BridgeEmbedBlock({
   /** Given the whole next config, so no hop has to merge partials. */
   onChangeConfig?: (next: BridgeEmbedConfig) => void;
   readOnly?: boolean;
+  /**
+   * THE PROGRESS EDGE, and it is the quiz's, not a new one. A challenge block
+   * reports the same shape `QuizBlock` reports — one entry per board, 'correct'
+   * where the learner matched or beat BEN — so `AssessedBlocks` aggregates a
+   * challenge and a quiz in the same tally and the same pass banner reads both.
+   * A table block never reports: there is nothing to be right about.
+   */
+  onResolvedChange?: (info: {
+    keyPrefix: string;
+    byIndex: Record<number, QuizResolveStatus>;
+    correct: number;
+    total: number;
+    allDone: boolean;
+  }) => void;
+  resultKeyPrefix?: string;
 }>) {
   const [live, setLive] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const def = bridgeEmbedDef(config.kind);
   const mode = def.kind;
+  const challenge = challengeSummary(config.challenge);
 
-  // BEN plays the other three seats at a table, and is the second opinion in a
-  // drill. One identity for the life of the block, so neither the table's robot
-  // effect nor the drill's prefetch restarts on a render.
+  // BEN plays the other three seats at a table, and is also the reference line
+  // a challenge board is set beside. One identity for the life of the block, so
+  // neither the table's robot effect nor the reference line restarts on a render.
   const decide = useBenDecide(setProblem);
 
   const set = (patch: Partial<BridgeEmbedConfig>) => onChangeConfig?.({ ...config, ...patch });
   const editable = !readOnly && !!onChangeConfig;
 
+  /**
+   * The mark, in the quiz's own vocabulary. `mark` comes from the player, which
+   * counts boards and compares them with BEN; nothing is recomputed here.
+   */
+  const sink = useRef(onResolvedChange);
+  sink.current = onResolvedChange;
+  const onChallengeProgress = useCallback(
+    (mark: {
+      boardsTotal: number;
+      boardsDone: number;
+      completed: boolean;
+      boardsWon: number;
+      rated: number;
+    }) => {
+      const byIndex: Record<number, QuizResolveStatus> = {};
+      for (let i = 0; i < mark.boardsDone; i++)
+        byIndex[i] = i < mark.boardsWon ? 'correct' : 'revealed';
+      sink.current?.({
+        keyPrefix: resultKeyPrefix,
+        byIndex,
+        correct: mark.boardsWon,
+        total: mark.boardsTotal,
+        allDone: mark.completed,
+      });
+    },
+    [resultKeyPrefix],
+  );
+
+  // A challenge that is not configured has nothing to open, and a reader must
+  // not meet a Play button that leads to an empty frame.
+  const playable = mode !== 'challenge' || !!challenge;
+  useEffect(() => {
+    if (!playable && live) setLive(false);
+  }, [playable, live]);
+
   /** The line under a thumbnail: what this block IS, in the author's own terms. */
   const subtitle = readOnly
-    ? def.blurb
-    : mode === 'drill'
-      ? `${config.drillHands.length} hand${config.drillHands.length === 1 ? '' : 's'} · you are ${SEAT_NAME[config.humanSeat]}`
+    ? mode === 'challenge' && challenge
+      ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'} · vs BEN`
+      : def.blurb
+    : mode === 'challenge'
+      ? challenge
+        ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'}`
+        : 'Not set up yet — open Configure and build it'
       : `Board ${config.seed} · you sit ${SEAT_NAME[config.humanSeat]}${config.showAllHands ? ' · all hands up' : ''}`;
 
-  /* A DIAGRAM has nothing to start, so it does not wait to be started. The
-     dormant-until-asked rule exists because a live table is expensive: an engine
-     loop, a decider, a reader's attention. A record of a deal is a picture, and a
-     picture behind a Play button is not a picture. It is still the lazy chunk, so
-     a page of diagrams costs one download and no BEN calls. */
   const stage =
-    mode === 'diagram' ? (
-      <Suspense fallback={<DiagramPreview />}>
-        <DealDiagram
-          seed={config.seed}
-          dealer={config.dealer}
-          vul={config.vul}
-          show={config.diagramShow}
-          boardLabel={config.seed}
-          highlightSeat={config.diagramShow === 'all' ? null : config.diagramShow}
-        />
-      </Suspense>
-    ) : mode === 'drill' ? (
+    mode === 'challenge' ? (
       <Suspense
         fallback={
-          <p style={{ fontSize: 12.5, color: '#6B7280', padding: 16, margin: 0 }}>
-            Loading the drill…
-          </p>
+          <div
+            style={{ display: 'grid', placeItems: 'center', width: '100%', height: '100%', color: '#fff', fontSize: 12.5 }}
+          >
+            Loading the challenge…
+          </div>
         }
       >
-        <BiddingDrill
-          hands={config.drillHands.map((h) => ({ seed: h.seed, note: h.note }))}
-          seat={config.humanSeat}
-          dealer={config.dealer}
-          vul={config.vul}
+        <ChallengePlayer
+          draft={config.challenge}
           decide={decide}
+          height="100%"
+          robotDelayMs={config.robotDelayMs}
+          appearance={{
+            skin: config.skin,
+            handLayout: config.handLayout,
+            bidPad: config.bidPad,
+          }}
+          onProgress={onChallengeProgress}
         />
       </Suspense>
     ) : (
@@ -489,14 +487,13 @@ export function BridgeEmbedBlock({
     );
 
   /**
-   * FRAMED means a picture: a fixed aspect on a dark ground, which is right for
-   * a table, for a thumbnail, and for a full-board diagram — all three are
-   * images that should hold their shape as the column resizes. It is wrong for
-   * the two things that size to their own content: a live drill, and a diagram
-   * of ONE hand, which is four lines of text. Forcing the board's 1.6 aspect on
-   * those left a slab of black under them.
+   * FRAMED means a picture: a fixed aspect on a dark ground. Both modes want it
+   * — a table and a challenge are boards, and a board should hold its shape as
+   * the column resizes. The challenge's own strip comes out of that height
+   * rather than being added to it, which is the whole reason the player takes
+   * `height="100%"` and prices its bands against the box it is given.
    */
-  const framed = mode === 'table' || (mode === 'diagram' ? config.diagramShow === 'all' : !live);
+  const framed = true;
 
   return (
     <div>
@@ -510,40 +507,48 @@ export function BridgeEmbedBlock({
           ...(framed ? { aspectRatio: String(def.ratio) } : {}),
         }}
       >
-        {live || mode === 'diagram' ? (
+        {live ? (
           <>
             {stage}
-            {mode !== 'diagram' && (
-              <button
-                type="button"
-                onClick={() => setLive(false)}
-                title={`Close — this unmounts the ${mode === 'drill' ? 'drill' : 'table'}`}
-                className="absolute flex items-center justify-center rounded-full"
-                style={{
-                  top: 8,
-                  right: 8,
-                  width: 28,
-                  height: 28,
-                  background: 'rgba(11,15,26,0.78)',
-                  color: '#fff',
-                  border: '1px solid rgba(255,255,255,0.18)',
-                  zIndex: 2,
-                }}
-              >
-                <X size={14} />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setLive(false)}
+              title={`Close — this unmounts the ${mode === 'challenge' ? 'challenge' : 'table'}`}
+              className="absolute flex items-center justify-center rounded-full"
+              style={{
+                // A challenge wears a 40px strip along the top whose right-hand
+                // end is the Results button, so the Close sits BELOW it rather
+                // than on top of it.
+                top: mode === 'challenge' ? 48 : 8,
+                right: 8,
+                width: 28,
+                height: 28,
+                background: 'rgba(11,15,26,0.78)',
+                color: '#fff',
+                border: '1px solid rgba(255,255,255,0.18)',
+                zIndex: 2,
+              }}
+            >
+              <X size={14} />
+            </button>
           </>
         ) : (
           <button
             type="button"
-            onClick={() => setLive(true)}
+            onClick={() => playable && setLive(true)}
+            disabled={!playable}
             className="absolute inset-0 w-full h-full"
-            style={{ padding: 0, border: 0, background: 'transparent', cursor: 'pointer', display: 'block' }}
-            title={`Open ${def.label}`}
+            style={{
+              padding: 0,
+              border: 0,
+              background: 'transparent',
+              cursor: playable ? 'pointer' : 'default',
+              display: 'block',
+            }}
+            title={playable ? `Open ${def.label}` : 'This challenge has no boards yet'}
           >
-            {mode === 'drill' ? (
-              <DrillPreview />
+            {mode === 'challenge' ? (
+              <ChallengePreview skin={config.skin} boards={challenge?.boards || 4} />
             ) : (
               <TablePreview skin={config.skin} fan={config.handLayout === 'fan'} />
             )}
@@ -555,21 +560,23 @@ export function BridgeEmbedBlock({
                 background: 'linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,0.72) 100%)',
               }}
             />
-            <span
-              className="flex items-center justify-center rounded-full"
-              style={{
-                position: 'absolute',
-                left: '50%',
-                top: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: 52,
-                height: 52,
-                background: 'rgba(255,255,255,0.94)',
-                boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
-              }}
-            >
-              <Play size={20} style={{ color: '#0B0F1A', marginLeft: 3 }} fill="#0B0F1A" />
-            </span>
+            {playable && (
+              <span
+                className="flex items-center justify-center rounded-full"
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 52,
+                  height: 52,
+                  background: 'rgba(255,255,255,0.94)',
+                  boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
+                }}
+              >
+                <Play size={20} style={{ color: '#0B0F1A', marginLeft: 3 }} fill="#0B0F1A" />
+              </span>
+            )}
             <span
               style={{
                 position: 'absolute',
@@ -580,7 +587,9 @@ export function BridgeEmbedBlock({
                 color: '#fff',
               }}
             >
-              <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>{def.label}</span>
+              <span style={{ display: 'block', fontSize: 13, fontWeight: 700 }}>
+                {mode === 'challenge' && challenge ? challenge.title : def.label}
+              </span>
               <span style={{ display: 'block', fontSize: 11.5, opacity: 0.82 }}>{subtitle}</span>
             </span>
           </button>
@@ -635,9 +644,8 @@ export function BridgeEmbedBlock({
               }}
             >
               {/* The MODE is the first thing, because everything under it depends
-                  on the answer. Each mode then shows ONLY its own settings — a
-                  drill has no skin-of-the-felt question, a diagram has no robot
-                  pace — so the panel stays short whichever one is chosen. */}
+                  on the answer. Each mode then shows ONLY its own settings, so
+                  the panel stays short whichever one is chosen. */}
               <Group title="Mode">
                 <div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
                   {BRIDGE_MODES.map((m) => (
@@ -653,233 +661,160 @@ export function BridgeEmbedBlock({
                 </div>
               </Group>
 
-              {mode === 'drill' ? (
-                <Group title="Hands">
-                  {config.drillHands.map((h, i) => (
-                    <div
-                      key={i}
-                      style={{
-                        marginTop: 6,
-                        paddingTop: 6,
-                        borderTop: i === 0 ? 0 : '1px solid rgba(0,0,0,0.06)',
-                      }}
-                    >
-                      <div className="flex items-baseline gap-2">
-                        <span style={{ fontSize: 11, color: '#9AA3AF', width: 14, flex: 'none' }}>
-                          {i + 1}
-                        </span>
-                        <CompactHand cards={dealFromSeed(h.seed)[config.humanSeat]} />
-                        <span className="flex items-center gap-1" style={{ marginLeft: 'auto', flex: 'none' }}>
-                          <Chip
-                            onClick={() =>
-                              set({
-                                drillHands: config.drillHands.map((x, j) =>
-                                  j === i ? { ...x, seed: rollBridgeSeed() } : x,
-                                ),
-                              })
-                            }
-                            title={`Board ${h.seed} — deal a different one`}
-                          >
-                            <Dices size={12} />
-                          </Chip>
-                          {config.drillHands.length > 1 && (
-                            <Chip
-                              onClick={() =>
-                                set({ drillHands: config.drillHands.filter((_, j) => j !== i) })
-                              }
-                              title="Remove this hand"
-                            >
-                              <Trash2 size={12} />
-                            </Chip>
-                          )}
-                        </span>
-                      </div>
-                      <input
-                        value={h.note}
-                        onChange={(e) =>
-                          set({
-                            drillHands: config.drillHands.map((x, j) =>
-                              j === i ? { ...x, note: e.target.value } : x,
-                            ),
-                          })
-                        }
-                        placeholder="What you want said about this hand (optional)"
-                        className="w-full"
-                        style={{
-                          marginTop: 4,
-                          fontSize: 11.5,
-                          border: '1px solid rgba(0,0,0,0.08)',
-                          borderRadius: 8,
-                          padding: '5px 8px',
-                        }}
-                      />
-                    </div>
-                  ))}
-                  <div style={{ marginTop: 8 }}>
-                    {config.drillHands.length < BRIDGE_DRILL_MAX_HANDS ? (
-                      <Chip
-                        onClick={() =>
-                          set({
-                            drillHands: [...config.drillHands, { seed: rollBridgeSeed(), note: '' }],
-                          })
-                        }
-                        title="One more hand at the end of the drill"
-                      >
-                        <Plus size={12} /> Add hand
-                      </Chip>
-                    ) : (
-                      <p style={{ fontSize: 11, color: '#9AA3AF', margin: 0 }}>
-                        {BRIDGE_DRILL_MAX_HANDS} hands is the most a drill takes.
+              {mode === 'challenge' ? (
+                /* THE WIZARD ITSELF. Not a re-implementation of it: this is the
+                   Bridge Platform's own create-challenge form, out of the same
+                   package as the table, with the invites step removed because a
+                   tutorial challenge is played by one learner. It saves as the
+                   author types — there is no second Save inside a panel that is
+                   already inside an editor. */
+                <Group title="Challenge">
+                  <Suspense
+                    fallback={
+                      <p style={{ fontSize: 12.5, color: '#6B7280', padding: '8px 0', margin: 0 }}>
+                        Loading the challenge builder…
                       </p>
-                    )}
-                  </div>
+                    }
+                  >
+                    <ChallengeCreator
+                      draft={config.challenge || undefined}
+                      createLabel="Done"
+                      onChange={(next) => set({ challenge: next })}
+                      onCreate={(next) => {
+                        set({ challenge: next });
+                        setConfigOpen(false);
+                      }}
+                    />
+                  </Suspense>
                 </Group>
               ) : (
-                <Group title="Deal">
-                  <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 6 }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 650, color: '#374151' }}>
-                      Board {config.seed}
-                    </span>
-                    <Chip
-                      onClick={() => set({ seed: rollBridgeSeed() })}
-                      title="Deal a different board"
-                    >
-                      <Dices size={12} /> Re-roll
-                    </Chip>
-                  </div>
-                  <BoardSummary
-                    seed={config.seed}
-                    seat={config.diagramShow === 'all' || mode !== 'diagram' ? config.humanSeat : config.diagramShow}
-                  />
-                </Group>
-              )}
-
-              <Group title={mode === 'diagram' ? 'Board' : 'Seats'}>
-                {mode === 'diagram' ? (
-                  <ChipRow label="Show">
-                    {BRIDGE_DIAGRAM_SHOWS.map((s) => (
-                      <Chip
-                        key={s.id}
-                        selected={config.diagramShow === s.id}
-                        onClick={() => set({ diagramShow: s.id })}
-                      >
-                        {s.label}
-                      </Chip>
-                    ))}
-                  </ChipRow>
-                ) : (
-                  <ChipRow label={mode === 'drill' ? 'Learner is' : 'Learner sits'}>
-                    {BRIDGE_SEATS.map((s) => (
-                      <Chip
-                        key={s.id}
-                        selected={config.humanSeat === s.id}
-                        onClick={() => set({ humanSeat: s.id })}
-                        title={s.label}
-                      >
-                        {s.label}
-                      </Chip>
-                    ))}
-                  </ChipRow>
-                )}
-                <ChipRow label="Dealer">
-                  {BRIDGE_SEATS.map((s) => (
-                    <Chip
-                      key={s.id}
-                      selected={config.dealer === s.id}
-                      onClick={() => set({ dealer: s.id })}
-                      title={s.label}
-                    >
-                      {s.label}
-                    </Chip>
-                  ))}
-                </ChipRow>
-                <ChipRow label="Vulnerable">
-                  {BRIDGE_VULS.map((v) => (
-                    <Chip key={v.id} selected={config.vul === v.id} onClick={() => set({ vul: v.id })}>
-                      {v.label}
-                    </Chip>
-                  ))}
-                </ChipRow>
-                {mode === 'table' && config.dealer !== config.humanSeat && (
-                  <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 6, paddingLeft: 76 }}>
-                    A robot opens the auction — the learner waits one turn.
-                  </p>
-                )}
-                {mode === 'drill' && config.dealer !== config.humanSeat && (
-                  <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 6, paddingLeft: 76 }}>
-                    The seats before the learner pass, so the call asked for is still the
-                    opening one. The drill shows those passes.
-                  </p>
-                )}
-              </Group>
-
-              {mode === 'table' && (
                 <>
-                  <Group title="Look">
-                    <ChipRow label="Skin">
-                      {BRIDGE_SKINS.map((k) => (
-                        <Chip key={k.id} selected={config.skin === k.id} onClick={() => set({ skin: k.id })}>
-                          {k.label}
-                        </Chip>
-                      ))}
-                    </ChipRow>
-                    <ChipRow label="Hands">
+                  <Group title="Deal">
+                    <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 6 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 650, color: '#374151' }}>
+                        Board {config.seed}
+                      </span>
                       <Chip
-                        selected={config.handLayout === 'row'}
-                        onClick={() => set({ handLayout: 'row' })}
-                        title="Cards side by side"
+                        onClick={() => set({ seed: rollBridgeSeed() })}
+                        title="Deal a different board"
                       >
-                        Row
-                      </Chip>
-                      <Chip
-                        selected={config.handLayout === 'fan'}
-                        onClick={() => set({ handLayout: 'fan' })}
-                        title="Cards splayed as a held fan"
-                      >
-                        Fan
-                      </Chip>
-                    </ChipRow>
-                    <ChipRow label="Bidding pad">
-                      <Chip selected={config.bidPad === 'grid'} onClick={() => set({ bidPad: 'grid' })}>
-                        Grid
-                      </Chip>
-                      <Chip selected={config.bidPad === 'columns'} onClick={() => set({ bidPad: 'columns' })}>
-                        Columns
-                      </Chip>
-                    </ChipRow>
-                  </Group>
-
-                  <Group title="Teaching">
-                    <div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
-                      <Chip
-                        selected={config.showAllHands}
-                        onClick={() => set({ showAllHands: !config.showAllHands })}
-                        title="Every hand face up — a worked board rather than a problem"
-                      >
-                        All four hands
-                      </Chip>
-                      <Chip
-                        selected={config.showCoach}
-                        onClick={() => set({ showCoach: !config.showCoach })}
-                        title="A coach panel beside the table"
-                      >
-                        Coach
+                        <Dices size={12} /> Re-roll
                       </Chip>
                     </div>
-                    <ChipRow label="Robot pace">
-                      {BRIDGE_PACES.map((p) => (
+                    <BoardSummary seed={config.seed} seat={config.humanSeat} />
+                  </Group>
+
+                  <Group title="Seats">
+                    <ChipRow label="Learner sits">
+                      {BRIDGE_SEATS.map((s) => (
                         <Chip
-                          key={p.id}
-                          selected={config.robotDelayMs === p.id}
-                          onClick={() => set({ robotDelayMs: p.id })}
-                          title={`${p.id}ms before a robot acts`}
+                          key={s.id}
+                          selected={config.humanSeat === s.id}
+                          onClick={() => set({ humanSeat: s.id })}
+                          title={s.label}
                         >
-                          {p.label}
+                          {s.label}
                         </Chip>
                       ))}
                     </ChipRow>
+                    <ChipRow label="Dealer">
+                      {BRIDGE_SEATS.map((s) => (
+                        <Chip
+                          key={s.id}
+                          selected={config.dealer === s.id}
+                          onClick={() => set({ dealer: s.id })}
+                          title={s.label}
+                        >
+                          {s.label}
+                        </Chip>
+                      ))}
+                    </ChipRow>
+                    <ChipRow label="Vulnerable">
+                      {BRIDGE_VULS.map((v) => (
+                        <Chip key={v.id} selected={config.vul === v.id} onClick={() => set({ vul: v.id })}>
+                          {v.label}
+                        </Chip>
+                      ))}
+                    </ChipRow>
+                    {config.dealer !== config.humanSeat && (
+                      <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 6, paddingLeft: 76 }}>
+                        A robot opens the auction — the learner waits one turn.
+                      </p>
+                    )}
                   </Group>
                 </>
+              )}
+
+              {/* The felt is the felt whichever mode drew it, so Look and pace
+                  are asked once and both modes answer them. */}
+              <Group title="Look">
+                <ChipRow label="Skin">
+                  {BRIDGE_SKINS.map((k) => (
+                    <Chip key={k.id} selected={config.skin === k.id} onClick={() => set({ skin: k.id })}>
+                      {k.label}
+                    </Chip>
+                  ))}
+                </ChipRow>
+                <ChipRow label="Hands">
+                  <Chip
+                    selected={config.handLayout === 'row'}
+                    onClick={() => set({ handLayout: 'row' })}
+                    title="Cards side by side"
+                  >
+                    Row
+                  </Chip>
+                  <Chip
+                    selected={config.handLayout === 'fan'}
+                    onClick={() => set({ handLayout: 'fan' })}
+                    title="Cards splayed as a held fan"
+                  >
+                    Fan
+                  </Chip>
+                </ChipRow>
+                <ChipRow label="Bidding pad">
+                  <Chip selected={config.bidPad === 'grid'} onClick={() => set({ bidPad: 'grid' })}>
+                    Grid
+                  </Chip>
+                  <Chip selected={config.bidPad === 'columns'} onClick={() => set({ bidPad: 'columns' })}>
+                    Columns
+                  </Chip>
+                </ChipRow>
+                <ChipRow label="Robot pace">
+                  {BRIDGE_PACES.map((p) => (
+                    <Chip
+                      key={p.id}
+                      selected={config.robotDelayMs === p.id}
+                      onClick={() => set({ robotDelayMs: p.id })}
+                      title={`${p.id}ms before a robot acts`}
+                    >
+                      {p.label}
+                    </Chip>
+                  ))}
+                </ChipRow>
+              </Group>
+
+              {/* Teaching aids belong to the plain table. A challenge decides
+                  them per challenge, in its own Table controls step — a scored
+                  board with every hand face up is a different promise. */}
+              {mode === 'table' && (
+                <Group title="Teaching">
+                  <div className="flex flex-wrap gap-1.5" style={{ marginTop: 6 }}>
+                    <Chip
+                      selected={config.showAllHands}
+                      onClick={() => set({ showAllHands: !config.showAllHands })}
+                      title="Every hand face up — a worked board rather than a problem"
+                    >
+                      All four hands
+                    </Chip>
+                    <Chip
+                      selected={config.showCoach}
+                      onClick={() => set({ showCoach: !config.showCoach })}
+                      title="A coach panel beside the table"
+                    >
+                      Coach
+                    </Chip>
+                  </div>
+                </Group>
               )}
             </div>
           )}
