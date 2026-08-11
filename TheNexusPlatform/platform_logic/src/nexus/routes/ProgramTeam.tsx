@@ -42,6 +42,7 @@ import {
   removeMember,
   revokeInvitation,
   setProgramMemberGroups,
+  setProgramMemberName,
   setProgramMemberRole,
   updateProgramRole,
   type AccessLevel,
@@ -262,6 +263,32 @@ export function ProgramTeam() {
     return chain;
   }
 
+  /**
+   * Rename a person from here.
+   *
+   * Addressed by email, like assignRole, so it also works for someone still INVITED —
+   * they hold a profile (that is how their credentials get set) but no membership id.
+   *
+   * The server writes the name across every profile they hold, so this is what the
+   * phone shows: the app labels its roster, leaderboard and chat from the session
+   * user's display name.
+   */
+  async function renameMember(m: ProgramMember) {
+    if (!m.email) return;
+    const next = window.prompt(`Name for ${m.email}`, m.display_name ?? "");
+    // Cancel returns null; an empty string would be a deletion, which this is not.
+    if (next === null) return;
+    const trimmed = next.trim();
+    if (!trimmed || trimmed === (m.display_name ?? "").trim()) return;
+    try {
+      await setProgramMemberName(programId, m.email, trimmed);
+      toast.success("Name updated — it will show in the app too");
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to rename");
+    }
+  }
+
   async function assignRole(m: ProgramMember, roleId: string | null) {
     if (!m.email) return;
     try {
@@ -324,7 +351,23 @@ export function ProgramTeam() {
     return (
       <TableRow key={`${keyPrefix}${m.email ?? m.invitation_id ?? m.membership_id ?? ""}`}>
         <TableCell>
-          <div className="font-medium text-foreground">{m.display_name ?? "—"}</div>
+          <div className="flex items-center gap-1">
+            <span className="font-medium text-foreground">{m.display_name ?? "—"}</span>
+            {/* Only where there is an email to address the rename by. Same pencil the
+                group-placement control uses, so an editable field looks editable in
+                the one way this table already establishes. */}
+            {m.email ? (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-1.5"
+                onClick={() => void renameMember(m)}
+                title="Edit this person's name"
+              >
+                <Pencil className="size-3" />
+              </Button>
+            ) : null}
+          </div>
           <div className="text-xs text-muted-foreground">{m.email}</div>
         </TableCell>
         <TableCell>

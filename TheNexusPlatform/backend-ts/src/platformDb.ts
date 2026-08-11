@@ -1111,6 +1111,12 @@ export async function releaseUsernameIfOrphaned(profileId: string): Promise<stri
   return pg.releaseUsernameIfOrphaned(profileId);
 }
 
+/** Admin rename by email, across every profile — see setDisplayNameByEmail. */
+export async function setDisplayNameByEmail(email: string, displayName: string): Promise<number> {
+  if (!usePg()) throw new HttpError(400, "Editing a name requires the database backend");
+  return pg.setDisplayNameByEmail(email, displayName);
+}
+
 /** Free an orphaned username by email — see releaseUsernameIfOrphanedByEmail. */
 export async function releaseUsernameIfOrphanedByEmail(email: string): Promise<string | null> {
   if (!usePg()) return null;

@@ -1492,6 +1492,20 @@ export async function setProgramMemberRole(programId: string, email: string, rol
   });
 }
 
+/**
+ * Rename a member. Addressed by email like the role call above, so it also reaches
+ * someone still invited (they have a profile but no membership id).
+ *
+ * The server writes it across every profile the person holds, which is what makes the
+ * new name appear in the app — see setDisplayNameByEmail.
+ */
+export async function setProgramMemberName(programId: string, email: string, displayName: string): Promise<void> {
+  await request(`/api/programs/${programId}/members/name`, {
+    method: "PUT",
+    body: JSON.stringify({ email, display_name: displayName }),
+  });
+}
+
 /** The signed-in member's own custom role (+perms) in a program, or null. */
 export async function getMyProgramRole(
   programId: string,

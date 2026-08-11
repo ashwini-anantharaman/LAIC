@@ -202,6 +202,29 @@ export async function releaseUsernameIfOrphaned(profileId: string): Promise<stri
 }
 
 /**
+ * Set someone's display name, by email, across every profile they hold.
+ *
+ * GLOBAL for the same reason the self-service rename is: the app shows ONE name, and
+ * loadUser returns persons[0] from the rows matching the caller — an arbitrary one.
+ * A per-org name would therefore be indeterminate on the phone rather than merely
+ * inconsistent, so there is no coherent way to make it org-local while a person can
+ * hold profiles in several orgs.
+ *
+ * `name` is written alongside `display_name` because readers fall back to it.
+ * Returns how many rows changed, so a caller can 404 rather than silently succeed.
+ */
+export async function setDisplayNameByEmail(email: string, displayName: string): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .update(profiles)
+      .set({ displayName, name: displayName, updatedAt: new Date() })
+      .where(sql`lower(${profiles.email}) = lower(${email})`)
+      .returning({ id: profiles.id });
+    return rows.length;
+  });
+}
+
+/**
  * The same release, addressed by EMAIL.
  *
  * An invited person can already hold a profile — that is how an admin sets their
