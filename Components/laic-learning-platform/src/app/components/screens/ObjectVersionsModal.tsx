@@ -5,8 +5,6 @@ import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 import { useConfirm } from '../ConfirmDialog';
-import { syncWorkingVersion } from '../../../lib/objectVersionsStore';
-import { USERS } from '../../../lib/data';
 
 export function ObjectVersionsModal({
   object,
@@ -29,15 +27,10 @@ export function ObjectVersionsModal({
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!object || !activeUserId) return;
-    const user = (USERS || []).find((u) => u.id === activeUserId);
-    try {
-      syncWorkingVersion(activeUserId, object, object.ownerName || user?.name || 'You');
-    } catch (err: any) {
-      console.warn('[versions] sync on open failed:', err?.message || err);
-    }
-  }, [object, activeUserId]);
+  // Opening this modal used to commit a version whenever the working copy had
+  // drifted from the tip — so looking at the history changed it. Versions are
+  // now created only by an explicit act: Submit as…, or Save as new version
+  // below.
 
   const versions = useMemo(
     () => (typeof listObjectVersions === 'function' ? (listObjectVersions(object.id) || []) : []),
@@ -125,7 +118,7 @@ export function ObjectVersionsModal({
               <span style={{ color: '#9AA3AF' }}> · {object.type}</span>
             </p>
             <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 4 }}>
-              Like commits: first save is v1; each later edit that changes content adds v2, v3, …
+              v1 is the original. Editing never adds a version on its own — use Submit as… or Save version.
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5" aria-label="Close">

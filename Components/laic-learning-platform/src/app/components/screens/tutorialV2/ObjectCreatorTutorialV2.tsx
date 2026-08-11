@@ -390,7 +390,10 @@ export function ObjectCreatorTutorialV2() {
       // which can lag a tick behind and corrupt reopen.
       tutorialV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any, saveOpts);
+      // Draft saves keep content safe but leave history alone. Left on 'auto'
+      // they committed a version of their own whenever the amend window had
+      // expired, which is where the surprise extra versions came from.
+    } as any, saveOpts ?? { version: 'skip' });
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects]);
 
