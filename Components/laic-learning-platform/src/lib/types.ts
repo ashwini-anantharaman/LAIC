@@ -876,7 +876,10 @@ export type BlockContent =
  * gaps from `BRIDGE_EMBED_DEFAULTS`.
  */
 export interface BridgeTableContent {
-  /** The MODE: 'table' (one playable board) or 'challenge' (boards, scored). */
+  /**
+   * The MODE: 'table' (one playable board), 'challenge' (boards against BEN,
+   * scored) or 'bidding' (the opening-bid drill, marked against the author).
+   */
   kind?: string;
   /** The deal, derived deterministically so every reader sees the same board. */
   seed?: number;
@@ -896,6 +899,8 @@ export interface BridgeTableContent {
    * `SoloChallengeDraft`. Opaque here; the package validates it.
    */
   challenge?: unknown;
+  /** bidding mode: how many of the authored opening-bid hands to ask. */
+  biddingHands?: number;
 }
 
 export interface Block {

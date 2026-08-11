@@ -260,11 +260,12 @@ export function GlossarySidebar({
  * How many things in this tutorial can be got right — the denominator of the
  * cumulative pass.
  *
- * A CHALLENGE BLOCK COUNTS ITS BOARDS. It resolves board by board exactly as a
- * quiz resolves question by question (BridgeEmbedBlock reports the same
- * `onResolvedChange` shape), so a lesson of four boards and six questions is
- * out of ten and the banner needs no second kind of arithmetic. A plain table
- * block counts nothing: there is nothing to be right about.
+ * A CHALLENGE BLOCK COUNTS ITS BOARDS, and an OPENING BID DRILL ITS HANDS. Both
+ * resolve one at a time exactly as a quiz resolves question by question
+ * (BridgeEmbedBlock reports the same `onResolvedChange` shape for all of them),
+ * so a lesson of four boards, five drill hands and six questions is out of
+ * fifteen and the banner needs no second kind of arithmetic. A plain table block
+ * counts nothing: there is nothing to be right about.
  */
 function countQuizQuestionsInBlocks(blocks: Block[]): number {
   let n = 0;
@@ -275,6 +276,7 @@ function countQuizQuestionsInBlocks(blocks: Block[]): number {
       const c = readBridgeConfig(b.content || {});
       const boards = challengeSummary(c.challenge);
       if (c.kind === 'challenge' && boards) n += boards.boards;
+      else if (c.kind === 'bidding') n += c.biddingHands;
     }
   }
   return n;

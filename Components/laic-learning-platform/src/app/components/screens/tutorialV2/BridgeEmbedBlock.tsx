@@ -1,13 +1,23 @@
 /**
  * A Bridge Platform component inside a tutorial — dormant until asked for.
  *
- * ONE BLOCK, TWO MODES. The mode is the first setting inside Configure, and it
- * chooses which component out of @bridge/table-embed this block mounts:
+ * ONE BLOCK, THREE MODES. The mode is the first setting inside Configure, and
+ * it chooses which component out of @bridge/table-embed this block mounts:
  *
  *  · table     — one playable board. Bid it, play it, BEN takes the other
  *                seats. Nothing is scored and nothing is reported.
  *  · challenge — the boards an author set, played in sequence against BEN,
  *                with the learner's line beside BEN's and a mark at the end.
+ *  · bidding   — the opening-bid drill. One hand, one call, and the answer is
+ *                the AUTHOR'S. No engine is consulted, here or below.
+ *
+ * THE THIRD MODE IS THE ONE THAT DOES NOT ASK BEN. Both others are scored
+ * against it, which is right when the question is "what would a strong engine
+ * do here" — but a lesson that teaches a bidding system needs the lesson's
+ * answer, and BEN bids its own. So the drill mounts <BiddingChallenge/>, which
+ * takes no `decide` prop and makes no network call: it marks a call against
+ * what the author wrote and prints the author's reason verbatim. It still
+ * reports progress, down the same wire the challenge uses.
  *
  * The challenge REPLACED the drill and the diagram (owner, 2026-08-10). It does
  * what both did — a bidding-only challenge is the drill, a challenge board with
@@ -43,6 +53,8 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDown, Dices, Play, Settings2, X } from 'lucide-react';
 import {
+  BRIDGE_BIDDING_COUNTS,
+  BRIDGE_BIDDING_HANDS_MAX,
   BRIDGE_MODES,
   BRIDGE_PACES,
   BRIDGE_SEATS,
@@ -78,6 +90,7 @@ const tableEmbed = () => import('../../../../vendor/bridge-table/table-embed.js'
 const BridgeTable = lazy(async () => ({ default: (await tableEmbed()).BridgeTable }));
 const ChallengePlayer = lazy(async () => ({ default: (await tableEmbed()).ChallengePlayer }));
 const ChallengeCreator = lazy(async () => ({ default: (await tableEmbed()).ChallengeCreator }));
+const BiddingChallenge = lazy(async () => ({ default: (await tableEmbed()).BiddingChallenge }));
 
 /** Where BEN answers. Override with VITE_BEN_ENDPOINT. */
 const BEN_ENDPOINT =
@@ -235,6 +248,150 @@ function ChallengePreview({ skin, boards }: Readonly<{ skin: string; boards: num
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * A miniature of the OPENING BID DRILL: a paper card, a hand written out as
+ * four suit lines, and the bid pad's five columns beside it. Deliberately not a
+ * felt board — this is the one mode with no table in it, and a thumbnail that
+ * showed green baize would promise the wrong thing.
+ */
+function DrillPreview() {
+  const line = (glyph: string, red: boolean, w: number) => (
+    <div key={glyph} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <span style={{ fontSize: 9, color: red ? '#C02020' : '#1b2a3a', width: 8 }}>{glyph}</span>
+      <span style={{ height: 4, width: `${w}%`, borderRadius: 2, background: 'rgba(17,24,39,0.55)' }} />
+    </div>
+  );
+  return (
+    <div
+      aria-hidden
+      style={{
+        width: '100%',
+        height: '100%',
+        background: '#f3f2ef',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '6%',
+        padding: '10% 8%',
+      }}
+    >
+      <div
+        style={{
+          flex: '1 1 0',
+          background: '#fff',
+          border: '1px solid #8a8a8a',
+          borderRadius: 3,
+          boxShadow: '0 2px 5px rgba(0,0,0,.28)',
+          padding: '6% 7%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 5,
+        }}
+      >
+        {line('\u2660', false, 62)}
+        {line('\u2665', true, 40)}
+        {line('\u2666', true, 30)}
+        {line('\u2663', false, 22)}
+      </div>
+      {/* the bid pad: five strain columns, the way BidColumns lays them out */}
+      <div style={{ flex: '0 0 42%', display: 'flex', gap: 3 }}>
+        {['#6b7280', '#1b2a3a', '#C02020', '#C02020', '#1b2a3a'].map((ink, c) => (
+          <div
+            key={c}
+            style={{
+              flex: 1,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              background: 'rgba(255,255,255,0.85)',
+              border: '1px solid rgba(0,0,0,0.10)',
+              borderRadius: 3,
+              padding: 2,
+            }}
+          >
+            {Array.from({ length: 5 }, (_, r) => (
+              <span key={r} style={{ height: 4, borderRadius: 1, background: ink, opacity: r === 0 ? 0.95 : 0.32 }} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * What the package's own validator says about the authored hand set, printed
+ * where an AUTHOR will see it.
+ *
+ * The check lives in @bridge/table-embed (`validateDrillHands`) because the data
+ * lives there; this only asks it and prints the answer. It is loaded through the
+ * same dynamic import as everything else in the bundle, so opening Configure on
+ * a drill costs the chunk and a dormant block still costs nothing.
+ *
+ * It reports a CLEAN set as well as a faulty one. "No problems" is information —
+ * it tells an author the hands were checked, rather than leaving them to wonder
+ * whether silence means sound data or a check that never ran.
+ */
+function DrillDataCheck() {
+  const [state, setState] = useState<{ loading: boolean; problems: { no: number; kind: string; detail: string }[]; error: string | null }>({
+    loading: true,
+    problems: [],
+    error: null,
+  });
+  useEffect(() => {
+    let alive = true;
+    tableEmbed()
+      .then((m) => alive && setState({ loading: false, problems: m.validateDrillHands(), error: null }))
+      .catch((e: Error) => alive && setState({ loading: false, problems: [], error: e.message }));
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (state.loading)
+    return <p style={{ fontSize: 11.5, color: '#9AA3AF', margin: '6px 0 0' }}>Checking the hands…</p>;
+  if (state.error)
+    return (
+      <p style={{ fontSize: 11.5, color: '#B42318', margin: '6px 0 0' }}>
+        The hands could not be checked ({state.error}).
+      </p>
+    );
+  if (state.problems.length === 0)
+    return (
+      <p style={{ fontSize: 11.5, color: '#6B7280', margin: '6px 0 0' }}>
+        All {BRIDGE_BIDDING_HANDS_MAX} hands check out — thirteen cards each, and every note's point
+        count matches its cards.
+      </p>
+    );
+  return (
+    <div
+      style={{
+        marginTop: 6,
+        padding: '7px 9px',
+        borderRadius: 8,
+        background: '#fff8e6',
+        border: '1px solid rgba(180,130,0,0.35)',
+        fontSize: 11.5,
+        lineHeight: 1.45,
+        color: '#8a5a00',
+      }}
+    >
+      <strong style={{ fontWeight: 700 }}>
+        {state.problems.length} problem{state.problems.length === 1 ? '' : 's'} in the hand set.
+      </strong>{' '}
+      The drill still runs — a hand that is a card short still teaches its opening call — but these
+      want patching in the Bridge repo:
+      <ul style={{ margin: '4px 0 0', paddingLeft: 16 }}>
+        {state.problems.map((pr, i) => (
+          <li key={`${pr.no}-${pr.kind}-${i}`}>
+            Hand {pr.no}: {pr.detail}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -414,26 +571,67 @@ export function BridgeEmbedBlock({
     [resultKeyPrefix],
   );
 
+  /**
+   * The drill's mark, in the same vocabulary. <BiddingChallenge/> reports hands
+   * where <ChallengePlayer/> reports boards, and nothing else differs — so this
+   * is the challenge's adapter with the nouns changed, not a second idea about
+   * what progress means. Both land in `onResolvedChange`, which is the quiz's.
+   */
+  const onDrillProgress = useCallback(
+    (mark: { handsTotal: number; handsDone: number; completed: boolean; matched: number }) => {
+      const byIndex: Record<number, QuizResolveStatus> = {};
+      for (let i = 0; i < mark.handsDone; i++)
+        byIndex[i] = i < mark.matched ? 'correct' : 'revealed';
+      sink.current?.({
+        keyPrefix: resultKeyPrefix,
+        byIndex,
+        correct: mark.matched,
+        total: mark.handsTotal,
+        allDone: mark.completed,
+      });
+    },
+    [resultKeyPrefix],
+  );
+
   // A challenge that is not configured has nothing to open, and a reader must
   // not meet a Play button that leads to an empty frame.
+  // The drill carries its own hands, so it is always playable.
   const playable = mode !== 'challenge' || !!challenge;
   useEffect(() => {
     if (!playable && live) setLive(false);
   }, [playable, live]);
 
   /** The line under a thumbnail: what this block IS, in the author's own terms. */
-  const subtitle = readOnly
-    ? mode === 'challenge' && challenge
-      ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'} · vs BEN`
-      : def.blurb
-    : mode === 'challenge'
-      ? challenge
-        ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'}`
-        : 'Not set up yet — open Configure and build it'
-      : `Board ${config.seed} · you sit ${SEAT_NAME[config.humanSeat]}${config.showAllHands ? ' · all hands up' : ''}`;
+  const drillLine = `${config.biddingHands} hand${config.biddingHands === 1 ? '' : 's'} · opening bids · the author's answers`;
+  const subtitle =
+    mode === 'bidding'
+      ? drillLine
+      : readOnly
+        ? mode === 'challenge' && challenge
+          ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'} · vs BEN`
+          : def.blurb
+        : mode === 'challenge'
+          ? challenge
+            ? `${challenge.boards} board${challenge.boards === 1 ? '' : 's'} · ${challenge.biddingOnly ? 'bidding only' : 'bid & play'}`
+            : 'Not set up yet — open Configure and build it'
+          : `Board ${config.seed} · you sit ${SEAT_NAME[config.humanSeat]}${config.showAllHands ? ' · all hands up' : ''}`;
 
   const stage =
-    mode === 'challenge' ? (
+    mode === 'bidding' ? (
+      <Suspense
+        fallback={
+          <p style={{ fontSize: 12.5, color: '#6B7280', padding: 14, margin: 0 }}>Loading the drill…</p>
+        }
+      >
+        <BiddingChallenge
+          limit={config.biddingHands}
+          // The author sees the data check in Configure, above; a reader is told
+          // about the hand in front of them and not about the set's paperwork.
+          showDataNotice={!readOnly}
+          onProgress={onDrillProgress}
+        />
+      </Suspense>
+    ) : mode === 'challenge' ? (
       <Suspense
         fallback={
           <div
@@ -487,13 +685,20 @@ export function BridgeEmbedBlock({
     );
 
   /**
-   * FRAMED means a picture: a fixed aspect on a dark ground. Both modes want it
-   * — a table and a challenge are boards, and a board should hold its shape as
-   * the column resizes. The challenge's own strip comes out of that height
-   * rather than being added to it, which is the whole reason the player takes
+   * FRAMED means a picture: a fixed aspect on a dark ground. A table and a
+   * challenge are boards, and a board should hold its shape as the column
+   * resizes. The challenge's own strip comes out of that height rather than
+   * being added to it, which is the whole reason the player takes
    * `height="100%"` and prices its bands against the box it is given.
+   *
+   * A LIVE DRILL IS NOT A PICTURE. It is a hand, a bid pad and a paragraph — a
+   * column of content that wants the height it wants, and stacks its pad under
+   * the hand on a narrow screen. Pinned to 5:4 it would either scroll inside a
+   * box or leave a field of empty felt under a two-line answer. So the drill is
+   * framed only as a THUMBNAIL, where a fixed aspect is exactly right, and
+   * takes its own height once it is open.
    */
-  const framed = true;
+  const framed = !(mode === 'bidding' && live);
 
   return (
     <div>
@@ -513,7 +718,7 @@ export function BridgeEmbedBlock({
             <button
               type="button"
               onClick={() => setLive(false)}
-              title={`Close — this unmounts the ${mode === 'challenge' ? 'challenge' : 'table'}`}
+              title={`Close — this unmounts the ${mode === 'challenge' ? 'challenge' : mode === 'bidding' ? 'drill' : 'table'}`}
               className="absolute flex items-center justify-center rounded-full"
               style={{
                 // A challenge wears a 40px strip along the top whose right-hand
@@ -547,7 +752,9 @@ export function BridgeEmbedBlock({
             }}
             title={playable ? `Open ${def.label}` : 'This challenge has no boards yet'}
           >
-            {mode === 'challenge' ? (
+            {mode === 'bidding' ? (
+              <DrillPreview />
+            ) : mode === 'challenge' ? (
               <ChallengePreview skin={config.skin} boards={challenge?.boards || 4} />
             ) : (
               <TablePreview skin={config.skin} fan={config.handLayout === 'fan'} />
@@ -661,7 +868,32 @@ export function BridgeEmbedBlock({
                 </div>
               </Group>
 
-              {mode === 'challenge' ? (
+              {mode === 'bidding' ? (
+                /* THE DRILL HAS ONE KNOB: how long it is. The hands, the
+                   answers and the reasons all ship inside the component,
+                   authored in the Bridge repo — so a lesson can never carry a
+                   stale copy of a set the author has since corrected, and
+                   there is nothing here for an author to re-key. */
+                <Group title="Drill">
+                  <ChipRow label="Hands">
+                    {BRIDGE_BIDDING_COUNTS.map((n) => (
+                      <Chip
+                        key={n}
+                        selected={config.biddingHands === n}
+                        onClick={() => set({ biddingHands: n })}
+                        title={`Ask the first ${n} hand${n === 1 ? '' : 's'} of the set`}
+                      >
+                        {n === BRIDGE_BIDDING_HANDS_MAX ? `All ${n}` : n}
+                      </Chip>
+                    ))}
+                  </ChipRow>
+                  <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 6, paddingLeft: 76 }}>
+                    Asked in the author's order. Each hand is marked against the author's own
+                    opening bid — BEN is never called, so the drill cannot contradict the lesson.
+                  </p>
+                  <DrillDataCheck />
+                </Group>
+              ) : mode === 'challenge' ? (
                 /* THE WIZARD ITSELF. Not a re-implementation of it: this is the
                    Bridge Platform's own create-challenge form, out of the same
                    package as the table, with the invites step removed because a
@@ -746,7 +978,10 @@ export function BridgeEmbedBlock({
               )}
 
               {/* The felt is the felt whichever mode drew it, so Look and pace
-                  are asked once and both modes answer them. */}
+                  are asked once and both TABLE modes answer them. The drill has
+                  no felt, no seats and no robots — a skin chip on it would be a
+                  control that changes nothing. */}
+              {mode !== 'bidding' && (
               <Group title="Look">
                 <ChipRow label="Skin">
                   {BRIDGE_SKINS.map((k) => (
@@ -792,6 +1027,7 @@ export function BridgeEmbedBlock({
                   ))}
                 </ChipRow>
               </Group>
+              )}
 
               {/* Teaching aids belong to the plain table. A challenge decides
                   them per challenge, in its own Table controls step — a scored

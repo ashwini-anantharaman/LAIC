@@ -41,10 +41,20 @@ export const BRIDGE_ORIGIN: string =
  * is the diagram, playable. Two modes that could not report progress have been
  * replaced by one that can.
  *
+ * AND THEN A THIRD CAME BACK, for the one thing neither of those can do
+ * (owner, 2026-08-11): `bidding` is the opening-bid drill, and its answers are
+ * the AUTHOR'S. Both other modes are scored against BEN, which is right when the
+ * question is "what would a strong engine do" — but a lesson that teaches a
+ * bidding system needs the lesson's answer, not an engine's, and BEN bids its
+ * own system. So this mode calls no engine at all: 25 authored hands, one
+ * opening call each, marked against what the author wrote and explained in the
+ * author's own words. It is not the old `drill` returning; the old one WAS BEN.
+ *
  * Each mode is a component in @bridge/table-embed, and each answers only its own
- * settings — a challenge has no single-board seed, a table has no board list.
+ * settings — a challenge has no single-board seed, a table has no board list,
+ * and the bidding drill carries its own hands so it has neither.
  */
-export type BridgeEmbedKind = 'table' | 'challenge';
+export type BridgeEmbedKind = 'table' | 'challenge' | 'bidding';
 
 export interface BridgeEmbedDef {
   kind: BridgeEmbedKind;
@@ -75,6 +85,16 @@ export const BRIDGE_EMBEDS: readonly BridgeEmbedDef[] = [
     // same shape with a little more height than the bare board.
     ratio: 5 / 4,
   },
+  {
+    kind: 'bidding',
+    label: 'Opening bid drill',
+    blurb: 'One hand at a time \u2014 what do you open? The author\u2019s answers, not BEN\u2019s.',
+    path: '/bridge/drills/opening',
+    // Only the THUMBNAIL is framed to this. A drill is a column of prose-width
+    // content, not a board, so once it is live it takes the height it needs \u2014
+    // see BridgeEmbedBlock's `framed`.
+    ratio: 5 / 4,
+  },
 ];
 
 export const BRIDGE_MODES: readonly { id: BridgeEmbedKind; label: string; hint: string }[] = [
@@ -84,7 +104,27 @@ export const BRIDGE_MODES: readonly { id: BridgeEmbedKind; label: string; hint: 
     label: 'Challenge',
     hint: 'Boards in sequence against BEN, scored \u2014 the learner\u2019s progress reports back',
   },
+  {
+    id: 'bidding',
+    label: 'Opening bid drill',
+    hint: 'Hands to open, marked against the AUTHOR\u2019s answer \u2014 no engine is consulted',
+  },
 ];
+
+/**
+ * How many hands the authored opening-bid set holds.
+ *
+ * MIRRORS @bridge/table-embed's OPENING_BID_HANDS.length, for the same reason
+ * `dealFromSeed` below mirrors the engine's deal: this module is imported
+ * eagerly by draftModel and the reader, so importing the vendored bundle here
+ * to count an array would drag the whole table into the main chunk. The
+ * component clamps to its own set, so a drift here can only make an author's
+ * chip offer a number the drill quietly shortens \u2014 never a wrong drill.
+ */
+export const BRIDGE_BIDDING_HANDS_MAX = 25;
+
+/** How many hands an author can ask for. */
+export const BRIDGE_BIDDING_COUNTS: readonly number[] = [5, 10, BRIDGE_BIDDING_HANDS_MAX];
 
 export function bridgeEmbedDef(kind: string | undefined): BridgeEmbedDef {
   return BRIDGE_EMBEDS.find((e) => e.kind === kind) || BRIDGE_EMBEDS[0];
@@ -186,6 +226,14 @@ export interface BridgeEmbedConfig {
    * block, and it says so rather than inventing boards.
    */
   challenge: BridgeChallengeDraft | null;
+  /**
+   * bidding: how many of the authored opening-bid hands to ask, in order. The
+   * hands themselves are NOT stored on the block — they ship inside the
+   * component, authored in the Bridge repo, so a lesson cannot carry a stale
+   * copy of a set the author has since corrected. All an author chooses here is
+   * the length.
+   */
+  biddingHands: number;
 }
 
 export const BRIDGE_SKINS: readonly { id: string; label: string }[] = [
@@ -232,6 +280,7 @@ export const BRIDGE_EMBED_DEFAULTS: BridgeEmbedConfig = {
   showCoach: false,
   robotDelayMs: 350,
   challenge: null,
+  biddingHands: BRIDGE_BIDDING_HANDS_MAX,
 };
 
 function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
@@ -240,7 +289,7 @@ function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T)
 
 const SEAT_IDS = ['N', 'E', 'S', 'W'] as const;
 const VUL_IDS = ['none', 'ns', 'ew', 'both'] as const;
-const KIND_IDS = ['table', 'challenge'] as const;
+const KIND_IDS = ['table', 'challenge', 'bidding'] as const;
 
 /**
  * The challenge draft, out of whatever a part or a block carries.
@@ -256,6 +305,16 @@ function readChallengeDraft(raw: unknown): BridgeChallengeDraft | null {
   const d = raw as Record<string, unknown>;
   if (!Array.isArray(d.boards) || d.boards.length === 0) return null;
   return d as unknown as BridgeChallengeDraft;
+}
+
+/**
+ * How many opening-bid hands to ask. Clamped into the set rather than trusted:
+ * a stored 0 would be a drill with nothing in it and a stored 400 a progress
+ * denominator no learner can reach.
+ */
+function readBiddingHands(raw: unknown): number {
+  const n = typeof raw === 'number' && Number.isFinite(raw) ? Math.round(raw) : BRIDGE_BIDDING_HANDS_MAX;
+  return Math.max(1, Math.min(BRIDGE_BIDDING_HANDS_MAX, n));
 }
 
 /**
@@ -289,6 +348,7 @@ export function readBridgeConfig(src: unknown): BridgeEmbedConfig {
     // No fallback: a challenge with no boards is an unconfigured block, and a
     // block that quietly invented four is a block the author never authored.
     challenge,
+    biddingHands: readBiddingHands(pick('embedBiddingHands', 'biddingHands')),
   };
 }
 
@@ -315,6 +375,7 @@ export function configToPartFields(c: BridgeEmbedConfig): Partial<TutorialV2Part
     embedShowCoach: c.showCoach,
     embedRobotDelayMs: c.robotDelayMs,
     embedChallenge: c.challenge,
+    embedBiddingHands: c.biddingHands,
   };
 }
 
@@ -333,6 +394,7 @@ export function configToBlockContent(c: BridgeEmbedConfig, caption: string) {
     showCoach: c.showCoach,
     robotDelayMs: c.robotDelayMs,
     challenge: c.challenge,
+    biddingHands: c.biddingHands,
     caption,
   };
 }

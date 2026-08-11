@@ -32,6 +32,17 @@
  * moderators, standings and a field; embedded there is one learner and BEN, so
  * every one of those is gone rather than stubbed. What is left is the part that
  * was always about bridge.
+ *
+ * AND ONE OF THEM DOES NOT ASK BEN AT ALL:
+ *
+ *   <BiddingChallenge/>  25 opening bids, marked against the AUTHOR's answer
+ *
+ * It is the drill's twin and its opposite. <BiddingDrill/> asks what a strong
+ * engine would call and shows BEN's answer beside yours; <BiddingChallenge/>
+ * asks what the lesson teaches and shows the author's, in the author's words.
+ * There is no `decide` prop on it and no network call under it — BEN bids its
+ * own system, and a drill that contradicts the lesson above it is worse than no
+ * drill. Which one a lesson wants is a question about the lesson.
  */
 export { BridgeTable } from "./BridgeTable";
 export { BiddingDrill } from "./BiddingDrill";
@@ -45,6 +56,29 @@ export type { BiddingDrillProps, DrillHand, DrillAnswer } from "./BiddingDrill";
 export type { DealDiagramProps } from "./DealDiagram";
 export type { ChallengeCreatorProps } from "./ChallengeCreator";
 export type { ChallengePlayerProps } from "./ChallengePlayer";
+/**
+ * The opening-bid drill: the component, its hands, and the check on them.
+ *
+ * `OpeningBidHand` is `openingBidHands.ts`'s own `DrillHand`, renamed on the way
+ * out because this barrel already spends that name on <BiddingDrill/>'s posed
+ * problem — a seed and an auction prefix, which is a different thing from a
+ * hand with an answer attached. The author's file keeps its own name; only the
+ * export is aliased.
+ *
+ * `validateDrillHands` is public because the FAULTS ARE PUBLIC. Five of these
+ * hands arrived holding twelve cards, and the notes on several disagreed with
+ * the cards; the author has since completed them, so the check is quiet today.
+ * It stays exported and stays wired: the component shows what it finds, and a
+ * host with its own author-facing panel (the learning platform's Configure)
+ * shows it there too. A set with a twelve-card hand in it is drawn, flagged and
+ * still playable — never hidden, never fatal.
+ */
+export { BiddingChallenge } from "./BiddingChallenge";
+export type { BiddingChallengeProps } from "./BiddingChallenge";
+export { OPENING_BID_HANDS, hcp, validateDrillHands } from "./openingBidHands";
+export type { DrillHand as OpeningBidHand, DrillHandProblem } from "./openingBidHands";
+export { normalizeCall, callsMatch, judgeHand, markAnswers } from "./openingBidDrill";
+export type { BiddingChallengeAnswer, BiddingChallengeMark } from "./openingBidDrill";
 /**
  * The challenge draft: the ONE object the creator produces and the player
  * consumes. A host that persists it needs the shape, the validator and the

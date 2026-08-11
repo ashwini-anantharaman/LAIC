@@ -69,6 +69,11 @@ export type TutorialV2Part = Omit<GeneratedPart, 'type'> & {
    * and validates it on the way back in (see bridgeEmbed.ts).
    */
   embedChallenge?: unknown;
+  /**
+   * bidding mode: how many of the authored opening-bid hands to ask. The hands
+   * ship inside the component, so only the length travels here.
+   */
+  embedBiddingHands?: number;
   /** From template media slot — steers the empty Start from scratch UI. */
   mediaKind?: 'image' | 'video' | 'either';
   mediaHint?: string;
