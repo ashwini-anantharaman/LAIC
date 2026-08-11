@@ -4,31 +4,44 @@ import { fetchLearningObjects, LearningObject } from "./nexus";
 /**
  * Which content reaches a learner.
  *
- * `published_at` is the real answer, and it beats the status string: publishing is
- * now a deliberate per-version act (migration 0004) that stamps the row, so a
- * stamped row IS the version its author chose to ship. Status is authoring
- * workflow — an object can sit at "in-review" while a previously published version
- * is the one readers should see.
+ * A publish stamp (published_at, migration 0004) is a definite yes. Its absence is
+ * not a no — see isVisibleToLearners for why. Otherwise the authoring status decides,
+ * read as a denylist.
  *
- * The status list survives as a FALLBACK for two cases, both real right now:
- * a server that predates 0004 (the column is absent, so every row would look
- * unpublished and the tab would go empty), and rows published before it (stamp
- * null, version unknown — the migration says so). `draft` is excluded either way:
- * genuinely unfinished, not merely unpublished.
- *
- * Publishing overwrites the row in place, so there is exactly one row per object
- * and no version filtering is needed here.
+ * Publishing overwrites the row in place, so there is exactly one row per object and
+ * no version filtering is needed here.
  */
-const LEARNER_VISIBLE = new Set(["in-review", "approved", "published"]);
+/**
+ * A DENYLIST, not an allowlist — and that switch is the point.
+ *
+ * This tab has now hidden the library three times, each time because a filter here
+ * listed what may pass and the Studio moved on: first `published` only (it uses
+ * in-review/approved), then `type === "concept-card"`, then a publish stamp nothing
+ * writes. An allowlist fails closed on every new value the authoring side invents,
+ * and it fails SILENTLY — content simply is not there.
+ *
+ * So the rule is inverted: everything reaches a learner except states that are
+ * definitely not for them. A status nobody here has heard of shows up, which is the
+ * safer way to be wrong.
+ */
+const LEARNER_HIDDEN = new Set(["draft", "archived", "deleted"]);
 
 function isVisibleToLearners(o: LearningObject): boolean {
-  // Stamped = published, whatever the authoring status now says.
+  // A publish stamp is a definite yes.
   if (o.published_at) return true;
-  // The column exists but this row was never published: honour that, rather than
-  // falling back to a status that would let unpublished work through.
-  if (o.published_at === null) return false;
-  // Column absent (pre-0004 server) — fall back to the authoring status.
-  return LEARNER_VISIBLE.has((o.status ?? "").trim().toLowerCase());
+  // …and its ABSENCE means nothing, because nothing writes it on this path.
+  //
+  // I had this backwards and it hid the whole library: 0004 adds the column, so it
+  // exists, and I read "exists but null" as "deliberately unpublished". But
+  // upsertLearningObject — every write behind PUT /learning/objects, which is what
+  // the Studio's save calls — does not set published_at or version_number at all.
+  // So the stamp is null on every row that path has ever written, and requiring it
+  // hid content that had been visible for weeks, including work published minutes
+  // earlier.
+  //
+  // Until the publish path stamps the row, authoring status is the only signal
+  // there is — read as a denylist, so a status this app has never seen still shows.
+  return !LEARNER_HIDDEN.has((o.status ?? "").trim().toLowerCase());
 }
 
 // Session-scoped cache so the detail screen can reuse the list fetch.
