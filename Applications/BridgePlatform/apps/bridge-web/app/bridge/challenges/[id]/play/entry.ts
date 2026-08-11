@@ -320,6 +320,14 @@ export async function enterChallenge(
  * overrides. The session IS stamped `practice`, though, so the robots are still
  * the cached challenge BEN and never the shelved KB player.
  *
+ * NO CHROME IS NOT NO FORMAT (owner, 2026-08-10). What a board asks for belongs
+ * to the challenge, not to the decoration, so a replay of a BIDDING-ONLY board
+ * ends with the auction exactly as the scored attempt did — the table reads
+ * that off this stamp (`practiceIsBiddingOnly`, table2/[sessionId]/
+ * challengeTable.ts), and the results view's replay button names the exercise
+ * before it is tapped. Playing such a board out here would be a different
+ * exercise wearing the same deal, offered by accident.
+ *
  * GUARDED. Only a participant who has ACCEPTED and FINISHED every board may
  * open one: before that, a practice copy would sit beside a live attempt on the
  * same deal, which is exactly the spoiler the whole-challenge unlock forbids.

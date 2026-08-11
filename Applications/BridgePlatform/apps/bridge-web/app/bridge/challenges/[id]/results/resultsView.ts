@@ -211,6 +211,16 @@ export interface ScorecardView {
   totals: ScorecardCell[];
 }
 
+/**
+ * THE REPLAY AFFORDANCE NAMES ITS EXERCISE (owner, 2026-08-10). A practice copy
+ * honours the challenge's format, so on a bidding-only challenge it ends where
+ * the scored board ended — with the auction. The button says which of the two
+ * it opens BEFORE it is tapped, rather than letting the learner discover it at
+ * the felt.
+ */
+export const PRACTICE_LABEL = "Replay for practice (unscored)";
+export const BIDDING_PRACTICE_LABEL = "Bid it again for practice (unscored)";
+
 export interface ResultsView {
   challengeId: string;
   /** The scorecard column key BEN travels under, for the compare links. */
@@ -238,6 +248,8 @@ export interface ResultsView {
   squares: BoardSquare[];
   /** Keyed by board number; only the viewer's own done boards, once unlocked. */
   details: Record<number, BoardDetail>;
+  /** What the unscored replay button says — see `PRACTICE_LABEL`. */
+  practiceLabel: string;
   progress: { done: number; total: number; pct: number };
 }
 
@@ -336,6 +348,8 @@ interface ResultsFigures {
   finishedIds: Set<string>;
   squares: BoardSquare[];
   details: Record<number, BoardDetail>;
+  /** What a replay of one of THESE boards opens — see `PRACTICE_LABEL`. */
+  practiceLabel: string;
 }
 
 /**
@@ -405,6 +419,7 @@ function assemble(
     boardsCaption,
     squares: figures.squares,
     details: figures.details,
+    practiceLabel: figures.practiceLabel,
     progress: {
       done: doneCount,
       total,
@@ -578,6 +593,7 @@ function buildFieldResultsView(input: ResultsViewInput): ResultsView {
     finishedIds: new Set(scores.standings.map((s) => s.userId)),
     squares,
     details,
+    practiceLabel: PRACTICE_LABEL,
   });
 }
 
@@ -765,5 +781,7 @@ function buildBiddingResultsView(input: ResultsViewInput): ResultsView {
     finishedIds: new Set(scores.standings.map((s) => s.userId)),
     squares,
     details,
+    // A replay here ends with the auction, exactly as the scored board did.
+    practiceLabel: BIDDING_PRACTICE_LABEL,
   });
 }

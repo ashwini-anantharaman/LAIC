@@ -35,6 +35,7 @@ import {
   LINE,
   MINE_ACCENT,
   PAGE_BG,
+  TONE_INK,
   WARN_BG,
   WARN_BORDER,
   WARN_INK,
@@ -307,9 +308,19 @@ export function CompareClient(props: Readonly<CompareClientProps>) {
     });
 
   // ── contract mismatch (spec §6: this is exactly why your-contract exists) ──
+  // NOT on a timeline with no cards on it. There, two different contracts are
+  // the whole comparison — the finding, not a caveat about comparing tricks —
+  // and the banner would warn about play that never happened.
   const mismatch =
-    bothReady && mineLine.contract !== cmpLine.contract && cmpLine.kind !== "your_contract";
-  const canOfferYourContract = props.viewerOwnsMine && cmpKey !== YOUR_CONTRACT_KEY;
+    bothReady &&
+    timeline.playLen > 0 &&
+    mineLine.contract !== cmpLine.contract &&
+    cmpLine.kind !== "your_contract";
+  // "BEN in your contract" replays YOUR contract with BEN's cards, so it needs
+  // cards to replay: on a bidding-only board (or a pass-out) it would give the
+  // viewer their own auction back.
+  const canOfferYourContract =
+    props.viewerOwnsMine && cmpKey !== YOUR_CONTRACT_KEY && !!mineLine && mineLine.play.length > 0;
 
   const pickSource = (key: string) => {
     setSheetOpen(false);
@@ -529,7 +540,9 @@ export function CompareClient(props: Readonly<CompareClientProps>) {
             onClose={() => setSheetOpen(false)}
             note={
               bothReady && divergeAt === null
-                ? "Both lines played the same cards — any swing here was the bidding, not the play."
+                ? timeline.playLen === 0
+                  ? "Both lines bid the same auction — on this board that is the whole comparison."
+                  : "Both lines played the same cards — any swing here was the bidding, not the play."
                 : ""
             }
           />
@@ -769,7 +782,9 @@ export function CompareClient(props: Readonly<CompareClientProps>) {
                   loading={forkLoading}
                   note={
                     bothReady && divergeAt === null
-                      ? "Same cards as your line — the swing here was the bidding, not the play."
+                      ? timeline.playLen === 0
+                        ? "Same auction as your line, call for call."
+                        : "Same cards as your line — the swing here was the bidding, not the play."
                       : null
                   }
                 />
@@ -1082,9 +1097,7 @@ function LineSegment({
             >
               {line.contract}
             </span>
-            <span
-              style={{ fontSize: 11, fontWeight: 700, color: line.made ? "#1a7a4b" : "#b3402f" }}
-            >
+            <span style={{ fontSize: 11, fontWeight: 700, color: TONE_INK[line.resultTone] }}>
               {`${line.result} ${line.rawText}`.trim()}
             </span>
           </>
@@ -1199,14 +1212,10 @@ function BoardPanel({
             borderBottom: "1px solid #eef1ef",
           }}
         >
-          <span
-            style={{ fontSize: 12.5, fontWeight: 700, color: line.made ? "#1a7a4b" : "#b3402f" }}
-          >
+          <span style={{ fontSize: 12.5, fontWeight: 700, color: TONE_INK[line.resultTone] }}>
             {line.result}
           </span>
-          <span
-            style={{ fontSize: 12.5, fontWeight: 800, color: line.made ? "#1a7a4b" : "#b3402f" }}
-          >
+          <span style={{ fontSize: 12.5, fontWeight: 800, color: TONE_INK[line.resultTone] }}>
             {line.rawText}
           </span>
           <span style={{ flex: 1 }} />
