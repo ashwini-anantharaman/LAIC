@@ -41,30 +41,37 @@ export interface TrickAreaProps {
  * one recognisably the same object — but the four seats sit on a PLUS the size
  * of the trick rather than a 262px compass that spreads to the corners:
  *
- *      N top-centre        · the N/S pair holds the vertical centre line
- *   W          E           · the W/E flanks straddle that pair's midline
- *      S bottom-centre     · each pair meets on a QUARTER-card overlap
+ *      N top-centre        · the vertical pair TOUCHES: N's bottom edge IS
+ *   W          E             S's top edge, on the card's centre line
+ *      S bottom-centre     · the flanks straddle that seam, half a card down
  *
- * The box is exactly the union of the four positions — two cards wide by two
- * and a half tall — so the whole compass scales as ONE unit like the cross.
+ * The vertical pair CLOSED UP on the owner's second look (2026-08-11): N used
+ * to end a half-card above S, with only the flanks bridging the gap, and the
+ * compass paid three quarters of a card of height for a hole in its middle.
+ * Touching, the box is exactly TWO CARDS BY TWO — a fifth shorter — and the
+ * band the trick sits in gets that height back. The flanks still straddle the
+ * junction and still overlap both neighbours, so it reads as one solid plus
+ * rather than a column with ears.
+ *
+ * The box is exactly the union of the four positions, so the whole compass
+ * scales as ONE unit like the cross.
  */
 const CARD = { w: 56, h: 80 };
 /**
- * Where the pairs meet, as a share of a card's height. A quarter is the tight
- * interlock the owner asked for; it is also, at the phone's card box, very
- * nearly the dead strip BELOW a card's rank+pip index, which is what lets the
- * paint order below bury nothing that says what a card is.
+ * Top of the W/E flanks: HALF a card down, which puts their own midline on the
+ * seam the vertical pair makes. It is also the point that spreads the cost of
+ * the tighter box evenly (see CLUSTER_ORDER): the flanks reach a card's index
+ * from below by exactly as much as they are reached from above.
  */
-const COMPASS_OVERLAP = 0.25;
-/** Top of the W/E flanks: one card down, less the overlap they share with N. */
-const flankTop = (h: number) => Math.round(h * (1 - COMPASS_OVERLAP));
-/** The compass's box for a card box: exactly the union of the four positions. */
+const flankTop = (h: number) => Math.round(h / 2);
+/** The compass's box for a card box: exactly the union of the four positions —
+    two cards wide (the flanks) by two tall (the touching vertical pair). */
 export function clusterBox(card: { w: number; h: number } = CARD) {
-  return { w: card.w * 2, h: flankTop(card.h) * 2 + card.h };
+  return { w: card.w * 2, h: card.h * 2 };
 }
 export const CLUSTER = clusterBox(CARD);
-/** Seat -> top-left inside the compass box. N high and centred, S low and
-    centred, W/E flanking on the line halfway between them. */
+/** Seat -> top-left inside the compass box. N and S share the centre column and
+    meet edge to edge; W/E flank that seam, half a card outside and half down. */
 const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number; top: number }> => {
   const half = Math.round(card.w / 2);
   const fy = flankTop(card.h);
@@ -72,17 +79,37 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
     N: { left: half, top: 0 },
     W: { left: 0, top: fy },
     E: { left: card.w, top: fy },
-    S: { left: half, top: fy * 2 },
+    S: { left: half, top: card.h },
   };
 };
 /**
  * Paint order is SPATIAL, not play order: strictly TOP TO BOTTOM (N, then the
- * W/E flanks, then S). A card therefore only ever covers the strip below the
- * card above it, and that strip is the quarter-card the compass overlaps by —
- * which at the phone's card box is the blank space under the rank+pip index, so
- * no card ever buries what another card SAYS. Layering by play order instead
- * let a later card bury an earlier one's rank, and it re-layered the pile on
- * every play; a fixed order means the compass never reshuffles under the eye.
+ * W/E flanks, then S). A fixed order means the compass never reshuffles under
+ * the eye as cards land, and among the four possible orders this is the one
+ * that protects what a card SAYS.
+ *
+ * It used to protect the whole index: at the old three-quarter-card offset a
+ * card only ever covered the blank strip BELOW its neighbour's rank and pip.
+ * Closing the vertical pair SPENDS that strip. With N and S touching, every
+ * flank crosses N's lower half and is crossed by S's upper half, and because
+ * the index lives at the card's left edge — under the column, on both sides —
+ * no arrangement of four cards on a 2x2 footprint leaves all four indexes
+ * whole. What survives, measured at the phone's 56x96 card (rank ink rows
+ * 5-32, pip ink rows 39-64, and half a card down is row 48):
+ *
+ *  · every RANK is untouched, on all four seats and for every rank INCLUDING
+ *    the two-glyph "10" — the covering edge falls at row 48, sixteen rows below
+ *    the rank's baseline, whichever neighbour is doing the covering;
+ *  · S — the seat you play from — is covered by nothing at all, and W keeps its
+ *    pip, which S crosses only on the blank right of the index;
+ *  · what is lost is the lower two thirds of ONE pip on N and one on E, split
+ *    evenly by the half-card offset: the flanks take exactly as much off N as S
+ *    takes off them. The suit still shows its top, and its colour.
+ *
+ * That is the best of the four orders, not merely the incumbent. Painting a
+ * flank over S covers S's rank (S's index is under the flank's upper half);
+ * painting the flanks under N covers theirs, and clips a "10" outright, because
+ * N and S then cross the flanks' index rows rather than the strip beside it.
  */
 const CLUSTER_ORDER: Seat[] = ["N", "W", "E", "S"];
 

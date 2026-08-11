@@ -349,10 +349,12 @@ test.describe("mobile table v3 — phone tier", () => {
     ).toBeGreaterThanOrEqual(tallShot.region.w - 1.5);
 
     // (1c) The trick is a tight interlocking COMPASS (owner, 2026-08-11) — N
-    // top-centre, W and E flanking, S bottom-centre, each pair meeting on a
-    // QUARTER-card overlap. Not the overlapping pile it replaced, and not four
-    // cards spread to the corners of a box twice their size. The footprint is
-    // exactly two cards wide by two and a half tall, whatever is on the felt.
+    // top-centre, W and E flanking, S bottom-centre. The VERTICAL PAIR TOUCHES:
+    // N's bottom edge is S's top edge, with the flanks straddling that seam
+    // half a card down. Not the overlapping pile it replaced, not four cards
+    // spread to the corners of a box twice their size, and no longer the
+    // half-card hole N and S used to leave between them — the footprint is
+    // exactly two cards wide by TWO tall, whatever is on the felt.
     const pileW =
       Math.max(...tallShot.cards.map((c) => c.x + c.w)) -
       Math.min(...tallShot.cards.map((c) => c.x));
@@ -360,7 +362,7 @@ test.describe("mobile table v3 — phone tier", () => {
       Math.max(...tallShot.cards.map((c) => c.y + c.h)) -
       Math.min(...tallShot.cards.map((c) => c.y));
     expect(pileW, "the compass is two cards wide").toBeLessThanOrEqual(2 * c0.w + 1);
-    expect(pileH, "and two and a half cards tall").toBeLessThanOrEqual(2.5 * c0.h + 1);
+    expect(pileH, "and two cards tall").toBeLessThanOrEqual(2 * c0.h + 1);
     expect(
       pileW / tallShot.stage.w,
       "the trick is the size of the trick, not of the felt",
@@ -368,8 +370,10 @@ test.describe("mobile table v3 — phone tier", () => {
 
     // A trick is played in ROTATION, so whatever is down is a run of adjacent
     // compass points — every card touches another. And it touches it at a
-    // CORNER (half a card by a quarter of one), never face-on: an overlap that
-    // swallowed a third of a card would be the pile again.
+    // CORNER (half a card by half of one — a quarter of its area), never
+    // face-on: an overlap past a third of a card would be the pile again. N and S
+    // are the exception the rotation never produces alone — they meet edge to
+    // edge, so they share a line and not an area.
     const overlap = (
       a: { x: number; y: number; w: number; h: number },
       b: { x: number; y: number; w: number; h: number },
@@ -394,8 +398,10 @@ test.describe("mobile table v3 — phone tier", () => {
     });
 
     // The compass points themselves, for whichever pairs are down: the flanks
-    // sit half a card outside the N/S column and three quarters of a card below
-    // N — which is exactly what puts them on the vertical pair's midline.
+    // sit half a card outside the N/S column and half a card below N — which
+    // puts their own midline on the seam the vertical pair makes, so each flank
+    // overlaps BOTH neighbours by half a card and the four close into one solid
+    // plus with nothing showing through the middle.
     const bySeat = Object.fromEntries(tallShot.cards.map((c) => [c.seat, c]));
     for (const flank of ["W", "E"] as const) {
       const f = bySeat[flank];
@@ -406,14 +412,14 @@ test.describe("mobile table v3 — phone tier", () => {
           `${flank} flanks the column by half a card`,
         ).toBeLessThanOrEqual(1.5);
         expect(
-          Math.abs(f.y - bySeat.N.y - c0.h * 0.75),
-          `${flank} overlaps N by a quarter of a card`,
+          Math.abs(f.y - bySeat.N.y - c0.h * 0.5),
+          `${flank} straddles the seam — half a card below N`,
         ).toBeLessThanOrEqual(1.5);
       }
       if (bySeat.S) {
         expect(
-          Math.abs(bySeat.S.y - f.y - c0.h * 0.75),
-          `${flank} overlaps S by a quarter of a card`,
+          Math.abs(bySeat.S.y - f.y - c0.h * 0.5),
+          `${flank} straddles the seam — half a card above S`,
         ).toBeLessThanOrEqual(1.5);
       }
     }
@@ -422,11 +428,19 @@ test.describe("mobile table v3 — phone tier", () => {
         Math.abs(bySeat.E.x - bySeat.W.x - c0.w),
         "W and E are one card apart — the compass is two wide",
       ).toBeLessThanOrEqual(1.5);
-    if (bySeat.N && bySeat.S)
+    if (bySeat.N && bySeat.S) {
       expect(
         Math.abs(bySeat.N.x - bySeat.S.x),
         "N and S share the centre column",
       ).toBeLessThanOrEqual(1);
+      // The whole point of the tightening (owner, 2026-08-11): the vertical
+      // pair TOUCHES. A gap here is the half-card hole the compass used to pay
+      // for, and it is the height the play band gets back.
+      expect(
+        Math.abs(bySeat.S.y - bySeat.N.y - c0.h),
+        "N's bottom edge is S's top edge",
+      ).toBeLessThanOrEqual(1.5);
+    }
 
     // (1b) The trick FITS its band. Prominence was a fixed 1.6 — a 419px ask
     // against a centre band that can sit at its floor — and `align-items:center`
