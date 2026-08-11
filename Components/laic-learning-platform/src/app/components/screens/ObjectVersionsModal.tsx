@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, GitBranch, Loader2, Lock, LockOpen, RotateCcw, Trash2, Upload, X } from 'lucide-react';
+import { CloudOff, Eye, GitBranch, Loader2, Lock, LockOpen, RotateCcw, Trash2, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
@@ -20,6 +20,7 @@ export function ObjectVersionsModal({
     saveObjectAsNewVersion,
     restoreObjectVersion,
     publishObjectVersion,
+    unpublishObject,
     ensureObjectInitialVersion,
     lockObjectVersion,
     deleteObjectVersion,
@@ -119,6 +120,27 @@ export function ObjectVersionsModal({
       return;
     }
     flash(`Published v${v.versionNumber} to the shared library`);
+  };
+
+  const onUnpublish = async (v: Version) => {
+    setError(null);
+    const ok = await confirm({
+      title: `Unpublish v${v.versionNumber}?`,
+      description:
+        `“${object.title}” is removed from the shared library, so the apps reading it stop showing it.`
+        + ' Your copy and its version history are untouched — you can publish again any time.',
+      confirmLabel: 'Unpublish',
+      destructive: true,
+    });
+    if (!ok) return;
+    setPublishingId(v.id);
+    const res = await unpublishObject(object.id);
+    setPublishingId(null);
+    if (!res.ok) {
+      setError(res.error || 'Could not unpublish that version.');
+      return;
+    }
+    flash(`Unpublished v${v.versionNumber}`);
   };
 
   const onToggleLock = (v: Version) => {
@@ -274,6 +296,21 @@ export function ObjectVersionsModal({
                 )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {!!v.publishedAt && (
+                  <button
+                    type="button"
+                    onClick={() => void onUnpublish(v)}
+                    disabled={publishingId !== null}
+                    className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border disabled:opacity-40"
+                    style={{ fontSize: 11.5, fontWeight: 650, color: '#B91C1C', borderColor: 'rgba(185,28,28,0.3)', background: '#fff' }}
+                    title="Remove this from the shared library so reader apps stop showing it"
+                  >
+                    {publishingId === v.id
+                      ? <Loader2 size={12} className="animate-spin" />
+                      : <CloudOff size={12} />}
+                    Unpublish
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void onPublish(v)}

@@ -574,6 +574,18 @@ export function markVersionPublished(
   return { ...hit, publishedAt: stamp };
 }
 
+/** Clear the published mark for an object (nothing of ours is live anymore). */
+export function clearVersionPublished(userId: string, objectId: string): void {
+  const all = readAll(userId);
+  if (!all.some((v) => v.objectId === objectId && v.publishedAt)) return;
+  writeAll(
+    userId,
+    all.map((v) => (
+      v.objectId === objectId && v.publishedAt ? { ...v, publishedAt: undefined } : v
+    )),
+  );
+}
+
 export function deleteVersion(userId: string, versionId: string): { ok: boolean; error?: string } {
   const all = readAll(userId);
   const hit = all.find((v) => v.id === versionId);
