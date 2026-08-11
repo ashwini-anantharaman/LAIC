@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Play, Pause, MessageCircle, FileText, HelpCircle, Check, X, Send, Loader2 } from 'lucide-react';
+import { Play, Pause, MessageCircle, FileText, HelpCircle, Check, X, Send, Loader2, Maximize, Minimize } from 'lucide-react';
 import { askAboutVideo, errorMessage } from '../../../lib/api';
 import { QuestionMedia } from './QuestionMedia';
 import type {
@@ -56,6 +56,8 @@ function CheckpointQuestion({
     setSubmitted(false);
   }, [checkpoint.id]);
 
+  const answeredCorrectly = submitted && picked === (q.correct ?? 0);
+
   const submit = () => {
     if (picked == null) return;
     setSubmitted(true);
@@ -106,11 +108,13 @@ function CheckpointQuestion({
           );
         })}
       </div>
-      {submitted && q.explanation && (
+      {submitted && picked === (q.correct ?? 0) && q.explanation && (
         <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 12, lineHeight: 1.5 }}>
           {q.explanation}
         </p>
       )}
+      {/* A checkpoint is a gate, not a speed bump: the video only resumes on a
+          correct answer. A wrong one says so and hands the question back. */}
       {!submitted ? (
         <button
           type="button"
@@ -121,7 +125,7 @@ function CheckpointQuestion({
         >
           Submit answer
         </button>
-      ) : (
+      ) : answeredCorrectly ? (
         <button
           type="button"
           onClick={onContinue}
@@ -130,6 +134,20 @@ function CheckpointQuestion({
         >
           Continue video →
         </button>
+      ) : (
+        <>
+          <p style={{ fontSize: 12.5, fontWeight: 600, color: '#B91C1C', marginTop: 12 }}>
+            Not quite — try again to keep watching.
+          </p>
+          <button
+            type="button"
+            onClick={() => { setSubmitted(false); setPicked(null); }}
+            className="mt-2 w-full py-2.5 rounded-full text-white"
+            style={{ background: '#0B0F1A', fontSize: 13.5, fontWeight: 650 }}
+          >
+            Try again
+          </button>
+        </>
       )}
     </div>
   );
@@ -370,6 +388,33 @@ export function VideoScriptPlayer({
   const [pos, setPos] = useState(0);
   const [duration, setDuration] = useState(0);
   const [cleared, setCleared] = useState<Set<string>>(() => new Set());
+  /**
+   * Fullscreen is ours, not YouTube's.
+   *
+   * Handing fullscreen to the iframe would hand the whole screen to YouTube's
+   * player: our progress bar, its checkpoint markers and the question would all
+   * be gone, and a student could watch straight past a gate. Fullscreening the
+   * WRAPPER keeps every overlay on top of the video. (YouTube's own controls
+   * and fullscreen button are already disabled via controls:0 / fs:0.)
+   */
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = () => {
+    const el = stageRef.current;
+    if (!el) return;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {});
+    } else {
+      void el.requestFullscreen?.().catch(() => {});
+    }
+  };
   const clearedRef = useRef<Set<string>>(new Set());
   const [activeCp, setActiveCp] = useState<VideoScriptCheckpoint | null>(null);
   const [tab, setTab] = useState<SideTab>(showTranscript ? 'transcript' : enableChat ? 'chat' : 'question');
@@ -522,14 +567,49 @@ export function VideoScriptPlayer({
       <div className="grid gap-3 grid-cols-1 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,0.9fr)]">
         {/* Video column */}
         <div>
-          <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', borderRadius: 18, overflow: 'hidden', background: '#000', boxShadow: '0 8px 28px -12px rgba(30,50,80,0.35)' }}>
+          <div
+            ref={stageRef}
+            style={{
+              position: 'relative',
+              width: '100%',
+              // The 16:9 ratio box is for the page; in fullscreen the stage
+              // must fill the screen instead.
+              paddingTop: isFullscreen ? 0 : '56.25%',
+              height: isFullscreen ? '100%' : undefined,
+              borderRadius: isFullscreen ? 0 : 18,
+              overflow: 'hidden',
+              background: '#000',
+              boxShadow: isFullscreen ? undefined : '0 8px 28px -12px rgba(30,50,80,0.35)',
+            }}
+          >
             <div ref={holderRef} style={{ position: 'absolute', inset: 0 }} />
             {activeCp && (
-              <div style={{ position: 'absolute', inset: 0, zIndex: 3, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div className="px-4 py-3 rounded-2xl text-center" style={{ background: 'rgba(255,255,255,0.95)', maxWidth: 280 }}>
-                  <HelpCircle size={22} style={{ color: '#059669', margin: '0 auto 6px' }} />
-                  <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>Checkpoint — answer in the panel</p>
-                </div>
+              <div
+                style={{
+                  position: 'absolute', inset: 0, zIndex: 3, background: 'rgba(0,0,0,0.55)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+                  overflowY: 'auto',
+                }}
+                onClick={(e) => e.stopPropagation()}
+                role="presentation"
+              >
+                {isFullscreen ? (
+                  <div
+                    className="rounded-2xl w-full"
+                    style={{ background: '#fff', maxWidth: 520, maxHeight: '92%', overflowY: 'auto', padding: 18 }}
+                  >
+                    <CheckpointQuestion
+                      key={activeCp.id}
+                      checkpoint={activeCp}
+                      onContinue={completeCheckpoint}
+                    />
+                  </div>
+                ) : (
+                  <div className="px-4 py-3 rounded-2xl text-center" style={{ background: 'rgba(255,255,255,0.95)', maxWidth: 280 }}>
+                    <HelpCircle size={22} style={{ color: '#059669', margin: '0 auto 6px' }} />
+                    <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>Checkpoint — answer in the panel</p>
+                  </div>
+                )}
               </div>
             )}
             <button type="button" onClick={toggle} disabled={!!activeCp} aria-label={playing ? 'Pause' : 'Play'}
@@ -576,6 +656,15 @@ export function VideoScriptPlayer({
                 <span style={{ color: '#fff', fontSize: 11, fontVariantNumeric: 'tabular-nums', minWidth: 74, textAlign: 'right' }}>
                   {fmtClock(pos)} / {fmtClock(duration)}
                 </span>
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+                  style={{ background: 'transparent', border: 0, cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+                >
+                  {isFullscreen ? <Minimize size={15} color="#fff" /> : <Maximize size={15} color="#fff" />}
+                </button>
               </div>
             </div>
           </div>
