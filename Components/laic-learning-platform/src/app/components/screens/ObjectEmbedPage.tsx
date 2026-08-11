@@ -84,7 +84,10 @@ export function ObjectEmbedPage({ objectId }: { objectId: string }) {
   }
 
   return (
-    <div className="min-h-screen" style={{ background }}>
+    // cs-embed-root: the viewport clamp for host WebViews (see index.html).
+    // This route renders before the Content Studio shell, so it inherits none
+    // of the shell's mobile guards.
+    <div className="cs-embed-root min-h-screen" style={{ background }}>
       <LearnerReader objectId={objectId} object={state.object} embedded />
     </div>
   );
