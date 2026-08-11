@@ -439,6 +439,20 @@ export function ingestWeb(
   });
 }
 
+/** POST /api/learning/publish — upsert a submitted object into the shared Nexus Supabase (standalone site). */
+export function publishLearningObject(
+  row: Record<string, unknown>,
+  /** Also flag the row publicly readable, so its /o/<id> link opens anywhere. */
+  share = false,
+  signal?: AbortSignal,
+): Promise<{ ok: boolean; id: string }> {
+  return apiFetch<{ ok: boolean; id: string }>('/api/learning/publish', {
+    method: 'POST',
+    body: { object: row, share },
+    signal,
+  });
+}
+
 /** POST /api/tutorials/fetch-image — server fetches a public image and inlines it as a data: URI. */
 export function fetchWebImage(
   url: string,
