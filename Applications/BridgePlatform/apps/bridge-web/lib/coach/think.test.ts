@@ -64,16 +64,16 @@ describe("thinkAid — nothing to scaffold", () => {
 describe("thinkAid — the auction", () => {
   it("subtracts your points from the pack rather than guessing", () => {
     expect(thinkAid(state(), "S")!.known[0]).toBe(
-      "27 of the 40 points are in the other three hands.",
+      "27 of the 40 points sit in the other three hands.",
     );
   });
 
   it("distinguishes a pass that ends the auction from one that does not", () => {
     const carriesOn = state({ auction: [call("N", "1D"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(carriesOn, "S"))).toContain("the auction carries on");
+    expect(text(thinkAid(carriesOn, "S"))).toContain("The auction carries on");
 
     const ends = state({ auction: [call("W", "1D"), call("N", "P"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(ends, "S"))).toContain("the auction is over — West plays 1♦");
+    expect(text(thinkAid(ends, "S"))).toContain("The auction ends — West plays 1♦");
   });
 
   it("warns that a pass throws the board in when nobody has bid", () => {
@@ -83,13 +83,13 @@ describe("thinkAid — the auction", () => {
 
   it("says whether the auction is contested, which the grid cannot", () => {
     const ours = state({ auction: [call("N", "1D"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(ours, "S"))).toContain("belongs to you and partner");
+    expect(text(thinkAid(ours, "S"))).toContain("Only your side has bid");
 
     const theirs = state({ auction: [call("W", "1S")], turn: "N" });
     expect(text(thinkAid(theirs, "N"))).toContain("partner hasn");
 
     const both = state({ auction: [call("W", "1S"), call("N", "2C")], turn: "E" });
-    expect(text(thinkAid(both, "E"))).toContain("contested");
+    expect(text(thinkAid(both, "E"))).toContain("Both sides are bidding");
   });
 
   it("offers the cheapest call in each strain plus pass — never all 35", () => {
@@ -124,7 +124,7 @@ describe("thinkAid — the play", () => {
     const s = play({ hands: { N: cards("HA HK"), E: cards("SK SJ"), S: HAND, W: cards("DA DK DJ") } });
     // 40 − S's 13 − dummy W's 8 (A=4, K=3, J=1) = 19.
     expect(thinkAid(s, "S")!.known[0]).toBe(
-      "19 points are unaccounted for, between partner and East.",
+      "19 points sit between partner and East.",
     );
   });
 
@@ -155,7 +155,7 @@ describe("thinkAid — the play", () => {
       tricks: [{ leader: "E", plays: [{ seat: "E", card: one("D3") }] }],
     });
     // Accounted: S 2 + dummy 3 + East's played 1 = 6. Outstanding = 7.
-    expect(text(thinkAid(s, "S"))).toContain("7 ♦ are still out");
+    expect(text(thinkAid(s, "S"))).toContain("7 ♦ are still in the hidden hands");
   });
 
   it("says who is winning the trick so far", () => {
@@ -165,7 +165,7 @@ describe("thinkAid — the play", () => {
         { leader: "E", plays: [{ seat: "E", card: one("D3") }, { seat: "S", card: one("D5") }] },
       ],
     });
-    expect(text(thinkAid(s, "S"))).toContain("You are winning it so far, with the 5♦");
+    expect(text(thinkAid(s, "S"))).toContain("You are winning it with the 5♦");
   });
 
   it("lowest, highest and any honour between — not every legal card", () => {
@@ -213,7 +213,7 @@ describe("thinkAid — the play", () => {
       expect(t, `leaked ${hidden}`).not.toContain(hidden);
     }
     // And it still said something useful about the position.
-    expect(t).toContain("unaccounted for");
+    expect(t).toContain("points sit between");
   });
 });
 
@@ -249,9 +249,9 @@ describe("thinkAid — declarer plays two hands", () => {
   it("still counts BOTH hands for the facts — that part was already right", () => {
     const a = thinkAid(atDummysTurn(), "S")!;
     // 40 − South's 13 − dummy's 7 = 20.
-    expect(a.known[0]).toBe("20 points are unaccounted for, between the two defenders.");
+    expect(a.known[0]).toBe("20 points sit between the two defenders.");
     // 3 of yours + 3 of dummy's + West's led card = 7 seen, so 6 out.
-    expect(a.known.join(" ")).toContain("6 ♦ are still out");
+    expect(a.known.join(" ")).toContain("6 ♦ are still in the hidden hands");
   });
 
   it("says nothing to choose when the turn belongs to an opponent", () => {
@@ -278,5 +278,42 @@ describe("thinkAid — declarer plays two hands", () => {
     const labels = thinkAid(s, "S")!.candidates.map((c) => c.label);
     expect(labels).toEqual(["7♦", "Q♦"]);   // yours: ♦Q ♦9 ♦7 → lowest and highest
     expect(thinkAid(s, "S")!.candidates[0]!.note).toBe("your lowest diamond");
+  });
+});
+
+describe("the known facts as flip cards", () => {
+  // The cards are the source and the plain lines are their backs, verbatim —
+  // the contract that lets the Game State UI and every older consumer of
+  // `known` read the same facts without either drifting.
+  it("derives `known` from knownCards, back for back", () => {
+    const auction = thinkAid(state({ auction: [call("E", "1C")], turn: "S" }), "S")!;
+    expect(auction.known).toEqual(auction.knownCards.map((k) => k.detail));
+    // Every front is genuinely glanceable: a title and a short value.
+    for (const k of auction.knownCards) {
+      expect(k.title.length).toBeGreaterThan(0);
+      expect(k.value.length).toBeGreaterThan(0);
+      expect(k.value.length).toBeLessThanOrEqual(16);
+    }
+  });
+
+  it("holds in the play too, voids and all", () => {
+    const s = state({
+      phase: "play",
+      contract: { level: 3, strain: "H", declarer: "S", doubled: 0 } as GameState["contract"],
+      turn: "S",
+      hands: { N: cards("D6 S3"), E: cards("SJ"), S: cards("SA HK"), W: cards("S6") },
+      tricks: [
+        { leader: "W", plays: [
+          { seat: "W", card: one("D2") }, { seat: "N", card: one("D6") }, { seat: "E", card: one("SJ") },
+        ] },
+      ],
+    });
+    const a = thinkAid(s, "S")!;
+    expect(a.known).toEqual(a.knownCards.map((k) => k.detail));
+    // East — a hand the declarer can NOT see — failed to follow the diamond
+    // lead. That inference must survive the restructuring as a card with a
+    // real front. (Dummy's discards prove nothing extra: dummy is face up.)
+    const voidCard = a.knownCards.find((k) => k.detail.includes("has no diamonds"));
+    expect(voidCard?.value).toBe("no ♦s");
   });
 });

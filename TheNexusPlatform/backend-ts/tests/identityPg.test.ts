@@ -17,8 +17,8 @@ import { eq } from "drizzle-orm";
 // Local auth store (credentials) in a temp dir; DATABASE_URL (from env) drives data.
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-idpg-"));
 process.env.LOCAL_DATA_DIR = tempDir;
-delete process.env.SUPABASE_URL;
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.SUPABASE_URL = "";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 
 const RUN = Boolean(process.env.DATABASE_URL);
 

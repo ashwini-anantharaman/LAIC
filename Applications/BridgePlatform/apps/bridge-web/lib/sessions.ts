@@ -25,12 +25,26 @@ import { benSeatDecider } from "./benSeat";
 import { challengeBenDecider } from "./challengeBen";
 import { kbStore } from "./kb";
 
-const globalCache = globalThis as unknown as {
-  __bridgeSessionService?: SessionService;
-  __bridgeLibraryStore?: LibraryStore;
-  __bridgeSubmissionStore?: SubmissionStore;
-  __bridgeAssignmentStore?: AssignmentStore;
-};
+/**
+ * MODULE-level singletons, deliberately NOT `globalThis` ones.
+ *
+ * These used to hang off globalThis, which in development outlives hot reload
+ * while the classes behind it are replaced. The moment a store or the service
+ * gained a method, every page that called it threw "…is not a function" until
+ * someone restarted the dev server — the code was right and the running instance
+ * was a fossil. Module scope is invalidated exactly when the code changes, which
+ * is precisely the lifetime these want.
+ *
+ * Nothing is lost by the change: the one genuinely expensive resource is the
+ * Supabase client, which keeps its own globalThis cache in ./backend, so these
+ * are a couple of object allocations over it. The JSON file stores read their
+ * file once per module instance and persist on every write, so disk stays the
+ * source of truth across a reload.
+ */
+let sessionServiceInstance: SessionService | undefined;
+let libraryStoreInstance: LibraryStore | undefined;
+let submissionStoreInstance: SubmissionStore | undefined;
+let assignmentStoreInstance: AssignmentStore | undefined;
 
 /**
  * WHICH BEN SITS AT THIS TABLE. The service is one global singleton, so the
@@ -69,7 +83,7 @@ function benDeciderFor(): NonNullable<SessionServiceOptions["benDecider"]> {
 }
 
 export function sessionService(): SessionService {
-  globalCache.__bridgeSessionService ??= new SessionService(
+  sessionServiceInstance ??= new SessionService(
     storeBackend() === "postgres"
       ? new PgSessionStore(pgClient())
       : new JsonFileSessionStore(join(process.cwd(), dataDir(), "session-store.json")),
@@ -78,29 +92,29 @@ export function sessionService(): SessionService {
     // missing endpoint only errors if a BEN seat actually has to act.
     { benDecider: benDeciderFor() },
   );
-  return globalCache.__bridgeSessionService;
+  return sessionServiceInstance;
 }
 
 export function libraryStore(): LibraryStore {
-  globalCache.__bridgeLibraryStore ??=
+  libraryStoreInstance ??=
     storeBackend() === "postgres"
       ? new PgLibraryStore(pgClient())
       : new JsonFileLibraryStore(join(process.cwd(), dataDir(), "library-store.json"));
-  return globalCache.__bridgeLibraryStore;
+  return libraryStoreInstance;
 }
 
 export function submissionStore(): SubmissionStore {
-  globalCache.__bridgeSubmissionStore ??=
+  submissionStoreInstance ??=
     storeBackend() === "postgres"
       ? new PgSubmissionStore(pgClient())
       : new JsonFileSubmissionStore(join(process.cwd(), dataDir(), "submission-store.json"));
-  return globalCache.__bridgeSubmissionStore;
+  return submissionStoreInstance;
 }
 
 export function assignmentStore(): AssignmentStore {
-  globalCache.__bridgeAssignmentStore ??=
+  assignmentStoreInstance ??=
     storeBackend() === "postgres"
       ? new PgAssignmentStore(pgClient())
       : new JsonFileAssignmentStore(join(process.cwd(), dataDir(), "assignment-store.json"));
-  return globalCache.__bridgeAssignmentStore;
+  return assignmentStoreInstance;
 }

@@ -27,6 +27,10 @@ const ADMIN: readonly BridgeRole[] = [
   "bridge_reviewer",
   "bridge_fellow",
 ];
+// Mirrors index.ts: "everyone" INCLUDES bridge_club_member (owner direction
+// 2026-08-10 — club members hold the ordinary member surface; only the
+// narrower admin/coach/org sets exclude them). The invariant test keeps this
+// file and the registry agreeing.
 const ALL = ALL_BRIDGE_ROLES;
 
 /**

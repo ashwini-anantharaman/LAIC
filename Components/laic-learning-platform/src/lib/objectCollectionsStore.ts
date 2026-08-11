@@ -76,7 +76,11 @@ function readList(userId: string): ObjectCollection[] {
 }
 
 function writeList(userId: string, list: ObjectCollection[]) {
-  localStorage.setItem(KEY(userId), JSON.stringify(list));
+  const next = JSON.stringify(list);
+  try {
+    if (localStorage.getItem(KEY(userId)) === next) return;
+  } catch { /* ignore */ }
+  localStorage.setItem(KEY(userId), next);
   emit();
 }
 
@@ -135,7 +139,8 @@ function bbTutorialsFolder(): ObjectCollection {
  * personal root collection. Migrates any legacy “bb-tutorials” folder id.
  */
 export function ensureDefaultObjectCollection(userId: string): ObjectCollection[] {
-  let list = readList(userId).map((c) => (
+  const before = readList(userId);
+  let list = before.map((c) => (
     c.id === BB_TUTORIALS_COLLECTION_ID
       ? { ...c, name: BB_TUTORIALS_COLLECTION_NAME, parentId: null, builtin: true }
       : c
@@ -166,8 +171,16 @@ export function ensureDefaultObjectCollection(userId: string): ObjectCollection[
     list = [...list, personal];
   }
 
-  writeList(userId, list);
-  const active = getActiveObjectCollectionId(userId);
+  // Only persist when something actually changed — writeList emits, and App
+  // refresh listeners call ensure again (must not loop).
+  if (JSON.stringify(before) !== JSON.stringify(list)) {
+    writeList(userId, list);
+  }
+
+  let active: string | null = null;
+  try {
+    active = localStorage.getItem(ACTIVE_KEY(userId));
+  } catch { /* ignore */ }
   if (!active || !list.some((c) => c.id === active)) {
     const personal = list.find((c) => c.id !== BB_TUTORIALS_COLLECTION_ID) || list[0];
     if (personal) setActiveObjectCollectionId(userId, personal.id);
@@ -235,14 +248,19 @@ export function getActiveObjectCollectionId(userId: string): string | null {
   try {
     const id = localStorage.getItem(ACTIVE_KEY(userId));
     if (!id) return null;
-    const list = getObjectCollections(userId);
-    return list.some((c) => c.id === id) ? id : (list[0]?.id || null);
+    // Use readList (not getObjectCollections) to avoid ensure → write → emit recursion.
+    const list = readList(userId);
+    if (list.some((c) => c.id === id)) return id;
+    return list[0]?.id || null;
   } catch {
     return null;
   }
 }
 
 export function setActiveObjectCollectionId(userId: string, id: string): void {
+  try {
+    if (localStorage.getItem(ACTIVE_KEY(userId)) === id) return;
+  } catch { /* ignore */ }
   localStorage.setItem(ACTIVE_KEY(userId), id);
   emit();
 }

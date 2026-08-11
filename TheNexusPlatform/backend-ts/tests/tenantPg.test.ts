@@ -17,8 +17,8 @@ import { eq } from "drizzle-orm";
 
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-tenantpg-"));
 process.env.LOCAL_DATA_DIR = tempDir;
-delete process.env.SUPABASE_URL;
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.SUPABASE_URL = "";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 
 const RUN = Boolean(process.env.DATABASE_URL);
 

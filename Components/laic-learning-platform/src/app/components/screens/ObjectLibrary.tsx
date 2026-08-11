@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
-  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2,
+  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
 import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
+import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 import {
   objectCollectionIds,
@@ -118,11 +119,11 @@ export function ObjectLibrary() {
   const [versionToast, setVersionToast] = useState<string | null>(null);
 
   const {
+    activeUserId,
     openReader,
     openEditor,
-    createdObjects,
-    objectCollections,
-    activeObjectCollectionId,
+    createdObjects: createdObjectsRaw,
+    objectCollections: objectCollectionsRaw,
     setActiveObjectCollectionId,
     createObjectCollection,
     renameObjectCollection,
@@ -132,8 +133,15 @@ export function ObjectLibrary() {
     saveObjectAsNewVersion,
     listObjectVersions,
     objectVersionsTick,
+    pendingLibraryFolderId,
+    clearPendingLibraryFolderId,
   } = useApp();
+  const createdObjects = createdObjectsRaw || [];
+  const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
+
+  const opened = objectCollections.find((c) => c.id === openedCollectionId) ?? null;
+  const breadcrumb = opened ? [...getCollectionPath(objectCollections, opened.id), opened] : [];
 
   const removeOrDeleteObject = (item: LearningObject) => {
     void (async () => {
@@ -180,7 +188,9 @@ export function ObjectLibrary() {
     })();
   };
 
-  const versionCount = (objectId: string) => listObjectVersions(objectId).length;
+  const versionCount = (objectId: string) => (
+    typeof listObjectVersions === 'function' ? listObjectVersions(objectId).length : 0
+  );
   // Keep count reactive when history changes.
   void objectVersionsTick;
 
@@ -194,16 +204,17 @@ export function ObjectLibrary() {
     window.setTimeout(() => setVersionToast(null), 2200);
   };
 
-  // When returning from Create (“Saved under X”), open that collection immediately.
+  // One-shot deep-link from save → “Go to Content Library” (not from sidebar).
   useEffect(() => {
-    if (!activeObjectCollectionId) return;
-    if (!objectCollections.some((c) => c.id === activeObjectCollectionId)) return;
-    setOpenedCollectionId(activeObjectCollectionId);
-    setSelectedFolderId(activeObjectCollectionId);
-  }, [activeObjectCollectionId, objectCollections]);
-
-  const opened = objectCollections.find((c) => c.id === openedCollectionId) ?? null;
-  const breadcrumb = opened ? [...getCollectionPath(objectCollections, opened.id), opened] : [];
+    if (!pendingLibraryFolderId) return;
+    if (!objectCollections.some((c) => c.id === pendingLibraryFolderId)) {
+      clearPendingLibraryFolderId();
+      return;
+    }
+    setOpenedCollectionId(pendingLibraryFolderId);
+    setSelectedFolderId(pendingLibraryFolderId);
+    clearPendingLibraryFolderId();
+  }, [pendingLibraryFolderId, objectCollections, clearPendingLibraryFolderId]);
 
   const rootFolders = useMemo(() => {
     const roots = getRootCollections(objectCollections);
@@ -444,7 +455,10 @@ export function ObjectLibrary() {
                           key={c.id}
                           type="button"
                           onClick={() => {
-                            const next = on ? ids.filter((x) => x !== c.id) : [...ids, c.id];
+                            const next = on
+                              ? ids.filter((x) => x !== c.id)
+                              // Newly checked folder becomes primary (first) for save → library deep-link.
+                              : [c.id, ...ids.filter((x) => x !== c.id)];
                             if (!next.length) return;
                             setObjectCollectionIds(item.id, next);
                           }}
@@ -600,6 +614,15 @@ export function ObjectLibrary() {
                 style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
               >
                 <Plus size={14} /> New folder
+              </button>
+              <button
+                type="button"
+                onClick={() => exportLibrarySnapshot(activeUserId, createdObjects || [])}
+                title="Download the whole library (folders + content) as a snapshot JSON — commit it as src/lib/seed/librarySnapshot.json to make it the baseline for every visitor."
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
+                style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
+              >
+                <Download size={14} /> Export snapshot
               </button>
             </div>
           </div>

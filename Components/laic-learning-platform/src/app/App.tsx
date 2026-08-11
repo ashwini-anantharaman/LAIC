@@ -28,12 +28,14 @@ import {
   BB_TUTORIALS_LEGACY_COLLECTION_ID,
 } from '../lib/objectCollectionsStore';
 import { mergeBbTutorialsIntoLibrary } from '../lib/bbTutorialsSeed';
+import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/librarySnapshotSeed';
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
+  sealVersionTip as storeSealVersionTip,
   listVersionsForObject,
   listAllVersions,
   subscribeObjectVersions,
@@ -108,7 +110,21 @@ export interface AppState {
   editingObjectId: string | null;
   /** Template id chosen in Template Library before opening the creator. */
   pendingTemplateId: string | null;
-  navigate: (screen: string) => void;
+  /**
+   * One-shot from Create: Tutorial V2 path after folder picker
+   * (`template` | `write-yourself`). Cleared when the creator consumes it.
+   */
+  pendingAuthoringPath: 'template' | 'write-yourself' | null;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  /**
+   * One-shot: when set, Content Library opens this folder once then clears.
+   * Normal nav to Content Library leaves this null → collections root.
+   */
+  pendingLibraryFolderId: string | null;
+  clearPendingLibraryFolderId: () => void;
+  /** Bumps when opening Content Library at root so the screen remounts outside any folder. */
+  libraryRootNonce: number;
+  navigate: (screen: string, opts?: { libraryFolderId?: string | null }) => void;
   login: (userId: string) => void;
   logout: () => void;
   setRole: (role: Role) => void;
@@ -117,6 +133,7 @@ export interface AppState {
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
   addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
@@ -160,6 +177,10 @@ function StudioApp() {
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
+  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | null>(null);
+  const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
+  const [libraryRootNonce, setLibraryRootNonce] = useState(0);
+  const clearPendingLibraryFolderId = useCallback(() => setPendingLibraryFolderId(null), []);
   /** Only persist to localStorage after the library for this user has been loaded. */
   const [libraryReady, setLibraryReady] = useState(false);
   const [nexusMode, setNexusMode] = useState(false);
@@ -225,10 +246,14 @@ function StudioApp() {
   const hydrateForUser = useCallback(async (userId: string) => {
     const gen = ++hydrateGenRef.current;
     setLibraryReady(false);
+    ensureSnapshotCollections(userId);
     refreshObjectCollections(userId);
 
     const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
-    const local = mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw));
+    const local = mergeLibrarySnapshot(
+      userId,
+      mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw)),
+    );
     if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
     if (local !== localRaw) {
@@ -248,9 +273,12 @@ function StudioApp() {
             ownerName: o.ownerName || 'Course Dev Demo',
           }))
         : remote;
-      const merged = mergeBbTutorialsIntoLibrary(
+      const merged = mergeLibrarySnapshot(
         userId,
-        withCollectionIds(userId, mergeObjects(local, claimedRemote)),
+        mergeBbTutorialsIntoLibrary(
+          userId,
+          withCollectionIds(userId, mergeObjects(local, claimedRemote)),
+        ),
       );
       setCreatedObjects(merged);
       if (merged.length > 0) saveUserObjects(userId, merged);
@@ -410,7 +438,12 @@ function StudioApp() {
     setCreatedObjects([]);
   }, [nexusMode]);
 
-  const navigate = useCallback((screen: string) => {
+  const navigate = useCallback((screen: string, opts?: { libraryFolderId?: string | null }) => {
+    if (screen === 'cd-library') {
+      const folderId = opts && 'libraryFolderId' in opts ? (opts.libraryFolderId || null) : null;
+      setPendingLibraryFolderId(folderId);
+      setLibraryRootNonce((n) => n + 1);
+    }
     setCurrentScreen(screen);
     setReaderObjectId(null);
     if (screen !== 'cd-creator') setEditingObjectId(null);
@@ -497,6 +530,9 @@ function StudioApp() {
         tutorialV2Draft: (partial as any).tutorialV2Draft !== undefined
           ? (partial as any).tutorialV2Draft
           : (existing as any)?.tutorialV2Draft,
+        structuredV2Draft: (partial as any).structuredV2Draft !== undefined
+          ? (partial as any).structuredV2Draft
+          : (existing as any)?.structuredV2Draft,
       };
       const nextList = [obj, ...prev.filter(o => o.id !== id)];
       const result = saveUserObjects(ownerId, nextList);
@@ -550,6 +586,8 @@ function StudioApp() {
 
   const setCreateCollectionIds = useCallback((ids: string[]) => {
     const unique = [...new Set(ids.filter(Boolean))];
+    // Keep ref in sync immediately so the next addObject (same tick) sees the pick.
+    createCollectionIdsRef.current = unique;
     setCreateCollectionIdsState(unique);
     if (unique[0]) {
       storeSetActiveObjectCollectionId(activeUserIdRef.current, unique[0]);
@@ -608,6 +646,11 @@ function StudioApp() {
       }
       return next;
     });
+    // Primary folder for deep-link after save → Content Library.
+    if (ids[0]) {
+      storeSetActiveObjectCollectionId(uid, ids[0]);
+      setActiveObjectCollectionIdState(ids[0]);
+    }
   }, []);
 
   const deleteCreatedObject = useCallback((objectId: string) => {
@@ -639,14 +682,30 @@ function StudioApp() {
   }, []);
 
   const openEditor = useCallback((objectId: string) => {
-    const fromCreated = createdObjects.find(o => o.id === objectId);
+    const fromCreated = (createdObjectsRef.current || []).find(o => o.id === objectId);
     const obj = fromCreated || OBJECTS.find(o => o.id === objectId);
     if (obj) setCreatorObjectTypeState(obj.type);
+    // Keep Create-folder picks aligned with where the object lives now (after moves).
+    if (fromCreated) {
+      const ids = objectCollectionIds(fromCreated);
+      createCollectionIdsRef.current = ids;
+      setCreateCollectionIdsState(ids);
+      if (ids[0]) {
+        storeSetActiveObjectCollectionId(activeUserIdRef.current, ids[0]);
+        setActiveObjectCollectionIdState(ids[0]);
+      }
+    }
+    // Next content-differing save should commit a new version (git-style).
+    try {
+      storeSealVersionTip(activeUserIdRef.current, objectId);
+    } catch (err: any) {
+      console.warn('[versions] seal tip failed:', err?.message || err);
+    }
     setEditingObjectId(objectId);
     setReaderObjectId(null);
     setReaderVersionId(null);
     setCurrentScreen('cd-creator');
-  }, [createdObjects]);
+  }, []);
 
   const clearEditingObject = useCallback(() => {
     setEditingObjectId(null);
@@ -682,9 +741,10 @@ function StudioApp() {
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,
     deleteObjectCollection, setObjectCollectionIds, deleteCreatedObject,
-    editingObjectId, pendingTemplateId,
+    editingObjectId, pendingTemplateId, pendingAuthoringPath,
+    pendingLibraryFolderId, clearPendingLibraryFolderId, libraryRootNonce,
     navigate, login, logout,
-    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, addObject,
+    setRole, setProgram, openReader, closeReader, setCreatorObjectType, setPendingTemplateId, setPendingAuthoringPath, addObject,
     openEditor, clearEditingObject,
   };
 

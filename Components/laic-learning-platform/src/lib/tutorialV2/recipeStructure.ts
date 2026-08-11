@@ -22,8 +22,9 @@ export interface RecipeStructureAnalysis {
   /** Library embeds shown as Structure pickers (tutorial-level). */
   libraryEmbeds: EmbeddedObjectItem[];
   /**
-   * Generate embeds at tutorial level (only when there is no Section block).
-   * With sections, generate embeds stay inside each section's recipe.
+   * Generate embeds at tutorial level — every generate embed in the recipe,
+   * with or without a Section block. A template with both a Section block and
+   * an embedded quiz shows the sections AND the quiz on Structure.
    */
   topLevelGenerateEmbeds: EmbeddedObjectItem[];
   /** True when Sources → markup → generate is needed. */
@@ -57,13 +58,13 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
   const libraryEmbeds = embeds.filter(isLibraryMode);
   const generateEmbeds = embeds.filter(isGenerateMode);
 
-  const topLevelGenerateEmbeds = hasSections ? [] : generateEmbeds;
+  // Generate embeds are their own Structure items even when sections exist —
+  // one quiz block in the template means one quiz to generate, not one per section.
+  const topLevelGenerateEmbeds = generateEmbeds;
 
   const sectionAtomics = recipe.filter((r) => r.kind === 'atomic');
-  // Per-section: atomics + generate embeds (library embeds are tutorial-level only).
-  const sectionRecipe = hasSections
-    ? recipe.filter((r) => r.kind === 'atomic' || (r.kind === 'embedded' && isGenerateMode(r)))
-    : [];
+  // Per-section: atomics only (embeds are tutorial-level Structure items).
+  const sectionRecipe = hasSections ? sectionAtomics : [];
 
   const needsSources = hasSections
     || topLevelGenerateEmbeds.length > 0;
@@ -99,6 +100,7 @@ export function seedTopLevelSlots(
       libraryTitle: old?.libraryTitle || item.libraryTitle,
       part: old?.part,
       done: !!(old?.versionPin?.objectId || old?.part),
+      learnerPage: old?.learnerPage,
     });
   }
 
@@ -122,6 +124,7 @@ export function seedTopLevelSlots(
       markupFlags: old?.markupFlags,
       units: old?.units,
       done: !!(old?.done || old?.part || parts?.length),
+      learnerPage: old?.learnerPage,
     });
   }
 
@@ -160,29 +163,94 @@ export function seedSectionsFromAnalysis(
 }
 
 /** Write-it-yourself: seed from whatever section titles the author named (no fixed count). */
+export type StructureSectionTitle = {
+  id?: string;
+  title: string;
+  intent?: string;
+  /** Student-preview page (1-based). */
+  learnerPage?: number;
+};
+
 export function seedWriteYourselfSections(
   analysis: RecipeStructureAnalysis,
-  titles: { id?: string; title: string; intent?: string }[],
+  titles: StructureSectionTitle[],
 ): V2Section[] {
-  const named = (titles || []).filter((t) => String(t.title || '').trim());
-  const outline = named.length ? named : [{ title: 'Section 1', intent: '' }];
+  return applySectionOutline([], titles, analysis, { writeYourself: true });
+}
+
+/**
+ * Apply Plan/Structure section outline onto existing sections.
+ * Renames / reorders / adds / removes by id (with title/index fallback),
+ * and keeps authored parts / done state for sections that remain.
+ */
+export function applySectionOutline(
+  existing: V2Section[],
+  titles: StructureSectionTitle[],
+  analysis: RecipeStructureAnalysis,
+  opts?: { writeYourself?: boolean },
+): V2Section[] {
+  const writeYourself = !!opts?.writeYourself;
+  let outline = [...(titles || [])];
+  if (writeYourself) {
+    outline = outline.filter((t) => String(t.title || '').trim());
+    if (!outline.length) outline = [{ title: 'Section 1', intent: '' }];
+  } else {
+    if (!analysis.hasSections) return [];
+    const n = analysis.sectionCount;
+    outline = outline.slice(0, n);
+    while (outline.length < n) {
+      outline.push({ title: `Section ${outline.length + 1}`, intent: '' });
+    }
+  }
+
+  const byId = new Map((existing || []).map((s) => [s.id, s]));
+  const unused = new Set((existing || []).map((s) => s.id));
   const recipe = cloneRecipeItems(
     analysis.sectionRecipe.length ? analysis.sectionRecipe : analysis.sectionAtomics,
     true,
   );
-  return outline.map((row) => ({
-    id: row.id || newSectionId(),
-    title: String(row.title || '').trim() || 'Section',
-    intent: row.intent || '',
-    recipe: cloneRecipeItems(recipe, true),
-    parts: [],
-    pickedSourceIds: [],
-    highlights: [],
-    units: undefined,
-    authorMode: 'empty' as const,
-    done: false,
-    required: true,
-  }));
+
+  return outline.map((row, i) => {
+    const title = String(row.title || '').trim() || `Section ${i + 1}`;
+    const learnerPage = Math.max(
+      1,
+      Number(row.learnerPage != null ? row.learnerPage : (i + 1)) || (i + 1),
+    );
+    let prev = (row.id && byId.get(row.id)) || undefined;
+    if (!prev && !row.id) {
+      const atIndex = existing[i];
+      if (atIndex && unused.has(atIndex.id)) prev = atIndex;
+    }
+    if (!prev) {
+      const needle = title.toLowerCase();
+      prev = (existing || []).find(
+        (s) => unused.has(s.id) && s.title.trim().toLowerCase() === needle,
+      );
+    }
+    if (prev) {
+      unused.delete(prev.id);
+      return {
+        ...prev,
+        title,
+        intent: row.intent !== undefined ? String(row.intent) : prev.intent,
+        learnerPage,
+      };
+    }
+    return {
+      id: row.id || newSectionId(),
+      title,
+      intent: row.intent || '',
+      recipe: cloneRecipeItems(recipe, true),
+      parts: [],
+      pickedSourceIds: [],
+      highlights: [],
+      units: undefined,
+      authorMode: 'empty' as const,
+      done: false,
+      required: true,
+      learnerPage,
+    };
+  });
 }
 
 /** Structure continue gate: required library slots pinned; sections named when present. */

@@ -30,12 +30,17 @@ export function ObjectVersionsModal({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const user = USERS.find((u) => u.id === activeUserId);
-    syncWorkingVersion(activeUserId, object, object.ownerName || user?.name || 'You');
+    if (!object || !activeUserId) return;
+    const user = (USERS || []).find((u) => u.id === activeUserId);
+    try {
+      syncWorkingVersion(activeUserId, object, object.ownerName || user?.name || 'You');
+    } catch (err: any) {
+      console.warn('[versions] sync on open failed:', err?.message || err);
+    }
   }, [object, activeUserId]);
 
   const versions = useMemo(
-    () => listObjectVersions(object.id),
+    () => (typeof listObjectVersions === 'function' ? (listObjectVersions(object.id) || []) : []),
     [object.id, objectVersionsTick, listObjectVersions],
   );
 
@@ -120,7 +125,7 @@ export function ObjectVersionsModal({
               <span style={{ color: '#9AA3AF' }}> · {object.type}</span>
             </p>
             <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 4 }}>
-              Each version is a frozen snapshot. Later edits don’t change older versions.
+              Like commits: first save is v1; each later edit that changes content adds v2, v3, …
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5" aria-label="Close">

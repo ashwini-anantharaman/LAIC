@@ -15,6 +15,7 @@ import { PrimaryButton, Screen, ScreenHeader } from "./ui";
 import { Brand, Colors, Fonts, Spacing } from "../constants/theme";
 import { BRIDGE_LAUNCH_URL_OVERRIDE, PROGRAM_ID } from "../lib/config";
 import { useAuth } from "../lib/auth-context";
+import { useSelectedClubId } from "../lib/club-context";
 import {
   forgetBridgeOrigin,
   peekBridgeOrigin,
@@ -96,9 +97,12 @@ export function BridgeEmbed({
   const originRef = useRef<string | null>(null);
   const lastRelaunch = useRef(0);
 
-  // The app-wide program unless a caller names its own — a club, for its people
-  // who are not in the app-wide one.
-  const programId = programIdProp ?? PROGRAM_ID;
+  // The app-wide program unless a caller names its own — OR a club is selected
+  // (owner direction 2026-08-10: club members hold the member surface, scoped
+  // to their club). An explicit prop still wins; with no club in play this is
+  // the app-wide program, exactly as before.
+  const selectedClubId = useSelectedClubId();
+  const programId = programIdProp ?? selectedClubId ?? PROGRAM_ID;
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -109,7 +113,7 @@ export function BridgeEmbed({
     // token exchange, no redirect. This is what makes switching screens
     // fast; the /welcome watchdog below handshakes again if the session
     // ever dies.
-    const known = peekBridgeOrigin(token);
+    const known = peekBridgeOrigin(token, programId);
     if (known) {
       originRef.current = known;
       setUrl(`${known}${next}`);
@@ -121,7 +125,7 @@ export function BridgeEmbed({
       if (!base) throw new Error("bridge platform URL not configured");
       const origin = new URL(base).origin;
       originRef.current = origin;
-      rememberBridgeOrigin(token, origin);
+      rememberBridgeOrigin(token, origin, programId);
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
         // The platform scopes /bridge/context by this, so it must be the SAME
@@ -200,7 +204,7 @@ export function BridgeEmbed({
     // Leaving a table means the board lists just changed (finished, saved,
     // discarded…) — start the summary refresh NOW so Resume and Play greet
     // the return with fresh lists instead of a stale-while-revalidate beat.
-    if (token) refreshSummary(token).catch(() => {});
+    if (token) refreshSummary(token, programId).catch(() => {});
     if (router.canGoBack()) router.back();
     else router.replace(backTo ?? "/home");
   }, [backTo, token]);

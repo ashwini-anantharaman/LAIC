@@ -6,12 +6,14 @@ import { afterAll, describe, expect, it, vi } from "vitest";
 
 const tempDir = mkdtempSync(join(tmpdir(), "owlwise-game-"));
 process.env.LOCAL_DATA_DIR = tempDir;
-delete process.env.SUPABASE_URL;
-// Set to "" (not delete) so `import "dotenv/config"` (loads backend-ts/.env)
-// can't repopulate DATABASE_URL and flip this flow into Postgres mode.
+// EVERY one of these is set to "" and never `delete`d. `import "dotenv/config"`
+// (via src/config.ts) loads backend-ts/.env, and dotenv only skips keys that are
+// already DEFINED — so a deleted key is one dotenv happily refills. Deleting
+// SUPABASE_URL therefore handed this local-mode flow the real cloud project.
+process.env.SUPABASE_URL = "";
 process.env.DATABASE_URL = "";
 process.env.SUPABASE_DB_URL = "";
-delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+process.env.SUPABASE_SERVICE_ROLE_KEY = "";
 
 // Mock the Claude call so the test doesn't hit the network / need a key.
 vi.mock("../src/claude", () => ({

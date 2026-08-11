@@ -160,14 +160,53 @@ function categoryDeco(id: string) {
   return null;
 }
 
+function panelYtId(url: string): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+  const m = raw.match(/(?:youtu\.be\/|youtube\.com\/(?:embed|shorts|live|v)\/|watch\?.*?v=)([A-Za-z0-9_-]{11})/);
+  return m ? m[1] : '';
+}
+
+function PanelMedia({ id, content }: { id: string; content: ConceptCardContent }) {
+  const media = content.categoryMedia?.[id];
+  if (!media?.url) return null;
+  if (media.kind === 'video') {
+    const yt = panelYtId(media.url);
+    if (!yt) return null;
+    return (
+      <div className="rounded-lg overflow-hidden mt-2" style={{ aspectRatio: '16 / 9' }}>
+        <iframe
+          title={media.caption || 'Video'}
+          src={`https://www.youtube-nocookie.com/embed/${yt}`}
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+          allowFullScreen
+          style={{ width: '100%', height: '100%', border: 0 }}
+        />
+      </div>
+    );
+  }
+  return (
+    <img
+      src={media.url}
+      alt={media.caption || ''}
+      className="mt-2 rounded-lg"
+      style={{ maxWidth: '100%', maxHeight: 220, objectFit: 'contain' }}
+    />
+  );
+}
+
 function PanelBody({ id, content }: { id: string; content: ConceptCardContent }) {
   if (id === 'components') {
     const bullets = content.keyComponents || [];
     if (!bullets.length) return <>{categoryBody(content, id) || '—'}</>;
     return (
-      <ul style={{ margin: 0, paddingLeft: 18 }}>
-        {bullets.map((b) => <li key={b} style={{ marginBottom: 4 }}>{b}</li>)}
-      </ul>
+      <>
+        <ul style={{ margin: 0, paddingLeft: 18 }}>
+          {bullets.map((b) => <li key={b} style={{ marginBottom: 4 }}>{b}</li>)}
+        </ul>
+        <PanelMedia id={id} content={content} />
+      </>
     );
   }
   if (id === 'visual') {
@@ -181,7 +220,12 @@ function PanelBody({ id, content }: { id: string; content: ConceptCardContent })
     );
   }
   const text = categoryBody(content, id);
-  return <div style={{ paddingRight: categoryDeco(id) ? 22 : 0, whiteSpace: 'pre-wrap' }}>{text || '—'}</div>;
+  return (
+    <div style={{ paddingRight: categoryDeco(id) ? 22 : 0, whiteSpace: 'pre-wrap' }}>
+      {text || (content.categoryMedia?.[id]?.url ? '' : '—')}
+      <PanelMedia id={id} content={content} />
+    </div>
+  );
 }
 
 function isFullWidth(id: string) {

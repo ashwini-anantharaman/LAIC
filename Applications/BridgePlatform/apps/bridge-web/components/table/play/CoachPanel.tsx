@@ -40,7 +40,7 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import type { ThinkAid } from "@/lib/coach/think";
+import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
 import { CoachChat, CoachEventAsk, WhatShouldIPlay } from "./CoachEventAsk";
 
@@ -229,7 +229,7 @@ export interface CoachPanelData {
    * arithmetic the learner should arguably do themselves, so it wants gating on
    * level rather than being always on.
    */
-  facts?: readonly { label: string; value: string }[];
+  facts?: readonly { label: string; value: string; detail?: string }[];
   /** One line on what the coach is looking at, for the context card. */
   looking?: string;
   /**
@@ -944,33 +944,25 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
     "start";
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* the position, in prose and numbers */}
+      {/* THE GAME STATE (owner direction 2026-08-10): "What I'm looking at"
+          and "What you can work out" merged into one section of small flip
+          cards — a glanceable value on the front, the full fact on the back.
+          Condensed (the dock) keeps only the position's own facts; the
+          worked-out cards are reading material and reading material belongs
+          to the sheet (owner direction 2026-08-06, unchanged by the merge). */}
       {(data.looking || !!data.facts?.length) && (
-        <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
-          <Label color={FELT_DEEP}>What I'm looking at</Label>
-          {data.looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{data.looking}</p>}
-          {!!data.facts?.length && (
-            <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: data.looking ? 9 : 0 }}>
-              {data.facts.map((f, i) => (
-                <span
-                  key={`${f.label}|${f.value}`}
-                  style={{
-                    fontSize: 11.5, fontWeight: 700, padding: "4px 9px", borderRadius: 20,
-                    background: i === 0 ? FELT_SOFT : "#f3ead4", color: i === 0 ? FELT_DEEP : "#6b5f50",
-                    fontVariantNumeric: "tabular-nums",
-                  }}
-                >
-                  <RedSuits>{f.value}</RedSuits>
-                  {f.label && <span style={{ fontWeight: 500, opacity: 0.75 }}> {f.label}</span>}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        <GameState
+          looking={data.looking}
+          facts={data.facts ?? []}
+          known={condensed ? [] : (data.aid?.knownCards ?? [])}
+          epoch={epoch}
+        />
       )}
 
-      {/* the reasoning scaffold, shown without being asked — sheet only */}
-      {!condensed && data.aid && <ThinkCard aid={data.aid} />}
+      {/* the realistic choices, shown without being asked — sheet only */}
+      {!condensed && data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
+        <ThinkCard aid={data.aid} />
+      )}
 
       {/* the advice, before the card is played */}
       {data.ask && data.ask.phase === "play" && data.ask.active && (
@@ -1052,10 +1044,163 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
   );
 }
 
+/* ── the Game State — the position as flip cards ─────────────────────────────
+   "What I'm looking at" and "What you can work out" used to be two prose
+   blocks; the owner asked for one section (2026-08-10) with the information
+   dissected into small two-sided cards. The front is glanceable — a value and
+   a two-word title; tapping flips it to the full fact. The same discipline as
+   the sections it replaces: every card is arithmetic or a definition, all
+   cards are styled identically, and nothing on either face recommends. */
+
+/** What every card shows: front value + title, back sentence. */
+type StateCard = { title: string; value: string; detail?: string };
+
+function FlipCard({ card }: Readonly<{ card: StateCard }>) {
+  const [flipped, setFlipped] = useState(false);
+  // The 3D stage exists ONLY while the card is turning. A face that sits under
+  // perspective/preserve-3d/backface-visibility lives on a composited layer,
+  // where the text is a rasterized texture — visibly blurry at this size. At
+  // rest the visible face renders flat, with no transform anywhere, so the
+  // glyphs come off the ordinary crisp text path.
+  const [turning, setTurning] = useState(false);
+  const canFlip = Boolean(card.detail);
+  const flip = () => {
+    setTurning(true);
+    // Two frames so the stage PAINTS at the old angle first — flipping state in
+    // the same frame it mounts would jump straight to the target, unanimated.
+    requestAnimationFrame(() => requestAnimationFrame(() => setFlipped((f) => !f)));
+    // Backstop for environments where transitionend never fires (reduced
+    // motion sets transition:none): settle to the crisp flat face regardless.
+    setTimeout(() => setTurning(false), 650);
+  };
+  const face: React.CSSProperties = {
+    position: "absolute", inset: 0, borderRadius: 9,
+    display: "flex", flexDirection: "column", justifyContent: "center",
+    padding: "5px 7px", textAlign: "center",
+  };
+  const front = (
+    <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
+      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+        <RedSuits>{card.value}</RedSuits>
+      </span>
+      {card.title && (
+        <span style={{ marginTop: 2, fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
+          {card.title}
+        </span>
+      )}
+      {canFlip && (
+        <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
+          ⟳
+        </span>
+      )}
+    </span>
+  );
+  const back = canFlip ? (
+    <span
+      style={{
+        ...face, overflowY: "auto",
+        background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
+      }}
+    >
+      <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
+        <RedSuits>{card.detail!}</RedSuits>
+      </span>
+    </span>
+  ) : null;
+  return (
+    <button
+      type="button"
+      onClick={canFlip ? flip : undefined}
+      aria-pressed={flipped}
+      aria-label={card.detail ? `${card.title || card.value} — tap to flip` : card.value}
+      style={{
+        // The button owns the footprint so the grid rows stay even while
+        // either face is showing.
+        position: "relative", minHeight: 54,
+        ...(turning ? { perspective: 600 } : {}),
+        padding: 0, borderWidth: 0, background: "transparent",
+        cursor: canFlip ? "pointer" : "default", textAlign: "inherit",
+        fontFamily: "inherit",
+      }}
+    >
+      {turning ? (
+        <span
+          className="coach-flip"
+          onTransitionEnd={() => setTurning(false)}
+          style={{
+            position: "absolute", inset: 0, transformStyle: "preserve-3d",
+            transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+          }}
+        >
+          <span style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
+            {front}
+          </span>
+          {back && (
+            <span
+              style={{
+                position: "absolute", inset: 0, transform: "rotateY(180deg)",
+                backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+              }}
+            >
+              {back}
+            </span>
+          )}
+        </span>
+      ) : (
+        // At rest: one face, no transforms — this is where the crispness lives.
+        <span style={{ position: "absolute", inset: 0 }}>{flipped && back ? back : front}</span>
+      )}
+    </button>
+  );
+}
+
 /**
- * The reasoning scaffold, shown on the NOW view without being asked — this is
+ * The Game State section: the one-line position, then the cards — the hand's
+ * own facts first, the worked-out inferences after them, one grid.
+ *
+ * Keyed by `epoch` so a new trick deals a fresh set with every card face up;
+ * a flip is a reading of THIS position and must not survive into the next.
+ */
+function GameState({
+  looking, facts, known, epoch,
+}: Readonly<{
+  looking?: string;
+  facts: readonly { label: string; value: string; detail?: string }[];
+  known: readonly KnownCard[];
+  epoch: string;
+}>) {
+  const cards: StateCard[] = [
+    ...facts.map((f) => ({ title: f.label, value: f.value, ...(f.detail ? { detail: f.detail } : {}) })),
+    ...known.map((k) => ({ title: k.title, value: k.value, detail: k.detail })),
+  ];
+  return (
+    <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
+      {/* the flip rotation, and its absence for those who asked motion to stop */}
+      <style>{`.coach-flip{transition:transform .45s;display:block}
+@media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}}`}</style>
+      <Label color={FELT_DEEP}>Game state</Label>
+      {looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{looking}</p>}
+      {cards.length > 0 && (
+        <div
+          style={{
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
+            gap: 6, marginTop: looking ? 9 : 0,
+          }}
+        >
+          {cards.map((c) => (
+            <FlipCard key={`${epoch}|${c.title}|${c.value}`} card={c} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The realistic choices, shown on the NOW view without being asked — this is
  * what the "Help me think" button used to answer with, promoted to the
- * default screen's centrepiece. Candidates render in given order and are
+ * default screen's centrepiece. (Its "what you can work out" half now lives
+ * in the Game State card above.) Candidates render in given order and are
  * styled identically, same as CoachPrompts' block: any visual difference
  * between them reads as a recommendation, and the point of the scaffold is
  * that it does not answer.
@@ -1069,21 +1214,6 @@ function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
         display: "flex", flexDirection: "column", gap: 11,
       }}
     >
-      {aid.known.length > 0 && (
-        <div>
-          <Label color={FELT_DEEP}>What you can work out</Label>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 5 }}>
-            {aid.known.map((line) => (
-              <li key={line} style={{ position: "relative", paddingLeft: 13, fontSize: 13.5, lineHeight: 1.45, color: INK }}>
-                <span aria-hidden style={{ position: "absolute", left: 0, top: 0, color: FELT_MID, fontWeight: 700 }}>
-                  &middot;
-                </span>
-                <RedSuits>{line}</RedSuits>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
       {aid.candidates.length > 0 && (
         <div>
           <Label>Your realistic choices</Label>

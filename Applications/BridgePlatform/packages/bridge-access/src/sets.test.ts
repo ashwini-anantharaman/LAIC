@@ -11,12 +11,25 @@ import {
   compileAssignment,
   type SetAssignment,
 } from "./sets";
+import type { BridgeRole } from "@bridge/nexus-client";
 
 /** Order-insensitive role-set equality. */
 function sameRoles(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
   const set = new Set(b);
   return a.every((r) => set.has(r));
+}
+
+/**
+ * A set assignment and a compiled rule map are both keyed by plain strings, so
+ * every lookup is `| undefined` under noUncheckedIndexedAccess. A key that is
+ * missing is precisely the breakage these tests exist to catch, so surface it
+ * as a failure here instead of threading optionals through every assertion.
+ */
+function rolesAt(map: Record<string, readonly BridgeRole[]>, key: string): readonly BridgeRole[] {
+  const roles = map[key];
+  if (!roles) throw new Error(`no roles for "${key}" — the partition is broken`);
+  return roles;
 }
 
 describe("partition", () => {
@@ -44,9 +57,10 @@ describe("the invariant", () => {
   it("compileAssignment(DEFAULT_ASSIGNMENT) equals each feature's defaultRoles", () => {
     const compiled = compileAssignment(DEFAULT_ASSIGNMENT);
     for (const feature of ACCESS_FEATURES) {
+      const roles = rolesAt(compiled, feature.key);
       expect(
-        sameRoles(compiled[feature.key], feature.defaultRoles),
-        `${feature.key}: compiled ${JSON.stringify(compiled[feature.key])} vs default ${JSON.stringify(feature.defaultRoles)}`,
+        sameRoles(roles, feature.defaultRoles),
+        `${feature.key}: compiled ${JSON.stringify(roles)} vs default ${JSON.stringify(feature.defaultRoles)}`,
       ).toBe(true);
     }
     // Nothing beyond the registry keys is produced.
@@ -62,20 +76,22 @@ describe("compile reflects a toggle", () => {
     const before = compileAssignment(DEFAULT_ASSIGNMENT);
     const toggled: SetAssignment = {
       ...DEFAULT_ASSIGNMENT,
-      library: DEFAULT_ASSIGNMENT.library.filter((r) => r !== "bridge_learner"),
+      library: rolesAt(DEFAULT_ASSIGNMENT, "library").filter((r) => r !== "bridge_learner"),
     };
     const after = compileAssignment(toggled);
 
     // Every library key loses exactly bridge_learner.
     for (const key of libraryKeys) {
-      expect(before[key]).toContain("bridge_learner");
-      expect(after[key]).not.toContain("bridge_learner");
-      expect(sameRoles(after[key], before[key].filter((r) => r !== "bridge_learner"))).toBe(true);
+      const was = rolesAt(before, key);
+      const now = rolesAt(after, key);
+      expect(was).toContain("bridge_learner");
+      expect(now).not.toContain("bridge_learner");
+      expect(sameRoles(now, was.filter((r) => r !== "bridge_learner"))).toBe(true);
     }
     // Every non-library key is unchanged.
     for (const feature of ACCESS_FEATURES) {
       if (libraryKeys.includes(feature.key)) continue;
-      expect(sameRoles(after[feature.key], before[feature.key])).toBe(true);
+      expect(sameRoles(rolesAt(after, feature.key), rolesAt(before, feature.key))).toBe(true);
     }
   });
 });

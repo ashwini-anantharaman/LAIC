@@ -8,6 +8,7 @@ import type { GeneratedQuizQuestion } from '../../../lib/api';
 import { editQuizQuestion, errorMessage } from '../../../lib/api';
 import { ensureFourHints } from '../../../lib/questionHints.js';
 import { QuizBlock } from './LearnerReader';
+import { ItemMediaAttach } from './objectV2/ItemMediaAttach';
 
 function toQuestionContent(q: GeneratedQuizQuestion | QuestionContent, i = 0): QuestionContent & { _id: string } {
   return {
@@ -23,6 +24,8 @@ function toQuestionContent(q: GeneratedQuizQuestion | QuestionContent, i = 0): Q
     hints: ensureFourHints((q as any).hints, { explanation: q.explanation, singleHint: q.hint }),
     cognitiveLevel: q.cognitiveLevel,
     difficulty: q.difficulty,
+    imageUrl: (q as any).imageUrl,
+    videoUrl: (q as any).videoUrl,
   };
 }
 
@@ -61,6 +64,8 @@ function AskAiQuestion({ q, onApply, onClose }: { q: QDraft; onApply: (patch: Pa
         hints: ensureFourHints((edited as any).hints, { explanation: edited.explanation, singleHint: edited.hint }),
         cognitiveLevel: edited.cognitiveLevel,
         difficulty: edited.difficulty,
+        imageUrl: (edited as any).imageUrl ?? q.imageUrl,
+        videoUrl: (edited as any).videoUrl ?? q.videoUrl,
       });
       setText('');
       onClose();
@@ -183,6 +188,18 @@ function ManualQuestionEdit({ q, onChange }: { q: QDraft; onChange: (patch: Part
         <label style={lbl}>Explanation</label>
         <textarea value={q.explanation || ''} onChange={(e) => onChange({ explanation: e.target.value })} rows={2}
           className="w-full rounded-xl px-3 py-2 resize-y" style={field} />
+      </div>
+      <div>
+        <label style={lbl}>Media (shown under the question)</label>
+        <ItemMediaAttach
+          imageUrl={q.imageUrl}
+          videoUrl={q.videoUrl}
+          onChange={(m) => onChange({
+            ...(m.imageUrl !== undefined ? { imageUrl: m.imageUrl || undefined } : {}),
+            ...(m.videoUrl !== undefined ? { videoUrl: m.videoUrl || undefined } : {}),
+          })}
+          compact
+        />
       </div>
     </div>
   );
@@ -421,6 +438,8 @@ export function QuizEditor({
                   ) : (
                     <div>
                       <p style={{ fontSize: 13.5, fontWeight: 600, color: '#0B1220', marginBottom: 6 }}>{q.question || '(empty question)'}</p>
+                      {q.imageUrl && <img src={q.imageUrl} alt="" style={{ maxHeight: 90, borderRadius: 8, objectFit: 'contain', marginBottom: 6 }} />}
+                      {q.videoUrl && <p style={{ fontSize: 11.5, color: '#DC2626', marginBottom: 6 }}>▶ video attached</p>}
                       {q.type === 'short-answer' ? (
                         <p style={{ fontSize: 12.5, color: '#6B7280' }}>Sample: {q.sampleAnswer || '—'}</p>
                       ) : (

@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronLeft, ChevronRight, Database, FileText, FolderOpen, Loader2,
-  Plus, Sparkles, Type, Image as ImageIcon, Youtube, X, Wand2,
+  Plus, Sparkles, Type, Image as ImageIcon, Youtube, X, Wand2, LayoutGrid,
 } from 'lucide-react';
 import { AssistantPanel } from '../AssistantPanel';
 import { MarkupWorkspace } from '../MarkupWorkspace';
@@ -14,10 +14,13 @@ import { LibraryPickerModal } from '../../LibraryPickerModal';
 import {
   applyEditActionsToParts,
   buildAssistantContext,
+  flattenActions,
   snapshotParts,
   type TutorialEditorPart,
 } from '../../../../lib/assistant';
 import {
+  movePartToPage,
+  partPageNumbers,
   pipelineDraftFromV2,
   sourcePoolToMarkupSources,
 } from '../../../../lib/tutorialV2/draftModel';
@@ -27,6 +30,7 @@ import {
   type LibraryObjectChoice,
 } from '../../../../lib/tutorialV2/tutorialTemplates';
 import { parsePdf, docFromText } from '../../../../lib/pdf';
+import { makeBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { errorMessage, ingestYoutube } from '../../../../lib/api';
 import { useApp } from '../../../App';
 import type { TutorialV2Draft, TutorialV2Part, V2SourceRef, V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
@@ -98,6 +102,15 @@ export function TutorialV2RefineSidebar({
     [draft],
   );
 
+  // Label each part with its student page so Hoot can move blocks across pages.
+  const partsForContext = useMemo(() => {
+    const pages = partPageNumbers(parts);
+    return parts.map((p, i) => ({
+      ...p,
+      label: `${p.label || p.type || 'Part'} · page ${pages[i]}`,
+    }));
+  }, [parts]);
+
   const assistantContext = useMemo(() => buildAssistantContext({
     objectId: draft.id,
     objectType: 'tutorial-v2',
@@ -106,10 +119,10 @@ export function TutorialV2RefineSidebar({
     scope: 'bridge',
     objective: String(draft.metadata.objective || ''),
     fv: pipelineDraft.fv,
-    parts: parts as TutorialEditorPart[],
+    parts: partsForContext as TutorialEditorPart[],
     pipelineDraft,
     selection,
-  }), [draft, parts, pipelineDraft, selection]);
+  }), [draft, partsForContext, pipelineDraft, selection]);
 
   const pushUndo = () => {
     setUndoStack((s) => [
@@ -125,12 +138,32 @@ export function TutorialV2RefineSidebar({
 
   const applyEditActions = (actions: EditAction[], _label: string) => {
     pushUndo();
-    const result = applyEditActionsToParts(partsRef.current as TutorialEditorPart[], actions, {
+    // Hoot can move a block to another student page: update_block { patch: { page: N } }.
+    const flat = flattenActions(actions);
+    const pageMoves: { blockId: string; page: number }[] = [];
+    const cleaned = flat.map((a: any) => {
+      if (a?.type === 'update_block' && a.patch && a.patch.page != null) {
+        pageMoves.push({ blockId: String(a.blockId), page: Number(a.patch.page) || 1 });
+        const { page: _page, ...rest } = a.patch;
+        if (!Object.keys(rest).length) return null;
+        return { ...a, patch: rest };
+      }
+      return a;
+    }).filter(Boolean) as EditAction[];
+    const result = applyEditActionsToParts(partsRef.current as TutorialEditorPart[], cleaned, {
       title: draft.title,
       objective: String(draft.metadata.objective || ''),
       fv: pipelineDraft.fv,
     });
-    onChangeParts(result.parts as TutorialV2Part[]);
+    let nextParts = result.parts as TutorialV2Part[];
+    for (const mv of pageMoves) nextParts = movePartToPage(nextParts, mv.blockId, mv.page);
+    result.parts = nextParts as any;
+    if (pageMoves.length) {
+      // Atomic: parts + manual-pages flag in one patch (stale-draft safety).
+      onChangeDraft({ assembledParts: nextParts, manualPageBreaks: true });
+    } else {
+      onChangeParts(nextParts);
+    }
     if (result.meta?.title != null) onChangeDraft({ title: result.meta.title });
     if (result.meta?.objective != null) {
       onChangeDraft({ metadata: { ...draft.metadata, objective: result.meta.objective } });
@@ -274,6 +307,14 @@ export function TutorialV2RefineSidebar({
     } finally {
       setSourceBusy(false);
     }
+  };
+
+  /** A Bridge Platform component, dormant until a reader opens it. */
+  const addBridgeEmbed = () => {
+    pushUndo();
+    const id = `p-refine-${Date.now().toString(36)}`;
+    onChangeParts([...parts, makeBridgeEmbedPart('table', id)]);
+    onSelectPart(id);
   };
 
   const addManualPart = (kind: 'rich-text' | 'image' | 'video') => {
@@ -604,6 +645,9 @@ export function TutorialV2RefineSidebar({
                 </button>
                 <button type="button" onClick={() => addManualPart('video')} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
                   <Youtube size={12} /> Video
+                </button>
+                <button type="button" onClick={addBridgeEmbed} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
+                  <LayoutGrid size={12} /> Bridge table
                 </button>
               </div>
             </div>

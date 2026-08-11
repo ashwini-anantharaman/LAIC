@@ -2074,6 +2074,74 @@ export async function listProgramCoaches(orgId: string, programId: string): Prom
   });
 }
 
+/**
+ * The coaches a CLUB's member may hire: the club's own instructors, nobody
+ * else (owner direction 2026-08-10). A club is a partner program whose people
+ * are org_memberships rows scoped to it; its "coach" is the membership role
+ * `instructor` — the role the club's own console assigns. The roster group and
+ * learner count are read from the PARENT program, because that is the instance
+ * where sessions, submissions and rosters actually live.
+ */
+export async function listClubCoaches(
+  orgId: string,
+  clubProgramId: string,
+  parentProgramId: string,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select p.id as coach_id,
+             coalesce(p.display_name, p.name, split_part(p.email, '@', 1)) as name,
+             g.id as group_id,
+             (select count(*) from participants pa
+               where pa.group_id = g.id and pa.participant_type = 'learner' and pa.status = 'active')
+               as learner_count
+      from org_memberships m
+      join profiles p on p.id = m.profile_id
+      left join groups g
+        on g.organization_id = ${orgId} and g.program_id = ${parentProgramId}
+       and g.metadata_json->>'kind' = 'coach_roster'
+       and g.metadata_json->>'coach_profile_id' = p.id::text
+      where m.org_id = ${orgId} and m.program_id = ${clubProgramId}
+        and m.role = 'instructor'
+        and (m.status is null or m.status = 'active')
+      order by name`);
+    return rows as unknown as Row[];
+  });
+}
+
+/**
+ * A learner participant for someone who never REGISTERED: a club member.
+ *
+ * The hire flow (and everything downstream: my-coaches, the summary's coach
+ * cards, the roster group) hangs off a participants row in the PARENT program,
+ * which gate sign-ups create via a registration. A club member joined through
+ * their club's console instead — org membership, no registration — so their
+ * first hire mints the participant row directly (registration_id stays null;
+ * the column is nullable and getLearnerParticipant's profile fallback finds
+ * the row again by email).
+ */
+export async function ensureClubLearnerParticipant(
+  orgId: string,
+  parentProgramId: string,
+  profileId: string,
+): Promise<Row> {
+  return asPrivileged(async (tx) => {
+    const existing = await tx.execute(sql`
+      select id, group_id, user_id from participants
+      where organization_id = ${orgId} and program_id = ${parentProgramId}
+        and user_id = ${profileId} and participant_type = 'learner' and status = 'active'
+      limit 1`);
+    const found = (existing as unknown as Row[])[0];
+    if (found) return found;
+    const inserted = await tx.execute(sql`
+      insert into participants (organization_id, program_id, user_id, participant_type, status, metadata)
+      values (${orgId}, ${parentProgramId}, ${profileId}, 'learner', 'active',
+              jsonb_build_object('origin', 'club_member'))
+      returning id, group_id, user_id`);
+    return (inserted as unknown as Row[])[0] as Row;
+  });
+}
+
 /** The coach's roster group, created on first use. */
 export async function ensureCoachRosterGroup(
   orgId: string,
@@ -2116,7 +2184,21 @@ export async function getLearnerParticipant(
         and pa.participant_type = 'learner' and pa.status = 'active'
         and lower(r.email) = ${key}
       limit 1`);
-    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+    const viaRegistration = (rows as unknown as Row[])[0] as Row | undefined;
+    if (viaRegistration) return viaRegistration;
+    // Registration-less participants: club members' rows are minted at first
+    // hire (ensureClubLearnerParticipant) with registration_id null, so the
+    // registrations join above can never see them — find those by profile.
+    const viaProfile = await tx.execute(sql`
+      select pa.id, pa.group_id, pa.user_id
+      from participants pa
+      join profiles p on p.id = pa.user_id
+      where pa.organization_id = ${orgId} and pa.program_id = ${programId}
+        and pa.participant_type = 'learner' and pa.status = 'active'
+        and pa.registration_id is null
+        and lower(p.email) = ${key}
+      limit 1`);
+    return ((viaProfile as unknown as Row[])[0] as Row | undefined) ?? null;
   });
 }
 

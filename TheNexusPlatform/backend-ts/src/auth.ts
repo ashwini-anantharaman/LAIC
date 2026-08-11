@@ -8,6 +8,7 @@ import * as platformDb from "./platformDb";
 import * as local from "./platformLocalStore";
 import type { Membership } from "./permissions";
 import { createEphemeralClient, requireAdminClient, requireClient } from "./supabaseClient";
+import { verifyJwtLocally } from "./jwtLocal";
 import { dbEnabled } from "./db/client";
 import * as demoAuth from "./db/demoAuthRepo";
 import * as pg from "./db/identityRepo";
@@ -97,6 +98,18 @@ export async function verifyToken(token: string): Promise<{ id: string; email: s
     if (user === null) throw new HttpError(401, "Invalid token");
     return { id: user.id, email: user.email };
   }
+  // In-process first: the project's tokens are ES256 JWTs whose public keys
+  // are published, so the signature checks locally in microseconds instead of
+  // one HTTPS round trip to Supabase Auth per request (~150-300ms, and the
+  // floor under EVERY endpoint's latency — see jwtLocal.ts, including the
+  // revocation trade accepted there).
+  const verdict = await verifyJwtLocally(token);
+  if (verdict.kind === "verified") return { id: verdict.id, email: verdict.email };
+  // A token of ours that failed its checks is a hard 401 — falling back to the
+  // network here would turn a forged signature into a second opinion.
+  if (verdict.kind === "invalid") throw new HttpError(401, "Invalid token");
+  // Unverifiable (not a JWT, foreign alg, unknown kid, JWKS unreachable):
+  // the pre-existing network path decides, exactly as before.
   const client = requireAdminClient();
   try {
     const { data, error } = await client.auth.getUser(token);
@@ -186,12 +199,47 @@ export async function loadPlatformUser(userId: string, email: string): Promise<P
   };
 }
 
+// ── Per-request identity, without a per-request identity QUERY ───────────────
+// After the JWT verifies locally, profile+memberships was the remaining
+// round trip on every request — and it costs more for exactly the people who
+// use the platform most (a coach's membership fan-out reads measurably slower
+// than a learner's). One profile rarely changes second to second, so warm
+// instances remember it briefly.
+//
+// TTL 30s: a role change or new membership shows up within half a minute on a
+// warm instance — well inside the 1-hour staleness the token itself already
+// carries. The cache serves ONLY getCurrentUser/getOptionalUser; login and
+// signup flows call loadPlatformUser directly and always read fresh, so
+// "sign up then land on your dashboard" can never see the pre-signup void.
+// Under vitest the cache is off: tests mutate roles mid-flow and assert the
+// next request sees it.
+const USER_CACHE_TTL_MS = 30_000;
+const USER_CACHE_MAX = 5_000;
+const _userCache = new Map<string, { user: PlatformUser; at: number }>();
+
+async function _cachedPlatformUser(authId: string, email: string): Promise<PlatformUser> {
+  if (process.env.VITEST) return loadPlatformUser(authId, email);
+  const hit = _userCache.get(authId);
+  if (hit && Date.now() - hit.at < USER_CACHE_TTL_MS) return hit.user;
+  const user = await loadPlatformUser(authId, email);
+  if (_userCache.size >= USER_CACHE_MAX) _userCache.clear(); // crude, sufficient
+  _userCache.set(authId, { user, at: Date.now() });
+  return user;
+}
+
+/** Drop one user's (or everyone's) cached identity — call after writes that
+ *  must be visible on the very next request rather than within the TTL. */
+export function invalidatePlatformUser(authId?: string): void {
+  if (authId) _userCache.delete(authId);
+  else _userCache.clear();
+}
+
 export async function getCurrentUser(c: Context): Promise<PlatformUser> {
   if (_currentUserOverride) return _currentUserOverride();
   const token = _bearerToken(c);
   if (!token) throw new HttpError(401, "Authentication required");
   const auth = await verifyToken(token);
-  return loadPlatformUser(auth.id, auth.email);
+  return _cachedPlatformUser(auth.id, auth.email);
 }
 
 export async function getOptionalUser(c: Context): Promise<PlatformUser | null> {
@@ -200,7 +248,7 @@ export async function getOptionalUser(c: Context): Promise<PlatformUser | null> 
   if (!token) return null;
   try {
     const auth = await verifyToken(token);
-    return await loadPlatformUser(auth.id, auth.email);
+    return await _cachedPlatformUser(auth.id, auth.email);
   } catch (exc) {
     if (exc instanceof HttpError) return null;
     throw exc;

@@ -67,6 +67,7 @@ import {
   platformAppSlug,
   platformRoleConfig,
   resolvePlatformAccess,
+  type ResolvedPlatformAccess,
 } from "../platformAccess";
 
 type Row = Record<string, any>;
@@ -152,56 +153,55 @@ function _programResponse(row: Row): Row {
 }
 
 async function _membershipSummaries(user: PlatformUser): Promise<Row[]> {
-  const summaries: Row[] = [];
-  for (const m of user.memberships) {
-    const org = await db.getOrganization(m.org_id);
-    let stageName: string | null = null;
-    let stageType = m.stage_type ?? null;
-    if (m.stage_node_id) {
-      const stage = await db.getStageNode(m.stage_node_id);
-      if (stage) {
-        stageName = stage.name ?? null;
-        stageType = stage.stage_type ?? stageType;
-      }
-    }
-    let programName: string | null = null;
-    let programCategory: string | null = null;
-    let registeredAppId: string | null = null;
-    let appLaunchUrl: string | null = null;
-    if (m.program_id) {
-      const program = await db.getProgram(m.program_id);
-      if (program) {
-        programName = program.name ?? null;
-        programCategory = program.category ?? null;
-      }
-      const apps = (await db.listRegisteredApps(m.program_id)).filter((a) => a.status === "active");
-      if (apps.length > 0) {
-        registeredAppId = apps[0].id;
-        appLaunchUrl = apps[0].launch_url ?? null;
-      }
-    }
-    summaries.push({
+  // One read per DISTINCT org/stage/program, all in flight together. This was
+  // a sequential loop making up to four round trips PER membership, which put
+  // /auth/me — called on every app launch and role check — at ~130ms for a
+  // one-membership learner but ~900ms for a coach. The people with the most
+  // memberships paid the most, on the least interesting endpoint.
+  const distinct = <T>(xs: (T | null | undefined)[]): T[] => [...new Set(xs.filter((x): x is T => Boolean(x)))];
+  const orgIds = distinct(user.memberships.map((m) => m.org_id));
+  const stageIds = distinct(user.memberships.map((m) => m.stage_node_id));
+  const programIds = distinct(user.memberships.map((m) => m.program_id));
+
+  const [orgRows, stageRows, programRows, appRows] = await Promise.all([
+    Promise.all(orgIds.map((id) => db.getOrganization(id))),
+    Promise.all(stageIds.map((id) => db.getStageNode(id))),
+    Promise.all(programIds.map((id) => db.getProgram(id))),
+    Promise.all(programIds.map((id) => db.listRegisteredApps(id))),
+  ]);
+  const orgs = new Map(orgIds.map((id, i) => [id, orgRows[i]]));
+  const stages = new Map(stageIds.map((id, i) => [id, stageRows[i]]));
+  const programs = new Map(programIds.map((id, i) => [id, programRows[i]]));
+  const apps = new Map(programIds.map((id, i) => [id, appRows[i]]));
+
+  return user.memberships.map((m) => {
+    const org = orgs.get(m.org_id) ?? null;
+    const stage = m.stage_node_id ? (stages.get(m.stage_node_id) ?? null) : null;
+    const program = m.program_id ? (programs.get(m.program_id) ?? null) : null;
+    const active = m.program_id
+      ? (apps.get(m.program_id) ?? []).filter((a) => a.status === "active")
+      : [];
+    return {
       id: m.id,
       org_id: m.org_id,
       org_name: org ? org.name : "",
-      org_slug: org ? org.slug ?? null : null,
+      org_slug: org ? (org.slug ?? null) : null,
       // The org-scoped person id (profiles.id) — the canonical identity WITHIN
       // this org's space (Phase 2). Platform context endpoints (bridge/learning)
       // key on this, never on the cross-cutting auth credential id.
       profile_id: m.profile_id ?? null,
       role: m.role,
       stage_node_id: m.stage_node_id ?? null,
-      stage_name: stageName,
-      stage_type: stageType,
+      stage_name: stage ? (stage.name ?? null) : null,
+      stage_type: stage ? (stage.stage_type ?? m.stage_type ?? null) : (m.stage_type ?? null),
       access: m.access,
       program_id: m.program_id ?? null,
-      program_name: programName,
-      program_category: programCategory,
-      registered_app_id: registeredAppId,
-      app_launch_url: appLaunchUrl,
-    });
-  }
-  return summaries;
+      program_name: program ? (program.name ?? null) : null,
+      program_category: program ? (program.category ?? null) : null,
+      registered_app_id: active.length > 0 ? active[0].id : null,
+      app_launch_url: active.length > 0 ? (active[0].launch_url ?? null) : null,
+    };
+  });
 }
 
 // LOOSE membership check: any membership that touches this org (org-level OR
@@ -832,24 +832,33 @@ platformRouter.post("/gates/:gate_id/signin", async (c) => {
 
 platformRouter.get("/auth/me", async (c) => {
   const user = await getCurrentUser(c);
-  // A confined Nexus operator (custom platform-scope role) — drives the
-  // operator mode + confined console nav.
-  const nexusRole =
+  // The confined-operator role and the membership summaries touch different
+  // tables and share nothing — fetched together. This endpoint is called on
+  // every launch and every role check, so its latency is pure overhead.
+  const [nexusRole, memberships, claim] = await Promise.all([
+    // A confined Nexus operator (custom platform-scope role) — drives the
+    // operator mode + confined console nav.
     dbEnabled() && user.email && user.role !== "platform_admin"
-      ? await graph.getNexusRoleForEmail(user.email).catch(() => null)
-      : null;
-  // Has this person set their own password? Until they have, the credential is
-  // one an admin handed them, and the app makes them choose their own before it
-  // shows anything else (0046).
-  const orgId = user.memberships[0]?.org_id ?? null;
-  const profileId = dbEnabled() ? await db.resolveProfileId(user.id, orgId).catch(() => null) : null;
-  const claim = profileId ? await db.getClaimState(profileId).catch(() => null) : null;
+      ? graph.getNexusRoleForEmail(user.email).catch(() => null)
+      : Promise.resolve(null),
+    _membershipSummaries(user),
+    // Has this person set their own password? Until they have, the credential
+    // is one an admin handed them, and the app makes them choose their own
+    // before it shows anything else (0046). Its two reads chain on each other
+    // but on nothing else here, so the chain runs as one parallel strand.
+    (async () => {
+      if (!dbEnabled()) return null;
+      const orgId = user.memberships[0]?.org_id ?? null;
+      const profileId = await db.resolveProfileId(user.id, orgId).catch(() => null);
+      return profileId ? await db.getClaimState(profileId).catch(() => null) : null;
+    })(),
+  ]);
   return c.json({
     id: user.id,
     email: user.email,
     display_name: user.display_name,
     role: user.role,
-    memberships: await _membershipSummaries(user),
+    memberships,
     nexus_role: nexusRole,
     // Absent/false for an operator or a demo backend — nothing to claim there.
     must_set_password: claim ? !claim.claimed : false,
@@ -971,19 +980,25 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    // A club's people all get bridge_club_member — deliberately narrow, and
-    // deliberately the same for a club's admin. The platform gates by role
-    // against ONE GLOBAL catalogue, so the parent program's coach role would open
-    // every page it reaches, and bridge_club_admin sits in the platform's ADMIN
-    // set (its admin & expert-review areas). Neither belongs to a club.
     //
-    // bridge_club_member holds page.challenges and challenge.create, nothing
-    // more. WHICH club people may create is then the app's own catalogue's
-    // business (app.challenge.create) — the platform permits, the club role gates.
+    // A club's people (owner direction 2026-08-10): members get
+    // bridge_club_member — the ordinary member surface, with their coach pool
+    // restricted to the club. The club's INSTRUCTOR is its coach and emits
+    // bridge_coach, or the hire loop dead-ends: their reviews queue, learner
+    // pages and assignment flows all sit behind the platform's coach gates,
+    // and every one of those surfaces is already scoped to their own hires by
+    // data. A club's admin still gets bridge_club_member here on purpose —
+    // bridge_club_admin sits in the platform's ADMIN set (admin & expert
+    // review areas), which does not belong to a club.
     roles: isPrebuilt
       ? [access.platformRole]
       : access.partnerClub
-        ? ["bridge_club_member"]
+        ? [
+            user.memberships.find((m) => m.program_id === access.partnerProgramId)?.role ===
+            "instructor"
+              ? "bridge_coach"
+              : "bridge_club_member",
+          ]
         : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
@@ -1031,10 +1046,21 @@ platformRouter.get("/bridge/learners", async (c) => {
 // hiring another switches. Instant (no approval) in v1.
 
 /** The program's coaches — visible to every bridge-program member/learner. */
+/**
+ * The hirable coach pool for THIS caller. Entered through a club, the pool is
+ * the club's own instructors and nobody else (owner direction 2026-08-10) —
+ * a club member never browses the parent program's coach list.
+ */
+async function _hirableCoaches(access: ResolvedPlatformAccess): Promise<Row[]> {
+  return access.partnerClub && access.partnerProgramId
+    ? graph.listClubCoaches(access.orgId, access.partnerProgramId, access.programId)
+    : graph.listProgramCoaches(access.orgId, access.programId);
+}
+
 platformRouter.get("/bridge/coaches", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
-  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  const coaches = await _hirableCoaches(access);
   // Names + ids only (people isolation: no emails to browsing learners).
   return c.json(
     coaches.map((co) => ({
@@ -1068,30 +1094,26 @@ function learnerCoachOut(co: Row) {
 platformRouter.get("/bridge/summary", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
-  const s = await graph.getBridgeActivitySummary(
-    access.orgId,
-    access.programId,
-    access.profileId,
-  );
-  // The learner's coaches ride along so Home can show the relationships.
-  // `coach` stays the primary (older callers); `coaches` is the full set.
-  let coach: Row | null = null;
-  let coachList: Row[] = [];
-  if (user.email) {
+  // Four independent strands, previously run one after another. Only the
+  // coach lookup is a true chain (participant → their coaches → the group's
+  // primary); the tallies, the resume list and the day's board never needed
+  // to wait behind it. This endpoint is the app's most frequent call — every
+  // tab focus — so its shape IS the app's felt baseline.
+  const coachStrand = (async (): Promise<{ coach: Row | null; coachList: Row[] }> => {
+    if (!user.email) return { coach: null, coachList: [] };
     const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
-    if (participant) {
-      coachList = await graph.listLearnerCoaches(
-        access.orgId,
-        access.programId,
-        participant,
-        access.profileId,
-      );
-      if (participant.group_id) coach = await graph.getCoachForGroup(participant.group_id as string);
-      if (!coach) coach = coachList[0] ?? null;
-    }
-  }
-  // The app's Play launcher: unfinished boards to resume, and the day's board.
-  const [inProgress, deal] = await Promise.all([
+    if (!participant) return { coach: null, coachList: [] };
+    const [coachList, groupCoach] = await Promise.all([
+      graph.listLearnerCoaches(access.orgId, access.programId, participant, access.profileId),
+      participant.group_id
+        ? graph.getCoachForGroup(participant.group_id as string)
+        : Promise.resolve(null),
+    ]);
+    return { coach: groupCoach ?? coachList[0] ?? null, coachList };
+  })();
+  const [s, { coach, coachList }, inProgress, deal] = await Promise.all([
+    graph.getBridgeActivitySummary(access.orgId, access.programId, access.profileId),
+    coachStrand,
     graph
       .listBridgeInProgressSessions(access.programId, access.profileId)
       .catch(() => [] as Row[]),
@@ -1198,9 +1220,20 @@ platformRouter.post("/bridge/my-coach", async (c) => {
   const coachId = String(body.coach_id ?? "");
   if (!coachId) throw new HttpError(400, "coach_id is required");
   if (!user.email) throw new HttpError(403, "Only learners can hire a coach");
-  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  let participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant && access.partnerClub) {
+    // A club member has no registration and therefore no participant row in
+    // the parent instance — their first hire mints one, which is what the
+    // relationship, the roster group, and every learner-side read key on.
+    participant = await graph.ensureClubLearnerParticipant(
+      access.orgId, access.programId, access.profileId,
+    );
+  }
   if (!participant) throw new HttpError(403, "Only program learners can hire a coach");
-  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  // THE POOL IS THE POLICY: entered through a club, only that club's own
+  // instructors are offered — and only they pass validation here, so a
+  // free-typed coach_id cannot reach outside the club either.
+  const coaches = await _hirableCoaches(access);
   const coach = coaches.find((co) => co.coach_id === coachId);
   if (!coach) throw new HttpError(404, "That coach is not part of this program");
   await graph.addLearnerCoach(access.orgId, access.programId, participant.id as string, coachId);

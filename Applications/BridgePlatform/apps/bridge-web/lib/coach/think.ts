@@ -43,9 +43,27 @@ export interface ThinkCandidate {
   does?: string;
 }
 
+/**
+ * One worked-out fact as a two-sided card: a glanceable front (a short title
+ * and a value the size of a chip) and the full sentence on the back. The
+ * sentence is the source of truth — `ThinkAid.known` is derived from these,
+ * so every existing consumer of the plain lines keeps reading exactly what it
+ * always read.
+ */
+export interface KnownCard {
+  /** Two-or-three-word headline — "Points out there", "If you pass". */
+  title: string;
+  /** The front's centrepiece — "33", "auction ends", "no ♦s". Short. */
+  value: string;
+  /** The back: the whole fact as one sentence. */
+  detail: string;
+}
+
 export interface ThinkAid {
   /** What can be worked out from what the learner can see. */
   known: string[];
+  /** The same facts as flip cards — front/back pairs for the Game State UI. */
+  knownCards: KnownCard[];
   /** The realistic choices, unranked and unmarked. */
   candidates: ThinkCandidate[];
   /** Set instead of candidates when there is genuinely nothing to weigh. */
@@ -70,9 +88,16 @@ type ThinkState = Pick<
 export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null {
   if (!seat) return null;
 
+  // The cards carry the facts; the plain lines every older consumer reads are
+  // their backs, verbatim. One source, two shapes.
+  const withKnown = (cards: KnownCard[]) => ({
+    known: cards.map((c) => c.detail),
+    knownCards: cards,
+  });
+
   if (state.phase === "auction") {
     return {
-      known: knownInAuction(state, seat),
+      ...withKnown(knownInAuction(state, seat)),
       candidates: auctionCandidates(state, seat),
       degraded: true,
     };
@@ -84,7 +109,13 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
 
     if (seat === dummy) {
       return {
-        known: ["You're dummy — partner is playing your cards, so there's nothing here to decide."],
+        ...withKnown([
+          {
+            title: "Your role",
+            value: "dummy",
+            detail: "You're dummy — partner plays your cards.",
+          },
+        ]),
         candidates: [],
         noChoice: "Nothing to choose while you're dummy.",
         degraded: true,
@@ -103,7 +134,7 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
 
     if (!actor) {
       return {
-        known: knownInPlay(state, seat),
+        ...withKnown(knownInPlay(state, seat)),
         candidates: [],
         noChoice: `${Relative(state.turn, seat)} to play — nothing for you to choose yet.`,
         degraded: true,
@@ -113,7 +144,7 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
     const legal = legalPlays(state as GameState, actor);
     const fromDummy = actor === dummy;
     return {
-      known: knownInPlay(state, seat),
+      ...withKnown(knownInPlay(state, seat)),
       candidates: legal.length <= 1 ? [] : playCandidates(legal, state, fromDummy),
       ...(legal.length === 1
         ? {
@@ -129,12 +160,16 @@ export function thinkAid(state: ThinkState, seat: Seat | null): ThinkAid | null 
 
 /* ───────────────────────── the auction ───────────────────────── */
 
-function knownInAuction(state: ThinkState, seat: Seat): string[] {
-  const out: string[] = [];
+function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
+  const out: KnownCard[] = [];
   const mine = dealtHand(state, seat);
 
   // 40 points in a deck. Yours are yours; the rest are somewhere.
-  out.push(`${40 - hcp(mine)} of the 40 points are in the other three hands.`);
+  out.push({
+    title: "Points out there",
+    value: String(40 - hcp(mine)),
+    detail: `${40 - hcp(mine)} of the 40 points sit in the other three hands.`,
+  });
 
   // WHAT A PASS DOES. Deterministic, and the thing a beginner most often misses:
   // that passing can end the auction rather than merely decline to bid.
@@ -144,28 +179,57 @@ function knownInAuction(state: ThinkState, seat: Seat): string[] {
   if (!last) {
     out.push(
       since >= 3
-        ? "Pass now and the board is thrown in — nobody plays it."
-        : "Nobody has bid, so passing just moves it along.",
+        ? {
+            title: "If you pass",
+            value: "board thrown in",
+            detail: "The board is thrown in — nobody plays it.",
+          }
+        : {
+            title: "If you pass",
+            value: "moves along",
+            detail: "Nobody has bid — passing moves it along.",
+          },
     );
   } else if (since >= 2) {
     const contract = state.auction.filter((a) => a.call !== "P" && a.call !== "X" && a.call !== "XX");
     const final = contract[contract.length - 1];
-    out.push(
-      final
-        ? `Pass now and the auction is over — ${relative(final.seat, seat)} plays ${callLabel(final.call)}.`
-        : "Pass now and the auction is over.",
-    );
+    out.push({
+      title: "If you pass",
+      value: "auction ends",
+      detail: final
+        ? `The auction ends — ${relative(final.seat, seat)} plays ${callLabel(final.call)}.`
+        : "The auction ends here.",
+    });
   } else {
-    out.push("Pass now and the auction carries on — it won't end here.");
+    out.push({
+      title: "If you pass",
+      value: "carries on",
+      detail: "The auction carries on — it won't end here.",
+    });
   }
 
   // Whether this is a contested auction. Relational, and the grid can't say it.
   const opps = [step(seat, 1), step(seat, 3)];
   const oppsBid = state.auction.some((a) => opps.includes(a.seat) && a.call !== "P");
   const partnerBid = state.auction.some((a) => a.seat === partnerOf(seat) && a.call !== "P");
-  if (partnerBid && !oppsBid) out.push("The opponents haven't bid — this auction belongs to you and partner.");
-  else if (oppsBid && !partnerBid) out.push("The opponents are in and partner hasn't spoken yet.");
-  else if (oppsBid && partnerBid) out.push("Both sides are bidding — the room is contested.");
+  if (partnerBid && !oppsBid)
+    out.push({
+      title: "The auction",
+      value: "yours so far",
+      detail: "Only your side has bid so far.",
+    });
+  else if (oppsBid && !partnerBid)
+    out.push({
+      title: "The auction",
+      value: "they're in",
+      detail: "The opponents are in; partner hasn't spoken.",
+    });
+  else if (oppsBid && partnerBid)
+    out.push({
+      title: "The auction",
+      value: "contested",
+      detail: "Both sides are bidding.",
+    });
 
   return out;
 }
@@ -203,8 +267,8 @@ function auctionCandidates(state: ThinkState, seat: Seat): ThinkCandidate[] {
 
 /* ───────────────────────── the play ───────────────────────── */
 
-function knownInPlay(state: ThinkState, seat: Seat): string[] {
-  const out: string[] = [];
+function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
+  const out: KnownCard[] = [];
   const contract = state.contract!;
   const declarer = contract.declarer;
   const seen = visibleSeats(state, seat);
@@ -217,7 +281,11 @@ function knownInPlay(state: ThinkState, seat: Seat): string[] {
     seat === declarer
       ? "between the two defenders"
       : `between partner and ${relative(declarer, seat)}`;
-  out.push(`${missing} points are unaccounted for, ${between}.`);
+  out.push({
+    title: "Points hidden",
+    value: String(missing),
+    detail: `${missing} points sit ${between}.`,
+  });
 
   // SHOWING OUT IS PROOF. If a seat failed to follow a led suit, they hold none
   // of it — a fact, not a read, and free from the trick record.
@@ -231,7 +299,11 @@ function knownInPlay(state: ThinkState, seat: Seat): string[] {
       if (theirs && theirs.card.suit !== led.card.suit) voids.add(led.card.suit);
     }
     for (const v of voids) {
-      out.push(`${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they discarded on one.`);
+      out.push({
+        title: Relative(s, seat),
+        value: `no ${GLYPH[v]}s`,
+        detail: `${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they couldn't follow suit.`,
+      });
     }
   }
 
@@ -243,8 +315,16 @@ function knownInPlay(state: ThinkState, seat: Seat): string[] {
     const outstanding = 13 - accountedIn(state, seat, focus);
     out.push(
       outstanding <= 0
-        ? `Every ${SUIT_WORD[focus]} is accounted for — none are left outstanding.`
-        : `${outstanding} ${GLYPH[focus]} ${outstanding === 1 ? "is" : "are"} still out, in the hands you can't see.`,
+        ? {
+            title: "Still out",
+            value: `no ${GLYPH[focus]}s`,
+            detail: `No ${SUIT_WORD[focus]}s are left in the hidden hands.`,
+          }
+        : {
+            title: "Still out",
+            value: `${outstanding} ${GLYPH[focus]}`,
+            detail: `${outstanding} ${GLYPH[focus]} ${outstanding === 1 ? "is" : "are"} still in the hidden hands.`,
+          },
     );
   }
 
@@ -254,7 +334,11 @@ function knownInPlay(state: ThinkState, seat: Seat): string[] {
     const best = inProgress.plays
       .filter((p) => p.card.suit === led)
       .reduce((a, b) => (b.card.rank > a.card.rank ? b : a));
-    out.push(`${Relative(best.seat, seat)} ${best.seat === seat ? "are" : "is"} winning it so far, with the ${cardLabel(best.card)}.`);
+    out.push({
+      title: "Winning so far",
+      value: best.seat === seat ? "you" : Relative(best.seat, seat),
+      detail: `${Relative(best.seat, seat)} ${best.seat === seat ? "are" : "is"} winning it with the ${cardLabel(best.card)}.`,
+    });
   }
 
   return out;

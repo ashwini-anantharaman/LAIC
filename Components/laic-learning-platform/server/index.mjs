@@ -351,9 +351,70 @@ function json3ToSegments(raw, chunkSec = 8) {
   }));
 }
 
+/**
+ * Serverless-friendly transcript fetch — YouTube InnerTube player API, no
+ * yt-dlp needed. Used on Vercel and as a fallback when yt_dlp is missing.
+ */
+async function fetchYoutubeTranscriptInnertube(id) {
+  // The IOS player client returns caption URLs that work without a
+  // proof-of-origin token, and honors fmt=json3. (The plain web timedtext
+  // URLs return empty bodies without a botguard token.)
+  const CLIENTS = [
+    {
+      client: {
+        clientName: 'IOS', clientVersion: '20.10.4', deviceMake: 'Apple',
+        deviceModel: 'iPhone16,2', osName: 'iPhone', osVersion: '18.3.2.22D82', hl: 'en',
+      },
+      ua: 'com.google.ios.youtube/20.10.4 (iPhone16,2; U; CPU iOS 18_3_2 like Mac OS X;)',
+    },
+    {
+      client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' },
+      ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
+    },
+  ];
+  let lastErr = null;
+  for (const { client, ua } of CLIENTS) {
+    try {
+      const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'User-Agent': ua },
+        body: JSON.stringify({ videoId: id, context: { client } }),
+      });
+      if (!res.ok) { lastErr = new Error(`player API ${res.status}`); continue; }
+      const player = await res.json();
+      if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') {
+        lastErr = new Error(`video not playable (${player.playabilityStatus.status})`);
+        continue;
+      }
+      const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
+      const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+      if (!tracks.length) {
+        lastErr = new LlmError(422, 'no_captions', 'No transcript is available for this video (captions may be disabled).');
+        continue;
+      }
+      const track = tracks.find((t) => String(t.languageCode || '').startsWith('en')) || tracks[0];
+      const sep = String(track.baseUrl).includes('?') ? '&' : '?';
+      const subRes = await fetch(`${track.baseUrl}${sep}fmt=json3`, { headers: { 'User-Agent': ua } });
+      if (!subRes.ok) { lastErr = new Error(`captions ${subRes.status}`); continue; }
+      const raw = await subRes.text();
+      if (!raw || raw.trimStart().startsWith('<')) { lastErr = new Error('captions came back in an unexpected format'); continue; }
+      const transcript = json3ToText(raw);
+      if (!transcript) { lastErr = new LlmError(422, 'empty_transcript', 'The transcript came back empty.'); continue; }
+      return { title, videoId: id, sentences: toSentences(transcript), segments: json3ToSegments(raw) };
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (lastErr instanceof LlmError) throw lastErr;
+  throw new LlmError(502, 'yt_fetch', `Could not fetch the transcript from YouTube${lastErr ? ` (${lastErr.message})` : ''}.`);
+}
+
 async function fetchYoutubeTranscript(url) {
   const id = parseVideoId(url);
   if (!id) throw new LlmError(400, 'bad_url', "That doesn't look like a YouTube link.");
+
+  // Serverless (Vercel) has no python/yt-dlp — go straight to InnerTube.
+  if (process.env.VERCEL) return fetchYoutubeTranscriptInnertube(id);
 
   const dir = await mkdtemp(join(tmpdir(), 'laic_yt_'));
   try {
@@ -374,7 +435,8 @@ async function fetchYoutubeTranscript(url) {
     } catch (e) {
       const msg = String(e.stderr || e.message || '');
       if (/No module named yt_dlp|not found|ENOENT/i.test(msg)) {
-        throw new LlmError(500, 'no_ytdlp', 'YouTube support needs yt-dlp on the server. Install it with: python3 -m pip install --user yt-dlp');
+        // yt-dlp missing — fall back to the dependency-free InnerTube path.
+        return await fetchYoutubeTranscriptInnertube(id);
       }
       // yt-dlp exits non-zero on some sub errors even when a file was written; continue to check for output.
     }
@@ -2111,6 +2173,8 @@ function normalizePart(raw, idx) {
         hints,
         label: typeof q.label === 'string' ? q.label : undefined,
         ...(sources ? { sources } : {}),
+        ...(typeof q.imageUrl === 'string' && q.imageUrl ? { imageUrl: q.imageUrl } : {}),
+        ...(typeof q.videoUrl === 'string' && q.videoUrl ? { videoUrl: q.videoUrl } : {}),
       };
     }).filter(Boolean);
     if (!questions.length) return null;
@@ -3518,6 +3582,7 @@ function normalizeEditedFlashcard(raw, prev) {
   else if (raw.hint === null) { /* cleared */ }
   else if (prev.hint) out.hint = prev.hint;
   if (prev.imageUrl) out.imageUrl = prev.imageUrl;
+  if (prev.videoUrl) out.videoUrl = prev.videoUrl;
   return out;
 }
 
@@ -3537,7 +3602,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /* ─── Router ──────────────────────────────────────────────────────── */
 
-const server = createServer(async (req, res) => {
+/** Request handler — exported so Vercel serverless (api/index.mjs) can reuse it. */
+export async function handler(req, res) {
   const { method } = req;
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const path = url.pathname;
@@ -3727,6 +3793,8 @@ const server = createServer(async (req, res) => {
       const normalized = normalizeQuizQuestion(obj, 0, { writeExplanations: true });
       if (!normalized) throw new LlmError(502, 'llm_parse', 'The model did not return a usable question.');
       if (item.id) normalized.id = item.id;
+      if (item.imageUrl && !normalized.imageUrl) normalized.imageUrl = item.imageUrl;
+      if (item.videoUrl && !normalized.videoUrl) normalized.videoUrl = item.videoUrl;
       return send(res, 200, { item: normalized });
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
@@ -4231,6 +4299,9 @@ const server = createServer(async (req, res) => {
         'For questions: prompt, options (4 strings), correct (0-3), exp, label.',
         'For add_block question content: {question,options,correct,explanation}. For rich-text: {text,heading}.',
         'For add_block image content: {url:"__ATTACHED_IMAGE_N__",caption,imageRef}.',
+        'STUDENT PAGES: on Review, block labels may end with "· page N" — the learner page the block sits on.',
+        'To move a block to another page (e.g. "put the quiz on page 1"), propose update_block {blockId, patch:{"page": N}}.',
+        'The block lands at the end of that page; use page = last page + 1 for a brand-new page. Do NOT use reorder_blocks for page moves.',
       ].join('\n');
 
       const historyLines = history
@@ -4518,9 +4589,12 @@ const server = createServer(async (req, res) => {
   }
 
   return send(res, 404, { code: 'not_found', message: `No route for ${method} ${path}` });
-});
+}
 
-server.listen(PORT, () => {
+const server = createServer(handler);
+
+// Vercel imports the handler; only local dev binds a port.
+if (!process.env.VERCEL) server.listen(PORT, () => {
   console.log(`\nLAIC dev backend → http://localhost:${PORT}`);
   console.log(`LLM: ${ANTHROPIC_API_KEY ? `enabled (model ${LLM_MODEL})` : 'DISABLED — set ANTHROPIC_API_KEY in .env'}`);
   console.log('Tutorial: POST /api/tutorials/ingest-web · POST /api/tutorials/ingest-youtube · POST /api/tutorials/expand-prompt · POST /api/tutorials/suggest-highlights · POST /api/tutorials/suggest-markup-flags · POST /api/tutorials/extract-knowledge · POST /api/tutorials/generate (SSE)');

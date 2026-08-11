@@ -103,6 +103,19 @@ export function normalizeConceptCardContent(
       .filter((s: { id: string; title: string }) => s.id && s.title)
     : [];
 
+  const categoryMedia: ConceptCardContent['categoryMedia'] = {};
+  if (c.categoryMedia && typeof c.categoryMedia === 'object') {
+    for (const [id, m] of Object.entries(c.categoryMedia as Record<string, any>)) {
+      const url = String(m?.url || '').trim();
+      if (!url) continue;
+      categoryMedia[id] = {
+        url,
+        kind: m?.kind === 'video' ? 'video' : 'image',
+        ...(m?.caption ? { caption: String(m.caption) } : {}),
+      };
+    }
+  }
+
   return {
     term,
     oneSentenceMeaning: meaning,
@@ -121,6 +134,7 @@ export function normalizeConceptCardContent(
     teachBack: String(c.teachBack || '').trim(),
     categories,
     extraSections,
+    ...(Object.keys(categoryMedia).length ? { categoryMedia } : {}),
     definition: meaning,
     analogy: String(c.whyItMatters || c.analogy || '').trim() || undefined,
     visualSuggestion: String(c.visualOrFormula || c.visualSuggestion || '').trim() || undefined,

@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import { BookOpen, Check, ChevronLeft, ChevronRight, Lightbulb, X } from 'lucide-react';
 import type { QuestionContent } from '../../../lib/types';
 import { hintsForQuestion } from '../../../lib/questionHints.js';
+import { QuestionMedia } from './QuestionMedia';
 
 export type QuizResolveStatus = 'correct' | 'revealed';
 
@@ -260,6 +261,7 @@ export function McqClusterModal({
           <p style={{ fontSize: 15.5, fontWeight: 700, color: '#0B1220', lineHeight: 1.45, marginBottom: 14 }}>
             {q.question}
           </p>
+          <QuestionMedia q={q} />
 
           {q.type === 'short-answer' ? (
             <input

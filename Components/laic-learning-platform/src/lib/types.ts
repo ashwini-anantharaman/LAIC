@@ -493,6 +493,8 @@ export interface ConceptCardContent {
   }>;
   /** Author-added / custom category bodies. */
   extraSections?: Array<{ id: string; title: string; body: string }>;
+  /** Optional media per category (keyed by category id, incl. custom ids). */
+  categoryMedia?: Record<string, { url: string; kind: 'image' | 'video'; caption?: string }>;
 
   voice?: string;
   length?: string;
@@ -528,6 +530,10 @@ export interface QuestionContent {
   difficulty?: string;
   /** Short grounded quotes shown after answer reveal ("FROM YOUR SOURCES"). */
   sources?: { quote: string; cite: string }[];
+  /** Optional image shown under the question stem (data URL or https). */
+  imageUrl?: string;
+  /** Optional YouTube video shown under the question stem. */
+  videoUrl?: string;
 }
 export interface QuizContent {
   questions: QuestionContent[];
@@ -553,6 +559,8 @@ export interface FlashcardItem {
   hint?: string;
   /** Data URL or https URL for Image → label cards (shown on the front). */
   imageUrl?: string;
+  /** Optional YouTube video shown on the prompt side. */
+  videoUrl?: string;
 }
 export interface FlashcardSetContent {
   cards: FlashcardItem[];
@@ -871,6 +879,17 @@ export type BlockContent =
   | DrillContent
   | LibraryEmbedContent;
 
+/** A published Bridge table block: everything needed to mount the component. */
+export interface BridgeTableContent {
+  /** Which Bridge component (today: 'table'). */
+  kind?: string;
+  /** The deal, derived deterministically so every reader sees the same board. */
+  seed?: number;
+  skin?: string;
+  showAllHands?: boolean;
+  caption?: string;
+}
+
 export interface Block {
   id: string;
   type:
@@ -889,10 +908,14 @@ export interface Block {
     | 'video-embed'
     | 'video-script'
     | 'bridge-play'
+    /** A live Bridge Platform table, configured by the author. */
+    | 'bridge-table'
     | 'bidding-sequence'
     /** Pinned Activity-library object embedded inside a tutorial. */
     | 'library-embed';
   content: BlockContent;
+  /** Author-controlled hard page break before this block (Tutorial V2 Structure). */
+  pageBreakBefore?: boolean;
 }
 
 /**
@@ -992,6 +1015,11 @@ export interface LearningObject {
    * Only used when type === 'tutorial-v2'; ignored by V1 tutorial path.
    */
   tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
+  /**
+   * Structured V2 authoring state (Plan → Structure → Author → Review) for
+   * quiz / flashcard-set / concept-card / video-script objects.
+   */
+  structuredV2Draft?: import('./objectV2/structuredDraft').StructuredV2Draft;
 }
 
 export interface CourseLesson {

@@ -2,6 +2,8 @@
  * Per-section workspace: write+refine (8a) and section-scoped generate (8b).
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import {
   ArrowLeft, Check, Loader2, PenLine, Sparkles, AlertTriangle,
   Image as ImageIcon, Youtube, Upload, ExternalLink, Plus, Trash2, Type,
@@ -28,6 +30,7 @@ import type { TutorialV2Draft, TutorialV2Part, V2Section, V2TopLevelSlot } from 
 import type { ContentUnit, TutorialSectionPlan, TutorialTemplate } from '../../../../lib/types';
 import { parseYtId } from './TutorialV2SourcePanel';
 import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
+import { RichTextEditor } from '../../RichTextEditor';
 import { TutorialV2ObjectGeneratePane } from './TutorialV2ObjectGeneratePane';
 import { objectTypeNoun } from '../../../../lib/tutorialV2/objectPipelineDefaults';
 
@@ -242,6 +245,7 @@ export function TutorialV2SectionWorkspace({
         units,
         authorMode: bumpAuthorMode(section.authorMode, 'generated'),
         markupFlags,
+        done: collected.length > 0,
       });
       setTab('write');
     } catch (e) {
@@ -533,16 +537,6 @@ function WritePane({
               {p.label || p.type}
             </span>
             <div className="flex items-center gap-1">
-              {(p.type === 'rich-text' || !p.type) && !isNestedEditablePart(p) && (
-                <button
-                  type="button"
-                  onClick={() => setRefineId(refineId === p.id ? null : p.id)}
-                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
-                  style={{ fontSize: 12, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)' }}
-                >
-                  <Sparkles size={11} /> Ask AI
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => onRemovePart(p.id)}
@@ -553,7 +547,15 @@ function WritePane({
               </button>
             </div>
           </div>
-          {isNestedEditablePart(p) ? (
+          {isBridgeEmbedPart(p) ? (
+            <BridgeEmbedBlock
+              kind={p.embedKind}
+              seed={p.embedSeed ?? 7}
+              skin={p.embedSkin}
+              caption={p.caption}
+              onChangeCaption={(caption) => onChangePart(p.id, { caption })}
+            />
+          ) : isNestedEditablePart(p) ? (
             <div>
               <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                 {p.libraryTitle || p.label || nestedEditorKindForPart(p) || p.type}
@@ -571,7 +573,7 @@ function WritePane({
             </div>
           ) : isMediaPart(p) ? (
             <MediaSlotEditor part={p} onChange={(patch) => onChangePart(p.id, patch)} />
-          ) : (
+          ) : isTextBodyPart(p) ? (
             <>
               {p.heading !== undefined && (
                 <input
@@ -582,15 +584,32 @@ function WritePane({
                   style={{ fontSize: 14, fontWeight: 650, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
                 />
               )}
-              <textarea
-                className="w-full resize-y"
-                rows={5}
+              <RichTextEditor
                 value={p.body || p.plain || ''}
+                onChange={(next) => onChangePart(p.id, { body: next, plain: next })}
                 placeholder="Write this block…"
-                onChange={(e) => onChangePart(p.id, { body: e.target.value, plain: e.target.value })}
-                style={{ fontSize: 13.5, lineHeight: 1.55, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: 10 }}
+                minHeight={140}
+                trailingActions={
+                  <button
+                    type="button"
+                    onClick={() => setRefineId(refineId === p.id ? null : p.id)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
+                    style={{ fontSize: 12, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)', background: '#fff' }}
+                  >
+                    <Sparkles size={11} /> Ask AI
+                  </button>
+                }
               />
             </>
+          ) : (
+            <textarea
+              className="w-full resize-y"
+              rows={5}
+              value={p.body || p.plain || ''}
+              placeholder="Write this block…"
+              onChange={(e) => onChangePart(p.id, { body: e.target.value, plain: e.target.value })}
+              style={{ fontSize: 13.5, lineHeight: 1.55, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: 10 }}
+            />
           )}
           {refineId === p.id && (
             <div className="mt-3 flex flex-wrap gap-2 items-center">
@@ -621,6 +640,13 @@ function WritePane({
 
 function isMediaPart(p: TutorialV2Part): boolean {
   return p.type === 'image' || p.type === 'video' || p.type === 'media' || !!p.mediaKind;
+}
+
+/** Text blocks that get the allowlisted rich-text toolbar (Tutorial V2 authoring). */
+function isTextBodyPart(p: TutorialV2Part): boolean {
+  if (isNestedEditablePart(p) || isMediaPart(p)) return false;
+  const t = String(p.type || 'rich-text');
+  return t === 'rich-text' || t === 'explanation' || !p.type;
 }
 
 function MediaSlotEditor({

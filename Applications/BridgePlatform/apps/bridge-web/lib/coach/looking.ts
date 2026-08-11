@@ -21,7 +21,7 @@ import type { Call, Seat } from "@bridge/events";
 
 import {
   callLabel, cardLabel, dealtHand, GLYPH, partnerOf, Relative,
-  relative, SEAT_NAME, shapeOf, SUITS,
+  relative, SEAT_NAME, shapeOf, SUITS, SUIT_WORD,
 } from "./position";
 
 /**
@@ -82,11 +82,30 @@ export interface LookingEventGroup {
 export interface LookingAt {
   /** One sentence on the position, from this learner's side of the table. */
   looking: string;
-  /** Compact chips. `label` may be empty for a value that reads alone. */
-  facts: { label: string; value: string }[];
+  /**
+   * Compact chips. `label` may be empty for a value that reads alone.
+   * `detail` is the flip side — the same fact spelled out, for the Game State
+   * card's back. Factual only, like everything in this file: a definition or
+   * a count, never advice.
+   */
+  facts: { label: string; value: string; detail?: string }[];
   /** The whole board so far — the auction and every trick, one group each. */
   eventGroups: LookingEventGroup[];
 }
+
+/** The flip side of the HCP chip — one definition, used in every phase.
+ *  Backs are read inside a ~110px card, so every one is cut to the bone. */
+const HCP_DETAIL = "A=4, K=3, Q=2, J=1. The deck holds 40.";
+
+/** The flip side of each shape `kind` — a definition, not a recommendation. */
+const KIND_DETAIL: Record<string, string> = {
+  balanced: "No void or singleton, at most one doubleton.",
+  "very long suit": "Seven or more cards in one suit.",
+  "six-card suit": "Six cards in your longest suit.",
+  "two long suits": "Two suits of five or more cards.",
+  "a void": "A suit with no cards in it.",
+  unbalanced: "Short in at least one suit.",
+};
 
 /**
  * The position, as facts.
@@ -133,14 +152,25 @@ export function lookingAt(
       };
     });
 
+  // The shape's flip side spells the glyphs out in words, so the back can be
+  // read by someone who hasn't internalized the symbols yet.
+  const shapeDetail = `${SUITS
+    .map((s) => {
+      const n = dealt.filter((c) => c.suit === s).length;
+      return `${n} ${SUIT_WORD[s]}${n === 1 ? "" : "s"}`;
+    })
+    .join(", ")}.`;
+
   if (state.phase === "auction") {
     return {
       looking: auctionSentence(state.auction, seat, state.turn),
       facts: [
-        { label: "HCP", value: String(points) },
-        { label: "", value: shape },
-        { label: "", value: kind },
-        ...(system ? [{ label: "", value: system }] : []),
+        { label: "HCP", value: String(points), detail: HCP_DETAIL },
+        { label: "", value: shape, detail: shapeDetail },
+        { label: "", value: kind, ...(KIND_DETAIL[kind] ? { detail: KIND_DETAIL[kind] } : {}) },
+        ...(system
+          ? [{ label: "", value: system, detail: "The bidding system this table plays." }]
+          : []),
       ],
       eventGroups: state.auction.length
         ? [{ id: "auction", title: "The auction", current: true, events: callEvents() }]
@@ -222,10 +252,14 @@ export function lookingAt(
     return {
       looking: sentence,
       facts: [
-        { label: "", value: `Trick ${Math.min(done + 1, 13)}` },
-        { label: "yours", value: String(ours) },
-        { label: "theirs", value: String(done - ours) },
-        { label: "HCP dealt", value: String(points) },
+        {
+          label: "",
+          value: `Trick ${Math.min(done + 1, 13)}`,
+          detail: `Trick ${Math.min(done + 1, 13)} of 13.`,
+        },
+        { label: "yours", value: String(ours), detail: "Won by you and partner so far." },
+        { label: "theirs", value: String(done - ours), detail: "Won by the opponents so far." },
+        { label: "HCP dealt", value: String(points), detail: HCP_DETAIL },
       ],
       eventGroups: groups,
     };
@@ -236,7 +270,10 @@ export function lookingAt(
     looking: state.contract
       ? `The board is done — ${state.contract.level}${state.contract.strain === "N" ? "NT" : GLYPH[state.contract.strain]} by ${SEAT_NAME[state.contract.declarer]}.`
       : "Nothing in play yet.",
-    facts: [{ label: "HCP dealt", value: String(points) }, { label: "", value: shape }],
+    facts: [
+      { label: "HCP dealt", value: String(points), detail: HCP_DETAIL },
+      { label: "", value: shape, detail: shapeDetail },
+    ],
     eventGroups: [],
   };
 }
