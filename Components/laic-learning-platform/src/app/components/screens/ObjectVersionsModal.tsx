@@ -46,6 +46,10 @@ export function ObjectVersionsModal({
     [object.id, objectVersionsTick, listObjectVersions],
   );
 
+  /** The newest version — its content is the working copy until a later one exists. */
+  const isTipVersion = (v: Version) =>
+    versions.every((x) => x.versionNumber <= v.versionNumber);
+
   const flash = (msg: string) => {
     setToast(msg);
     window.setTimeout(() => setToast((t) => (t === msg ? null : t)), 1800);
@@ -273,7 +277,7 @@ export function ObjectVersionsModal({
                 <button
                   type="button"
                   onClick={() => void onPublish(v)}
-                  disabled={!v.snapshot || publishingId !== null || !!v.publishedAt}
+                  disabled={(!v.snapshot && !isTipVersion(v)) || publishingId !== null || !!v.publishedAt}
                   className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-white disabled:opacity-40"
                   style={{ fontSize: 11.5, fontWeight: 650, background: v.publishedAt ? '#047857' : '#0B0F1A' }}
                   title={

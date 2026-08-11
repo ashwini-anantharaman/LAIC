@@ -782,14 +782,24 @@ function StudioApp() {
     if (!base) return { ok: false, error: 'Content not found.' };
     const version = getVersion(ownerId, versionId);
     if (!version) return { ok: false, error: 'That version no longer exists.' };
-    if (!version.snapshot) {
+
+    // A snapshot can be missing because the browser's storage was full when it
+    // was written. For the NEWEST version that is recoverable rather than
+    // fatal: the working copy is that version's content until a later version
+    // freezes it, so the live object is exactly what would have been stored.
+    const isTip = listVersionsForObject(ownerId, objectId)
+      .every((v) => v.versionNumber <= version.versionNumber);
+    if (!version.snapshot && !isTip) {
       return { ok: false, error: `v${version.versionNumber} has no saved content to publish.` };
     }
 
     const cols = getObjectCollections(ownerId);
     const ids = objectCollectionIds(base);
     const names = cols.filter((c) => ids.includes(c.id)).map((c) => c.name);
-    const shipped = { ...objectFromVersion(base, version), collectionIds: ids };
+    const shipped = {
+      ...(version.snapshot ? objectFromVersion(base, version) : base),
+      collectionIds: ids,
+    };
 
     try {
       await publishLearningObject(
