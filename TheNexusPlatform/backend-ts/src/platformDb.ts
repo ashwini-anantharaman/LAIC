@@ -1105,6 +1105,16 @@ export async function setProfileAvatar(profileId: string, avatar: string | null)
   return pg.setProfileAvatar(profileId, avatar);
 }
 
+/** Rename the caller across every profile they hold — see setOwnDisplayName. */
+export async function setOwnDisplayName(
+  authUserId: string,
+  email: string | null,
+  displayName: string,
+): Promise<number> {
+  if (!usePg()) throw new HttpError(400, "Editing your name requires the database backend");
+  return pg.setOwnDisplayName(authUserId, email, displayName);
+}
+
 export async function getMembership(memberId: string): Promise<Row | null> {
   if (usePg()) return tpg.getMembership(memberId);
   if (await useLocal()) return local.localGetMembership(memberId);

@@ -2675,6 +2675,28 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
 export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
+  // collection_ids/collection_names arrive with 0003_object_collections.sql. A
+  // deploy that lands before that migration must still serve the list, so the
+  // richer query falls back to the original one on undefined_column rather than
+  // 500ing the Learn tab.
+  try {
+    return await _listLearningObjectsMeta(orgId, programId, true);
+  } catch (e) {
+    if (!_isUndefinedColumn(e)) throw e;
+    console.warn("[nexus] learning_objects.collection_* missing — run migrations for folder labels");
+    return _listLearningObjectsMeta(orgId, programId, false);
+  }
+}
+
+async function _listLearningObjectsMeta(
+  orgId: string,
+  programId: string | null | undefined,
+  withCollections: boolean,
+): Promise<Row[]> {
+  const cols = withCollections
+    ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
+            coalesce(collection_names, '[]'::jsonb) as collection_names`
+    : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(
       programId
@@ -2682,6 +2704,7 @@ export async function listLearningObjectsMeta(orgId: string, programId?: string 
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
+             ${cols}
       from learning_objects
       where organization_id = ${orgId} and program_id = ${programId}
       order by updated_at desc nulls last`
@@ -2689,6 +2712,7 @@ export async function listLearningObjectsMeta(orgId: string, programId?: string 
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
+             ${cols}
       from learning_objects
       where organization_id = ${orgId}
       order by updated_at desc nulls last`,
@@ -2708,6 +2732,94 @@ export async function getLearningObject(orgId: string, id: string): Promise<Row 
       where organization_id = ${orgId} and id = ${id}
       limit 1`);
     return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/**
+ * One object by id for an ANONYMOUS caller — the public share link.
+ *
+ * Deliberately NOT org-scoped: that is what makes a link portable to a machine
+ * with no session. The protection is the `shared_at` flag plus the id itself, so
+ * the filter here is the whole security boundary — an unshared object must be
+ * indistinguishable from one that does not exist, which is why this returns null
+ * rather than throwing a "not shared" error a prober could tell apart.
+ *
+ * `pipeline_draft` is excluded: an in-progress authoring draft is not part of what
+ * someone chose to publish.
+ */
+export async function getSharedLearningObject(id: string): Promise<Row | null> {
+  // `shared_at` arrives with migration 0002_public_share.sql. Deploying this code
+  // BEFORE that migration must not 500 — it should simply mean "nothing is
+  // published yet", so a missing column is caught and read as null. Any other
+  // error still propagates.
+  try {
+    return await _getSharedLearningObject(id);
+  } catch (e) {
+    if (_isUndefinedColumn(e)) {
+      console.warn("[nexus] learning_objects.shared_at missing — run migrations to enable share links");
+      return null;
+    }
+    throw e;
+  }
+}
+
+/** Postgres 42703 = undefined_column. */
+function _isUndefinedColumn(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
+    ?? (e as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "42703";
+}
+
+async function _getSharedLearningObject(id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
+             description, estimated_time, blocks, tags, source_ids,
+             created_at::text as created_at, updated_at::text as updated_at
+      from learning_objects
+      where id = ${id} and shared_at is not null
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/**
+ * Turn a public link on or off. Org-scoped on purpose — only someone who can see
+ * the object in their own org may publish it.
+ *
+ * Returns false when the object is not this org's, so the route can 404 instead
+ * of silently doing nothing.
+ */
+export async function setLearningObjectShared(
+  orgId: string,
+  id: string,
+  shared: boolean,
+): Promise<boolean> {
+  // Same tolerance as the read, but LOUD: an author who clicks share must not be
+  // told it worked when the column is missing, so this rethrows as a clear error
+  // the route turns into a 503 rather than a silent success.
+  try {
+    return await _setLearningObjectShared(orgId, id, shared);
+  } catch (e) {
+    if (_isUndefinedColumn(e)) {
+      throw new Error("share-unavailable: learning_objects.shared_at missing (run migrations)");
+    }
+    throw e;
+  }
+}
+
+async function _setLearningObjectShared(
+  orgId: string,
+  id: string,
+  shared: boolean,
+): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      update learning_objects
+      set shared_at = ${shared ? sql`now()` : sql`null`}, updated_at = now()
+      where organization_id = ${orgId} and id = ${id}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
   });
 }
 

@@ -160,6 +160,12 @@ export type LearningObject = {
   tags: string[] | null;
   blocks: LearningBlock[] | null;
   updated_at: string | null;
+  /** The author's folders (0003). Ids are stable across renames; names are what a
+   *  reader can display without holding the Studio's collection table. Both are
+   *  empty arrays when the object is filed nowhere — or when the server predates
+   *  the migration, so a consumer can treat them as arrays unconditionally. */
+  collection_ids?: string[];
+  collection_names?: string[];
 };
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
@@ -378,10 +384,10 @@ export function fetchMe(token: string): Promise<NexusUser> {
  *  list can run to tens of MB; content renders in the platform WebView). */
 export function fetchLearningObjects(
   token: string,
-  programId: string = PROGRAM_ID,
+  programId: string | undefined = PROGRAM_ID,
 ): Promise<LearningObject[]> {
   return request<LearningObject[]>(
-    `/api/platform/learning/objects?program_id=${programId}&meta=1`,
+    `/api/platform/learning/objects?program_id=${programId ?? PROGRAM_ID}&meta=1`,
     { token },
   );
 }
@@ -393,14 +399,19 @@ export type PlatformLaunch = {
   expires_at: string;
 };
 
-/** Mint a single-use launch into the learning platform (works for learners).
- *  A club's people launch as THEIR CLUB, same as the bridge launch. */
+/**
+ * Mint a single-use launch into the learning platform (works for learners).
+ *
+ * `programId` decides WHICH program's access is resolved — see
+ * launchBridgePlatform's note. A club's people are not in the app-wide program,
+ * so launching it for them resolves no access at all.
+ */
 export function launchLearningPlatform(
   token: string,
-  programId: string = PROGRAM_ID,
+  programId: string | undefined = PROGRAM_ID,
 ): Promise<PlatformLaunch> {
   return request<PlatformLaunch>(
-    `/api/programs/${programId}/learning-platform/launch`,
+    `/api/programs/${programId ?? PROGRAM_ID}/learning-platform/launch`,
     { method: "POST", token },
   );
 }
@@ -547,6 +558,22 @@ export function fetchBridgeContext(
     `/api/platform/bridge/context?program_id=${programId ?? PROGRAM_ID}`,
     { token },
   );
+}
+
+/**
+ * Change your own display name — global, across every club.
+ *
+ * A profile row is per (person, org), so the server renames all of them: the name
+ * belongs to the person, not to a club. Returns the name the server stored, which
+ * may differ from what was sent (it trims and collapses whitespace).
+ */
+export async function updateMyDisplayName(token: string, displayName: string): Promise<string> {
+  const res = await request<{ ok: boolean; display_name: string }>("/api/platform/auth/me", {
+    method: "PATCH",
+    token,
+    body: { display_name: displayName },
+  });
+  return res.display_name;
 }
 
 export type ProgramLearner = {

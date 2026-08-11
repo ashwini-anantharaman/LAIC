@@ -275,10 +275,12 @@ export function saveAsNewVersion(
   obj: LearningObject,
   createdBy: string,
   notes?: string,
+  /** Commit even when the content is unchanged — the author asked for a version. */
+  force = false,
 ): Version {
   const existing = listVersionsForObject(userId, obj.id);
   const tip = existing[0];
-  if (tip?.snapshot && contentEqualsSnapshot(tip.snapshot, obj) && !(notes || '').trim()) {
+  if (!force && tip?.snapshot && contentEqualsSnapshot(tip.snapshot, obj) && !(notes || '').trim()) {
     return tip;
   }
   const n = nextVersionNumber(existing);
@@ -290,6 +292,50 @@ export function saveAsNewVersion(
   );
   upsertLocal(userId, v);
   return v;
+}
+
+/**
+ * Overwrite an EXISTING version in place, keeping its id and number.
+ *
+ * Submitting always minted a new version, so an author fixing a typo three
+ * times ended up at v5 with four dead versions behind it. "Submit as → v2"
+ * replaces v2's snapshot instead of growing the history.
+ *
+ * Refuses on a locked version and on seed rows (which live in data.ts and have
+ * no local record to replace) rather than silently creating a new version —
+ * the author asked to overwrite a specific one, and quietly doing something
+ * else is worse than saying no.
+ */
+export function overwriteVersion(
+  userId: string,
+  versionId: string,
+  obj: LearningObject,
+  createdBy: string,
+  notes?: string,
+): { ok: boolean; version?: Version; error?: string } {
+  const target = listVersionsForObject(userId, obj.id).find((v) => v.id === versionId);
+  if (!target) return { ok: false, error: 'That version no longer exists.' };
+  if (target.locked) return { ok: false, error: `v${target.versionNumber} is locked.` };
+  // v1 is the original state — the one thing you can always compare against.
+  if (target.versionNumber === 1) {
+    return { ok: false, error: 'v1 is the original state and cannot be replaced. Submit as a new version instead.' };
+  }
+
+  const version: Version = {
+    ...target,
+    objectTitle: obj.title,
+    status: obj.status,
+    createdAt: today(),
+    createdBy,
+    notes: (notes || '').trim() || target.notes,
+    editCount: (target.editCount || 0) + 1,
+    snapshot: snapshotFromObject(obj),
+    // Amend clock reset: an overwrite is a deliberate commit, not the tail of
+    // an earlier edit burst, so the next save must not fold into it.
+    ...({ createdAtMs: 0 } as any),
+  };
+  upsertLocal(userId, version);
+  return { ok: true, version };
 }
 
 /**

@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
-import { supabaseEnabled, listObjects, fetchObject, saveObject } from '../lib/supabase';
+import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
+import { publishLearningObject } from '../lib/api';
 import {
   loadUserObjects,
   saveUserObjects,
@@ -32,6 +33,7 @@ import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/libraryS
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
+  overwriteVersion as storeOverwriteVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -53,6 +55,22 @@ import {
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { defaultScreenForCapabilities } from '../lib/roleAccess';
+
+/**
+ * What a save should do to version history.
+ *  'auto'  — the usual working-version sync (amend the tip, or commit the next)
+ *  'skip'  — touch nothing
+ *  'new'   — always commit the next version, even if content is unchanged
+ *  { overwriteId } — replace that version in place, bumping its edit count
+ * Submit passes an explicit mode so the amend window cannot reinterpret it.
+ */
+export type AddObjectVersionMode = 'auto' | 'skip' | 'new' | { overwriteId: string };
+
+export interface AddObjectOptions {
+  version?: AddObjectVersionMode;
+  /** Reported when an overwrite is refused (locked version, v1, …). */
+  onVersionError?: (message: string) => void;
+}
 
 export interface AppState {
   role: Role;
@@ -88,7 +106,13 @@ export interface AppState {
   objectVersionsTick: number;
   listObjectVersions: (objectId: string) => Version[];
   listAllObjectVersions: () => Version[];
-  saveObjectAsNewVersion: (objectId: string, notes?: string) => Version | null;
+  saveObjectAsNewVersion: (objectId: string, notes?: string, force?: boolean) => Version | null;
+  /** Replace an existing version in place (Submit as → v2) instead of adding one. */
+  overwriteObjectVersion: (
+    objectId: string,
+    versionId: string,
+    notes?: string,
+  ) => { ok: boolean; version?: Version; error?: string };
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -134,7 +158,10 @@ export interface AppState {
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
   setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
-  addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
+  addObject: (
+    partial: Partial<LearningObject> & { type: ObjectType; title: string },
+    opts?: AddObjectOptions,
+  ) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
 }
@@ -492,7 +519,12 @@ function StudioApp() {
     setCreatorObjectTypeState(type);
   }, []);
 
-  const addObject = useCallback((partial: Partial<LearningObject> & { type: ObjectType; title: string }) => {
+  const addObject = useCallback((
+    partial: Partial<LearningObject> & { type: ObjectType; title: string },
+    opts?: AddObjectOptions,
+  ) => {
+    const versionMode = opts?.version ?? 'auto';
+    const onVersionError = opts?.onVersionError;
     const ownerId = activeUserIdRef.current;
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
@@ -539,13 +571,32 @@ function StudioApp() {
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
       }
+      // Versioning happens HERE, against the object just built — not in the
+      // caller. createdObjectsRef only refreshes on render, so a caller acting
+      // right after this returns would version the PRE-EDIT content: the
+      // overwrite would store stale blocks, and the next save would then see a
+      // difference and mint the spare version this is meant to avoid.
+      const createdBy = obj.ownerName || user?.name || 'You';
       try {
-        syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
+        if (versionMode === 'new') {
+          storeSaveAsNewVersion(ownerId, obj, createdBy, undefined, true);
+        } else if (typeof versionMode === 'object' && versionMode.overwriteId) {
+          const res = storeOverwriteVersion(ownerId, versionMode.overwriteId, obj, createdBy);
+          if (!res.ok && res.error) onVersionError?.(res.error);
+        } else if (versionMode !== 'skip') {
+          syncWorkingVersion(ownerId, obj, createdBy);
+        }
       } catch (err: any) {
         console.warn('[versions] sync failed:', err?.message || err);
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
+      } else if (obj.status === 'in-review' || obj.status === 'approved') {
+        // Standalone site (no Nexus session): publish submitted content to the
+        // shared Nexus Supabase through the CS API so partner apps see it.
+        const names = cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name);
+        publishLearningObject(objectToPublishRow(obj, names)).catch((err) =>
+          console.warn('[publish] could not publish to shared library:', err?.message || err));
       }
       return nextList;
     });
@@ -562,13 +613,26 @@ function StudioApp() {
     return listAllVersions(activeUserIdRef.current);
   }, [objectVersionsTick]);
 
-  const saveObjectAsNewVersion = useCallback((objectId: string, notes?: string) => {
+  const saveObjectAsNewVersion = useCallback((objectId: string, notes?: string, force = false) => {
     const ownerId = activeUserIdRef.current;
     const obj = createdObjectsRef.current.find((o) => o.id === objectId)
       || OBJECTS.find((o) => o.id === objectId);
     if (!obj) return null;
     const user = USERS.find((u) => u.id === ownerId);
-    return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes);
+    return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes, force);
+  }, []);
+
+  const overwriteObjectVersion = useCallback((
+    objectId: string,
+    versionId: string,
+    notes?: string,
+  ) => {
+    const ownerId = activeUserIdRef.current;
+    const obj = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!obj) return { ok: false, error: 'Content not found.' };
+    const user = USERS.find((u) => u.id === ownerId);
+    return storeOverwriteVersion(ownerId, versionId, obj, obj.ownerName || user?.name || 'You', notes);
   }, []);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
@@ -736,7 +800,7 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,

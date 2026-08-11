@@ -32,10 +32,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ActivityCarousel, type Activity } from "../../components/activity-carousel";
 import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
-import { ChallengeCaption, ChallengeTile } from "../../components/challenge-tile";
 import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
@@ -60,7 +60,7 @@ const HEAD = { left: 25, blurbGap: 13, pillTop: 5, pillRight: 24 };
  * It is the sum of what sits above its edge, not a round number: the top gap
  * (28) + the title's line (~34) + the gap to the blurb (13) + the blurb's line
  * (~22), and then 6 of air. It ended 24 below the blurb at first, which left the
- * band running almost into "Latest Challenge"; cutting it close to the text puts
+ * band running almost into "Activities"; cutting it close to the text puts
  * that whitespace on the cream side of the edge, where it reads as breathing
  * room rather than as dead photograph.
  *
@@ -302,6 +302,43 @@ export default function ClubScreen() {
     };
   }, [token, club]);
 
+  /**
+   * What the Activities carousel shows.
+   *
+   * The FIRST entry is the latest challenge, unchanged: same tile, same tap —
+   * the bridge resolves which challenge "latest" is, since the app has no id to
+   * give it (see app/challenge-play.tsx).
+   *
+   * The tutorial after it opens a Content Studio page in a webview. It is still
+   * the design's placeholder for the activity types a club home will carry later
+   * — the page is a fixed URL, not data — but it is a REAL embed, so the shape of
+   * a non-challenge activity is demonstrable. Adding a real type later is an entry
+   * in this list.
+   */
+  const activities: Activity[] = [
+    {
+      id: "latest-challenge",
+      kind: "challenge",
+      // The summary may not have answered yet (or the club has none): the card
+      // still shows, uncaptioned, and the tap falls back to the bridge-resolved
+      // "latest" play route. With an id in hand it opens the challenge's OWN
+      // info screen, same as the Challenges carousel — never straight into a
+      // table.
+      title: latest?.name ?? "Challenge",
+      ...(latest ? { detail: `${latest.boards} Boards` } : {}),
+      onPress: () =>
+        latest
+          ? router.push({ pathname: "/challenge-info", params: { id: latest.id } })
+          : router.push("/challenge-play"),
+    },
+    {
+      id: "tutorial-1",
+      kind: "document",
+      title: "Tutorial 1",
+      onPress: () => router.push("/tutorial"),
+    },
+  ];
+
   // A button its role cannot open is not dimmed but ABSENT: dimming says "not
   // now", and this is "not yours". The grid closes up around what is left.
   const buttons = [
@@ -359,7 +396,7 @@ export default function ClubScreen() {
                 />
               )}
               <Text style={[styles.title, { color: headText }]} numberOfLines={1}>
-                {club?.name ?? "My Club"}
+                {club?.name ?? "Club"}
               </Text>
               {/* Only meaningful with somewhere to switch TO. Two clubs toggle
                   straight over; three or more open the list. */}
@@ -414,32 +451,11 @@ export default function ClubScreen() {
         {onHome ? (
           <View style={styles.body}>
             <Text style={[styles.heading, { marginTop: HOME.headingTop * s }]}>
-              Latest Challenge
+              Activities
             </Text>
 
-            <View style={{ marginTop: HOME.tileGap * s, alignSelf: "center" }}>
-              <ChallengeTile
-                size={HOME.tile * s}
-                // Through the challenge's info screen, same as the Challenges
-                // carousel — never straight into a table. Only when the summary
-                // hasn't answered (no id to name) does the tile fall back to
-                // the bridge-resolved "latest" play route.
-                onPress={() =>
-                  latest
-                    ? router.push({ pathname: "/challenge-info", params: { id: latest.id } })
-                    : router.push("/challenge-play")
-                }
-              />
-              {latest ? (
-                <ChallengeCaption
-                  challenge={latest}
-                  width={HOME.tile * s}
-                  fontSize={13.633 * s}
-                  dot={5.029 * s}
-                  gap={8 * s}
-                  paddingTop={2 * s}
-                />
-              ) : null}
+            <View style={{ marginTop: HOME.tileGap * s }}>
+              <ActivityCarousel activities={activities} scale={s} onAdd={() => {}} />
             </View>
 
             <View

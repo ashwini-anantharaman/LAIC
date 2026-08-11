@@ -9,7 +9,7 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
-import { ICON_CHALLENGE_CARD } from "../constants/brand-vectors";
+import { ICON_ACTIVITY_DOC, ICON_CHALLENGE_CARD } from "../constants/brand-vectors";
 import { Brand, Fonts } from "../constants/theme";
 
 /** The reference tile the design was measured at. */
@@ -25,15 +25,25 @@ const R = {
   glyphH: 52.807 / TILE_REF,
   glyphA: { x: 45.4 / TILE_REF, y: 36.7 / TILE_REF },
   glyphB: { x: 102.4 / TILE_REF, y: 89.8 / TILE_REF },
+  /** The document glyph is ONE centred mark, at its own aspect (42.4 x 53). */
+  docW: 50.6 / TILE_REF,
+  docH: 63.25 / TILE_REF,
 } as const;
 
 export function ChallengeTile({
   /** The tile's side, already scaled to the screen. */
   size,
   onPress,
+  /**
+   * Which mark the face carries. "challenge" (the default, so every existing
+   * caller is unchanged) is the two offset cards; "document" is the single
+   * centred page the Activities carousel uses for non-challenge activities.
+   */
+  variant = "challenge",
 }: {
   size: number;
   onPress?: () => void;
+  variant?: "challenge" | "document";
 }) {
   const faceInset = size * R.faceInset;
   const faceSize = size * R.faceSize;
@@ -54,13 +64,28 @@ export function ChallengeTile({
           },
         ]}
       />
-      {/* The two glyphs sit on the TILE, offset diagonally as drawn. */}
-      <View style={{ position: "absolute", left: size * R.glyphA.x, top: size * R.glyphA.y }}>
-        <SvgXml xml={ICON_CHALLENGE_CARD} width={gw} height={gh} />
-      </View>
-      <View style={{ position: "absolute", left: size * R.glyphB.x, top: size * R.glyphB.y }}>
-        <SvgXml xml={ICON_CHALLENGE_CARD} width={gw} height={gh} />
-      </View>
+      {variant === "document" ? (
+        // One mark, centred on the face rather than offset diagonally.
+        <View
+          style={{
+            position: "absolute",
+            left: (size - size * R.docW) / 2,
+            top: (size - size * R.docH) / 2,
+          }}
+        >
+          <SvgXml xml={ICON_ACTIVITY_DOC} width={size * R.docW} height={size * R.docH} />
+        </View>
+      ) : (
+        <>
+          {/* The two glyphs sit on the TILE, offset diagonally as drawn. */}
+          <View style={{ position: "absolute", left: size * R.glyphA.x, top: size * R.glyphA.y }}>
+            <SvgXml xml={ICON_CHALLENGE_CARD} width={gw} height={gh} />
+          </View>
+          <View style={{ position: "absolute", left: size * R.glyphB.x, top: size * R.glyphB.y }}>
+            <SvgXml xml={ICON_CHALLENGE_CARD} width={gw} height={gh} />
+          </View>
+        </>
+      )}
     </View>
   );
 

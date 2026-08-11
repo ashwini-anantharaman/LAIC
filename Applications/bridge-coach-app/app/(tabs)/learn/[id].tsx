@@ -2,14 +2,15 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { ContentWebView } from "../../components/content-webview";
-import { PrimaryButton, Screen, ScreenHeader } from "../../components/ui";
-import { Colors, Fonts, Spacing } from "../../constants/theme";
-import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../lib/config";
-import { useAuth } from "../../lib/auth-context";
-import { useSelectedClubId } from "../../lib/club-context";
-import { takeLaunch } from "../../lib/launch-cache";
-import { getCachedObject } from "../../lib/learning";
+import { ContentWebView } from "../../../components/content-webview";
+import { PrimaryButton, Screen, ScreenHeader } from "../../../components/ui";
+import { EMBED_SKIN_CSS } from "../../../constants/embed-skin";
+import { Colors, Fonts, Spacing } from "../../../constants/theme";
+import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
+import { useAuth } from "../../../lib/auth-context";
+import { useSelectedClubId } from "../../../lib/club-context";
+import { takeLaunch } from "../../../lib/launch-cache";
+import { getCachedObject } from "../../../lib/learning";
 
 /**
  * Opens one learning object in the learning platform's own student view:
@@ -20,6 +21,8 @@ import { getCachedObject } from "../../lib/learning";
 export default function LearnContentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  // Launch and read as the CLUB — the app-wide program gives a club's people no
+  // standing, which is what made this 403 for them.
   const clubId = useSelectedClubId();
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,9 +41,6 @@ export default function LearnContentScreen() {
       const base = LEARNING_PLATFORM_URL || launch.launch_url;
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
-        // The SAME program the launch was minted for — a club, when one is
-        // selected. Pinning the app-wide id here handed the platform a token
-        // and a program that disagreed for club members.
         program_id: clubId ?? PROGRAM_ID,
         object: id,
         embed: "1", // content only — the app owns the surrounding navigation
@@ -81,7 +81,15 @@ export default function LearnContentScreen() {
         </View>
       )}
 
-      {url && <ContentWebView url={url} onHostMessage={handleHostMessage} />}
+      {url && (
+        <ContentWebView
+          url={url}
+          onHostMessage={handleHostMessage}
+          // Same skin as the tutorial embed: the app's two faces and its cream
+          // ground, so a reader does not read as a browser inside a screen.
+          injectedCSS={EMBED_SKIN_CSS}
+        />
+      )}
     </Screen>
   );
 }

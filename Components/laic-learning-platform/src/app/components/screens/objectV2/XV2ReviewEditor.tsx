@@ -16,7 +16,8 @@ import {
 } from '../../../../lib/objectV2/structuredDraft';
 import { SlotEditor } from './XV2UnitWorkspace';
 import { XV2RefineSidebar } from './XV2RefineSidebar';
-import type { LearningObject, VideoScriptContent } from '../../../../lib/types';
+import type { LearningObject, Version, VideoScriptContent } from '../../../../lib/types';
+import { SubmitVersionMenu, type SubmitTarget } from '../SubmitVersionMenu';
 
 export function XV2ReviewEditor({
   draft,
@@ -25,14 +26,17 @@ export function XV2ReviewEditor({
   onSave,
   onSubmit,
   canSubmit,
+  submitVersions = [],
   rail,
 }: {
   draft: StructuredV2Draft;
   onChangeDraft: (next: StructuredV2Draft) => void;
   onBack: () => void;
   onSave: () => void;
-  onSubmit: () => void;
+  onSubmit: (target: SubmitTarget) => void;
   canSubmit: boolean;
+  /** Existing versions of this object, so the author can overwrite one. */
+  submitVersions?: Version[];
   rail?: React.ReactNode;
 }) {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
@@ -90,16 +94,12 @@ export function XV2ReviewEditor({
               >
                 Save draft
               </button>
-              <button
-                type="button"
-                disabled={!blocks.length}
-                onClick={onSubmit}
-                className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-white disabled:opacity-40"
-                style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
-                title={canSubmit ? 'Submit for review' : 'Some required parts are still empty'}
-              >
-                <Send size={12} /> Submit for review
-              </button>
+              <SubmitVersionMenu
+                versions={submitVersions}
+                canSubmit={blocks.length > 0}
+                onSubmit={onSubmit}
+                disabledTitle={canSubmit ? 'Submit for review' : 'Some required parts are still empty'}
+              />
             </div>
           </div>
           {rail}

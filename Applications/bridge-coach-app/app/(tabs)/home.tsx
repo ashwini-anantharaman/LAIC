@@ -33,7 +33,7 @@ const NESTS = [
   { key: "play", label: "Play", href: "/play", x: 30, y: 203, w: 151, h: 91.5, lx: 86, ly: 220 },
   { key: "learn", label: "Learn", href: "/learn", x: 204, y: 229, w: 151, h: 91.5, lx: 255, ly: 246 },
   { key: "coach", label: "Coach", href: "/coach", x: 49, y: 416, w: 151, h: 91.5, lx: 97, ly: 434 },
-  { key: "club", label: "My Club", href: "/club", x: 231, y: 446, w: 151, h: 91.5, lx: 270, ly: 462 },
+  { key: "club", label: "Club", href: "/club", x: 231, y: 446, w: 151, h: 91.5, lx: 270, ly: 462 },
   {
     key: "analysis",
     label: "Analysis",

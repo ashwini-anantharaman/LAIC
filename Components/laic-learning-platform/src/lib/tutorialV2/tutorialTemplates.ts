@@ -231,6 +231,7 @@ export const KNOB_LOCK_OPTIONS: { key: KnobLockKey; label: string; hint: string 
  */
 export function isKnobLocked(template: TutorialTemplate, key: KnobLockKey): boolean {
   if (template.id === FREEFORM_TUTORIAL_TEMPLATE_ID) return false;
+  if (template.id === BLANK_CANVAS_TUTORIAL_TEMPLATE_ID) return false;
   if (template.knobLocks && typeof template.knobLocks === 'object') {
     return template.knobLocks[key] === true;
   }
@@ -727,6 +728,18 @@ export function isWriteYourselfTutorial(templateId?: string | null): boolean {
   return templateId === WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID;
 }
 
+/**
+ * Blank canvas — no set section count or prescribed content. Structure lets
+ * the author add any number of sections plus quiz / flashcard / concept-card /
+ * library-embed slots; Sources and AI generation stay available (unlike the
+ * Write-it-yourself path).
+ */
+export const BLANK_CANVAS_TUTORIAL_TEMPLATE_ID = 'v2-blank-canvas';
+
+export function isBlankCanvasTutorial(templateId?: string | null): boolean {
+  return templateId === BLANK_CANVAS_TUTORIAL_TEMPLATE_ID;
+}
+
 /** @deprecated Prefer KNOB_LOCK_OPTIONS + isKnobLocked. Field ids historically locked together. */
 export const TEMPLATE_LOCKED_KNOB_IDS = [
   'secs', 'prog', 'dpth', 'end',
@@ -737,6 +750,7 @@ export const TEMPLATE_LOCKED_KNOB_IDS = [
 /** True when any structure knob is locked (legacy all-or-nothing or granular). */
 export function isTutorialStructureLocked(template: TutorialTemplate): boolean {
   if (template.id === FREEFORM_TUTORIAL_TEMPLATE_ID) return false;
+  if (template.id === BLANK_CANVAS_TUTORIAL_TEMPLATE_ID) return false;
   if (template.knobLocks && typeof template.knobLocks === 'object') {
     return KNOB_LOCK_OPTIONS.some((o) => template.knobLocks?.[o.key] === true);
   }
@@ -932,6 +946,27 @@ export const BUILTIN_TUTORIAL_TEMPLATES: TutorialTemplate[] = [
     knobDefaults: {
       secs: 4, prog: 'Themed clusters', dpth: 'Overview', end: 'None',
       chks: 0, excpts: 2, wex: false, pass: '70%', hintsOn: false, hintN: 0, aiExtra: false,
+    },
+  }),
+  packTemplate({
+    id: BLANK_CANVAS_TUTORIAL_TEMPLATE_ID,
+    name: 'Blank canvas',
+    description:
+      'No set structure — add any number of sections plus quizzes, flashcards, concept cards, library embeds, and media wherever you want. Sources and AI generation stay available.',
+    builtin: true,
+    ...withArchetypes([
+      makeAtomicItem('section-heading', { required: true }),
+      makeAtomicItem('explanation', { required: false }),
+    ], false),
+    sectionConnection: 'sequential',
+    assessmentPlacement: 'end_only',
+    recipe: [
+      makeAtomicItem('section-heading', { required: true }),
+      makeAtomicItem('explanation', { required: false }),
+    ],
+    knobDefaults: {
+      secs: 1, prog: 'Linear build-up', dpth: 'Standard', end: 'None',
+      chks: 0, excpts: 0, wex: false, pass: '70%', hintsOn: false, hintN: 0, aiExtra: false,
     },
   }),
   packTemplate({
@@ -1171,8 +1206,8 @@ export function listTutorialTemplates(): TutorialTemplate[] {
   const mergedBuiltins = BUILTIN_TUTORIAL_TEMPLATES.map((b) => {
     const override = byId.get(b.id);
     if (!override) return b;
-    // Freeform must remain author-editable even if a local override exists.
-    if (b.id === FREEFORM_TUTORIAL_TEMPLATE_ID) {
+    // Freeform / Blank canvas must remain author-editable even if a local override exists.
+    if (b.id === FREEFORM_TUTORIAL_TEMPLATE_ID || b.id === BLANK_CANVAS_TUTORIAL_TEMPLATE_ID) {
       return {
         ...override,
         builtin: false,

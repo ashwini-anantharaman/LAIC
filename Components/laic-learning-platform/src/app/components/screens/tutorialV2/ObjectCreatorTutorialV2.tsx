@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, Loader2, Send, Save,
   Check, ChevronRight, ListOrdered, LayoutList, Database, PenLine, Eye,
 } from 'lucide-react';
-import { useApp } from '../../../App';
+import { useApp, type AddObjectOptions } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import {
@@ -21,6 +21,7 @@ import {
   DEFAULT_TUTORIAL_TEMPLATE_ID,
   WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID,
   getTutorialTemplate,
+  isBlankCanvasTutorial,
   isWriteYourselfTutorial,
   writeYourselfTutorialTemplate,
 } from '../../../../lib/tutorialV2/tutorialTemplates';
@@ -127,6 +128,7 @@ function buildPoolFromSources(args: {
       sentences: w.doc.sentences || [],
       html: w.doc.html,
       sourceUrl: w.doc.sourceUrl || w.url,
+      images: w.images?.length ? w.images : undefined,
     });
   }
   if (args.libraryDoc && args.librarySource) {
@@ -146,6 +148,7 @@ export function ObjectCreatorTutorialV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
+    listObjectVersions, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -296,6 +299,7 @@ export function ObjectCreatorTutorialV2() {
           html: out.html || undefined,
           sourceUrl: out.url || url,
         },
+        images: out.images?.length ? out.images : undefined,
       }]);
       setWebUrl('');
     } catch (e) {
@@ -355,7 +359,11 @@ export function ObjectCreatorTutorialV2() {
     || pathMode === 'manual'
   );
 
-  const persist = useCallback((next: TutorialV2Draft, blocksOverride?: ReturnType<typeof partsToBlocks>) => {
+  const persist = useCallback((
+    next: TutorialV2Draft,
+    blocksOverride?: ReturnType<typeof partsToBlocks>,
+    saveOpts?: AddObjectOptions,
+  ) => {
     const fv = {
       passOn: true,
       pass: next.structure.pass || '70%',
@@ -382,9 +390,15 @@ export function ObjectCreatorTutorialV2() {
       // which can lag a tick behind and corrupt reopen.
       tutorialV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any);
+    } as any, saveOpts);
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects]);
+
+  /** Versions the author may overwrite instead of adding another. */
+  const submitVersions = useMemo(
+    () => listObjectVersions(draft.id).filter((v) => !!v.snapshot),
+    [listObjectVersions, draft.id, objectVersionsTick],
+  );
 
   const draftCollectionLabel = useCallback((collectionIds?: string[]) => {
     const existing = createdObjects.find((o) => o.id === draft.id);
@@ -524,6 +538,7 @@ export function ObjectCreatorTutorialV2() {
         setWebSources(existing.sourcePool.filter((s) => s.kind === 'web').map((s) => ({
           id: s.id, url: s.sourceUrl || '',
           doc: { fileName: s.label, pageCount: 1, sentences: s.sentences || [], html: s.html, sourceUrl: s.sourceUrl },
+          images: s.images?.length ? s.images : undefined,
         })));
       }
     } else {
@@ -587,7 +602,10 @@ export function ObjectCreatorTutorialV2() {
       const titles = sectionTitles.length
         ? sectionTitles
         : synced.sections.map((s) => ({ id: s.id, title: s.title, intent: s.intent || '' }));
-      const sections = applySectionOutline(synced.sections, titles, analysis, { writeYourself: wy });
+      const sections = applySectionOutline(synced.sections, titles, analysis, {
+        writeYourself: wy,
+        freeSections: isBlankCanvasTutorial(draft.templateId),
+      });
       next = touchDraft(synced, {
         phase: 'structure',
         sections,
@@ -638,6 +656,8 @@ export function ObjectCreatorTutorialV2() {
 
   const writeYourself = isWriteYourselfTutorial(draft.templateId)
     || draft.metadata.authoringPath === 'write-yourself';
+  /** Blank canvas: free section count + author-added slots, but Sources and AI stay on. */
+  const freeform = isBlankCanvasTutorial(draft.templateId);
 
   const pipelineNeedsSources = useMemo(() => {
     if (writeYourself) return false;
@@ -1041,7 +1061,7 @@ export function ObjectCreatorTutorialV2() {
     const tpl = getTutorialTemplate(draft.templateId);
     const analysis = analyzeTemplateRecipe(tpl);
     const slots = writeYourself ? [] : (draft.topLevelSlots || []);
-    const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself });
+    const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself, freeform });
     const continueLabel = writeYourself
       ? 'Save skeleton & continue to author →'
       : analysis.needsSources
@@ -1055,10 +1075,12 @@ export function ObjectCreatorTutorialV2() {
         title="Structure"
         subtitle={writeYourself
           ? 'Name your sections — no template recipe'
-          : 'Slots and sections from your template recipe'}
+          : freeform
+            ? 'Blank canvas — add any sections and content you want'
+            : 'Slots and sections from your template recipe'}
         rail={pipelineRail}
       >
-        <div className="max-w-2xl mx-auto pb-8">
+        <div className={`${freeform ? 'max-w-4xl' : 'max-w-2xl'} mx-auto pb-8`}>
           <TutorialV2StructurePanel
             template={tpl}
             slots={slots}
@@ -1067,6 +1089,7 @@ export function ObjectCreatorTutorialV2() {
             onChangeSectionTitles={setSectionTitles}
             createdObjects={createdObjects || []}
             writeYourself={writeYourself}
+            freeform={freeform}
           />
 
           <div className="flex flex-wrap gap-2 px-1 mt-5">
@@ -1098,7 +1121,7 @@ export function ObjectCreatorTutorialV2() {
                   synced.sections,
                   sectionTitles,
                   analysis,
-                  { writeYourself: false },
+                  { writeYourself: false, freeSections: freeform },
                 );
                 const nextSlots = seedTopLevelSlots(analysis, synced.topLevelSlots?.length ? synced.topLevelSlots : slots);
                 const nextPhase: TutorialV2Phase = analysis.needsSources ? 'sources' : 'navigator';
@@ -1121,9 +1144,11 @@ export function ObjectCreatorTutorialV2() {
               <p style={{ fontSize: 12.5, color: '#B45309', width: '100%' }}>
                 {writeYourself
                   ? 'Name at least one section to continue.'
-                  : analysis.hasSections
-                    ? 'Name every section and pick required library content to continue.'
-                    : 'Pick required library content to continue.'}
+                  : freeform
+                    ? 'Add at least one section or content item (and pin any required library picks) to continue.'
+                    : analysis.hasSections
+                      ? 'Name every section and pick required library content to continue.'
+                      : 'Pick required library content to continue.'}
               </p>
             )}
           </div>
@@ -1334,18 +1359,25 @@ export function ObjectCreatorTutorialV2() {
           }}
           onBack={() => commit(touchDraft(draft, { phase: 'navigator', activeSectionId: null, activeSlotId: null }), 'navigator')}
           onSave={() => void saveDraft()}
-          onSubmit={() => {
+          onSubmit={(target) => {
             const blocks = partsToBlocks(parts, {
               passOn: true,
               pass: draft.structure.pass || '70%',
             });
             const next = touchDraft(draft, { status: 'submitted', phase: 'review', assembledParts: parts });
-            persist(next, blocks);
+            // The save itself performs the one versioning act the author picked,
+            // so it runs against the content being saved rather than the stale
+            // copy a follow-up call would see.
+            persist(next, blocks, {
+              version: target?.versionId ? { overwriteId: target.versionId } : 'new',
+              onVersionError: (msg) => window.alert(msg),
+            });
             setDraft(next);
             clearEditingObject?.();
             navigate('cd-library');
           }}
           canSubmit={canSubmit}
+          submitVersions={submitVersions}
           rail={pipelineRail}
           onBackToPlan={() => goToPipelinePhase('start')}
           onBackToStructure={() => goToPipelinePhase('structure')}

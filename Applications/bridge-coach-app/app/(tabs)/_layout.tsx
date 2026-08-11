@@ -83,8 +83,11 @@ export default function TabsLayout() {
       }}
     >
       <SwipeTabs.Screen name="home" options={{ title: "Home" }} />
-      <SwipeTabs.Screen name="learn" options={{ title: "Learn" }} />
+      {/* Play sits second, ahead of Learn — playing is the thing people open the
+          app to do. The tab bar renders state.routes in this order, so the bar and
+          the swipe sequence both follow from here. */}
       <SwipeTabs.Screen name="play" options={{ title: "Play" }} />
+      <SwipeTabs.Screen name="learn" options={{ title: "Learn" }} />
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
       </SwipeTabs>

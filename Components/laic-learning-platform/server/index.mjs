@@ -728,6 +728,195 @@ function extractHtmlTitle(html, fallbackHost) {
   return fallbackHost || 'Web page';
 }
 
+/* ─── Website image harvesting (authoring image picker) ──────────── */
+
+const WEB_IMAGE_MAX = 40;
+const IMG_MAX_BYTES = 6_000_000;
+/** Src substrings that are almost never content images. */
+const IMG_SKIP_SRC = /(sprite|favicon|\/icons?\/|icon-|-icon|logo|avatar|emoji|badge|pixel|tracker|tracking|spacer|blank\.|1x1|advert|banner-ad|share-|widget)/i;
+
+/** Pick the largest candidate from a srcset attribute. */
+function pickFromSrcset(srcset) {
+  let best = '';
+  let bestW = -1;
+  for (const part of String(srcset || '').split(',')) {
+    const bits = part.trim().split(/\s+/);
+    if (!bits[0]) continue;
+    const wm = bits[1] && bits[1].match(/^(\d+)w$/i);
+    const w = wm ? Number(wm[1]) : 0;
+    if (w >= bestW) { bestW = w; best = bits[0]; }
+  }
+  return best;
+}
+
+/**
+ * Harvest content images from a fetched page so course developers can place
+ * them while authoring (instead of screenshotting manually). Prefers the
+ * article/main chunk; pairs <figure> images with their captions; resolves
+ * relative and lazy-load srcs; filters icons/pixels/logos.
+ */
+function extractWebsiteImages(html, baseUrl) {
+  const stripped = String(html || '')
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ');
+
+  const images = [];
+  const seen = new Set();
+  const cleanText = (s) => decodeHtmlEntities(String(s || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+  const attrOf = (attrs, key) => {
+    const m = String(attrs || '').match(new RegExp(`\\b${key}\\s*=\\s*("([^"]*)"|'([^']*)'|([^\\s>]+))`, 'i'));
+    return m ? (m[2] ?? m[3] ?? m[4] ?? '') : '';
+  };
+
+  const pushTag = (tag, caption) => {
+    if (images.length >= WEB_IMAGE_MAX) return;
+    const w = Number(attrOf(tag, 'width')) || 0;
+    const h = Number(attrOf(tag, 'height')) || 0;
+    if ((w && w < 80) || (h && h < 80)) return; // icons / tracking pixels
+    const raw = pickFromSrcset(attrOf(tag, 'srcset') || attrOf(tag, 'data-srcset'))
+      || attrOf(tag, 'src')
+      || attrOf(tag, 'data-src')
+      || attrOf(tag, 'data-lazy-src')
+      || attrOf(tag, 'data-original');
+    let src = decodeHtmlEntities(String(raw || '').trim());
+    if (!src) return;
+    if (src.startsWith('data:')) {
+      // keep only substantial inline images; lazy-load placeholders are tiny
+      if (!src.startsWith('data:image/') || src.length < 4096) return;
+    } else {
+      try { src = new URL(src, baseUrl).toString(); } catch { return; }
+      if (!/^https?:\/\//i.test(src)) return;
+      if (/\.svg([?#]|$)/i.test(src)) return;
+      if (IMG_SKIP_SRC.test(src)) return;
+    }
+    if (seen.has(src)) return;
+    seen.add(src);
+    const alt = cleanText(attrOf(tag, 'alt')).slice(0, 300);
+    const cap = cleanText(caption).slice(0, 300);
+    images.push({ src, alt: alt || undefined, caption: cap || undefined });
+  };
+
+  // Prefer the article/main chunk; sweep the whole page only if it's sparse.
+  for (const scope of [extractMainHtmlChunk(stripped), stripped]) {
+    // 1) figures first — they carry captions
+    for (const fig of scope.match(/<figure\b[\s\S]*?<\/figure>/gi) || []) {
+      const cap = fig.match(/<figcaption\b[^>]*>([\s\S]*?)<\/figcaption>/i)?.[1] || '';
+      for (const tag of fig.match(/<img\b[^>]*>/gi) || []) pushTag(tag, cap);
+    }
+    // 2) remaining images (dedup via `seen`)
+    for (const tag of scope.match(/<img\b[^>]*>/gi) || []) pushTag(tag, '');
+    if (images.length >= 3) break;
+  }
+
+  // Hero fallback when the page exposes nothing else
+  if (!images.length) {
+    const og = stripped.match(/<meta[^>]+property=["']og:image(?::url)?["'][^>]+content=["']([^"']+)["']/i)
+      || stripped.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::url)?["']/i);
+    if (og?.[1]) pushTag(`<img src="${og[1].replace(/"/g, '&quot;')}">`, '');
+  }
+
+  return images;
+}
+
+/** Fetch ONE public image and inline it as a data: URI (picker placement). */
+async function fetchWebsiteImageAsDataUri(rawUrl) {
+  let finalUrl = assertPublicHttpUrl(rawUrl);
+  for (let hop = 0; hop <= WEB_MAX_REDIRECTS; hop += 1) {
+    assertPublicHttpUrl(finalUrl.toString());
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), WEB_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(finalUrl.toString(), {
+        method: 'GET',
+        redirect: 'manual',
+        signal: ctrl.signal,
+        headers: {
+          'User-Agent': 'LAIC-SourceBot/1.0 (+course authoring; educational)',
+          Accept: 'image/*,*/*;q=0.8',
+        },
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      if (e?.name === 'AbortError') throw new LlmError(504, 'timeout', 'Timed out fetching that image.');
+      throw new LlmError(502, 'fetch_failed', `Could not fetch that image: ${e.message || 'network error'}`);
+    } finally {
+      clearTimeout(timer);
+    }
+    if ([301, 302, 303, 307, 308].includes(res.status)) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new LlmError(502, 'bad_redirect', 'The image host redirected without a destination.');
+      finalUrl = new URL(loc, finalUrl);
+      continue;
+    }
+    if (!res.ok) throw new LlmError(502, 'http_error', `The image host returned HTTP ${res.status}.`);
+    const ctype = String(res.headers.get('content-type') || '').toLowerCase().split(';')[0].trim();
+    if (!ctype.startsWith('image/')) throw new LlmError(422, 'not_image', 'That link did not return an image.');
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length > IMG_MAX_BYTES) throw new LlmError(413, 'too_large', 'That image is too large to inline (max ~6 MB).');
+    return { dataUri: `data:${ctype};base64,${buf.toString('base64')}`, contentType: ctype, bytes: buf.length };
+  }
+  throw new LlmError(502, 'too_many_redirects', 'Too many redirects while fetching that image.');
+}
+
+/* ─── Publish learning objects → shared Nexus Supabase ───────────── */
+// The standalone site has no Nexus session, so submitted content is published
+// here server-side (service role key; RLS stays closed to the public).
+
+const NEXUS_SUPABASE_URL = process.env.NEXUS_SUPABASE_URL || '';
+const NEXUS_SUPABASE_SERVICE_ROLE_KEY = process.env.NEXUS_SUPABASE_SERVICE_ROLE_KEY || '';
+const LEARNING_ORG_ID = process.env.LEARNING_ORG_ID || '';
+
+async function publishLearningObjectRow(row, share = false) {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library publishing is not configured on the server.');
+  }
+  const id = String(row?.id || '').trim();
+  const type = String(row?.type || '').trim();
+  if (!id || !type) throw new LlmError(400, 'bad_object', 'Object id and type are required.');
+  const out = {
+    id,
+    organization_id: LEARNING_ORG_ID,
+    program_id: row.program_id ?? null,
+    type,
+    title: String(row.title || ''),
+    owner_id: row.owner_id != null ? String(row.owner_id) : null,
+    owner_name: row.owner_name != null ? String(row.owner_name) : null,
+    status: String(row.status || 'in-review'),
+    scope: String(row.scope || 'bridge'),
+    reuse_count: Number(row.reuse_count) || 0,
+    description: String(row.description || ''),
+    estimated_time: String(row.estimated_time || ''),
+    blocks: Array.isArray(row.blocks) ? row.blocks : [],
+    tags: Array.isArray(row.tags) ? row.tags : [],
+    source_ids: Array.isArray(row.source_ids) ? row.source_ids : [],
+    collection_ids: Array.isArray(row.collection_ids) ? row.collection_ids : [],
+    collection_names: Array.isArray(row.collection_names) ? row.collection_names : [],
+    pipeline_draft: row.pipeline_draft ?? null,
+    updated_at: new Date().toISOString(),
+  };
+  // Sharing is opt-in per object (see migration 0002_public_share.sql). Only
+  // ever set — never cleared here, so re-publishing cannot silently revoke a
+  // link someone already handed out.
+  if (share) out.shared_at = new Date().toISOString();
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?on_conflict=id`, {
+    method: 'POST',
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=minimal',
+    },
+    body: JSON.stringify([out]),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library upsert failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return { ok: true, id };
+}
+
 async function fetchWebsitePage(rawUrl) {
   let url = assertPublicHttpUrl(rawUrl);
   let html = '';
@@ -797,12 +986,22 @@ async function fetchWebsitePage(rawUrl) {
   if (!sentences.length) {
     throw new LlmError(422, 'no_sentences', 'Extracted text but could not split it into sentences. Try Paste text.');
   }
+  let images;
+  try {
+    const found = extractWebsiteImages(html, finalUrl.toString());
+    images = found.length ? found : undefined;
+  } catch {
+    images = undefined; // image harvesting must never break text ingestion
+  }
+
   return {
     title,
     sentences,
     url: finalUrl.toString(),
     /** Sanitized article HTML for Markup — preserves website structure/formatting. */
     html: articleHtml || undefined,
+    /** Content images for the authoring image picker. */
+    images,
   };
 }
 
@@ -3668,6 +3867,31 @@ export async function handler(req, res) {
     if (!body.url) return send(res, 400, { code: 'no_url', message: 'Provide a website URL.' });
     try {
       const out = await fetchWebsitePage(body.url);
+      return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Publish a submitted learning object to the shared Nexus Supabase ---- */
+  if (method === 'POST' && path === '/api/learning/publish') {
+    const body = await readJson(req);
+    try {
+      const out = await publishLearningObjectRow(body.object || body, !!body.share);
+      return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Tutorial: website image → inline data URI (image picker) ---- */
+  if (method === 'POST' && path === '/api/tutorials/fetch-image') {
+    const body = await readJson(req);
+    if (!body.url) return send(res, 400, { code: 'no_url', message: 'Provide an image URL.' });
+    try {
+      const out = await fetchWebsiteImageAsDataUri(body.url);
       return send(res, 200, out);
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;

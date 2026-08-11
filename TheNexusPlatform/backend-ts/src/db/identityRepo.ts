@@ -160,6 +160,55 @@ export async function setProfileAvatar(
 }
 
 /**
+ * Set a person's own display name across EVERY profile they hold.
+ *
+ * A profile row is per (person, organization), so someone in more than one org has
+ * more than one row and a single-row update would rename them in one place and not
+ * the others. The name is the person's, not a club's, so this is deliberately
+ * global: one edit, every club.
+ *
+ * The match must be a SUPERSET of what loadUser reads, or the rename appears not
+ * to work at all: loadUser (behind /auth/me) selects on
+ * `auth_user_id = X or profiles.id = X` and returns persons[0], so a row keyed by
+ * `profiles.id = X` — the legacy shape where a profile's own id IS the auth id —
+ * would be read but never written. The PATCH then succeeded on other rows while
+ * /auth/me kept serving the old name, and the field snapped back.
+ *
+ * So all three arms:
+ *   • auth_user_id — the normal link,
+ *   • profiles.id  — the legacy shape loadUser also accepts,
+ *   • email        — an invited profile carries the email before it is ever linked
+ *                    to an auth user; without this those rows keep the old name
+ *                    forever. Email identifies the person (one credential, one
+ *                    person), the same assumption the login path makes.
+ *
+ * `name` is written alongside `display_name` because several readers fall back to
+ * it (`display_name || name || email`); leaving it stale would let the old name
+ * resurface wherever that fallback runs.
+ *
+ * Returns how many rows changed, so a caller can tell a real rename from a no-op.
+ */
+export async function setOwnDisplayName(
+  authUserId: string,
+  email: string | null,
+  displayName: string,
+): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .update(profiles)
+      .set({ displayName, name: displayName, updatedAt: new Date() })
+      .where(
+        email
+          ? sql`(${profiles.authUserId} = ${authUserId} or ${profiles.id} = ${authUserId}
+                 or lower(${profiles.email}) = lower(${email}))`
+          : sql`(${profiles.authUserId} = ${authUserId} or ${profiles.id} = ${authUserId})`,
+      )
+      .returning({ id: profiles.id });
+    return rows.length;
+  });
+}
+
+/**
  * Set or clear a profile's username. Pass null to clear.
  *
  * Uniqueness is enforced by the partial unique index, so a race between two

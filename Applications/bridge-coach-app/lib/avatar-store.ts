@@ -11,6 +11,7 @@
 
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
+import { Alert, Linking } from "react-native";
 
 import {
   fetchAvatars,
@@ -107,9 +108,59 @@ export async function loadAvatars(
  * ordinary outcomes, not errors. An upload failure throws, so the caller can say
  * so rather than silently showing the old picture.
  */
+/**
+ * Make sure we can read the photo library, RE-ASKING when that is still possible
+ * and sending the person to Settings when it is not.
+ *
+ * A first tap shows the OS dialog. A tap after an accidental "Don't Allow" used to
+ * do NOTHING visible: iOS answers a second request immediately and silently, so
+ * requestMediaLibraryPermissionsAsync returned not-granted, every picker returned
+ * null, and the button looked broken with no way to recover inside the app.
+ *
+ * `canAskAgain` is the distinction — its own documentation says that when it is
+ * false "one should be directed to the Settings app". So:
+ *   • already granted        → straight through
+ *   • can still be asked     → ask (the OS dialog appears)
+ *   • cannot be asked again   → explain, and offer to open Settings
+ *
+ * iOS "limited" access (the person picked specific photos) reports granted, and is
+ * deliberately treated as fine: the picker shows their chosen photos, which is a
+ * complete answer to "choose a picture".
+ */
+export async function ensurePhotoAccess(): Promise<boolean> {
+  const current = await ImagePicker.getMediaLibraryPermissionsAsync();
+  if (current.granted) return true;
+
+  if (current.canAskAgain) {
+    const asked = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (asked.granted) return true;
+    // Declined at the dialog just now — they meant it; no Settings detour.
+    if (asked.canAskAgain) return false;
+  }
+
+  return new Promise<boolean>((resolve) => {
+    Alert.alert(
+      "Photo access is off",
+      "To choose a picture, allow photo access for Bridge Bird in Settings.",
+      [
+        { text: "Not now", style: "cancel", onPress: () => resolve(false) },
+        {
+          text: "Open Settings",
+          onPress: () => {
+            // Returning from Settings re-runs this check on the next tap, so a
+            // permission granted there is picked up without a restart.
+            void Linking.openSettings();
+            resolve(false);
+          },
+        },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
 export async function pickAndUploadAvatar(token: string): Promise<string | null> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return null;
+  if (!(await ensurePhotoAccess())) return null;
 
   const picked = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
@@ -150,8 +201,7 @@ export async function pickAndUploadClubHeader(
   token: string,
   programId: string,
 ): Promise<string | null> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return null;
+  if (!(await ensurePhotoAccess())) return null;
 
   const picked = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
@@ -204,8 +254,7 @@ export async function removeClubHeader(token: string, programId: string): Promis
  * while staying inside the column's cap.
  */
 export async function pickChatImage(): Promise<string | null> {
-  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-  if (!permission.granted) return null;
+  if (!(await ensurePhotoAccess())) return null;
 
   const picked = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],

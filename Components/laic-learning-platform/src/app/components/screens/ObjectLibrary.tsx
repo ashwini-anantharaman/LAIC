@@ -2,14 +2,35 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
   BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
+  GripVertical,
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { OBJECTS } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
 import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
 import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
+import { objectToPublishRow, saveObject, setObjectShared } from '../../../lib/supabase';
+import { publishLearningObject } from '../../../lib/api';
+import { applyObjectOrder, setObjectOrder, subscribeObjectOrder } from '../../../lib/objectOrderStore';
 import {
   objectCollectionIds,
   getRootCollections,
@@ -103,11 +124,72 @@ function NewCollectionModal({
   );
 }
 
+/**
+ * One library row, draggable by its grip.
+ *
+ * The grip exists because the row already carries six click targets — dragging
+ * from anywhere would steal those clicks. Listeners go on the handle only.
+ */
+function SortableObjectRow({
+  id,
+  reorderable,
+  isLast,
+  children,
+}: {
+  id: string;
+  reorderable: boolean;
+  isLast: boolean;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id,
+    disabled: !reorderable,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80"
+      style={{
+        borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.05)',
+        transform: CSS.Transform.toString(transform),
+        transition,
+        background: isDragging ? '#F8FAFC' : undefined,
+        boxShadow: isDragging ? '0 8px 20px -10px rgba(30,50,80,0.35)' : undefined,
+        position: isDragging ? 'relative' : undefined,
+        zIndex: isDragging ? 5 : undefined,
+      }}
+    >
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="w-5 shrink-0 flex items-center justify-center"
+        style={{
+          cursor: reorderable ? (isDragging ? 'grabbing' : 'grab') : 'default',
+          color: '#C7CDD6',
+          opacity: reorderable ? 1 : 0.25,
+          touchAction: 'none',
+        }}
+        title={reorderable ? 'Drag to reorder' : 'Clear the search and status filter to reorder'}
+        aria-label="Reorder"
+        disabled={!reorderable}
+      >
+        <GripVertical size={14} />
+      </button>
+      {children}
+    </div>
+  );
+}
+
 export function ObjectLibrary() {
   const [search, setSearch] = useState('');
   const [collectionSearch, setCollectionSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** Bumped when the saved folder order changes (this tab or another). */
+  const [orderTick, setOrderTick] = useState(0);
+  /** Per object: did publishing succeed? Absent = not attempted this session. */
+  const [linkPublic, setLinkPublic] = useState<Record<string, boolean>>({});
   const [showNewCol, setShowNewCol] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -231,6 +313,17 @@ export function ObjectLibrary() {
     return kids.filter((c) => c.name.toLowerCase().includes(q));
   }, [objectCollections, opened, collectionSearch]);
 
+  /**
+   * Copy the object's link AND publish it, because a link nobody else can open is
+   * not a link. /o/<id> used to resolve only in the browser that authored the
+   * object, so a copied URL failed everywhere it was pasted.
+   *
+   * The clipboard write happens FIRST and unawaited-on-network: browsers only
+   * allow it inside the user's gesture, and putting a round trip in front of it
+   * loses that gesture in Safari. Publishing then follows, and its outcome is
+   * reported on the button — a link that is merely copied and a link that
+   * actually works must not look the same.
+   */
   const copyObjectUrl = async (objectId: string) => {
     const url = objectEmbedUrl(objectId);
     try {
@@ -240,6 +333,37 @@ export function ObjectLibrary() {
     } catch {
       window.prompt('Copy this content URL:', url);
     }
+
+    // Publishing needs the row to exist server-side first: object saves are
+    // fire-and-forget (App.tsx), so an object authored in a session without a
+    // Nexus token was never persisted and has nothing to share.
+    // `allObjects` is declared just below; this only runs from a click, long
+    // after the component body has evaluated.
+    const obj = allObjects.find((o) => o.id === objectId);
+    let ok = false;
+    if (obj) {
+      try {
+        await saveObject(obj);
+        ok = await setObjectShared(objectId, true);
+      } catch {
+        ok = false;
+      }
+      if (!ok) {
+        // No Nexus session (the standalone site): both calls above 401, so the
+        // link would be copied but dead. Publish through the CS API instead,
+        // which writes the same row server-side and flags it shared.
+        try {
+          const names = objectCollections
+            .filter((c) => objectCollectionIds(obj).includes(c.id))
+            .map((c) => c.name);
+          const res = await publishLearningObject(objectToPublishRow(obj, names), true);
+          ok = !!res?.ok;
+        } catch {
+          ok = false;
+        }
+      }
+    }
+    setLinkPublic((m) => ({ ...m, [objectId]: ok }));
   };
 
   const allObjects = useMemo(() => {
@@ -265,13 +389,44 @@ export function ObjectLibrary() {
     return allObjects.filter((o) => objectCollectionIds(o).includes(opened.id));
   }, [allObjects, opened]);
 
+  useEffect(() => subscribeObjectOrder(() => setOrderTick((n) => n + 1)), []);
+
+  /** The author's saved order for this folder, ahead of any filtering. */
+  const orderedCollectionObjects = useMemo(() => {
+    if (!opened) return collectionObjects;
+    return applyObjectOrder(activeUserId, opened.id, collectionObjects);
+  }, [collectionObjects, opened, activeUserId, orderTick]);
+
   const listObjects = useMemo(() => {
-    return collectionObjects.filter((o) => {
+    return orderedCollectionObjects.filter((o) => {
       const matchSearch = o.title.toLowerCase().includes(search.toLowerCase());
       const matchStatus = filterStatus === 'all' || o.status === filterStatus;
       return matchSearch && matchStatus;
     });
-  }, [collectionObjects, search, filterStatus]);
+  }, [orderedCollectionObjects, search, filterStatus]);
+
+  /**
+   * Reordering is only offered on the unfiltered list: a partial view cannot
+   * express a total order, and dropping row 2 onto row 5 of a filtered list
+   * would move it somewhere the author cannot see.
+   */
+  const canReorder = !!opened && !search.trim() && filterStatus === 'all';
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleReorder = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!opened || !over || active.id === over.id) return;
+    const ids = orderedCollectionObjects.map((o) => o.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    setObjectOrder(activeUserId, opened.id, arrayMove(ids, from, to));
+    setOrderTick((n) => n + 1);
+  };
 
   const openFolder = (id: string) => {
     setSelectedFolderId(id);
@@ -390,6 +545,12 @@ export function ObjectLibrary() {
   );
 
   const renderObjectRows = (items: LearningObject[]) => (
+    <DndContext
+      sensors={dndSensors}
+      collisionDetection={closestCenter}
+      onDragEnd={handleReorder}
+    >
+    <SortableContext items={items.map((i) => i.id)} strategy={verticalListSortingStrategy}>
     <div
       className="rounded-[22px] overflow-hidden"
       style={{ background: 'white', boxShadow: '0 4px 20px -8px rgba(30,50,80,0.12)' }}
@@ -397,10 +558,11 @@ export function ObjectLibrary() {
       {items.map((item, idx) => {
         const draft = isDraftStatus(item.status);
         return (
-          <div
+          <SortableObjectRow
             key={item.id}
-            className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80"
-            style={{ borderBottom: idx < items.length - 1 ? '1px solid rgba(0,0,0,0.05)' : 'none' }}
+            id={item.id}
+            reorderable={canReorder}
+            isLast={idx === items.length - 1}
           >
             <div
               className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
@@ -483,9 +645,22 @@ export function ObjectLibrary() {
                 type="button"
                 onClick={() => void copyObjectUrl(item.id)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                title={copiedId === item.id ? 'Copied' : 'Copy content URL'}
+                title={
+                  copiedId !== item.id
+                    ? 'Copy content URL'
+                    : linkPublic[item.id] === false
+                      ? 'Copied — but this link only opens in this browser (publishing failed; sign in with authoring access)'
+                      : 'Copied — this link opens anywhere'
+                }
               >
-                {copiedId === item.id ? <Check size={13} className="text-emerald-600" /> : <Link2 size={13} />}
+                {copiedId === item.id ? (
+                  <Check
+                    size={13}
+                    className={linkPublic[item.id] === false ? 'text-amber-600' : 'text-emerald-600'}
+                  />
+                ) : (
+                  <Link2 size={13} />
+                )}
               </button>
               <button
                 type="button"
@@ -543,10 +718,12 @@ export function ObjectLibrary() {
                 <Trash2 size={13} />
               </button>
             </div>
-          </div>
+          </SortableObjectRow>
         );
       })}
     </div>
+    </SortableContext>
+    </DndContext>
   );
 
   return (

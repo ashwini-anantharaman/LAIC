@@ -1,12 +1,8 @@
-// Learn — the Content Library dealt as horizontal decks (Figma 476:663).
+// Learn — two horizontal decks of playing cards (Figma 476:663).
 //
-// ONE DECK PER FOLDER (owner direction 2026-08-11): the studio's library
-// folders are named for their content types — concept cards, flashcards,
-// quiz, bb-tutorials — so each published type deals as its own row, titled
-// like its folder, in the library's own order. A folder with nothing
-// published deals no row (an empty shelf is noise, not information). Only
-// PUBLISHED objects appear: drafts and in-review content are authoring
-// state, which is the studio's business.
+// "Concept Cards" is REAL: the same learning objects this screen always fetched,
+// now dealt as cards instead of listed as rows, and still opening the platform's
+// reader on tap. Loading / error / empty states are preserved.
 //
 // "Browse Lessons" is a design-only shelf — the Nexus API has no lessons,
 // chapters or coach-authored courses — so SAMPLE_LESSONS below is placeholder
@@ -15,7 +11,7 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "../../../components/brand-chrome";
 import { CARD, PlayingCard } from "../../../components/playing-card";
@@ -41,44 +37,24 @@ const SAMPLE_LESSONS = [
   { title: "Bridge Advanced", author: "Coach Miland", chapters: 10 },
 ] as const;
 
-/**
- * Folder rows, in the library's own order. Known types get their folder's
- * display name; anything the studio adds later still deals (prettified from
- * its type id) rather than silently vanishing from Learn.
- */
-const FOLDER_ROWS: readonly { type: string; title: string }[] = [
-  { type: "concept-card", title: "Concept Cards" },
-  { type: "flashcard-set", title: "Flashcards" },
-  { type: "quiz", title: "Quiz" },
-  { type: "tutorial", title: "Tutorials" },
-  { type: "tutorial-v2", title: "Tutorials" },
-];
+/** The Studio's type ids, as a learner would read them. */
+const TYPE_LABELS: Record<string, string> = {
+  "tutorial-v2": "Tutorial",
+  tutorial: "Tutorial",
+  quiz: "Quiz",
+  "flashcard-set": "Flashcards",
+  "concept-card": "Concept",
+  summary: "Summary",
+  reflection: "Reflection",
+  scenario: "Scenario",
+  assignment: "Assignment",
+  drill: "Drill",
+  lesson: "Lesson",
+};
 
-function rowsFor(objects: LearningObject[]): { title: string; items: LearningObject[] }[] {
-  const rows: { title: string; items: LearningObject[] }[] = [];
-  const rowByTitle = new Map<string, LearningObject[]>();
-  const claim = (title: string): LearningObject[] => {
-    let items = rowByTitle.get(title);
-    if (!items) {
-      items = [];
-      rowByTitle.set(title, items);
-      rows.push({ title, items });
-    }
-    return items;
-  };
-  const known = new Map(FOLDER_ROWS.map((r) => [r.type, r.title]));
-  // Known folders first, in their order; unknown types afterwards, prettified.
-  for (const r of FOLDER_ROWS) claim(r.title);
-  for (const o of objects) {
-    const title =
-      known.get(o.type) ??
-      o.type
-        .split("-")
-        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ") + "s";
-    claim(title).push(o);
-  }
-  return rows.filter((r) => r.items.length > 0);
+/** Unknown types show their own id rather than being hidden or mislabelled. */
+function typeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type;
 }
 
 function SectionHeading({ children }: { children: string }) {
@@ -104,7 +80,9 @@ function Deck({ children }: { children: ReactNode }) {
 
 export default function LearnScreen() {
   const { token } = useAuth();
-  // A club's Learn list is the club's own curriculum.
+  // The library belongs to the club being viewed. Asking about the app-wide
+  // program answers "no access" for a club's people, who are not in it — which is
+  // exactly the 403 this screen used to show.
   const clubId = useSelectedClubId();
   const [cards, setCards] = useState<LearningObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -114,35 +92,62 @@ export default function LearnScreen() {
       if (!token) return;
       setError(null);
       try {
-        // Every published object — rowsFor() deals them one deck per folder.
-        setCards(await getLearningObjects(token, { refresh, programId: clubId ?? undefined }));
+        // EVERY authored type, not just concept cards: the Studio publishes
+        // tutorials, quizzes, flashcard sets and concept cards, and filtering to
+        // one of them left most of the library invisible. The server already
+        // orders by updated_at desc, so the newest content deals first.
+        setCards(await getLearningObjects(token, { refresh, ...(clubId ? { programId: clubId } : {}) }));
       } catch (e) {
+        // Show the SERVER'S own 403 reason. It distinguishes "this feature is not
+        // enabled for the program" (a Features toggle on the club) from "your role
+        // does not grant access" (a role grant) — two different fixes that the old
+        // single message flattened into one, sending anyone who hit it looking in
+        // the wrong place.
         setError(
           e instanceof NexusError && e.status === 403
-            ? "Your account doesn't have access to learning content in this program."
+            ? `${e.message} (learning access for this club)`
             : "Couldn't load content. Check that the Nexus backend is running.",
         );
       }
     },
-    [token],
+    [token, clubId],
   );
 
   useEffect(() => {
     load();
   }, [load]);
 
+  /**
+   * Refetch when the app comes back to the foreground.
+   *
+   * Content is authored elsewhere while this app sits in the background, so the
+   * list it holds is stale by the time someone returns to it. Coming back is
+   * exactly the moment to re-read — and it costs one request, unlike polling.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void load(true);
+    });
+    return () => sub.remove();
+  }, [load]);
+
   // Keep an unused launch token warm so tapping a card opens the platform
   // without a mint round-trip.
   useFocusEffect(
     useCallback(() => {
-      if (token) prefetchLaunch(token, "learning");
-    }, [token, clubId]),
+      if (token) prefetchLaunch(token, "learning", clubId ?? undefined);
+      // Returning to the tab re-reads as well: content added since the last look
+      // should be here without a restart.
+      void load(true);
+    }, [token, clubId, load]),
   );
 
   return (
     <BrandChrome>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Learn</Text>
+
+        <SectionHeading>Concept Cards</SectionHeading>
 
         {!cards && !error && (
           <View style={styles.state}>
@@ -159,29 +164,32 @@ export default function LearnScreen() {
 
         {cards && !error && cards.length === 0 && (
           <Text style={styles.stateText}>
-            Nothing published yet. Content published in the learning platform
-            will appear here, one row per folder.
+            No concept cards yet. Content published in the learning platform will
+            appear here.
           </Text>
         )}
 
-        {cards &&
-          !error &&
-          rowsFor(cards).map((row) => (
-            <View key={row.title}>
-              <SectionHeading>{row.title}</SectionHeading>
-              <Deck>
-                {row.items.map((item, i) => (
-                  <PlayingCard
-                    key={item.id}
-                    index={i}
-                    title={item.title}
-                    body={item.description ?? undefined}
-                    onPress={() => router.push(`/learn-object/${item.id}`)}
-                  />
-                ))}
-              </Deck>
-            </View>
-          ))}
+        {cards && !error && cards.length > 0 && (
+          <Deck>
+            {cards.map((item, i) => (
+              <PlayingCard
+                key={item.id}
+                index={i}
+                title={item.title}
+                body={item.description ?? undefined}
+                // What a learner chooses on: what kind of thing it is, and how
+                // long it takes. Both are optional in the data, so the footer is
+                // whatever is actually known.
+                footer={
+                  <Text style={styles.cardFooter}>
+                    {[typeLabel(item.type), item.estimated_time].filter(Boolean).join(" · ")}
+                  </Text>
+                }
+                onPress={() => router.push(`/learn/${item.id}`)}
+              />
+            ))}
+          </Deck>
+        )}
 
         <SectionHeading>Browse Lessons</SectionHeading>
         <Deck>

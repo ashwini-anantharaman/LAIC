@@ -9,7 +9,7 @@ import {
   ArrowLeft, Check, ChevronRight, Database, Eye, LayoutList, ListOrdered,
   Loader2, PenLine, Save,
 } from 'lucide-react';
-import { useApp } from '../../../App';
+import { useApp, type AddObjectOptions } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import { errorMessage, ingestWeb, ingestYoutube } from '../../../../lib/api';
@@ -90,6 +90,7 @@ export function ObjectCreatorStructuredV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
+    listObjectVersions, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -268,7 +269,13 @@ export function ObjectCreatorStructuredV2() {
   const hasAnySource = !!(pdfSources.length || textSources.length || ytSources.length || webSources.length || librarySource);
 
   /* ── persistence ──────────────────────────────────────────── */
-  const persist = useCallback((next: StructuredV2Draft) => {
+  /** Versions the author may overwrite instead of adding another. */
+  const submitVersions = useMemo(
+    () => listObjectVersions(draft.id).filter((v) => !!v.snapshot),
+    [listObjectVersions, draft.id, objectVersionsTick],
+  );
+
+  const persist = useCallback((next: StructuredV2Draft, saveOpts?: AddObjectOptions) => {
     const blocks = unitsToBlocks(next);
     const existing = createdObjects.find((o) => o.id === next.id);
     const fromExisting = existing ? objectCollectionIds(existing) : [];
@@ -284,7 +291,7 @@ export function ObjectCreatorStructuredV2() {
       blocks: blocks as any,
       structuredV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any);
+    } as any, saveOpts);
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects, noun]);
 
@@ -821,14 +828,21 @@ export function ObjectCreatorStructuredV2() {
           onChangeDraft={(next) => commit(next)}
           onBack={() => commit(touchXDraft(draft, { activeUnitId: null }), 'navigator')}
           onSave={() => void saveDraft()}
-          onSubmit={() => {
+          onSubmit={(target) => {
             const next = touchXDraft(draft, { status: 'submitted', phase: 'review' });
-            persist(next);
+            // The save itself performs the one versioning act the author picked,
+            // so it runs against the content being saved rather than the stale
+            // copy a follow-up call would see.
+            persist(next, {
+              version: target?.versionId ? { overwriteId: target.versionId } : 'new',
+              onVersionError: (msg) => window.alert(msg),
+            });
             setDraft(next);
             clearEditingObject?.();
             navigate('cd-library');
           }}
           canSubmit={allUnitsReady(draft.units)}
+          submitVersions={submitVersions}
           rail={rail}
         />
         {globalHoot}

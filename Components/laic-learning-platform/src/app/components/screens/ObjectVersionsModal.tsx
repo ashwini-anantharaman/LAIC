@@ -179,6 +179,15 @@ export function ObjectVersionsModal({
                       <Lock size={9} /> LOCKED
                     </span>
                   )}
+                  {!!v.editCount && (
+                    <span
+                      className="px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      style={{ background: 'rgba(180,83,9,0.1)', color: '#B45309' }}
+                      title={`Resubmitted onto this version ${v.editCount} time${v.editCount === 1 ? '' : 's'}`}
+                    >
+                      EDITED {v.editCount}x
+                    </span>
+                  )}
                   <StatusPill status={v.status} />
                 </div>
                 <p style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>

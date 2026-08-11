@@ -128,6 +128,13 @@ export function seedTopLevelSlots(
     });
   }
 
+  // Author-added slots (recipeIndex -1, e.g. Blank canvas "Add content") are
+  // not recipe-derived — preserve them across Structure re-entries.
+  const seeded = new Set(out.map((s) => s.id));
+  for (const s of existing || []) {
+    if (s.recipeIndex === -1 && !seeded.has(s.id)) out.push(s);
+  }
+
   return out;
 }
 
@@ -187,9 +194,9 @@ export function applySectionOutline(
   existing: V2Section[],
   titles: StructureSectionTitle[],
   analysis: RecipeStructureAnalysis,
-  opts?: { writeYourself?: boolean },
+  opts?: { writeYourself?: boolean; freeSections?: boolean },
 ): V2Section[] {
-  const writeYourself = !!opts?.writeYourself;
+  const writeYourself = !!opts?.writeYourself || !!opts?.freeSections;
   let outline = [...(titles || [])];
   if (writeYourself) {
     outline = outline.filter((t) => String(t.title || '').trim());
@@ -258,11 +265,18 @@ export function structureIsReady(
   analysis: RecipeStructureAnalysis,
   slots: V2TopLevelSlot[],
   sections: { title: string }[],
-  opts?: { writeYourself?: boolean },
+  opts?: { writeYourself?: boolean; freeform?: boolean },
 ): boolean {
   if (opts?.writeYourself) {
     const named = (sections || []).filter((s) => String(s.title || '').trim());
     return named.length >= 1;
+  }
+  if (opts?.freeform) {
+    for (const slot of slots) {
+      if (slot.kind === 'library' && slot.required && !slot.versionPin?.objectId) return false;
+    }
+    const named = (sections || []).filter((s) => String(s.title || '').trim());
+    return named.length >= 1 || slots.length >= 1;
   }
   for (const slot of slots) {
     if (slot.kind !== 'library') continue;
