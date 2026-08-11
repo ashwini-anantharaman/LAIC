@@ -32,6 +32,7 @@ import {
 } from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
 import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
@@ -44,10 +45,12 @@ const GRID_TOP_GAP = 42;
 
 export default function PlayScreen() {
   const { token } = useAuth();
+  // The selected club scopes every bridge read on this screen (null = app-wide).
+  const clubId = useSelectedClubId();
   const { width } = useWindowDimensions();
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
-    token ? peekSummary(token) : null,
+    token ? peekSummary(token, clubId ?? undefined) : null,
   );
   const [error, setError] = useState<string | null>(null);
 
@@ -70,15 +73,15 @@ export default function PlayScreen() {
       );
       let cancelled = false;
       setError(null);
-      refreshSummary(token)
+      refreshSummary(token, clubId ?? undefined)
         .then((sum) => !cancelled && setSummary(sum))
         // A failed refresh with stale data on screen stays silent — the stale
         // summary beats an error banner.
-        .catch(() => !cancelled && !peekSummary(token) && setError("Couldn't load your boards."));
+        .catch(() => !cancelled && !peekSummary(token, clubId ?? undefined) && setError("Couldn't load your boards."));
       return () => {
         cancelled = true;
       };
-    }, [token]),
+    }, [token, clubId]),
   );
 
   const inProgress = summary?.in_progress ?? [];

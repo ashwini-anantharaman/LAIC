@@ -47,6 +47,14 @@ export interface ResolvedPlatformAccess {
    * bridge_coach would reach everything that role reaches platform-wide.
    */
   partnerClub?: boolean;
+  /**
+   * The club's OWN program id when partnerClub is set. `programId` above is the
+   * CONNECTED parent (clubs share the parent's data instance), which is right
+   * for sessions and assignments — but club-scoped policy (a member may only
+   * hire their own club's coaches) needs to know which club granted entry, and
+   * that id is otherwise lost at this seam.
+   */
+  partnerProgramId?: string;
   /** Fine-grained capabilities carried by the granting PROGRAM role (its
    *  `perms.capabilities`), when access came from a program role with a
    *  "partial" (capability-bound) platform grant. The platform context filters
@@ -270,6 +278,7 @@ export async function resolvePlatformAccess(
         platformRole: null,
         roleName: "Partner access",
         partnerClub: true,
+        partnerProgramId: partnerRow.id as string,
         programRoleCapabilities: fa && fa.length ? fa : null,
       };
     }

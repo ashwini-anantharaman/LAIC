@@ -11,12 +11,15 @@ import {
 import { OptionCard, PrimaryButton, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { useSelectedClubId } from "../lib/club-context";
 import { fetchProgramLearners, NexusError, ProgramLearner } from "../lib/nexus";
 
 /** Coach view: the program's learner roster (Phase 1 — reviews and
  *  assignments will hang off each learner in Phase 2). */
 export default function LearnersScreen() {
   const { token } = useAuth();
+  // The selected club scopes every bridge read on this screen (null = app-wide).
+  const clubId = useSelectedClubId();
   const [learners, setLearners] = useState<ProgramLearner[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -24,7 +27,7 @@ export default function LearnersScreen() {
     if (!token) return;
     setError(null);
     try {
-      setLearners(await fetchProgramLearners(token));
+      setLearners(await fetchProgramLearners(token, clubId ?? undefined));
     } catch (e) {
       setError(
         e instanceof NexusError && e.status === 403
@@ -32,7 +35,7 @@ export default function LearnersScreen() {
           : "Couldn't load the learner roster. Check that the backend is running.",
       );
     }
-  }, [token]);
+  }, [token, clubId]);
 
   useEffect(() => {
     load();

@@ -80,8 +80,12 @@ export function BridgeSessionWarmer() {
         onUrlChange={(u) => {
           // Landed on a signed-in /m page: the cookie session is live. Record
           // the origin so every embed from now on loads directly, and vanish.
+          // Recorded WITH the program it was minted for: a club member's embeds
+          // pin their club, and must not inherit this app-wide session — their
+          // first embed handshakes for the club instead. (For them this warm
+          // bounces at the platform's door and simply times out.)
           if (u.includes("/m/") && token && originRef.current) {
-            rememberBridgeOrigin(token, originRef.current);
+            rememberBridgeOrigin(token, originRef.current, PROGRAM_ID);
             setUrl(null);
           }
         }}

@@ -67,6 +67,7 @@ import {
   platformAppSlug,
   platformRoleConfig,
   resolvePlatformAccess,
+  type ResolvedPlatformAccess,
 } from "../platformAccess";
 
 type Row = Record<string, any>;
@@ -1039,10 +1040,21 @@ platformRouter.get("/bridge/learners", async (c) => {
 // hiring another switches. Instant (no approval) in v1.
 
 /** The program's coaches — visible to every bridge-program member/learner. */
+/**
+ * The hirable coach pool for THIS caller. Entered through a club, the pool is
+ * the club's own instructors and nobody else (owner direction 2026-08-10) —
+ * a club member never browses the parent program's coach list.
+ */
+async function _hirableCoaches(access: ResolvedPlatformAccess): Promise<Row[]> {
+  return access.partnerClub && access.partnerProgramId
+    ? graph.listClubCoaches(access.orgId, access.partnerProgramId, access.programId)
+    : graph.listProgramCoaches(access.orgId, access.programId);
+}
+
 platformRouter.get("/bridge/coaches", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
-  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  const coaches = await _hirableCoaches(access);
   // Names + ids only (people isolation: no emails to browsing learners).
   return c.json(
     coaches.map((co) => ({
@@ -1202,9 +1214,20 @@ platformRouter.post("/bridge/my-coach", async (c) => {
   const coachId = String(body.coach_id ?? "");
   if (!coachId) throw new HttpError(400, "coach_id is required");
   if (!user.email) throw new HttpError(403, "Only learners can hire a coach");
-  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  let participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
+  if (!participant && access.partnerClub) {
+    // A club member has no registration and therefore no participant row in
+    // the parent instance — their first hire mints one, which is what the
+    // relationship, the roster group, and every learner-side read key on.
+    participant = await graph.ensureClubLearnerParticipant(
+      access.orgId, access.programId, access.profileId,
+    );
+  }
   if (!participant) throw new HttpError(403, "Only program learners can hire a coach");
-  const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
+  // THE POOL IS THE POLICY: entered through a club, only that club's own
+  // instructors are offered — and only they pass validation here, so a
+  // free-typed coach_id cannot reach outside the club either.
+  const coaches = await _hirableCoaches(access);
   const coach = coaches.find((co) => co.coach_id === coachId);
   if (!coach) throw new HttpError(404, "That coach is not part of this program");
   await graph.addLearnerCoach(access.orgId, access.programId, participant.id as string, coachId);

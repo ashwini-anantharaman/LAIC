@@ -18,26 +18,31 @@
 
 import { BridgeSummary, fetchBridgeSummary } from "./nexus";
 
-let cached: { token: string; summary: BridgeSummary } | null = null;
-let inflight: { token: string; promise: Promise<BridgeSummary> } | null = null;
+// Keyed by token AND program: a club member's summary is their club's world,
+// and one cache slot serving both scopes would flash the wrong counts.
+const keyOf = (token: string, programId?: string) => `${token}|${programId ?? ""}`;
+
+let cached: { key: string; summary: BridgeSummary } | null = null;
+let inflight: { key: string; promise: Promise<BridgeSummary> } | null = null;
 
 /** The last summary for this token — render it NOW, refresh behind it. */
-export function peekSummary(token: string): BridgeSummary | null {
-  return cached?.token === token ? cached.summary : null;
+export function peekSummary(token: string, programId?: string): BridgeSummary | null {
+  return cached?.key === keyOf(token, programId) ? cached.summary : null;
 }
 
 /** Fetch fresh and remember it; concurrent callers share one round-trip. */
-export function refreshSummary(token: string): Promise<BridgeSummary> {
-  if (inflight && inflight.token === token) return inflight.promise;
-  const promise = fetchBridgeSummary(token)
+export function refreshSummary(token: string, programId?: string): Promise<BridgeSummary> {
+  const key = keyOf(token, programId);
+  if (inflight && inflight.key === key) return inflight.promise;
+  const promise = fetchBridgeSummary(token, programId)
     .then((summary) => {
-      cached = { token, summary };
+      cached = { key, summary };
       return summary;
     })
     .finally(() => {
-      if (inflight?.token === token) inflight = null;
+      if (inflight?.key === key) inflight = null;
     });
-  inflight = { token, promise };
+  inflight = { key, promise };
   return promise;
 }
 

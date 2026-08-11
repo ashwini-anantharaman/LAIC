@@ -42,22 +42,19 @@ const ADMIN: readonly BridgeRole[] = [
   "bridge_fellow",
 ];
 /**
- * The shorthand used by ~22 `defaultRoles: ALL` grants — deliberately every role
- * EXCEPT bridge_club_member.
+ * The shorthand used by ~23 `defaultRoles: ALL` grants — every role, INCLUDING
+ * bridge_club_member (owner direction 2026-08-10, superseding the challenges-only
+ * phase 1).
  *
- * A club member enters from the club app for one purpose (challenges, and the
- * table a challenge board opens). Inheriting ALL would have handed the new role
- * every page on the platform, which is exactly the boundary it exists to draw.
- * Its grants are therefore opt-IN: each feature a club member should reach names
- * the role explicitly, and everything else omits it.
+ * A club member now holds the ordinary MEMBER surface: the home page, playing
+ * (quick play, the table), their games, the library, challenges. The boundary
+ * the role still draws is everything keyed narrower than ALL — the admin and
+ * expert areas, coach-only lists, org pages and governance all name their roles
+ * explicitly and none of them names the club member. WHO a club member can hire
+ * as a coach is not this file's boundary: the Nexus backend restricts their
+ * coach pool to their own club's instructors.
  */
-const ALL = ALL_BRIDGE_ROLES.filter((r) => r !== "bridge_club_member");
-
-/**
- * ALL plus a club member — the handful of features a club's people reach through
- * the club app: challenges, and the table a challenge board opens.
- */
-const WITH_CLUB: readonly BridgeRole[] = [...ALL, "bridge_club_member"];
+const ALL = ALL_BRIDGE_ROLES;
 
 /**
  * The gateable surface. Keys are stable contract with the enforcement layer —
@@ -167,9 +164,7 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     group: "Pages",
     kind: "page",
     description: "The challenges list and everything it opens; hidden, challenges are unreachable.",
-    // WITH_CLUB: a club member reaches challenges from the club app, and this is
-    // the only PAGE they reach. Every other page keeps ALL, which excludes them.
-    defaultRoles: WITH_CLUB,
+    defaultRoles: ALL,
   },
 
   // Table: the controls and rails around a live table.
@@ -420,10 +415,9 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     group: "Challenges",
     kind: "feature",
     description: "Assembling and inviting to a new challenge; hidden, challenges can only be played.",
-    // WITH_CLUB, matching the spec's "challenge.create (ALL roles)". Which club
-    // members actually get a + is decided by the app's own catalogue
+    // Which club members actually get a + is decided by the app's own catalogue
     // (app.challenge.create) — the platform allows it, the club role gates it.
-    defaultRoles: WITH_CLUB,
+    defaultRoles: ALL,
   },
 
   // Organization: org-profile editing.

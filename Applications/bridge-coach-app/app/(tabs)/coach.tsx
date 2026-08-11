@@ -10,6 +10,7 @@ import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { OptionCard, Screen } from "../../components/ui";
 import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
 import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary, type SummaryCoach } from "../../lib/nexus";
@@ -18,12 +19,14 @@ import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 
 export default function CoachScreen() {
   const { token } = useAuth();
+  // The selected club scopes every bridge read on this screen (null = app-wide).
+  const clubId = useSelectedClubId();
   // Both caches are primed at sign-in — seed from them so the first focus
   // shows the real view (and the coach's name below) with no fetch in front.
   const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token) : null));
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
-    token ? peekSummary(token) : null,
+    token ? peekSummary(token, clubId ?? undefined) : null,
   );
 
   useEffect(() => {
@@ -35,7 +38,7 @@ export default function CoachScreen() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, clubId]);
 
   useFocusEffect(
     useCallback(() => {
@@ -49,13 +52,13 @@ export default function CoachScreen() {
         peekBridgeOrigin(token),
       );
       let cancelled = false;
-      refreshSummary(token)
+      refreshSummary(token, clubId ?? undefined)
         .then((s) => !cancelled && setSummary(s))
         .catch(() => {});
       return () => {
         cancelled = true;
       };
-    }, [token]),
+    }, [token, clubId]),
   );
 
   const s = summary;

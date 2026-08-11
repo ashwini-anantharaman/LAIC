@@ -27,11 +27,11 @@ const ADMIN: readonly BridgeRole[] = [
   "bridge_reviewer",
   "bridge_fellow",
 ];
-// Mirrors index.ts: "everyone" deliberately EXCLUDES bridge_club_member — a
-// club member reaches challenges and nothing else, so they join only the
-// challenges set below. Using the raw role list here silently handed the club
-// role every surface the moment it was added; the invariant test caught it.
-const ALL = ALL_BRIDGE_ROLES.filter((r) => r !== "bridge_club_member");
+// Mirrors index.ts: "everyone" INCLUDES bridge_club_member (owner direction
+// 2026-08-10 — club members hold the ordinary member surface; only the
+// narrower admin/coach/org sets exclude them). The invariant test keeps this
+// file and the registry agreeing.
+const ALL = ALL_BRIDGE_ROLES;
 
 /**
  * The 16 capability sets. Their featureKeys partition every ACCESS_FEATURES key
@@ -170,8 +170,7 @@ export type SetAssignment = Record<string, BridgeRole[]>;
 export const DEFAULT_ASSIGNMENT: SetAssignment = {
   basics: [...ALL],
   playing: [...ALL],
-  // Challenges is the ONE set a club member holds (index.ts WITH_CLUB).
-  challenges: [...ALL, "bridge_club_member"],
+  challenges: [...ALL],
   player_roster: [...ALL],
   neural_players: [...ALL],
   library: [...ALL],

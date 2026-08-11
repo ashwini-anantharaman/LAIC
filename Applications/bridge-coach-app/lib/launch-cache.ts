@@ -77,15 +77,23 @@ export async function takeLaunch(
 // screen can load its destination directly and skip the mint + exchange
 // round-trips entirely (the slow part of screen switching). Keyed by session
 // token for the same reason the cache above is: no cross-user leaks.
-let bridgeOrigin: { token: string; origin: string } | null = null;
+//
+// ALSO keyed by program: the cookie session carries the program the launch
+// was minted for, so a session exchanged for one club must not be reused for
+// another (or for the app-wide program) — a direct load there would scope
+// every read to the wrong instance. Callers that don't pass a program keep
+// the old behavior of matching whatever is remembered.
+let bridgeOrigin: { token: string; origin: string; programId?: string } | null = null;
 
-export function rememberBridgeOrigin(token: string, origin: string): void {
-  bridgeOrigin = { token, origin };
+export function rememberBridgeOrigin(token: string, origin: string, programId?: string): void {
+  bridgeOrigin = { token, origin, ...(programId ? { programId } : {}) };
 }
 
 /** The signed-in origin for this token, or null when a handshake is needed. */
-export function peekBridgeOrigin(token: string): string | null {
-  return bridgeOrigin?.token === token ? bridgeOrigin.origin : null;
+export function peekBridgeOrigin(token: string, programId?: string): string | null {
+  if (bridgeOrigin?.token !== token) return null;
+  if (programId && bridgeOrigin.programId && bridgeOrigin.programId !== programId) return null;
+  return bridgeOrigin.origin;
 }
 
 /** The session died on that origin (bounced to /welcome) — handshake again. */
