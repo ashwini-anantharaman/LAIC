@@ -38,7 +38,10 @@ export default function LearnContentScreen() {
       const base = LEARNING_PLATFORM_URL || launch.launch_url;
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
-        program_id: PROGRAM_ID,
+        // The SAME program the launch was minted for — a club, when one is
+        // selected. Pinning the app-wide id here handed the platform a token
+        // and a program that disagreed for club members.
+        program_id: clubId ?? PROGRAM_ID,
         object: id,
         embed: "1", // content only — the app owns the surrounding navigation
       });
@@ -46,7 +49,7 @@ export default function LearnContentScreen() {
     } catch {
       setError("Couldn't open this content. Check that the learning platform is running.");
     }
-  }, [token, id]);
+  }, [token, id, clubId]);
 
   useEffect(() => {
     load();

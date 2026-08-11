@@ -18,7 +18,10 @@ import { Platform } from "react-native";
 
 const LOCAL = {
   api: "http://localhost:8000",
-  learning: "http://localhost:5174",
+  // The studio's own `vite` default. This briefly pointed at 5174 ("our
+  // known-good instance" while 5173 was contested); nothing serves 5174 any
+  // more, so every locally opened lesson showed "localhost refused to connect".
+  learning: "http://localhost:5173",
   bridgeLaunch: "http://localhost:3000/nexus/launch",
 };
 
