@@ -9,7 +9,7 @@ import {
   ExternalLink, Save,
 } from 'lucide-react';
 import { pastelFromHex } from '../../../../lib/pastel';
-import { partsToBlocks } from '../../../../lib/tutorialV2/draftModel';
+import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV2/draftModel';
 import {
   isNestedEditablePart,
   nestedEditorKindForPart,
@@ -86,6 +86,16 @@ export function TutorialV2AssembleEditor({
     hintN: draft.structure.hintN,
   };
   const blocks = partsToBlocks(parts, fv);
+  const partPages = partPageNumbers(parts);
+  const pageCount = partPages.length ? partPages[partPages.length - 1] : 1;
+  const setPartPage = (partId: string, page: number) => {
+    // One atomic draft patch — parts AND the manual-pages flag together, so
+    // the structure-level re-stamp can never clobber the new break flags.
+    onChangeDraft({
+      assembledParts: movePartToPage(parts, partId, page),
+      manualPageBreaks: true,
+    });
+  };
 
   const updatePart = (id: string, patch: Partial<TutorialV2Part>) => {
     onChangeParts(parts.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -260,9 +270,21 @@ export function TutorialV2AssembleEditor({
                 <div className="space-y-3">
                   {parts.map((p, i) => {
                     const selected = selectedPartId === p.id;
+                    const pageStartsHere = i === 0 || partPages[i] !== partPages[i - 1];
                     return (
+                      <React.Fragment key={p.id}>
+                      {pageStartsHere && (
+                        <div className="flex items-center gap-2 pt-1" aria-label={`Student page ${partPages[i]}`}>
+                          <span
+                            className="px-2.5 py-0.5 rounded-full shrink-0"
+                            style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', background: '#EEF2FF', color: '#4338CA' }}
+                          >
+                            STUDENT PAGE {partPages[i]}
+                          </span>
+                          <div className="flex-1" style={{ height: 1, background: 'rgba(67,56,202,0.18)' }} />
+                        </div>
+                      )}
                       <div
-                        key={p.id}
                         className="rounded-2xl p-4"
                         style={{
                           background: 'white',
@@ -277,6 +299,19 @@ export function TutorialV2AssembleEditor({
                             {p.label || p.type || `Part ${i + 1}`}
                           </span>
                           <div className="flex items-center gap-1">
+                            <select
+                              value={partPages[i]}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => { e.stopPropagation(); setPartPage(p.id, Number(e.target.value)); }}
+                              className="rounded-lg px-1.5 py-0.5 mr-1"
+                              style={{ fontSize: 11, fontWeight: 650, color: '#4338CA', border: '1px solid rgba(67,56,202,0.25)', background: '#F5F3FF', outline: 'none' }}
+                              title="Student page this block appears on"
+                            >
+                              {Array.from({ length: pageCount }, (_, k) => (
+                                <option key={k + 1} value={k + 1}>Page {k + 1}</option>
+                              ))}
+                              <option value={pageCount + 1}>New page {pageCount + 1}</option>
+                            </select>
                             <button type="button" onClick={(e) => { e.stopPropagation(); movePart(i, -1); }} disabled={i === 0} className="p-1 rounded" style={{ color: i === 0 ? '#E5E7EB' : '#6B7280' }}>
                               <ChevronUp size={14} />
                             </button>
@@ -423,6 +458,7 @@ export function TutorialV2AssembleEditor({
                           </>
                         )}
                       </div>
+                      </React.Fragment>
                     );
                   })}
                 </div>

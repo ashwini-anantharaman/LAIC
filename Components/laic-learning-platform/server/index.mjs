@@ -4299,6 +4299,9 @@ export async function handler(req, res) {
         'For questions: prompt, options (4 strings), correct (0-3), exp, label.',
         'For add_block question content: {question,options,correct,explanation}. For rich-text: {text,heading}.',
         'For add_block image content: {url:"__ATTACHED_IMAGE_N__",caption,imageRef}.',
+        'STUDENT PAGES: on Review, block labels may end with "· page N" — the learner page the block sits on.',
+        'To move a block to another page (e.g. "put the quiz on page 1"), propose update_block {blockId, patch:{"page": N}}.',
+        'The block lands at the end of that page; use page = last page + 1 for a brand-new page. Do NOT use reorder_blocks for page moves.',
       ].join('\n');
 
       const historyLines = history

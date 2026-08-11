@@ -444,6 +444,8 @@ export function applyLearnerPageBreaksToParts(
 ): TutorialV2Part[] {
   const list = parts || [];
   if (!list.length) return list;
+  // Review-level page edits win — keep the parts' own break flags.
+  if (draft.manualPageBreaks) return list;
 
   const slots = draft.topLevelSlots || [];
   const sections = draft.sections || [];
@@ -756,4 +758,67 @@ export function partsToBlocks(parts: TutorialV2Part[] | GeneratedPart[], fv: Rec
       },
     };
   }) as Block[];
+}
+
+
+/* ── Review-stage per-part page control ─────────────────────── */
+
+/** 1-based student page for each part, derived from pageBreakBefore flags. */
+export function partPageNumbers(parts: TutorialV2Part[]): number[] {
+  let page = 1;
+  return (parts || []).map((p, i) => {
+    if (i > 0 && p.pageBreakBefore) page += 1;
+    return page;
+  });
+}
+
+/**
+ * Move one part onto a student page (1-based). The part is placed at the end
+ * of that page; `page` beyond the last page starts a new one. Break flags are
+ * rewritten so the first part of every page after the first carries
+ * pageBreakBefore.
+ */
+export function movePartToPage(
+  parts: TutorialV2Part[],
+  partId: string,
+  page: number,
+): TutorialV2Part[] {
+  const list = parts || [];
+  const idx = list.findIndex((p) => p.id === partId);
+  if (idx < 0) return list;
+
+  // Split into page groups by the current flags.
+  const groups: TutorialV2Part[][] = [];
+  for (let i = 0; i < list.length; i++) {
+    if (i === 0 || list[i].pageBreakBefore) groups.push([]);
+    groups[groups.length - 1].push(list[i]);
+  }
+  if (!groups.length) groups.push([]);
+
+  // Pull the part out of its group.
+  let moved: TutorialV2Part | null = null;
+  for (const g of groups) {
+    const gi = g.findIndex((p) => p.id === partId);
+    if (gi >= 0) { moved = g.splice(gi, 1)[0]; break; }
+  }
+  if (!moved) return list;
+
+  const target = Math.max(1, Math.round(Number(page) || 1));
+  while (groups.length < target) groups.push([]);
+  groups[target - 1].push(moved);
+
+  // Rebuild, dropping now-empty pages, and rewrite the break flags.
+  const rebuilt = groups.filter((g) => g.length);
+  const out: TutorialV2Part[] = [];
+  rebuilt.forEach((g, gi) => {
+    g.forEach((p, pi) => {
+      const wantBreak = gi > 0 && pi === 0;
+      if (!!p.pageBreakBefore === wantBreak) { out.push(p); return; }
+      const next = { ...p };
+      if (wantBreak) next.pageBreakBefore = true;
+      else delete next.pageBreakBefore;
+      out.push(next);
+    });
+  });
+  return out;
 }
