@@ -38,7 +38,7 @@ import {
   removeMyAvatar,
   subscribeToMyAvatar,
 } from "../lib/avatar-store";
-import { updateMyDisplayName } from "../lib/nexus";
+import { NexusError, updateMyDisplayName } from "../lib/nexus";
 
 /** The avatar ships dark for the cream app bar; on the maroon sheet it must be white. */
 const AVATAR_WHITE = tintSvg(ICON_AVATAR, "#ffffff");
@@ -139,8 +139,15 @@ function Field({
 
 export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
   const { user, token, signOut, refreshUser } = useAuth();
-  const [first, last] = splitName(user?.display_name);
   const [savingName, setSavingName] = useState(false);
+  /**
+   * The name we just asked the server for, shown while the round trip is in
+   * flight. Without it the row reverts to the session's old name the moment the
+   * input closes and only corrects itself once refreshUser lands — which reads
+   * exactly like the edit was rejected.
+   */
+  const [pendingName, setPendingName] = useState<string | null>(null);
+  const [first, last] = splitName(pendingName ?? user?.display_name);
 
   /**
    * Save a renamed first or last half.
@@ -160,11 +167,21 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
       .join(" ");
     if (!combined) return;
     setSavingName(true);
+    setPendingName(combined);
     try {
-      await updateMyDisplayName(token, combined);
+      const saved = await updateMyDisplayName(token, combined);
+      // Show what the SERVER stored — it trims and collapses whitespace, so this
+      // can differ from what was typed.
+      setPendingName(saved);
       await refreshUser();
-    } catch {
-      Alert.alert("Couldn't save that name", "Check your connection and try again.");
+    } catch (e) {
+      // Drop the optimistic value so the row shows the truth again, and say what
+      // went wrong rather than silently snapping back.
+      setPendingName(null);
+      Alert.alert(
+        "Couldn't save that name",
+        e instanceof NexusError ? e.message : "Check your connection and try again.",
+      );
     } finally {
       setSavingName(false);
     }

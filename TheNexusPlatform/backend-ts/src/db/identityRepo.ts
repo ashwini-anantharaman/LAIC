@@ -167,11 +167,20 @@ export async function setProfileAvatar(
  * the others. The name is the person's, not a club's, so this is deliberately
  * global: one edit, every club.
  *
- * Matched by auth user id OR email, because an invited profile carries the email
- * before it is ever linked to an auth user — without the email arm, a person's
- * not-yet-linked rows would keep the old name forever. Email identifies the person
- * here (one credential, one person), which is the same assumption the login path
- * makes.
+ * The match must be a SUPERSET of what loadUser reads, or the rename appears not
+ * to work at all: loadUser (behind /auth/me) selects on
+ * `auth_user_id = X or profiles.id = X` and returns persons[0], so a row keyed by
+ * `profiles.id = X` — the legacy shape where a profile's own id IS the auth id —
+ * would be read but never written. The PATCH then succeeded on other rows while
+ * /auth/me kept serving the old name, and the field snapped back.
+ *
+ * So all three arms:
+ *   • auth_user_id — the normal link,
+ *   • profiles.id  — the legacy shape loadUser also accepts,
+ *   • email        — an invited profile carries the email before it is ever linked
+ *                    to an auth user; without this those rows keep the old name
+ *                    forever. Email identifies the person (one credential, one
+ *                    person), the same assumption the login path makes.
  *
  * `name` is written alongside `display_name` because several readers fall back to
  * it (`display_name || name || email`); leaving it stale would let the old name
@@ -190,8 +199,9 @@ export async function setOwnDisplayName(
       .set({ displayName, name: displayName, updatedAt: new Date() })
       .where(
         email
-          ? sql`(${profiles.authUserId} = ${authUserId} or lower(${profiles.email}) = lower(${email}))`
-          : eq(profiles.authUserId, authUserId),
+          ? sql`(${profiles.authUserId} = ${authUserId} or ${profiles.id} = ${authUserId}
+                 or lower(${profiles.email}) = lower(${email}))`
+          : sql`(${profiles.authUserId} = ${authUserId} or ${profiles.id} = ${authUserId})`,
       )
       .returning({ id: profiles.id });
     return rows.length;
