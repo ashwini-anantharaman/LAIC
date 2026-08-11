@@ -109,6 +109,13 @@ export type NexusUser = {
   id: string;
   email: string;
   display_name: string | null;
+  /**
+   * True while the password was handed over by an admin rather than chosen by
+   * this person. One credential is shared across every club they belong to, so
+   * until they own it an admin could reset it — the app makes them choose one
+   * before showing anything else (backend 0046).
+   */
+  must_set_password?: boolean;
   /** Profile-level role: "org_admin", "teacher", "student", "platform_admin". */
   role: string;
   /** Present on /auth/me; absent from the login response. */
@@ -332,6 +339,36 @@ export async function setClubHeaderImage(
   });
 }
 
+// ── Password ownership ───────────────────────────────────────────────────────
+
+/** Change your own password. The current one is required. */
+export async function changeMyPassword(
+  token: string,
+  currentPassword: string,
+  password: string,
+): Promise<void> {
+  await request("/api/platform/auth/password", {
+    method: "POST",
+    token,
+    body: { current_password: currentPassword, password },
+  });
+}
+
+/**
+ * Redeem a claim code an admin read out, and set a password. Unauthenticated —
+ * the whole point is that the person cannot sign in.
+ */
+export async function claimAccount(
+  identifier: string,
+  code: string,
+  password: string,
+): Promise<{ email: string }> {
+  return request<{ email: string }>("/api/platform/auth/claim", {
+    method: "POST",
+    body: { identifier, code, password },
+  });
+}
+
 /** The signed-in user's identity. */
 export function fetchMe(token: string): Promise<NexusUser> {
   return request<NexusUser>("/api/platform/auth/me", { token });
@@ -420,9 +457,21 @@ export function fetchBridgeSummary(token: string): Promise<BridgeSummary> {
 }
 
 /** Mint a single-use launch into the bridge platform (works for learners). */
-export function launchBridgePlatform(token: string): Promise<PlatformLaunch> {
+/**
+ * Mint a launch into the bridge platform.
+ *
+ * `programId` decides WHO the platform thinks you are. Launching the app-wide
+ * Bridge Program is right for a member of it — and wrong for a club's people, who
+ * are not in that program and so arrive with no standing at all (every challenge
+ * route then renders its 404-for-forbidden). Pass the club and the partner path
+ * resolves instead, emitting bridge_club_member.
+ */
+export function launchBridgePlatform(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<PlatformLaunch> {
   return request<PlatformLaunch>(
-    `/api/programs/${PROGRAM_ID}/bridge-platform/launch`,
+    `/api/programs/${programId}/bridge-platform/launch`,
     { method: "POST", token },
   );
 }

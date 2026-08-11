@@ -4,6 +4,8 @@
  * app-key auth used by external apps to push signups.
  */
 
+import { randomBytes } from "node:crypto";
+
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 
@@ -983,6 +985,20 @@ offeringsRouter.get("/programs/:program_id/roles", async (c) => {
   return c.json(await graph.listProgramRoles(programId));
 });
 
+/**
+ * The catalogues a PROGRAM role may bind capabilities from: this program's own
+ * console inventory, plus each app it can grant. Named once — when a provider was
+ * missing from one of the two call sites that used to inline this, its
+ * capabilities were silently dropped on save: the role stored none, the builder
+ * showed every toggle off, and the app fell back to its no-role behaviour.
+ */
+const _programRoleCatalogues = (programId: string) => [
+  { providerId: "program-console" as const, instanceId: programId },
+  { providerId: "learning" as const },
+  { providerId: "bridge" as const },
+  { providerId: "club-app" as const },
+];
+
 offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -997,10 +1013,7 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   const validCaps = req.capabilities !== undefined
     ? await _clampCapsToProvisioning(
         program,
-        await validGrantsAcross(
-          [{ providerId: "program-console", instanceId: programId }, { providerId: "learning" }, { providerId: "bridge" }],
-          req.capabilities,
-        ),
+        await validGrantsAcross(_programRoleCatalogues(programId), req.capabilities),
       )
     : undefined;
   const finalPerms: Record<string, unknown> =
@@ -1033,7 +1046,7 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
   // Fold fine-grained capabilities into perms without wiping the area perms.
   if (req.capabilities !== undefined) {
     const refs: CatalogueRef[] = existing.program_id
-      ? [{ providerId: "program-console", instanceId: existing.program_id as string }, { providerId: "learning" }, { providerId: "bridge" }]
+      ? _programRoleCatalogues(existing.program_id as string)
       : existing.organization_id
         ? [{ providerId: "org-console", instanceId: existing.organization_id as string }]
         : [{ providerId: "nexus-console" }];
@@ -1108,20 +1121,44 @@ const assignAdminSchema = z.object({ email: z.string().email(), display_name: z.
 // active member of the program right away, with an account created if they
 // didn't have one. A new account gets a shared dev password (returned so the
 // admin can pass it along) until the real reset flow lands.
-const DEFAULT_MEMBER_PASSWORD = "NexusDev2026!";
+/**
+ * The starting password for a brand-new member, generated PER PERSON.
+ *
+ * It used to be one constant for everyone, which meant anyone who knew it could
+ * sign in as any newly added member before that person got there. A per-person
+ * value costs nothing: it is returned once to the admin who added them, and the
+ * app forces a replacement at first sign-in anyway (0046).
+ *
+ * Readable rather than maximally random — an admin reads it out. The characters
+ * that misread aloud (I, L, O, 0, 1) are excluded, as with claim codes.
+ */
+const STARTING_PASSWORD_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+function newStartingPassword(): string {
+  const bytes = randomBytes(12);
+  let out = "";
+  for (let i = 0; i < 12; i += 1) {
+    out += STARTING_PASSWORD_ALPHABET[bytes[i] % STARTING_PASSWORD_ALPHABET.length];
+  }
+  // Grouped so it can be read aloud without losing your place.
+  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
+}
 async function _enrollActiveMember(
   orgId: string,
   programId: string,
   opts: { email: string; displayName?: string | null; membershipRole: string; roleId?: string | null },
-): Promise<{ email: string; created: boolean }> {
+): Promise<{ email: string; created: boolean; startingPassword: string | null }> {
   const email = opts.email.trim().toLowerCase();
   const existing = await db.getProfileByEmail(email);
   let authId: string;
   let created = false;
+  let startingPassword: string | null = null;
   if (existing) {
+    // Already in the system: reuse the credential untouched. Their password is
+    // theirs — this club is being added to an account that already exists.
     authId = (existing.auth_user_id as string) ?? (existing.id as string);
   } else {
-    authId = (await createAuthUser(email, DEFAULT_MEMBER_PASSWORD)).id as string;
+    startingPassword = newStartingPassword();
+    authId = (await createAuthUser(email, startingPassword)).id as string;
     created = true;
   }
   const profileId = await db.ensureOrgProfile(authId, orgId, { email, role: "teacher", displayName: opts.displayName ?? null });
@@ -1144,7 +1181,7 @@ async function _enrollActiveMember(
   if (opts.roleId) {
     await graph.setProgramRoleAssignment(orgId, programId, email, opts.roleId).catch((e) => console.error("enroll role:", e));
   }
-  return { email, created };
+  return { email, created, startingPassword };
 }
 
 offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
@@ -1172,7 +1209,14 @@ offeringsRouter.post("/programs/:program_id/administrators", async (c) => {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { email: req.email },
   });
-  return c.json({ active: true, email: result.email, created: result.created, temp_password: result.created ? DEFAULT_MEMBER_PASSWORD : null });
+  return c.json({
+    active: true,
+    email: result.email,
+    created: result.created,
+    // Returned ONCE, and only for an account this call created. An existing
+    // member's password is their own and is never disclosed here.
+    temp_password: result.startingPassword,
+  });
 });
 
 // ── Program members + custom-role assignment (§3.5 Team & Roles: People) ────
@@ -1366,7 +1410,14 @@ offeringsRouter.post("/programs/:program_id/members", async (c) => {
     orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
     metadata: { email: req.email, role_id: req.role_id ?? null },
   });
-  return c.json({ active: true, email: result.email, created: result.created, temp_password: result.created ? DEFAULT_MEMBER_PASSWORD : null });
+  return c.json({
+    active: true,
+    email: result.email,
+    created: result.created,
+    // Returned ONCE, and only for an account this call created. An existing
+    // member's password is their own and is never disclosed here.
+    temp_password: result.startingPassword,
+  });
 });
 
 // Link-based program invitation (the true system): creates a PENDING invitation

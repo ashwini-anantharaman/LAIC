@@ -111,6 +111,16 @@ export type BridgeRole =
   | "bridge_program_admin"
   | "bridge_org_admin"
   | "bridge_club_admin"
+  /**
+   * A member of a PARTNER club, entering through the club app.
+   *
+   * Its own role rather than reusing bridge_coach, because the platform gates by
+   * ROLE against one global catalogue: a club member given bridge_coach would see
+   * everything that role reaches platform-wide, and there is no per-club
+   * narrowing to fall back on. A distinct role is the only place the boundary can
+   * actually be drawn.
+   */
+  | "bridge_club_member"
   | "bridge_coach"
   | "bridge_reviewer"
   | "bridge_fellow"

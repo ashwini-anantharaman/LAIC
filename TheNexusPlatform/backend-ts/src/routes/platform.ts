@@ -1,5 +1,7 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
+import { randomBytes } from "node:crypto";
+
 import { Hono, type Context } from "hono";
 import { z } from "zod";
 
@@ -307,6 +309,10 @@ platformRouter.post("/auth/signup", async (c) => {
         metadata: { name: org.name },
       });
     }
+    const ownerProfileId = dbEnabled()
+      ? await db.resolveProfileId(auth.id, null).catch(() => null)
+      : null;
+    if (ownerProfileId) await db.markPasswordClaimed(ownerProfileId).catch(() => {});
     const session = await signInUser(req.email, req.password);
     const user = await loadPlatformUser(auth.id, req.email);
     return c.json(_authUserResponse(user, session.access_token));
@@ -314,7 +320,11 @@ platformRouter.post("/auth/signup", async (c) => {
 
   if (req.signup_type === "student") {
     const auth = await createAuthUser(req.email, req.password);
-    await db.createProfile(auth.id, req.email, "student", req.display_name ?? null);
+    const profile = await db.createProfile(auth.id, req.email, "student", req.display_name ?? null);
+    // They chose this password themselves, so it is theirs from the start (0046).
+    // Without this the app would greet them by asking them to replace the
+    // "temporary password" they had just invented.
+    if (profile?.id) await db.markPasswordClaimed(profile.id as string).catch(() => {});
     const session = await signInUser(req.email, req.password);
     const user = await loadPlatformUser(auth.id, req.email);
     return c.json(_authUserResponse(user, session.access_token));
@@ -342,6 +352,8 @@ platformRouter.post("/auth/signup", async (c) => {
     role: profileRole,
     displayName: req.display_name ?? null,
   });
+  // Chosen by them at signup, so theirs from the start (0046).
+  if (profileId) await db.markPasswordClaimed(profileId as string).catch(() => {});
 
   // Stored membership role uses the canonical "instructor" (Nexus addendum);
   // the public-facing "Coach"/"Teacher" word is derived from program category
@@ -822,13 +834,23 @@ platformRouter.get("/auth/me", async (c) => {
   // The confined-operator role and the membership summaries touch different
   // tables and share nothing — fetched together. This endpoint is called on
   // every launch and every role check, so its latency is pure overhead.
-  const [nexusRole, memberships] = await Promise.all([
+  const [nexusRole, memberships, claim] = await Promise.all([
     // A confined Nexus operator (custom platform-scope role) — drives the
     // operator mode + confined console nav.
     dbEnabled() && user.email && user.role !== "platform_admin"
       ? graph.getNexusRoleForEmail(user.email).catch(() => null)
       : Promise.resolve(null),
     _membershipSummaries(user),
+    // Has this person set their own password? Until they have, the credential
+    // is one an admin handed them, and the app makes them choose their own
+    // before it shows anything else (0046). Its two reads chain on each other
+    // but on nothing else here, so the chain runs as one parallel strand.
+    (async () => {
+      if (!dbEnabled()) return null;
+      const orgId = user.memberships[0]?.org_id ?? null;
+      const profileId = await db.resolveProfileId(user.id, orgId).catch(() => null);
+      return profileId ? await db.getClaimState(profileId).catch(() => null) : null;
+    })(),
   ]);
   return c.json({
     id: user.id,
@@ -837,6 +859,8 @@ platformRouter.get("/auth/me", async (c) => {
     role: user.role,
     memberships,
     nexus_role: nexusRole,
+    // Absent/false for an operator or a demo backend — nothing to claim there.
+    must_set_password: claim ? !claim.claimed : false,
   });
 });
 
@@ -955,7 +979,20 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    roles: isPrebuilt ? [access.platformRole] : mapped.roles,
+    // A club's people all get bridge_club_member — deliberately narrow, and
+    // deliberately the same for a club's admin. The platform gates by role
+    // against ONE GLOBAL catalogue, so the parent program's coach role would open
+    // every page it reaches, and bridge_club_admin sits in the platform's ADMIN
+    // set (its admin & expert-review areas). Neither belongs to a club.
+    //
+    // bridge_club_member holds page.challenges and challenge.create, nothing
+    // more. WHICH club people may create is then the app's own catalogue's
+    // business (app.challenge.create) — the platform permits, the club role gates.
+    roles: isPrebuilt
+      ? [access.platformRole]
+      : access.partnerClub
+        ? ["bridge_club_member"]
+        : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
     capabilities, // effective bridge-catalogue capability ids (tab gating + display)
@@ -1624,6 +1661,88 @@ platformRouter.get("/club-app/members", async (c) => {
       };
     }),
   );
+});
+
+// ── Password ownership: claim codes (0046) ──────────────────────────────────
+//
+// No email is wired in this stack, so recovery for a claimed account is a
+// single-use code an admin issues and reads out. The person redeems it in the app
+// and picks a password nobody else ever sees — which is the whole point: the
+// admin regains the ability to HELP without regaining the ability to log in as
+// them.
+
+/** Issue a claim code for a member. Same authority as setting credentials. */
+platformRouter.post("/members/:member_id/claim-code", async (c) => {
+  const user = await getCurrentUser(c);
+  const memberId = c.req.param("member_id") ?? "";
+  const membership = await db.getMembership(memberId);
+  if (!membership) throw new HttpError(404, "Member not found");
+  _assertCanManageCredentials(user, membership);
+
+  const profile = await db.getProfile(membership.profile_id as string);
+  if (!profile) throw new HttpError(404, "Profile not found");
+  if (!profile.email) throw new HttpError(400, "This member has no email");
+
+  const issued = await db.issueClaimCode(membership.profile_id as string);
+  await db.recordAuditEvent("member.claim_code_issued", {
+    orgId: membership.org_id as string,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: (membership.program_id as string) ?? null,
+    targetType: "profile",
+    targetId: membership.profile_id as string,
+    // The code itself is never recorded — only that one was issued.
+    metadata: { email: profile.email, expires_at: issued.expiresAt },
+  });
+  return c.json({ code: issued.code, expires_at: issued.expiresAt });
+});
+
+/**
+ * Redeem a claim code and set a password. UNAUTHENTICATED by necessity — the
+ * person cannot sign in, which is why they have a code.
+ */
+platformRouter.post("/auth/claim", async (c) => {
+  const body = parseBody(
+    z.object({
+      identifier: z.string().trim().min(1),
+      code: z.string().trim().min(1),
+      password: z.string().min(8, "Use at least 8 characters").max(128),
+    }),
+    await c.req.json(),
+  );
+  const redeemed = await db.redeemClaimCode(body.identifier, body.code);
+  // One message for every failure — a wrong code, an expired one and an unknown
+  // account must be indistinguishable.
+  if (!redeemed) throw new HttpError(400, "That code is not valid or has expired");
+
+  await setAuthUserPassword(redeemed.email, body.password);
+  await db.markPasswordClaimed(redeemed.profileId);
+  return c.json({ ok: true, email: redeemed.email });
+});
+
+/** Change your own password. The current one is required — a live session is not
+ *  on its own proof enough to replace the credential it rests on. */
+platformRouter.post("/auth/password", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = parseBody(
+    z.object({
+      current_password: z.string().min(1),
+      password: z.string().min(8, "Use at least 8 characters").max(128),
+    }),
+    await c.req.json(),
+  );
+  if (!user.email) throw new HttpError(400, "This account has no email");
+  // Verified by signing in with it, which is the only check that cannot be
+  // fooled by a stale session.
+  await signInUser(user.email, body.current_password).catch(() => {
+    throw new HttpError(403, "That current password is not right");
+  });
+  await setAuthUserPassword(user.email, body.password);
+
+  const orgId = user.memberships[0]?.org_id ?? null;
+  const profileId = await db.resolveProfileId(user.id, orgId);
+  if (profileId) await db.markPasswordClaimed(profileId);
+  return c.json({ ok: true });
 });
 
 // The person's display name in THIS org (their org-scoped profile), falling
@@ -2710,6 +2829,18 @@ platformRouter.patch("/members/:member_id/credentials", async (c) => {
   }
 
   if (req.password !== undefined) {
+    // A credential is SHARED across every club its owner belongs to. While it is
+    // unclaimed nobody owns it, so a starting password is a courtesy; once the
+    // person has set their own, setting it here would hand this club a working
+    // key to another club's member. Refuse, and point at the code instead.
+    const claim = await db.getClaimState(membership.profile_id as string);
+    if (claim?.claimed) {
+      throw new HttpError(
+        409,
+        "This person has set their own password, so it cannot be changed here. " +
+          "Issue a claim code instead — they redeem it in the app and choose a new one.",
+      );
+    }
     await setAuthUserPassword(email, req.password);
     changed.push("password");
   }
@@ -4058,9 +4189,20 @@ platformRouter.get("/admin/organizations", async (c) => {
 // The operator's provisioning event — a fixed, repeatable sequence: create the
 // org + isolation boundary, grant default entitlements, then enroll every named
 // administrator (first = owner) as an ACTIVE member with an account right away —
-// no pending activation link. New accounts get a shared temp password (returned
-// so the operator can hand it off) until the real reset flow lands.
-const PROVISION_PASSWORD = "NexusDev2026!";
+// no pending activation link. Each new account gets ITS OWN starting password,
+// returned once so the operator can hand it off; the app makes them replace it at
+// first sign-in (0046).
+//
+// It used to be one constant shared by every account this path created, which
+// meant anyone who knew it could sign in as a freshly provisioned org admin
+// before that person got there.
+const STARTING_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+function newStartingPassword(): string {
+  const bytes = randomBytes(12);
+  let out = "";
+  for (let i = 0; i < 12; i += 1) out += STARTING_ALPHABET[bytes[i] % STARTING_ALPHABET.length];
+  return `${out.slice(0, 4)}-${out.slice(4, 8)}-${out.slice(8)}`;
+}
 const provisionOrgSchema = z.object({
   name: z.string().min(1),
   // Optional operator-chosen URL slug; normalized + made unique server-side.
@@ -4068,12 +4210,25 @@ const provisionOrgSchema = z.object({
   admins: z.array(z.object({ email: z.string().email(), display_name: z.string().nullish() })).min(1),
 });
 
-/** Resolve an existing login by email, or create one. Returns the auth id. */
-async function _resolveOrCreateAccount(email: string): Promise<{ authId: string; created: boolean }> {
+/**
+ * Resolve an existing login by email, or create one with its own starting
+ * password. An existing account keeps the password it has — provisioning an org
+ * must never overwrite someone's credential.
+ */
+async function _resolveOrCreateAccount(
+  email: string,
+): Promise<{ authId: string; created: boolean; startingPassword: string | null }> {
   const existing = await db.getProfileByEmail(email.trim().toLowerCase());
-  if (existing) return { authId: (existing.auth_user_id as string) ?? (existing.id as string), created: false };
-  const acct = await createAuthUser(email.trim().toLowerCase(), PROVISION_PASSWORD);
-  return { authId: acct.id as string, created: true };
+  if (existing) {
+    return {
+      authId: (existing.auth_user_id as string) ?? (existing.id as string),
+      created: false,
+      startingPassword: null,
+    };
+  }
+  const startingPassword = newStartingPassword();
+  const acct = await createAuthUser(email.trim().toLowerCase(), startingPassword);
+  return { authId: acct.id as string, created: true, startingPassword };
 }
 
 platformRouter.post("/admin/organizations", async (c) => {
@@ -4095,8 +4250,18 @@ platformRouter.post("/admin/organizations", async (c) => {
     allowSecondOrg: true,
   });
 
-  const enrolled: Array<{ email: string; role: string; created: boolean }> = [
-    { email: owner.email.trim().toLowerCase(), role: "owner", created: ownerAcct.created },
+  const enrolled: Array<{
+    email: string;
+    role: string;
+    created: boolean;
+    temp_password: string | null;
+  }> = [
+    {
+      email: owner.email.trim().toLowerCase(),
+      role: "owner",
+      created: ownerAcct.created,
+      temp_password: ownerAcct.startingPassword,
+    },
   ];
   // Remaining named admins → active administrator memberships in the new org.
   for (const a of rest) {
@@ -4106,7 +4271,12 @@ platformRouter.post("/admin/organizations", async (c) => {
       email, role: "org_admin", displayName: a.display_name ?? null, allowSecondOrg: true,
     });
     await db.addMembership(result.organizationId, profileId, "administrator", null, "edit", null);
-    enrolled.push({ email, role: "administrator", created: acct.created });
+    enrolled.push({
+      email,
+      role: "administrator",
+      created: acct.created,
+      temp_password: acct.startingPassword,
+    });
   }
 
   await db.recordAuditEvent("organization.provisioned", {
@@ -4118,7 +4288,8 @@ platformRouter.post("/admin/organizations", async (c) => {
   });
   return c.json({
     organization: { id: result.organizationId, name: req.name, slug: result.slug, status: "active" },
-    admins: enrolled.map((e) => ({ ...e, temp_password: e.created ? PROVISION_PASSWORD : null })),
+    // Each new account's own password, returned once. Existing accounts: null.
+    admins: enrolled,
   });
 });
 

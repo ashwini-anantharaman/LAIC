@@ -12,6 +12,7 @@
 // not changing them.
 
 import type { Card, Seat, Vul } from "@bridge/events";
+import { parseBbo } from "@bridge/formats";
 import { SeatDiagram } from "@bridge/table-ui";
 import { useState } from "react";
 import { DealEditor } from "@/components/library/DealEditor";
@@ -51,6 +52,31 @@ export function BoardCard({
 }>) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [link, setLink] = useState("");
+  const [linking, setLinking] = useState(false);
+
+  /** Take the FIRST board out of a pasted BBO link and make it this board. */
+  const applyLink = () => {
+    const parsed = parseBbo(link);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    const imported = parsed.boards[0]!;
+    setError(null);
+    setLink("");
+    setLinking(false);
+    // Importing a named deal IS setting the board — the creator has had the
+    // hands in front of them — so it carries the same badge the editor does.
+    onOpenEditor();
+    onChange({
+      hands: imported.hands,
+      dealer: imported.dealer,
+      vul: imported.vul,
+      edited: true,
+      touched: true,
+    });
+  };
 
   const openEditor = () => {
     setEditing(true);
@@ -79,6 +105,11 @@ export function BoardCard({
   };
 
   const vulnerable = board.vul !== "none";
+  const errorEl = error ? (
+    <p className="mx-2.5 mb-2 rounded border border-red-200 bg-red-50 px-2.5 py-1.5 text-[11px] text-invalid">
+      {error}
+    </p>
+  ) : null;
 
   return (
     <div
@@ -147,15 +178,50 @@ export function BoardCard({
         until you open the editor
       </p>
 
-      <button
-        type="button"
-        onClick={() => (editing ? setEditing(false) : openEditor())}
-        className={`w-full border-t border-neutral-100 py-2 text-xs font-bold ${
-          editing ? "bg-emerald-50 text-emerald-800" : "bg-neutral-50 text-neutral-600"
-        }`}
-      >
-        {editing ? "Close pack editor" : "Edit pack →"}
-      </button>
+      {!editing && errorEl}
+
+      {/* Two doors onto the same board: paste a deal, or set it card by card.
+          Both fold away — six cards of permanent chrome is a wall. */}
+      <div className="flex border-t border-neutral-100 text-xs font-bold">
+        <button
+          type="button"
+          onClick={() => setLinking((v) => !v)}
+          className={`flex-1 border-r border-neutral-100 py-2 ${
+            linking ? "bg-neutral-100 text-neutral-800" : "bg-neutral-50 text-neutral-600"
+          }`}
+        >
+          {linking ? "Close BBO link" : "BBO link"}
+        </button>
+        <button
+          type="button"
+          onClick={() => (editing ? setEditing(false) : openEditor())}
+          className={`flex-1 py-2 ${
+            editing ? "bg-emerald-50 text-emerald-800" : "bg-neutral-50 text-neutral-600"
+          }`}
+        >
+          {editing ? "Close pack editor" : "Edit pack →"}
+        </button>
+      </div>
+
+      {linking && (
+        <div className="flex gap-1.5 border-t border-neutral-100 bg-neutral-50 px-2.5 py-2">
+          <input
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="Paste a Hand Viewer URL"
+            aria-label={`BBO hand link for board ${board.boardNo}`}
+            className="h-9 min-w-0 flex-1 rounded-lg border border-neutral-300 px-2 text-[12px] text-neutral-900"
+          />
+          <button
+            type="button"
+            onClick={applyLink}
+            disabled={!link.trim()}
+            className="h-9 shrink-0 rounded-lg bg-neutral-800 px-3 text-[11px] font-bold text-white disabled:bg-neutral-200 disabled:text-neutral-400"
+          >
+            Use deal
+          </button>
+        </div>
+      )}
 
       {editing && (
         <div className="border-t border-neutral-100 bg-neutral-50 px-2.5 py-3">

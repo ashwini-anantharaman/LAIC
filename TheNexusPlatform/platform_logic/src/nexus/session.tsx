@@ -42,6 +42,9 @@ export interface Session {
   setActiveOrg: (orgId: string | null) => void;
   login: (email: string, password: string, orgSlug?: string) => Promise<void>;
   logout: () => void;
+  /** Clear the session WITHOUT navigating — for flows that must stay on the
+   *  page after signing out, e.g. accepting an invitation as someone else. */
+  clearSession: () => void;
   refresh: () => Promise<void>;
   /** Dev impersonation (null when not testing a role). */
   impersonation: Impersonation | null;
@@ -135,6 +138,18 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     window.location.href = !isOperator && orgSlug ? portalPath(orgSlug) : "/login";
   }, [user, activeOrgId, setActiveOrg]);
 
+  /**
+   * Sign out in place. `logout` deliberately hard-redirects to the right door,
+   * which is wrong when the current page IS the destination — the invite screen
+   * needs the session gone and itself still mounted.
+   */
+  const clearSession = useCallback(() => {
+    clearToken();
+    setActiveOrg(null);
+    setUser(null);
+    setImpersonation(null);
+  }, [setActiveOrg]);
+
   const startImpersonation = useCallback((imp: Impersonation) => setImpersonation(imp), []);
   const stopImpersonation = useCallback(() => setImpersonation(null), []);
 
@@ -143,6 +158,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     return {
       loading,
       user,
+      clearSession,
       mode: deriveMode(user),
       orgMemberships: memberships.filter((m) => !m.program_id),
       programMemberships: memberships.filter((m) => m.program_id),
@@ -155,7 +171,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       startImpersonation,
       stopImpersonation,
     };
-  }, [loading, user, activeOrgId, setActiveOrg, login, logout, refresh, impersonation, startImpersonation, stopImpersonation]);
+  }, [loading, user, activeOrgId, setActiveOrg, login, logout, clearSession, refresh, impersonation, startImpersonation, stopImpersonation]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

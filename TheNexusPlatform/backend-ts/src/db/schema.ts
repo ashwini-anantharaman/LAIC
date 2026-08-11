@@ -19,7 +19,13 @@ export const profiles = pgTable("profiles", {
   email: text("email"),
   /** Optional second sign-in identifier; unique case-insensitively (0038). */
   username: text("username"),
-  /** Profile picture as a base64 data URL, capped at ~150 kB (0040). */
+  /** When the person set their OWN password (0046). Null = admins may still set
+   *  a starting one; set = only they can change it, via a claim code. */
+  claimedAt: timestamp("claimed_at", { withTimezone: true }),
+  /** SHA-256 of a pending single-use claim code, and its expiry (0046). */
+  claimCodeHash: text("claim_code_hash"),
+  claimCodeExpiresAt: timestamp("claim_code_expires_at", { withTimezone: true }),
+  /** Profile picture as a base64 data URL, capped at ~150 kB (0043). */
   avatar: text("avatar"),
   role: text("role").notNull().default("student"),
   name: text("name"),
@@ -130,7 +136,7 @@ export const clubChatMessages = pgTable("club_chat_messages", {
   programId: uuid("program_id").notNull(),
   authorProfileId: uuid("author_profile_id").notNull(),
   body: text("body").notNull(),
-  /** An attached picture as a data URL (0042); a message may be image-only. */
+  /** An attached picture as a data URL (0045); a message may be image-only. */
   image: text("image"),
   pinnedAt: timestamp("pinned_at", { withTimezone: true }),
   pinnedBy: uuid("pinned_by"),
@@ -154,7 +160,7 @@ export const programs = pgTable("programs", {
   category: text("category").notNull(),
   description: text("description"),
   icon: text("icon"),
-  /** The club's banner on the app's Club tab, as a data URL (0041). */
+  /** The club's banner on the app's Club tab, as a data URL (0044). */
   headerImage: text("header_image"),
   instructorLabel: text("instructor_label"),
   learnerLabel: text("learner_label"),

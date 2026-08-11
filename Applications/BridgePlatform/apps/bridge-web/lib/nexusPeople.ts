@@ -49,6 +49,31 @@ export async function listBridgePeople(programId: string): Promise<BridgePerson[
   });
 }
 
+/**
+ * Everyone in a Nexus program, with the id an invite can address.
+ *
+ * listBridgePeople above is email-keyed and so cannot name an invitee — every
+ * bridge artifact keys on the org-scoped profile id, which is what
+ * /bridge/context calls nexusUserId. This endpoint returns exactly that
+ * (`profile_id`), so a challenge can invite the people of a program by their
+ * Nexus account rather than by whatever roster the caller happens to see.
+ */
+export interface NexusProgramMember {
+  profile_id: string | null;
+  email: string | null;
+  display_name: string | null;
+  membership_role: string;
+  status: string;
+}
+
+export async function listNexusProgramMembers(programId: string): Promise<NexusProgramMember[]> {
+  return cachedNexusGet(`members:${programId}`, async () => {
+    const res = await nexusFetch(`/api/programs/${encodeURIComponent(programId)}/members`);
+    if (!res.ok) throw new Error(`Nexus members request failed: ${res.status}`);
+    return (await res.json()) as NexusProgramMember[];
+  });
+}
+
 export async function setBridgeRole(
   programId: string,
   email: string,

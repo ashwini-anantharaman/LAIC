@@ -13,8 +13,12 @@
 // The + and the leaderboard are each gated on their own capability, so a role
 // may view challenges without creating them, or without seeing standings.
 //
-// The Nexus API has no clubs, challenges or leaderboards yet, so the content in
-// SEED_CHALLENGES is placeholder; the layout and interaction are real.
+// The content in SEED_CHALLENGES is still placeholder — this screen is the
+// designed shell. The WORKING feature lives on the bridge platform
+// (/bridge/challenges: assemble boards, play them against BEN, score, compare),
+// and "Open live challenges" embeds it. Phase 1 of joining the two: prove the
+// embed renders inside the app before replacing this screen's data with real
+// challenges.
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -248,6 +252,23 @@ export default function ClubChallengesScreen() {
           </ScrollView>
         )}
 
+        {/* Through to the working feature, while this screen is still a shell
+            over seeded data. Outside the canSeeBoard gate deliberately: seeing
+            standings and reaching the real challenges are different things. */}
+        <Pressable
+          onPress={() => router.push("/live-challenges")}
+          accessibilityRole="button"
+          accessibilityLabel="Open live challenges on the bridge platform"
+          style={({ pressed }) => [
+            styles.liveRow,
+            { marginTop: 14 * s, marginHorizontal: ROW.left * s },
+            pressed && styles.pressed,
+          ]}
+        >
+          <Text style={[styles.liveText, { fontSize: 14 * s }]}>Open live challenges</Text>
+          <Ionicons name="arrow-forward" size={15 * s} color={Brand.cream} />
+        </Pressable>
+
         {canSeeBoard ? (
           <Text
             style={[
@@ -291,6 +312,16 @@ const styles = StyleSheet.create({
   title: { fontFamily: Fonts.display, fontSize: Type.screenTitle, color: Brand.ink },
   plus: { alignItems: "center", justifyContent: "center", backgroundColor: Brand.ink },
   heading: { fontFamily: Fonts.heading, fontSize: Type.sectionHeading, color: Brand.ink },
+  liveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 11,
+    borderRadius: 12,
+    backgroundColor: Brand.green,
+  },
+  liveText: { fontFamily: Fonts.bodySemibold, color: Brand.cream },
   boardClip: { flex: 1, overflow: "hidden" },
   rowShadow: { position: "absolute", left: 0, right: 0, backgroundColor: Brand.rowShadow },
   row: {

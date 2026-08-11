@@ -9,6 +9,7 @@
 
 export * from "./context";
 export { parseLin, type LinBoard, type LinParseResult } from "./lin";
+export { linFromBbo, parseBbo, type BboLinResult } from "./bbo";
 export { parseLinToContexts } from "./linAdapter";
 export { parsePbn } from "./pbn";
 export { randomContext } from "./random";

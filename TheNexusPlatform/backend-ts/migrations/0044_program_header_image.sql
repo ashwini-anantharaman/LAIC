@@ -1,6 +1,6 @@
 -- A club's header image — the banner behind its name on the app's Club tab.
 --
--- Same storage decision as profile pictures (0040): a base64 data URL on the row
+-- Same storage decision as profile pictures (0043): a base64 data URL on the row
 -- rather than object storage. The app downsizes to 1080 wide before upload, so
 -- this is a few hundred kilobytes at most, and every surface that draws it is
 -- already fetching the club it belongs to.

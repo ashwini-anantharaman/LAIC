@@ -1,17 +1,24 @@
 // Who a creator can invite. Server-side only.
 //
-// The spec asks for a platform-wide, cross-org people search (§2). Nexus has
-// no such endpoint today: the roster helpers the assignments surfaces use
-// (`getMyLearners`) and the program coaches list are the only sources that
-// return the USER IDS challenge invites are keyed on — `listBridgePeople` is
-// email-keyed and cannot address an invite. So v1 searches the people this
-// caller can actually see; the search box and the invite records are already
-// id-based, so widening the directory later is a change to THIS file only.
+// The directory is the PROGRAM'S OWN PEOPLE, from Nexus.
+//
+// It used to be whatever roster the caller happened to see (their learners plus
+// the program's coaches), because the only email-keyed Nexus listing could not
+// name an invitee — every bridge artifact keys on the org-scoped profile id,
+// which /bridge/context calls nexusUserId. /api/programs/:id/members returns
+// exactly that id alongside the email, so a club can now invite its own members
+// by their Nexus account. The roster helpers stay as a fallback for a context
+// carrying no program (and for stub mode).
+//
+// Still not the spec's platform-wide cross-org search — that needs a directory
+// endpoint Nexus does not have. This is the club-scoped subset, which is what the
+// club app actually wants.
 
 import { STUB_USERS, stubDisplayName } from "@bridge/nexus-client";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { cache } from "react";
 import { getMyLearners, getProgramCoaches, nexusMode } from "@/lib/nexus";
+import { listNexusProgramMembers, nexusProgramId } from "@/lib/nexusPeople";
 
 export interface ChallengePerson {
   /** The id space challenge invites (and every bridge artifact) key on. */
@@ -38,6 +45,18 @@ export const listChallengePeople = cache(
           handle: `@${user.devUserId}`,
         });
     } else {
+      // The program's own roster first — everyone in the club, by Nexus account.
+      const programId = nexusProgramId(context);
+      if (programId) {
+        const members = await listNexusProgramMembers(programId).catch(() => []);
+        for (const m of members)
+          if (m.profile_id)
+            add({
+              userId: m.profile_id,
+              name: m.display_name?.trim() || m.email || m.profile_id,
+              handle: m.email ?? undefined,
+            });
+      }
       const [learners, coaches] = await Promise.all([
         getMyLearners().catch(() => []),
         getProgramCoaches().catch(() => []),

@@ -20,7 +20,7 @@ import { useSession } from "@/nexus/session";
 
 export function AcceptInvite() {
   const { token = "" } = useParams();
-  const { user, refresh, logout } = useSession();
+  const { user, refresh, clearSession } = useSession();
   const navigate = useNavigate();
 
   const [inv, setInv] = useState<Invitation | null>(null);
@@ -120,8 +120,12 @@ export function AcceptInvite() {
                 <Button
                   className="w-full"
                   onClick={() => {
-                    logout();
-                    // Session cleared — the create-account branch below renders.
+                    // clearSession, NOT logout: logout hard-redirects to the
+                    // sign-in door, which navigated away from this very page —
+                    // the invitation could never be accepted by anyone but the
+                    // admin who was already signed in. Clearing in place lets the
+                    // create-account branch below render.
+                    clearSession();
                   }}
                 >
                   Continue as {inv.display_name ?? inv.email}
@@ -139,7 +143,19 @@ export function AcceptInvite() {
               </div>
             ) : (
               <form onSubmit={createAccountAndAccept} className="mt-6 space-y-4">
-                <p className="text-sm text-muted-foreground">Create your account to accept.</p>
+                {/* This form serves BOTH cases and cannot tell them apart without
+                    probing whether the email has an account, which would disclose
+                    that to whoever holds the link. So it says both plainly rather
+                    than guessing — the old copy said "choose a password", which
+                    for an existing account silently meant "type your current one"
+                    and only explained itself after the attempt failed. */}
+                <p className="text-sm text-muted-foreground">
+                  New here? Pick a password and we'll create your account.{" "}
+                  <span className="text-foreground">
+                    Already use this email elsewhere? Enter that account's existing password
+                  </span>{" "}
+                  — accepting adds this organization to it, and your password does not change.
+                </p>
                 <div className="space-y-1.5">
                   <Label htmlFor="accept-name2">Your name</Label>
                   <Input
@@ -155,7 +171,7 @@ export function AcceptInvite() {
                   <Input id="accept-email" value={inv.email ?? ""} disabled />
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="accept-password">Choose a password</Label>
+                  <Label htmlFor="accept-password">Password</Label>
                   <Input
                     id="accept-password"
                     type="password"

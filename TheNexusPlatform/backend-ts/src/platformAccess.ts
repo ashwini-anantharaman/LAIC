@@ -40,6 +40,13 @@ export interface ResolvedPlatformAccess {
   platformRole: string | null;
   /** The custom role's name when the grant came from one (null for admins). */
   roleName: string | null;
+  /**
+   * True when the grant came through a PARTNER program — a club. The bridge
+   * context emits club roles for these, not the parent program's coach role: the
+   * platform gates by role against one global catalogue, so a club member handed
+   * bridge_coach would reach everything that role reaches platform-wide.
+   */
+  partnerClub?: boolean;
   /** Fine-grained capabilities carried by the granting PROGRAM role (its
    *  `perms.capabilities`), when access came from a program role with a
    *  "partial" (capability-bound) platform grant. The platform context filters
@@ -262,6 +269,7 @@ export async function resolvePlatformAccess(
         level: "edit",
         platformRole: null,
         roleName: "Partner access",
+        partnerClub: true,
         programRoleCapabilities: fa && fa.length ? fa : null,
       };
     }

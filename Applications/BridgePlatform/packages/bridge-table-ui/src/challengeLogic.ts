@@ -170,3 +170,45 @@ export function compareRowInert(state: CompareState, boardNo: number): boolean {
 export function comparePicked(state: CompareState, boardNo: number, key: string): boolean {
   return state.picks.some((p) => p.boardNo === boardNo && p.key === key);
 }
+
+// ---------------------------------------------------------------------------
+// The way onward from a finished board
+// ---------------------------------------------------------------------------
+
+/** The one action a finished challenge board offers. */
+export interface OnwardStep {
+  label: string;
+  href: string;
+  /** The quiet line beside the button. */
+  note: string;
+}
+
+/**
+ * Where a finished board sends you. The entry route (`/play`) already resolves
+ * the next unplayed board, so there is no cursor to carry here — the only
+ * decision is whether any board is LEFT, and a viewer who has finished every
+ * one is sent to the results rather than bounced through the entry.
+ */
+export function onwardFromBoard({
+  challengeId,
+  boardsLeft,
+  boardsTotal,
+}: Readonly<{
+  challengeId: string;
+  /** Boards still without a completed play, this board's freeze included. */
+  boardsLeft: number;
+  boardsTotal: number;
+}>): OnwardStep {
+  const base = `/bridge/challenges/${encodeURIComponent(challengeId)}`;
+  if (boardsLeft <= 0)
+    return {
+      label: "See your results",
+      href: `${base}/results`,
+      note: `All ${boardsTotal} boards played`,
+    };
+  return {
+    label: "Next board",
+    href: `${base}/play`,
+    note: boardsLeft === 1 ? "1 board left" : `${boardsLeft} boards left`,
+  };
+}

@@ -103,21 +103,14 @@ export async function getRoleContext(token: string): Promise<RoleContext> {
       settle(fetchMe(token)),
     ]);
 
-    // The app's own access is program-scoped, so it needs the membership first:
-    // a club member's program is their club, not the app-wide PROGRAM_ID.
     const memberships = me.value?.memberships ?? [];
-    const programId =
-      memberships.filter((m) => m.program_id).find((m) => m.program_category === "partner")
-        ?.program_id ??
-      memberships.find((m) => m.program_id)?.program_id ??
-      null;
-    const app = programId ? await settle(fetchAppContext(token, programId)) : { answered: true, value: null };
-
     const value: RoleContext = {
       bridge: bridge.value,
       memberships,
       profileRole: me.value?.role ?? null,
-      app: app.value,
+      // Filled in per club by getAppContext — a person may be a Mentor in one
+      // club and a plain member in another, so there is no single answer here.
+      app: null,
     };
     // Only an ANSWERED resolve is worth remembering; a hiccup retries on the
     // next call instead of masquerading as "learner" until sign-out.
@@ -233,9 +226,82 @@ export function primaryMembership(context: RoleContext): NexusMembership | null 
   );
 }
 
+// ── The app's access, per club ───────────────────────────────────────────────
+//
+// Keyed by (token, programId): capabilities belong to a club, so switching clubs
+// switches what you may do. Cached so every gate on a screen shares one fetch.
+const appCache = new Map<string, AppContext | null>();
+const appInflight = new Map<string, Promise<AppContext | null>>();
+const appKey = (token: string, programId: string) => `${token}::${programId}`;
+
+/** The caller's access in ONE club, or null when it cannot be resolved. */
+export async function getAppContext(
+  token: string,
+  programId: string,
+): Promise<AppContext | null> {
+  const key = appKey(token, programId);
+  if (appCache.has(key)) return appCache.get(key) ?? null;
+  const existing = appInflight.get(key);
+  if (existing) return existing;
+
+  const promise = settle(fetchAppContext(token, programId))
+    .then(({ answered, value }) => {
+      // Only an ANSWERED resolve is cached; a hiccup would otherwise pin an
+      // empty capability set (and so the permissive fallback) for the session.
+      if (answered) appCache.set(key, value);
+      return value;
+    })
+    .finally(() => appInflight.delete(key));
+  appInflight.set(key, promise);
+  return promise;
+}
+
+/** Synchronously, for a first paint that does not flash the fallback. */
+export function peekAppContext(token: string, programId: string): AppContext | null {
+  return appCache.get(appKey(token, programId)) ?? null;
+}
+
+/** Drop the app access for one club (or all), so the next read refetches. */
+export function clearAppContext(token?: string, programId?: string): void {
+  if (token && programId) {
+    appCache.delete(appKey(token, programId));
+    return;
+  }
+  appCache.clear();
+  appInflight.clear();
+}
+
+/** Everyone currently rendering a gate, so a refresh redraws all of them. */
+const roleListeners = new Set<(ctx: RoleContext) => void>();
+
+export function subscribeToRoleContext(fn: (ctx: RoleContext) => void): () => void {
+  roleListeners.add(fn);
+  return () => roleListeners.delete(fn);
+}
+
+/**
+ * Re-resolve from the server, ignoring the cache, and tell every gate.
+ *
+ * Roles are edited in the Nexus console while the app is open, and the resolve
+ * is cached for the session — so without this, a permission change needed a
+ * sign-out to take effect. Called when the app returns to the foreground, which
+ * is exactly when someone comes back from changing something.
+ */
+export async function refreshRoleContext(token: string): Promise<RoleContext> {
+  if (cached?.token === token) cached = null;
+  inflight = null;
+  // Per-club access is part of what a refresh is for — a role edited in the
+  // console changes capabilities, not memberships.
+  clearAppContext();
+  const value = await getRoleContext(token);
+  for (const fn of roleListeners) fn(value);
+  return value;
+}
+
 export function clearBridgeRoleCache(): void {
   cached = null;
   inflight = null;
+  clearAppContext();
 }
 
 /**

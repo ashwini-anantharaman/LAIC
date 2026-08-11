@@ -9,6 +9,7 @@ import { getSettings } from "./config";
 import type { ProgramFeatures } from "./schemas";
 import { requireClient } from "./supabaseClient";
 import { dbEnabled } from "./db/client";
+import * as claim from "./db/claimRepo";
 import * as pg from "./db/identityRepo";
 import * as tpg from "./db/tenantRepo";
 
@@ -1055,6 +1056,28 @@ export async function getProfileByUsername(username: string): Promise<Row | null
 export async function setProfileUsername(profileId: string, username: string | null): Promise<Row> {
   if (!usePg()) throw new HttpError(400, "Usernames require the database backend");
   return pg.setProfileUsername(profileId, username);
+}
+
+// ── Password ownership (0046) — DB-backed only, like usernames ──────────────
+export async function getClaimState(profileId: string) {
+  if (!usePg()) return null;
+  return claim.getClaimState(profileId);
+}
+export async function isClaimedByEmail(email: string): Promise<boolean> {
+  if (!usePg()) return false;
+  return claim.isClaimedByEmail(email);
+}
+export async function markPasswordClaimed(profileId: string): Promise<void> {
+  if (!usePg()) return;
+  return claim.markClaimed(profileId);
+}
+export async function issueClaimCode(profileId: string) {
+  if (!usePg()) throw new HttpError(400, "Claim codes require the database backend");
+  return claim.issueClaimCode(profileId);
+}
+export async function redeemClaimCode(identifier: string, code: string) {
+  if (!usePg()) return null;
+  return claim.redeemClaimCode(identifier, code);
 }
 
 /** Session id -> org-scoped profile id. Null off the Postgres path. */

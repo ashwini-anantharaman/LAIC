@@ -23,6 +23,7 @@ export const ALL_BRIDGE_ROLES: readonly BridgeRole[] = [
   "bridge_program_admin",
   "bridge_org_admin",
   "bridge_club_admin",
+  "bridge_club_member",
   "bridge_coach",
   "bridge_reviewer",
   "bridge_fellow",
@@ -40,7 +41,23 @@ const ADMIN: readonly BridgeRole[] = [
   "bridge_reviewer",
   "bridge_fellow",
 ];
-const ALL = ALL_BRIDGE_ROLES;
+/**
+ * The shorthand used by ~22 `defaultRoles: ALL` grants — deliberately every role
+ * EXCEPT bridge_club_member.
+ *
+ * A club member enters from the club app for one purpose (challenges, and the
+ * table a challenge board opens). Inheriting ALL would have handed the new role
+ * every page on the platform, which is exactly the boundary it exists to draw.
+ * Its grants are therefore opt-IN: each feature a club member should reach names
+ * the role explicitly, and everything else omits it.
+ */
+const ALL = ALL_BRIDGE_ROLES.filter((r) => r !== "bridge_club_member");
+
+/**
+ * ALL plus a club member — the handful of features a club's people reach through
+ * the club app: challenges, and the table a challenge board opens.
+ */
+const WITH_CLUB: readonly BridgeRole[] = [...ALL, "bridge_club_member"];
 
 /**
  * The gateable surface. Keys are stable contract with the enforcement layer —
@@ -150,7 +167,9 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     group: "Pages",
     kind: "page",
     description: "The challenges list and everything it opens; hidden, challenges are unreachable.",
-    defaultRoles: ALL,
+    // WITH_CLUB: a club member reaches challenges from the club app, and this is
+    // the only PAGE they reach. Every other page keeps ALL, which excludes them.
+    defaultRoles: WITH_CLUB,
   },
 
   // Table: the controls and rails around a live table.
@@ -401,7 +420,10 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     group: "Challenges",
     kind: "feature",
     description: "Assembling and inviting to a new challenge; hidden, challenges can only be played.",
-    defaultRoles: ALL,
+    // WITH_CLUB, matching the spec's "challenge.create (ALL roles)". Which club
+    // members actually get a + is decided by the app's own catalogue
+    // (app.challenge.create) — the platform allows it, the club role gates it.
+    defaultRoles: WITH_CLUB,
   },
 
   // Organization: org-profile editing.
