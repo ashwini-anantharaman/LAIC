@@ -9,7 +9,7 @@ import {
   ArrowLeft, Plus, Trash2, Loader2, Send, Save,
   Check, ChevronRight, ListOrdered, LayoutList, Database, PenLine, Eye,
 } from 'lucide-react';
-import { useApp } from '../../../App';
+import { useApp, type AddObjectOptions } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import {
@@ -148,7 +148,7 @@ export function ObjectCreatorTutorialV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
-    listObjectVersions, overwriteObjectVersion, saveObjectAsNewVersion, objectVersionsTick,
+    listObjectVersions, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -362,7 +362,7 @@ export function ObjectCreatorTutorialV2() {
   const persist = useCallback((
     next: TutorialV2Draft,
     blocksOverride?: ReturnType<typeof partsToBlocks>,
-    saveOpts?: { skipVersionSync?: boolean },
+    saveOpts?: AddObjectOptions,
   ) => {
     const fv = {
       passOn: true,
@@ -390,7 +390,10 @@ export function ObjectCreatorTutorialV2() {
       // which can lag a tick behind and corrupt reopen.
       tutorialV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any, saveOpts);
+      // Draft saves keep content safe but leave history alone. Left on 'auto'
+      // they committed a version of their own whenever the amend window had
+      // expired, which is where the surprise extra versions came from.
+    } as any, saveOpts ?? { version: 'skip' });
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects]);
 
@@ -1365,16 +1368,14 @@ export function ObjectCreatorTutorialV2() {
               pass: draft.structure.pass || '70%',
             });
             const next = touchDraft(draft, { status: 'submitted', phase: 'review', assembledParts: parts });
-            // Save without the implicit version sync, then do exactly the one
-            // versioning act the author picked.
-            persist(next, blocks, { skipVersionSync: true });
+            // The save itself performs the one versioning act the author picked,
+            // so it runs against the content being saved rather than the stale
+            // copy a follow-up call would see.
+            persist(next, blocks, {
+              version: target?.versionId ? { overwriteId: target.versionId } : 'new',
+              onVersionError: (msg) => window.alert(msg),
+            });
             setDraft(next);
-            if (target?.versionId) {
-              const res = overwriteObjectVersion(next.id, target.versionId);
-              if (!res.ok && res.error) window.alert(res.error);
-            } else {
-              saveObjectAsNewVersion(next.id, undefined, true);
-            }
             clearEditingObject?.();
             navigate('cd-library');
           }}

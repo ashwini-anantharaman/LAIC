@@ -34,6 +34,10 @@ import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
   overwriteVersion as storeOverwriteVersion,
+  getVersion,
+  objectFromVersion,
+  truncateVersionsAfter as storeTruncateVersionsAfter,
+  markVersionPublished,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -55,6 +59,22 @@ import {
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { defaultScreenForCapabilities } from '../lib/roleAccess';
+
+/**
+ * What a save should do to version history.
+ *  'auto'  — the usual working-version sync (amend the tip, or commit the next)
+ *  'skip'  — touch nothing
+ *  'new'   — always commit the next version, even if content is unchanged
+ *  { overwriteId } — replace that version in place, bumping its edit count
+ * Submit passes an explicit mode so the amend window cannot reinterpret it.
+ */
+export type AddObjectVersionMode = 'auto' | 'skip' | 'new' | { overwriteId: string };
+
+export interface AddObjectOptions {
+  version?: AddObjectVersionMode;
+  /** Reported when an overwrite is refused (locked version, v1, …). */
+  onVersionError?: (message: string) => void;
+}
 
 export interface AppState {
   role: Role;
@@ -97,6 +117,16 @@ export interface AppState {
     versionId: string,
     notes?: string,
   ) => { ok: boolean; version?: Version; error?: string };
+  /** Roll content AND history back to a version, discarding everything above it. */
+  restoreObjectVersion: (
+    objectId: string,
+    versionId: string,
+  ) => { ok: boolean; version?: Version; removed?: number; error?: string };
+  /** Push one version's content to the shared library partner apps read. */
+  publishObjectVersion: (
+    objectId: string,
+    versionId: string,
+  ) => Promise<{ ok: boolean; version?: Version; error?: string }>;
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -144,7 +174,7 @@ export interface AppState {
   setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
   addObject: (
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
-    opts?: { skipVersionSync?: boolean },
+    opts?: AddObjectOptions,
   ) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
@@ -505,9 +535,10 @@ function StudioApp() {
 
   const addObject = useCallback((
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
-    opts?: { skipVersionSync?: boolean },
+    opts?: AddObjectOptions,
   ) => {
-    const skipVersionSync = !!opts?.skipVersionSync;
+    const versionMode = opts?.version ?? 'auto';
+    const onVersionError = opts?.onVersionError;
     const ownerId = activeUserIdRef.current;
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
@@ -554,25 +585,30 @@ function StudioApp() {
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
       }
-      // Submit decides its own versioning ("new version" vs "replace v2"), so it
-      // opts out of the implicit sync — otherwise the amend window would swallow
-      // a requested new version, or mint a spare one right before an overwrite.
-      if (!skipVersionSync) {
-        try {
-          syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
-        } catch (err: any) {
-          console.warn('[versions] sync failed:', err?.message || err);
+      // Versioning happens HERE, against the object just built — not in the
+      // caller. createdObjectsRef only refreshes on render, so a caller acting
+      // right after this returns would version the PRE-EDIT content: the
+      // overwrite would store stale blocks, and the next save would then see a
+      // difference and mint the spare version this is meant to avoid.
+      const createdBy = obj.ownerName || user?.name || 'You';
+      try {
+        if (versionMode === 'new') {
+          storeSaveAsNewVersion(ownerId, obj, createdBy, undefined, true);
+        } else if (typeof versionMode === 'object' && versionMode.overwriteId) {
+          const res = storeOverwriteVersion(ownerId, versionMode.overwriteId, obj, createdBy);
+          if (!res.ok && res.error) onVersionError?.(res.error);
+        } else if (versionMode !== 'skip') {
+          syncWorkingVersion(ownerId, obj, createdBy);
         }
+      } catch (err: any) {
+        console.warn('[versions] sync failed:', err?.message || err);
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
-      } else if (obj.status === 'in-review' || obj.status === 'approved') {
-        // Standalone site (no Nexus session): publish submitted content to the
-        // shared Nexus Supabase through the CS API so partner apps see it.
-        const names = cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name);
-        publishLearningObject(objectToPublishRow(obj, names)).catch((err) =>
-          console.warn('[publish] could not publish to shared library:', err?.message || err));
       }
+      // Nothing is pushed to the shared library here. Publishing is a per-version
+      // act (Versions → Publish): an implicit publish on every submit would let
+      // later work silently replace the version an author chose to ship.
       return nextList;
     });
     // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
@@ -608,6 +644,78 @@ function StudioApp() {
     if (!obj) return { ok: false, error: 'Content not found.' };
     const user = USERS.find((u) => u.id === ownerId);
     return storeOverwriteVersion(ownerId, versionId, obj, obj.ownerName || user?.name || 'You', notes);
+  }, []);
+
+  /**
+   * Roll the object back to a version: its content AND its history.
+   *
+   * Everything above the restored version is discarded, so the version you
+   * restored to becomes the tip and the list still describes the object you
+   * have. Nothing new is committed — the restored state is only recorded if
+   * the author submits afterwards.
+   *
+   * History is truncated FIRST: if something above is locked the whole restore
+   * is refused, and refusing after already overwriting the content would leave
+   * the object and its history disagreeing.
+   */
+  const restoreObjectVersion = useCallback((objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+    if (!version.snapshot) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to restore.` };
+    }
+
+    const trimmed = storeTruncateVersionsAfter(ownerId, objectId, version.versionNumber);
+    if (!trimmed.ok) return { ok: false, error: trimmed.error };
+
+    const restored = objectFromVersion(base, version);
+    addObject({
+      ...restored,
+      // Keep the object where it lives now; the snapshot predates any moves.
+      collectionIds: objectCollectionIds(base),
+      status: base.status,
+    } as any, { version: 'skip' });
+    return { ok: true, version, removed: trimmed.removed };
+  }, [addObject]);
+
+  /**
+   * Push ONE version's content to the shared library, where partner apps read.
+   *
+   * The snapshot is what ships — not the working copy — so an author can keep
+   * editing after publishing without that work leaking out. The shared table
+   * holds one row per object, so publishing a version is also what unpublishes
+   * the previous one: readers see exactly the version chosen here.
+   */
+  const publishObjectVersion = useCallback(async (objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+    if (!version.snapshot) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to publish.` };
+    }
+
+    const cols = getObjectCollections(ownerId);
+    const ids = objectCollectionIds(base);
+    const names = cols.filter((c) => ids.includes(c.id)).map((c) => c.name);
+    const shipped = { ...objectFromVersion(base, version), collectionIds: ids };
+
+    try {
+      await publishLearningObject(
+        objectToPublishRow(shipped, names, version.versionNumber),
+      );
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not reach the shared library.' };
+    }
+    // Only after the upload lands — see markVersionPublished.
+    markVersionPublished(ownerId, objectId, versionId);
+    return { ok: true, version };
   }, []);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
@@ -775,7 +883,8 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, overwriteObjectVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
+    lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,

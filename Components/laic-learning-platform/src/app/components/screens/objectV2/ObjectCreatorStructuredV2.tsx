@@ -9,7 +9,7 @@ import {
   ArrowLeft, Check, ChevronRight, Database, Eye, LayoutList, ListOrdered,
   Loader2, PenLine, Save,
 } from 'lucide-react';
-import { useApp } from '../../../App';
+import { useApp, type AddObjectOptions } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import { errorMessage, ingestWeb, ingestYoutube } from '../../../../lib/api';
@@ -90,7 +90,7 @@ export function ObjectCreatorStructuredV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
-    listObjectVersions, overwriteObjectVersion, saveObjectAsNewVersion, objectVersionsTick,
+    listObjectVersions, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -275,7 +275,7 @@ export function ObjectCreatorStructuredV2() {
     [listObjectVersions, draft.id, objectVersionsTick],
   );
 
-  const persist = useCallback((next: StructuredV2Draft, saveOpts?: { skipVersionSync?: boolean }) => {
+  const persist = useCallback((next: StructuredV2Draft, saveOpts?: AddObjectOptions) => {
     const blocks = unitsToBlocks(next);
     const existing = createdObjects.find((o) => o.id === next.id);
     const fromExisting = existing ? objectCollectionIds(existing) : [];
@@ -291,7 +291,9 @@ export function ObjectCreatorStructuredV2() {
       blocks: blocks as any,
       structuredV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any, saveOpts);
+      // Draft saves keep content safe but leave history alone — see the same
+      // note in the Tutorial V2 creator.
+    } as any, saveOpts ?? { version: 'skip' });
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects, noun]);
 
@@ -830,16 +832,14 @@ export function ObjectCreatorStructuredV2() {
           onSave={() => void saveDraft()}
           onSubmit={(target) => {
             const next = touchXDraft(draft, { status: 'submitted', phase: 'review' });
-            // Save without the implicit version sync, then do exactly the one
-            // versioning act the author picked.
-            persist(next, { skipVersionSync: true });
+            // The save itself performs the one versioning act the author picked,
+            // so it runs against the content being saved rather than the stale
+            // copy a follow-up call would see.
+            persist(next, {
+              version: target?.versionId ? { overwriteId: target.versionId } : 'new',
+              onVersionError: (msg) => window.alert(msg),
+            });
             setDraft(next);
-            if (target?.versionId) {
-              const res = overwriteObjectVersion(next.id, target.versionId);
-              if (!res.ok && res.error) window.alert(res.error);
-            } else {
-              saveObjectAsNewVersion(next.id, undefined, true);
-            }
             clearEditingObject?.();
             navigate('cd-library');
           }}
