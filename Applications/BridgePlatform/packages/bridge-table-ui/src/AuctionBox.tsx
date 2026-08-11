@@ -24,6 +24,26 @@ export interface AuctionBoxSizing {
    * outgrows the band. Defaults to the authored 340 cap.
    */
   maxH?: number;
+  /**
+   * RESERVE this many call rows, always. The grid then has ONE height for the
+   * whole auction: a two-call auction shows two calls over empty reserved rows,
+   * and the ninth row scrolls the oldest off the top (the grid is already
+   * pinned to the newest call). Omit for the authored content-sized grid.
+   *
+   * The reservation is made on the ROWS area, not the box, so the head keeps
+   * its natural height and a caller can price the box without knowing the
+   * head's font metrics — `auctionRowsBoxH` is that arithmetic, exported so the
+   * budget that hands this grid a band and the grid itself never drift.
+   */
+  rowsVisible?: number;
+}
+
+const ROW_GAP = 3;
+const ROWS_PAD = 3;
+
+/** Border-box height of a rows area holding exactly `rows` call rows. */
+export function auctionRowsBoxH(rows: number, rowH: number): number {
+  return rows * rowH + Math.max(0, rows - 1) * ROW_GAP + ROWS_PAD * 2;
 }
 
 export interface AuctionHead {
@@ -64,6 +84,18 @@ export function AuctionBox({
     if (el) el.scrollTop = el.scrollHeight;
   }, [rows.length]);
 
+  // A reserved rows area is a FIXED height that ignores how many calls there
+  // are; without one the area flexes into whatever the box has left, which is
+  // the content-sized behaviour every other caller still gets. It may still
+  // SHRINK (flex 0 1 auto): a band squeezed below the reservation clamps the
+  // box, and the rows have to scroll inside what is left rather than be cut off
+  // by the box's overflow — the newest call is the one that would go.
+  const rowH = m.cellMinH ?? Math.round(m.cellFont * 1.15) + 4;
+  const reserved =
+    m.rowsVisible != null && m.rowsVisible > 0
+      ? { flex: "0 1 auto", height: auctionRowsBoxH(m.rowsVisible, rowH), minHeight: 0, boxSizing: "border-box" as const }
+      : { flex: 1, minHeight: 0 };
+
   return (
     <div style={{ width: m.width, height: m.height, maxHeight: m.maxH ?? (m.height === "auto" ? 340 : undefined), background: bg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
@@ -74,13 +106,13 @@ export function AuctionBox({
           </span>
         ))}
       </div>
-      <div ref={rowsRef} data-testid="auction-rows" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 5px", display: "flex", flexDirection: "column", gap: 3 }}>
+      <div ref={rowsRef} data-testid="auction-rows" style={{ ...reserved, overflowY: "auto", padding: `${ROWS_PAD}px 5px`, display: "flex", flexDirection: "column", gap: ROW_GAP }}>
         {rows.map((row, i) => (
           <div key={i} style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 4, textAlign: "center" }}>
             {[0, 1, 2, 3].map((j) => {
               const e = row[j];
               return (
-                <span key={j} style={{ borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
+                <span key={j} style={{ borderRadius: 3, padding: "2px 0", minHeight: m.cellMinH ?? 0, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", fontSize: m.cellFont, lineHeight: 1.15, background: e ? (j === dealerCol ? DEALER_TINT : GREY) : "transparent", color: e ? callColor(e.call) : "#000" }}>
                   {e ? callText(e.call) : ""}
                 </span>
               );

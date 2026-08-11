@@ -59,7 +59,7 @@ export function CoachPanel({
   const acts = actions && actions.length ? actions : [];
 
   return (
-    <div style={shell}>
+    <div data-testid="coach-panel" style={shell}>
       {/* Header: accent roundel · title · status. */}
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "9px 14px", borderBottom: "1px solid #dde2dd" }}>
         <span style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, flex: "none", borderRadius: 11, background: accent, color: "#fff", fontSize: 12, fontWeight: 700 }}>C</span>

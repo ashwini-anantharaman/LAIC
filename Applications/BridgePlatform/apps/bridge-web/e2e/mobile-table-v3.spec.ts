@@ -110,6 +110,46 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(atNewest, "auction grid pinned to the newest call").toBeLessThanOrEqual(1);
     await page.setViewportSize(PHONE);
 
+    // The grid PRE-EXISTS at four call rows and does not resize as the auction
+    // fills them (owner, 2026-08-11). A content-sized grid grew a row at a time
+    // and moved the felt under the reader on every call; this one reserves the
+    // four rows up front and scrolls past them. Measured across a REAL auction
+    // advancing under the robots — same box, more calls.
+    const gridShape = () =>
+      page.evaluate(() => {
+        const rows = document.querySelector('[data-testid="auction-rows"]')!;
+        const box = rows.parentElement!;
+        return {
+          box: +box.getBoundingClientRect().height.toFixed(1),
+          rows: rows.clientHeight,
+          calls: [...rows.querySelectorAll("span")].filter((n) => (n.textContent || "").trim())
+            .length,
+        };
+      });
+    await page.waitForTimeout(300);
+    const first = await gridShape();
+    expect(first.rows, "four call rows reserved (4x52 + gaps + padding)").toBe(223);
+    // Proof it is a RESERVATION and not the content: this young auction holds
+    // far fewer calls than four rows can. (The bars-off test below re-reads the
+    // same number on a board the robots have carried further.)
+    expect(first.calls, "reserved rows the auction has not filled").toBeLessThan(12);
+
+    // The stage fills the box it was measured against — it is 720 wide scaled
+    // to the region, never squeezed to the width of its widest child.
+    const widthFit = () =>
+      page.evaluate(() => {
+        const stage = document.querySelector('[data-testid="phone-stage"]')!;
+        return {
+          stage: stage.getBoundingClientRect().width,
+          region: stage.parentElement!.getBoundingClientRect().width,
+        };
+      });
+    const auctionW = await widthFit();
+    expect(
+      auctionW.stage,
+      "the stage renders the full width of its region",
+    ).toBeGreaterThanOrEqual(auctionW.region - 1.5);
+
     // The phone chip row does not fit at 390px, so the ⋯ group is present. It
     // opens within the viewport and its items are reachable — nothing is ever
     // unreachable at any size.
@@ -233,9 +273,16 @@ test.describe("mobile table v3 — phone tier", () => {
           const b = el.getBoundingClientRect();
           return { x: b.x, y: b.y, w: b.width, h: b.height };
         });
+        // A card in a HAND, to size the trick against. The dummy row and your
+        // own hand draw the same M_CARD, so any one of them is the metric.
+        const held = document.querySelector('button[aria-label^="Play "]');
+        const hb = held?.getBoundingClientRect();
+        const region = document.querySelector('[data-testid="phone-stage"]')!.parentElement!;
         return {
           band: { y: band.y, h: band.height },
           stage: { w: stage.width },
+          region: { w: region.getBoundingClientRect().width },
+          hand: hb ? { w: hb.width, h: hb.height } : null,
           cards,
         };
       });
@@ -270,6 +317,33 @@ test.describe("mobile table v3 — phone tier", () => {
     const c1 = tallShot.cards[1]!;
     expect(Math.abs(c0.w - c1.w), "trick card widths equal").toBeLessThanOrEqual(0.6);
     expect(Math.abs(c0.h - c1.h), "trick card heights equal").toBeLessThanOrEqual(0.6);
+
+    // (1d) A trick card is the SAME CARD as one in a hand (owner, 2026-08-11).
+    // The cluster used to magnify to 2.4x, which put a 68x98 card in the middle
+    // of a table whose hands hold 28x65 ones — two decks on one felt. It is
+    // drawn at the hand's metrics now, and only ever scales DOWN to fit a
+    // squeezed band, never up.
+    expect(tallShot.hand, "a hand card to size the trick against").not.toBeNull();
+    const held = tallShot.hand!;
+    expect(c0.w, "a trick card is no wider than a card in the hand").toBeLessThanOrEqual(
+      held.w + 0.6,
+    );
+    expect(c0.h, "a trick card is no taller than a card in the hand").toBeLessThanOrEqual(
+      held.h + 0.6,
+    );
+    expect(
+      Math.abs(c0.w - held.w),
+      "and at the reference phone it MATCHES the hand",
+    ).toBeLessThanOrEqual(1);
+
+    // (1e) The board compacts VERTICALLY, never horizontally: the 720-wide stage
+    // renders the full width of its region in play, exactly as in the auction.
+    // It used to be a shrinkable flex item, so the table narrowed by a card's
+    // pitch every time one was played.
+    expect(
+      tallShot.stage.w,
+      "the stage keeps its full width while cards are played",
+    ).toBeGreaterThanOrEqual(tallShot.region.w - 1.5);
 
     // (1c) The cluster is TIGHT and OVERLAPPING. Laid side by side the same
     // cards would need `n × width`; the union of their boxes is far less than
@@ -335,14 +409,50 @@ test.describe("mobile table v3 — phone tier", () => {
         (el) =>
           [...el.querySelectorAll("span")].filter((n) => (n.textContent || "").trim()).length,
       );
+    // Stack height, felt height and the height of one bar, in ONE snapshot.
+    const stack = () =>
+      page.evaluate(() => {
+        const r = (sel: string) => document.querySelector(sel)?.getBoundingClientRect() ?? null;
+        return {
+          stage: r('[data-testid="phone-stage"]')!.height,
+          centre: r('[data-testid="centre-band"]')!.height,
+          coach: r('[data-testid="coach-panel"]')?.height ?? 0,
+          bar: r('[data-testid="edge-toolbar"]')?.height ?? 0,
+        };
+      });
+
+    await page.goto(`/bridge/table2/${sid}`);
+    await expect(page.getByTestId("bid-tray")).toBeVisible();
+    const withBars = await stack();
 
     await page.goto(`/bridge/table2/${sid}?bars=off`);
     await expect(page.getByTestId("bid-tray")).toBeVisible();
     expect(await page.getByTestId("edge-toolbar").count(), "no toolbars rendered").toBe(0);
 
+    // Hiding the toolbars makes the whole stack SHORTER by their height — it
+    // does not hand the felt two toolbars' worth of extra green (owner,
+    // 2026-08-11). The freed band goes DOWN, to the coach panel.
+    const noBars = await stack();
+    expect(
+      Math.abs(withBars.stage - noBars.stage - withBars.bar * 2),
+      "the stack loses exactly the bars it stopped drawing",
+    ).toBeLessThanOrEqual(2);
+    expect(
+      Math.abs(noBars.centre - withBars.centre),
+      "the felt does not grow into the freed band",
+    ).toBeLessThanOrEqual(2);
+    expect(noBars.coach, "the coach panel gets it instead").toBeGreaterThan(withBars.coach + 1);
+
     const before = await calls();
     await expect
       .poll(calls, { timeout: 15_000, message: "robots advance with no toolbar on screen" })
       .toBeGreaterThan(before);
+
+    // Same four reserved call rows on a board further into its auction: the
+    // grid's height is a reservation, not a function of how much has been bid.
+    expect(
+      await page.getByTestId("auction-rows").evaluate((el) => el.clientHeight),
+      "the grid still reserves four rows once calls have arrived",
+    ).toBe(223);
   });
 });

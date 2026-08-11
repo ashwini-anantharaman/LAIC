@@ -22,6 +22,15 @@ export interface TrickAreaProps {
   /** Box scale (1, or up to CLUSTER_MAX_K on phones). Ignored by the pill variant. */
   scale?: number;
   variant?: "cross" | "cluster" | "pill";
+  /**
+   * CLUSTER only: the card box the trick is drawn at, and the index type that
+   * goes on it. The phone hands over the metrics of the cards in the HAND, so
+   * the card you played and the cards you hold are the same object at the same
+   * size — a trick card larger than a hand card reads as a different deck.
+   * Omitted, the cluster keeps its authored 56x80 face.
+   */
+  card?: { w: number; h: number };
+  index?: { rank: number; glyph: number };
 }
 
 /**
@@ -35,13 +44,25 @@ export interface TrickAreaProps {
 const CARD = { w: 56, h: 80 };
 const CLUSTER_DX = 34;
 const CLUSTER_DY = 19;
-export const CLUSTER = { w: CLUSTER_DX * 2 + CARD.w, h: CLUSTER_DY * 2 + CARD.h };
+/** The offsets are the authored card's PROPORTIONS, so a cluster drawn at some
+    other card size (the phone hands it the hand's card) keeps the same pile. */
+const dxFor = (w: number) => Math.round((w * CLUSTER_DX) / CARD.w);
+const dyFor = (h: number) => Math.round((h * CLUSTER_DY) / CARD.h);
+/** The cluster's box for a card box: exactly the union of the four positions. */
+export function clusterBox(card: { w: number; h: number } = CARD) {
+  return { w: dxFor(card.w) * 2 + card.w, h: dyFor(card.h) * 2 + card.h };
+}
+export const CLUSTER = clusterBox(CARD);
 /** Seat -> top-left inside the cluster box. N sits high, S low, W/E flank. */
-const CLUSTER_POS: Record<Seat, { left: number; top: number }> = {
-  N: { left: CLUSTER_DX, top: 0 },
-  W: { left: 0, top: CLUSTER_DY },
-  E: { left: CLUSTER_DX * 2, top: CLUSTER_DY },
-  S: { left: CLUSTER_DX, top: CLUSTER_DY * 2 },
+const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number; top: number }> => {
+  const dx = dxFor(card.w);
+  const dy = dyFor(card.h);
+  return {
+    N: { left: dx, top: 0 },
+    W: { left: 0, top: dy },
+    E: { left: dx * 2, top: dy },
+    S: { left: dx, top: dy * 2 },
+  };
 };
 /**
  * Paint order is SPATIAL, not play order: left-to-right, top-to-bottom, so
@@ -52,7 +73,14 @@ const CLUSTER_POS: Record<Seat, { left: number; top: number }> = {
  */
 const CLUSTER_ORDER: Seat[] = ["W", "N", "S", "E"];
 
-export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonly<TrickAreaProps>) {
+export function TrickArea({
+  plays,
+  turn,
+  scale = 1,
+  variant = "cross",
+  card = CARD,
+  index = { rank: 38, glyph: 30 },
+}: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
       <div style={{ position: "relative", width: 300, height: 220 }}>
@@ -81,13 +109,15 @@ export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonl
     // so the four cards can never desync in size. What changes is the geometry
     // — the trick reads as one object in the middle of the felt rather than
     // four cards pinned to the corners of a compass twice its size.
+    const box = clusterBox(card);
+    const pos4 = clusterPos(card);
     return (
-      <div style={{ width: CLUSTER.w * scale, height: CLUSTER.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: box.w * scale, height: box.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TableMotion />
-        <div style={{ position: "relative", width: CLUSTER.w, height: CLUSTER.h, flex: "none", transform: `scale(${scale})`, transformOrigin: "center center" }}>
+        <div style={{ position: "relative", width: box.w, height: box.h, flex: "none", transform: `scale(${scale})`, transformOrigin: "center center" }}>
           {CLUSTER_ORDER.map((seat, z) => {
             const play = plays.find((p) => p.seat === seat);
-            const pos = CLUSTER_POS[seat];
+            const pos = pos4[seat];
             const onTurn = seat === turn;
             const rank = play ? rankText(play.card.rank) : "";
             return (
@@ -99,7 +129,7 @@ export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonl
                     key={`${play.card.suit}${play.card.rank}`}
                     data-testid="trick-card"
                     className={DEAL}
-                    style={{ position: "relative", display: "block", width: CARD.w, height: CARD.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)" }}
+                    style={{ position: "relative", display: "block", width: card.w, height: card.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)", boxSizing: "border-box" }}
                   >
                     {/* Bold face: a heavy rank with the pip directly beneath it,
                         both pinned to the card's TOP-LEFT — that strip is the
@@ -107,12 +137,12 @@ export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonl
                         the pile still says what it is. "10" is the only
                         two-glyph rank and takes the narrower size. */}
                     <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
-                      <span style={{ fontSize: rank.length > 1 ? 26 : 38, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
-                      <span style={{ fontSize: 30, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
+                      <span style={{ fontSize: rank.length > 1 ? Math.round(index.rank * 0.68) : index.rank, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
+                      <span style={{ fontSize: index.glyph, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
                     </span>
                   </span>
                 ) : (
-                  <span style={{ display: "flex", width: CARD.w, height: CARD.h, alignItems: "center", justifyContent: "center" }}>
+                  <span style={{ display: "flex", width: card.w, height: card.h, alignItems: "center", justifyContent: "center" }}>
                     <span style={{ display: "block", width: onTurn ? 24 : 0, height: 5, borderRadius: 3, background: onTurn ? "rgba(255,255,255,.62)" : "transparent" }} />
                   </span>
                 )}
