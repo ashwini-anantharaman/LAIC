@@ -13,17 +13,19 @@
 // The + and the leaderboard are each gated on their own capability, so a role
 // may view challenges without creating them, or without seeing standings.
 //
-// The content in SEED_CHALLENGES is still placeholder — this screen is the
-// designed shell. The WORKING feature lives on the bridge platform
-// (/bridge/challenges: assemble boards, play them against BEN, score, compare),
-// and "Open live challenges" embeds it. Phase 1 of joining the two: prove the
-// embed renders inside the app before replacing this screen's data with real
-// challenges.
+// The data is REAL: challenges and standings come from the bridge platform
+// (where the working feature lives — assemble boards, play them against BEN,
+// score, compare) through its summary route, so the carousel lists the
+// challenges this person is actually in and the leaderboard shows the actual
+// field. TAPPING A TILE opens that challenge's info screen (challenge-info);
+// its Start button is what enters the embed — play while it has boards for
+// you, results once it doesn't.
 
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   NativeScrollEvent,
   NativeSyntheticEvent,
   Pressable,
@@ -34,16 +36,18 @@ import {
   View,
 } from "react-native";
 
-import { BrandChrome } from "../components/brand-chrome";
+import { BackChevron, BrandChrome } from "../components/brand-chrome";
 import { ChallengeFormPanel } from "../components/challenge-form-panel";
-import {
-  Challenge,
-  ChallengeCaption,
-  ChallengeTile,
-  SEED_CHALLENGES,
-} from "../components/challenge-tile";
+import { ChallengeCaption, ChallengeTile } from "../components/challenge-tile";
 import { Avatar } from "../components/avatar";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
+import { useAuth } from "../lib/auth-context";
+import {
+  fetchClubChallenges,
+  type ChallengeStanding,
+  type ClubChallenge,
+} from "../lib/challenges";
+import { useSelectedClubId } from "../lib/club-context";
 import { useCan } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
@@ -70,7 +74,7 @@ function LeaderboardRow({
   scale: s,
 }: {
   rank: number;
-  standing: { name: string; mp: number; pct: number };
+  standing: ChallengeStanding;
   scale: number;
 }) {
   return (
@@ -105,16 +109,15 @@ function LeaderboardRow({
       >
         <Text style={[styles.rank, { fontSize: 14.4 * s, width: 14 * s }]}>{rank}</Text>
         <View style={{ marginLeft: 12 * s, marginRight: 22 * s }}>
-          {/* No picture: these standings are seed data with no profile behind
-              them. Drawn through Avatar so real entrants get their face the
-              day the leaderboard is fed by the API. */}
+          {/* The summary carries names, not faces — drawn through Avatar so
+              entrants get their picture the day the payload carries one. */}
           <Avatar uri={null} width={29 * s} height={28.12 * s} tint={Brand.cream} />
         </View>
         <Text style={[styles.name, { fontSize: 14.4 * s }]} numberOfLines={1}>
           {standing.name}
         </Text>
-        <Text style={[styles.score, { fontSize: 14.4 * s, width: 62 * s }]}>{standing.mp} MP</Text>
-        <Text style={[styles.pct, { fontSize: 14.4 * s, width: 42 * s }]}>{standing.pct}%</Text>
+        <Text style={[styles.score, { fontSize: 14.4 * s, width: 62 * s }]}>{standing.score}</Text>
+        <Text style={[styles.pct, { fontSize: 14.4 * s, width: 42 * s }]}>{standing.pct}</Text>
       </View>
     </View>
   );
@@ -128,11 +131,37 @@ export default function ClubChallengesScreen() {
   const coach = useIsCoach();
   const canCreate = useCan("app.challenge.create", coach);
   const canSeeBoard = useCan("app.challenge.leaderboard.view", true);
+  const { token } = useAuth();
+  const clubId = useSelectedClubId();
 
-  const [challenges, setChallenges] = useState<Challenge[]>(SEED_CHALLENGES);
+  // Null while loading — an empty carousel means "none", not "not yet".
+  const [challenges, setChallenges] = useState<ClubChallenge[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const lastActive = useRef(0);
   const carousel = useRef<ScrollView>(null);
+
+  useEffect(() => {
+    if (!token) return;
+    let cancelled = false;
+    setChallenges(null);
+    setLoadError(null);
+    fetchClubChallenges(token, clubId)
+      .then((rows) => {
+        if (cancelled) return;
+        setChallenges(rows);
+        setActive(0);
+        lastActive.current = 0;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setChallenges([]);
+        setLoadError("Couldn't load challenges.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, clubId]);
 
   const [configuring, setConfiguring] = useState(false);
   const [draftName, setDraftName] = useState("");
@@ -141,20 +170,21 @@ export default function ClubChallengesScreen() {
   const pitch = ITEM_PITCH * s;
   const captionH = (CAPTION_GAP + 13.633 * 1.35) * s;
 
+  const count = challenges?.length ?? 0;
   const onScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
       const i = Math.round(e.nativeEvent.contentOffset.x / pitch);
-      const clamped = Math.max(0, Math.min(challenges.length - 1, i));
+      const clamped = Math.max(0, Math.min(count - 1, i));
       if (clamped !== lastActive.current) {
         lastActive.current = clamped;
         setActive(clamped);
       }
     },
-    [pitch, challenges.length],
+    [pitch, count],
   );
 
   const openConfigure = () => {
-    setDraftName(`Challenge ${challenges.length + 1}`);
+    setDraftName(`Challenge ${count + 1}`);
     setDraftBoards(8);
     setConfiguring(true);
   };
@@ -162,23 +192,42 @@ export default function ClubChallengesScreen() {
   const saveChallenge = () => {
     const name = draftName.trim();
     if (!name) return;
-    // A brand-new challenge has no results yet — an empty board is the truth.
-    const next: Challenge = { name, boards: draftBoards, scoring: "MP score", standings: [] };
-    const index = challenges.length;
-    setChallenges((prev) => [...prev, next]);
+    // Device-local until the app grows a create flow of its own: real
+    // challenges are assembled on the platform ("Open live challenges").
+    const next: ClubChallenge = {
+      id: `local-${count + 1}`,
+      name,
+      description: "",
+      createdByName: "",
+      boards: draftBoards,
+      scoring: "mp",
+      scoringLabel: "MP score",
+      inviteStatus: "accepted",
+      finishedBoards: 0,
+      finished: false,
+      resultsUnlocked: true,
+      standings: [],
+      benTotal: null,
+    };
+    const index = count;
+    setChallenges((prev) => [...(prev ?? []), next]);
     setActive(index);
     lastActive.current = index;
     setConfiguring(false);
   };
 
-  const challenge = challenges[active] ?? challenges[0]!;
+  const challenge = challenges?.[active] ?? challenges?.[0] ?? null;
 
   return (
-    <BrandChrome onBack={() => (router.canGoBack() ? router.back() : router.replace("/club"))}>
+    <BrandChrome>
       <View style={styles.page}>
         {/* Title and + on one line, the + hugging the text rather than the
             screen's edge, so the pair reads as one heading. */}
         <View style={[styles.titleRow, { paddingTop: TITLE_TOP * s }]}>
+          <BackChevron
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/club"))}
+            style={{ marginRight: 8 * s }}
+          />
           <Text style={styles.title}>Challenges</Text>
           {canCreate ? (
             <Pressable
@@ -217,6 +266,23 @@ export default function ClubChallengesScreen() {
             onSave={saveChallenge}
             scale={s}
           />
+        ) : challenges === null || challenges.length === 0 ? (
+          // Same footprint as the carousel, so the button and leaderboard
+          // below don't jump when the challenges arrive.
+          <View
+            style={[
+              styles.carouselFallback,
+              { height: TILE * s + captionH, marginTop: CAROUSEL_GAP * s },
+            ]}
+          >
+            {challenges === null ? (
+              <ActivityIndicator color={Brand.green} />
+            ) : (
+              <Text style={styles.fallbackText}>
+                {loadError ?? "No challenges yet — a coach starts one from live challenges."}
+              </Text>
+            )}
+          </View>
         ) : (
           <ScrollView
             ref={carousel}
@@ -237,8 +303,17 @@ export default function ClubChallengesScreen() {
             scrollEventThrottle={16}
           >
             {challenges.map((c) => (
-              <View key={c.name} style={{ width: pitch }}>
-                <ChallengeTile size={TILE * s} />
+              <View key={c.id} style={{ width: pitch }}>
+                <ChallengeTile
+                  size={TILE * s}
+                  // A local draft has nothing behind it to open. Real tiles
+                  // land on the info screen; its Start button enters play.
+                  onPress={
+                    c.id.startsWith("local-")
+                      ? undefined
+                      : () => router.push({ pathname: "/challenge-info", params: { id: c.id } })
+                  }
+                />
                 <ChallengeCaption
                   challenge={c}
                   width={TILE * s}
@@ -251,23 +326,6 @@ export default function ClubChallengesScreen() {
             ))}
           </ScrollView>
         )}
-
-        {/* Through to the working feature, while this screen is still a shell
-            over seeded data. Outside the canSeeBoard gate deliberately: seeing
-            standings and reaching the real challenges are different things. */}
-        <Pressable
-          onPress={() => router.push("/live-challenges")}
-          accessibilityRole="button"
-          accessibilityLabel="Open live challenges on the bridge platform"
-          style={({ pressed }) => [
-            styles.liveRow,
-            { marginTop: 14 * s, marginHorizontal: ROW.left * s },
-            pressed && styles.pressed,
-          ]}
-        >
-          <Text style={[styles.liveText, { fontSize: 14 * s }]}>Open live challenges</Text>
-          <Ionicons name="arrow-forward" size={15 * s} color={Brand.cream} />
-        </Pressable>
 
         {canSeeBoard ? (
           <Text
@@ -282,17 +340,23 @@ export default function ClubChallengesScreen() {
 
         {/* Clipped so rows cut at both edges and scroll only within here. */}
         <View style={[styles.boardClip, { paddingHorizontal: ROW.left * s }]}>
-          {!canSeeBoard ? null : (
+          {!canSeeBoard || challenge === null ? null : (
           <ScrollView showsVerticalScrollIndicator={false}>
-            {challenge.standings.length === 0 ? (
+            {!challenge.resultsUnlocked ? (
+              // The platform's own visibility rule: standings stay hidden
+              // until this viewer finishes the challenge.
+              <Text style={styles.boardEmpty}>
+                Standings unlock once you finish all {challenge.boards} boards.
+              </Text>
+            ) : challenge.standings.length === 0 ? (
               <Text style={styles.boardEmpty}>
                 No results yet — standings appear once this challenge is played.
               </Text>
             ) : (
               challenge.standings.map((st, i) => (
                 <LeaderboardRow
-                  key={`${challenge.name}-${st.name}-${i}`}
-                  rank={i + 1}
+                  key={`${challenge.id}-${st.name}-${i}`}
+                  rank={st.rank}
                   standing={st}
                   scale={s}
                 />
@@ -312,17 +376,16 @@ const styles = StyleSheet.create({
   title: { fontFamily: Fonts.display, fontSize: Type.screenTitle, color: Brand.ink },
   plus: { alignItems: "center", justifyContent: "center", backgroundColor: Brand.ink },
   heading: { fontFamily: Fonts.heading, fontSize: Type.sectionHeading, color: Brand.ink },
-  liveRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 11,
-    borderRadius: 12,
-    backgroundColor: Brand.green,
-  },
-  liveText: { fontFamily: Fonts.bodySemibold, color: Brand.cream },
   boardClip: { flex: 1, overflow: "hidden" },
+  carouselFallback: { alignItems: "center", justifyContent: "center" },
+  fallbackText: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: "rgba(31,31,31,0.55)",
+    textAlign: "center",
+    lineHeight: 21,
+    paddingHorizontal: 32,
+  },
   rowShadow: { position: "absolute", left: 0, right: 0, backgroundColor: Brand.rowShadow },
   row: {
     position: "absolute",

@@ -10,21 +10,49 @@
 // CONTENT_TOP_GAP — the breathing room between the status bar and the first line
 // of a screen. Screens add nothing of their own on top of it, so they all agree.
 //
-// A screen passes `onBack` to put a back arrow in that space instead — the pushed
-// screens (Chat, Challenges) always do, and the Club tab does while its Members
-// view is showing. The arrow row is exactly CONTENT_TOP_GAP tall so switching it
-// on and off moves nothing below it.
+// A screen passes `onBack` to put a back arrow in that space instead. The club
+// screens don't: their arrow sits INSIDE the title row, left of the title, so
+// they render `BackChevron` there themselves and take the plain gap from the
+// chrome. The arrow row is exactly CONTENT_TOP_GAP tall so switching it on and
+// off moves nothing below it.
 
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { ReactNode } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Pressable, StyleSheet, StyleProp, View, ViewStyle } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Brand } from "../constants/theme";
 
 /** Status bar to first line — the design's y=84 minus the 56pt status bar. */
 export const CONTENT_TOP_GAP = 28;
+
+/**
+ * The back arrow a screen places at the left of its own title row, for the
+ * screens whose arrow lives on the title's line rather than above the content.
+ */
+export function BackChevron({
+  onPress,
+  /** Over a banner the ink arrow disappears — the caller passes its text color. */
+  color = Brand.ink,
+  style,
+}: {
+  onPress: () => void;
+  color?: string;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={16}
+      accessibilityRole="button"
+      accessibilityLabel="Go back"
+      style={({ pressed }) => [style, pressed && styles.pressed]}
+    >
+      <Ionicons name="chevron-back" size={24} color={color} />
+    </Pressable>
+  );
+}
 
 export function BrandChrome({
   /** Given on pushed screens: renders a back arrow above the content. */

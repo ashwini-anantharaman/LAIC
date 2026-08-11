@@ -27,52 +27,6 @@ const R = {
   glyphB: { x: 102.4 / TILE_REF, y: 89.8 / TILE_REF },
 } as const;
 
-export type Challenge = {
-  name: string;
-  boards: number;
-  scoring: string;
-  standings: { name: string; mp: number; pct: number }[];
-};
-
-/** Placeholder content — the Nexus API has no clubs or challenges yet. */
-export const SEED_CHALLENGES: Challenge[] = [
-  {
-    name: "Challenge 1",
-    boards: 8,
-    scoring: "MP score",
-    standings: [
-      { name: "Keith", mp: 41, pct: 74 },
-      { name: "Ralph", mp: 37, pct: 66 },
-      { name: "Quan", mp: 31, pct: 56 },
-      { name: "Ashwini", mp: 30, pct: 55 },
-      { name: "Miland", mp: 24, pct: 44 },
-      { name: "David", mp: 19, pct: 35 },
-    ],
-  },
-  {
-    name: "Challenge 2",
-    boards: 12,
-    scoring: "IMP score",
-    standings: [
-      { name: "Ralph", mp: 52, pct: 81 },
-      { name: "David", mp: 47, pct: 73 },
-      { name: "Keith", mp: 39, pct: 61 },
-      { name: "Miland", mp: 33, pct: 52 },
-      { name: "Quan", mp: 26, pct: 41 },
-    ],
-  },
-  {
-    name: "Challenge 3",
-    boards: 6,
-    scoring: "MP score",
-    standings: [
-      { name: "Ashwini", mp: 36, pct: 69 },
-      { name: "Quan", mp: 30, pct: 58 },
-      { name: "Keith", mp: 22, pct: 42 },
-    ],
-  },
-];
-
 export function ChallengeTile({
   /** The tile's side, already scaled to the screen. */
   size,
@@ -131,7 +85,8 @@ export function ChallengeCaption({
   gap,
   paddingTop = 8,
 }: {
-  challenge: Challenge;
+  /** Real challenges carry more than this; the caption reads only these two. */
+  challenge: { name: string; boards: number };
   width: number;
   fontSize: number;
   dot: number;

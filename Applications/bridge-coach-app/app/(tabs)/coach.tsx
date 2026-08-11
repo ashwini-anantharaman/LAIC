@@ -4,7 +4,7 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { OptionCard, Screen } from "../../components/ui";
@@ -25,9 +25,16 @@ export default function CoachScreen() {
   // club-only account, paid in full before the real fetch could start.
   const { selected, loading: clubsLoading } = useClubs();
   const clubId = selected?.programId ?? null;
-  // Both caches are primed at sign-in — seed from them so the first focus
-  // shows the real view (and the coach's name below) with no fetch in front.
-  const [coach, setCoach] = useState(() => isCoach(token ? peekRoleContext(token, clubId ?? undefined) : null));
+  // Role UNKNOWN (null) until the context resolves. Seeding a boolean painted
+  // the learner view over a coach's first sign-in (peek misses on a cold
+  // cache, isCoach(null) is false) and then flipped it to the coach view in
+  // front of them — NEITHER view may claim the screen until we know which one
+  // is true. The sign-in prime usually answers the peek synchronously, so the
+  // known case still paints the real view with no fetch in front.
+  const [coach, setCoach] = useState<boolean | null>(() => {
+    const peeked = token ? peekRoleContext(token, clubId ?? undefined) : null;
+    return peeked ? isCoach(peeked) : null;
+  });
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
     token ? peekSummary(token, clubId ?? undefined) : null,
@@ -36,6 +43,10 @@ export default function CoachScreen() {
   useEffect(() => {
     let cancelled = false;
     if (!token || clubsLoading) return;
+    // Re-seed on a club switch: this club's role may be cached (answer now) or
+    // not (back to unknown — never the previous club's answer).
+    const peeked = peekRoleContext(token, clubId ?? undefined);
+    setCoach(peeked ? isCoach(peeked) : null);
     getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
       if (!cancelled) setCoach(isCoach(ctx));
     });
@@ -132,6 +143,17 @@ export default function CoachScreen() {
       onPress: () => router.push("/assigned"),
     },
   ];
+
+  // Unknown role: a quiet spinner, not a guessed view that corrects itself.
+  if (coach === null) {
+    return (
+      <Screen style={styles.screen}>
+        <View style={styles.roleLoading}>
+          <ActivityIndicator color={Brand.green} />
+        </View>
+      </Screen>
+    );
+  }
 
   return (
     <Screen style={styles.screen}>
@@ -261,6 +283,12 @@ function coachStatus(co: SummaryCoach): string {
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: Spacing.screen },
+  roleLoading: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingBottom: TAB_BAR_CLEARANCE,
+  },
   headerBlock: { paddingTop: 32, gap: 4 },
   eyebrow: {
     fontSize: 12,

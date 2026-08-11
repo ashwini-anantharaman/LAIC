@@ -38,7 +38,7 @@ import { SvgXml } from "react-native-svg";
 import { Image } from "expo-image";
 
 import { Avatar } from "../components/avatar";
-import { BrandChrome, CONTENT_TOP_GAP } from "../components/brand-chrome";
+import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../components/brand-chrome";
 import { BrandSheet } from "../components/brand-sheet";
 import { tintSvg } from "../components/svg-tint";
 import { ICON_PIN } from "../constants/brand-vectors";
@@ -57,8 +57,9 @@ import { useIsCoach } from "../lib/use-is-coach";
 
 const DESIGN_WIDTH = 390;
 
-/** Title row: "Chat" at x 25, the pin at x 104 — both under the app bar. */
-const HEAD = { titleLeft: 25, titleTop: 0, pin: 23, pinLeft: 104, pinTop: 8 };
+/** Title row: back arrow at x 25 with "Chat" beside it; the pin sits past the
+ *  title's new right edge (the arrow and its gap pushed everything 32 right). */
+const HEAD = { titleLeft: 25, titleTop: 0, pin: 23, pinLeft: 136, pinTop: 8 };
 /** Incoming: avatar at x 25, bubble from x 90; the card behind is offset (4, 5). */
 const IN = { avatarLeft: 25, avatarW: 41.3, avatarH: 40, bubbleLeft: 90, maxWidth: 214 };
 /** Outgoing: bubble's right edge 21 short of the screen edge; behind offset (5, 4). */
@@ -283,13 +284,26 @@ export default function ClubChatScreen() {
   const rows = messages ?? [];
 
   return (
-    <BrandChrome onBack={() => (router.canGoBack() ? router.back() : router.replace("/club"))}>
+    <BrandChrome>
       <KeyboardAvoidingView
         style={styles.page}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <View style={{ height: 44 * s, paddingTop: HEAD.titleTop * s }}>
-          <Text style={[styles.title, { marginLeft: HEAD.titleLeft * s }]}>Chat</Text>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              alignSelf: "flex-start",
+              marginLeft: HEAD.titleLeft * s,
+            }}
+          >
+            <BackChevron
+              onPress={() => (router.canGoBack() ? router.back() : router.replace("/club"))}
+              style={{ marginRight: 8 * s }}
+            />
+            <Text style={styles.title}>Chat</Text>
+          </View>
           {canPin ? (
           <Pressable
             onPress={() => setPinsOpen(true)}

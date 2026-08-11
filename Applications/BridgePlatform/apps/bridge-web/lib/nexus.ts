@@ -272,6 +272,42 @@ const contextCache = (
 ).__bridgeContextCache ??= new Map();
 
 /**
+ * Resolve a context from an EXPLICIT token instead of the launch cookie — the
+ * native club app holds the same Nexus session token the cookie would carry,
+ * but React Native's fetch has no access to the WebView's cookie jar, so its
+ * API calls send it as a bearer header. http mode only: a bearer token means
+ * a real Nexus behind us. Shares the cross-request cache with the cookie path.
+ */
+export async function getBridgeContextFromToken(
+  accessToken: string,
+  programId?: string | null,
+): Promise<NexusBridgeContext | null> {
+  if (nexusMode() !== "http") return null;
+  const baseUrl = process.env.NEXUS_API_BASE_URL;
+  if (!baseUrl) return null;
+
+  const cacheKey = `${accessToken}:${programId ?? ""}`;
+  const hit = contextCache.get(cacheKey);
+  if (hit && hit.expires > Date.now()) return hit.context;
+
+  try {
+    const context = await createNexusClient({
+      mode: "http",
+      baseUrl,
+      accessToken,
+      ...(programId ? { programId } : {}),
+    }).getBridgeContext();
+    if (contextCache.size > 200) contextCache.clear();
+    contextCache.set(cacheKey, { context, expires: Date.now() + CONTEXT_TTL_MS });
+    return context;
+  } catch (err) {
+    // A dead session or a role without Bridge — the caller treats it as 404.
+    console.error("getBridgeContextFromToken failed:", err);
+    return null;
+  }
+}
+
+/**
  * Resolve the caller's NexusBridgeContext for this request, or null when not
  * signed in (no dev user selected / no Supabase session). Cached per request
  * so layout and pages can each call it cheaply.

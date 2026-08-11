@@ -32,18 +32,15 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
+import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
-import {
-  ChallengeCaption,
-  ChallengeTile,
-  SEED_CHALLENGES,
-} from "../../components/challenge-tile";
+import { ChallengeCaption, ChallengeTile } from "../../components/challenge-tile";
 import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
+import { fetchClubChallenges } from "../../lib/challenges";
 import { useClubs } from "../../lib/club-context";
 import { useCan } from "../../lib/use-can";
 import {
@@ -282,7 +279,28 @@ export default function ClubScreen() {
     return rows.filter((r) => standingOf(r) === filter);
   }, [roster, filter, checked]);
 
-  const latest = SEED_CHALLENGES[SEED_CHALLENGES.length - 1]!;
+  // The newest REAL challenge, for the thumbnail's caption. The summary comes
+  // newest-first; null (no challenges, or a failed read) hides the caption
+  // rather than captioning the tile with an invention. The id rides along so
+  // the tile can open the challenge's OWN info screen, not a table.
+  const [latest, setLatest] = useState<{ id: string; name: string; boards: number } | null>(null);
+  useEffect(() => {
+    if (!token || !club) return;
+    let cancelled = false;
+    fetchClubChallenges(token, club.id)
+      .then((rows) => {
+        const newest = rows[0];
+        if (!cancelled && newest) {
+          setLatest({ id: newest.id, name: newest.name, boards: newest.boards });
+        }
+      })
+      .catch(() => {
+        // The tile still opens the latest challenge; only the caption is lost.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, club]);
 
   // A button its role cannot open is not dimmed but ABSENT: dimming says "not
   // now", and this is "not yours". The grid closes up around what is left.
@@ -325,16 +343,21 @@ export default function ClubScreen() {
   }
 
   return (
-    <BrandChrome
-      onBack={onHome ? undefined : () => setView("home")}
-      banner={header ? { uri: header, height: BANNER_DEPTH * s } : null}
-    >
+    <BrandChrome banner={header ? { uri: header, height: BANNER_DEPTH * s } : null}>
       {/* A light status bar reads over the banner; cream needs the dark one. */}
       <StatusBar style={onBanner ? "light" : "dark"} />
       <View style={styles.page}>
         <View style={styles.headerRow}>
           <View style={{ flex: 1 }}>
             <View style={[styles.titleRow, { marginLeft: HEAD.left * s }]}>
+              {/* Members view only — Home is the tab's root, nothing to go back to. */}
+              {onHome ? null : (
+                <BackChevron
+                  onPress={() => setView("home")}
+                  color={headText}
+                  style={{ marginRight: 8 * s }}
+                />
+              )}
               <Text style={[styles.title, { color: headText }]} numberOfLines={1}>
                 {club?.name ?? "My Club"}
               </Text>
@@ -397,19 +420,26 @@ export default function ClubScreen() {
             <View style={{ marginTop: HOME.tileGap * s, alignSelf: "center" }}>
               <ChallengeTile
                 size={HOME.tile * s}
-                // The THUMBNAIL plays; the heading's own screen still lists them.
-                // The bridge resolves which challenge "latest" is — the app has no
-                // id to give it (see app/challenge-play.tsx).
-                onPress={() => router.push("/challenge-play")}
+                // Through the challenge's info screen, same as the Challenges
+                // carousel — never straight into a table. Only when the summary
+                // hasn't answered (no id to name) does the tile fall back to
+                // the bridge-resolved "latest" play route.
+                onPress={() =>
+                  latest
+                    ? router.push({ pathname: "/challenge-info", params: { id: latest.id } })
+                    : router.push("/challenge-play")
+                }
               />
-              <ChallengeCaption
-                challenge={latest}
-                width={HOME.tile * s}
-                fontSize={13.633 * s}
-                dot={5.029 * s}
-                gap={8 * s}
-                paddingTop={2 * s}
-              />
+              {latest ? (
+                <ChallengeCaption
+                  challenge={latest}
+                  width={HOME.tile * s}
+                  fontSize={13.633 * s}
+                  dot={5.029 * s}
+                  gap={8 * s}
+                  paddingTop={2 * s}
+                />
+              ) : null}
             </View>
 
             <View

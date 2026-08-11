@@ -31,7 +31,7 @@ import {
   View,
 } from "react-native";
 
-import { BrandChrome } from "../components/brand-chrome";
+import { BackChevron, BrandChrome } from "../components/brand-chrome";
 import { ChallengeFormPanel } from "../components/challenge-form-panel";
 import { ChallengeTile } from "../components/challenge-tile";
 import { DealChat } from "../components/deal-chat";
@@ -124,9 +124,13 @@ export default function PracticeDealsScreen() {
   const deal = deals[active] ?? deals[0]!;
 
   return (
-    <BrandChrome onBack={() => (router.canGoBack() ? router.back() : router.replace("/club"))}>
+    <BrandChrome>
       <View style={styles.page}>
         <View style={[styles.titleRow, { paddingTop: TITLE_TOP * s }]}>
+          <BackChevron
+            onPress={() => (router.canGoBack() ? router.back() : router.replace("/club"))}
+            style={{ marginRight: 8 * s }}
+          />
           <Text style={styles.title}>Practice Deals</Text>
           {canCreate ? (
             <Pressable

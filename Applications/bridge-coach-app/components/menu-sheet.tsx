@@ -18,10 +18,11 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { Href } from "expo-router";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { confirmDestructive, notify } from "../lib/dialogs";
 import {
   loadClubHeader,
   pickAndUploadClubHeader,
@@ -206,7 +207,7 @@ function ClubHeaderRow({ canSet, canRemove }: { canSet: boolean; canRemove: bool
       const uri = await pickAndUploadClubHeader(token, programId);
       if (uri) setHeader(uri);
     } catch {
-      Alert.alert("Couldn't set that header", "Please try again.");
+      notify("Couldn't set that header", "Please try again.");
     } finally {
       setBusy(false);
     }
@@ -214,20 +215,20 @@ function ClubHeaderRow({ canSet, canRemove }: { canSet: boolean; canRemove: bool
 
   function remove() {
     if (!token || !programId || busy) return;
-    Alert.alert("Remove the club header?", "The Club tab goes back to plain cream.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          setBusy(true);
-          removeClubHeader(token, programId)
-            .then(() => setHeader(null))
-            .catch(() => Alert.alert("Couldn't remove that header", "Please try again."))
-            .finally(() => setBusy(false));
-        },
+    // confirmDestructive, not Alert directly: on web a buttoned Alert renders
+    // nothing, which made this row a silent no-op in the browser.
+    confirmDestructive(
+      "Remove the club header?",
+      "The Club tab goes back to plain cream.",
+      "Remove",
+      () => {
+        setBusy(true);
+        removeClubHeader(token, programId)
+          .then(() => setHeader(null))
+          .catch(() => notify("Couldn't remove that header", "Please try again."))
+          .finally(() => setBusy(false));
       },
-    ]);
+    );
   }
 
   return (
