@@ -1120,6 +1120,8 @@ export interface Version {
   notes: string;
   /** Frozen — regular saves do not overwrite this version. */
   locked?: boolean;
+  /** How many times an author submitted onto this version ("edited 2x"). */
+  editCount?: number;
   /** Content at the time this version was saved. */
   snapshot?: ObjectVersionSnapshot;
 }
