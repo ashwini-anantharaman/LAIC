@@ -78,6 +78,13 @@ export interface BridgeTableProps {
   coachShare?: number;
   /** Fires once, when the last trick has resolved. */
   onComplete?: (state: GameState) => void;
+  /**
+   * Fires on EVERY position, the first included. A wrapper needs this when the
+   * board it is running ends somewhere other than the last trick — a
+   * bidding-only challenge board is over the moment the auction closes, and
+   * `onComplete` would never fire at all there.
+   */
+  onState?: (state: GameState) => void;
 }
 
 export function BridgeTable({
@@ -93,6 +100,7 @@ export function BridgeTable({
   showCoach = false,
   coachShare,
   onComplete,
+  onState,
 }: Readonly<BridgeTableProps>) {
   const hands = useMemo(() => deal ?? seededDeal(seed), [deal, seed]);
 
@@ -207,6 +215,14 @@ export function BridgeTable({
       busy.current = false;
     };
   }, [decide, myTurn, state, robotDelayMs]);
+
+  // The position, every time it moves. Held in a ref so a host that passes an
+  // inline arrow does not re-fire the effect on its own re-renders.
+  const stateSink = useRef(onState);
+  stateSink.current = onState;
+  useEffect(() => {
+    stateSink.current?.(state);
+  }, [state]);
 
   const done = useRef(false);
   useEffect(() => {

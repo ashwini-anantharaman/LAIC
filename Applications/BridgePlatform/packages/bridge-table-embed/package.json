@@ -22,8 +22,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@bridge/challenges": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*",
+    "@bridge/formats": "workspace:*",
     "@bridge/table-config": "workspace:*",
     "@bridge/table-ui": "workspace:*"
   },

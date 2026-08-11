@@ -90,6 +90,26 @@ export function isBiddingOnly(challenge: Pick<Challenge, "format">): boolean {
   return challengeFormat(challenge) === "bidding-only";
 }
 
+/**
+ * WHEN AN ATTEMPT IS OVER, in one place.
+ *
+ * A full board is over when the last trick has resolved. A BIDDING-ONLY board
+ * is over the moment the auction closes (owner, 2026-08-10): the engine's
+ * `play` phase belongs to nobody there — no participant and no robot will ever
+ * enter it — so `auction → done` is the whole life of the board. A passed-out
+ * board reaches `complete` straight from the auction and satisfies both.
+ *
+ * It lives in this client-safe package because THREE surfaces must agree: the
+ * server-side freeze, the table deciding whether the felt should still invite a
+ * card, and the embedded solo player, which has no server at all.
+ */
+export function challengeBoardIsOver(
+  phase: "auction" | "play" | "complete",
+  biddingOnly: boolean,
+): boolean {
+  return biddingOnly ? phase !== "auction" : phase === "complete";
+}
+
 // ── boards ──────────────────────────────────────────────────────────────────
 
 /** Board count bounds — the create wizard's board-count step (spec §1). */

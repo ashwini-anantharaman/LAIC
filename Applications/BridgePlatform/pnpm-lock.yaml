@@ -408,12 +408,18 @@ importers:
 
   packages/bridge-table-embed:
     dependencies:
+      '@bridge/challenges':
+        specifier: workspace:*
+        version: link:../bridge-challenges
       '@bridge/engine':
         specifier: workspace:*
         version: link:../bridge-engine
       '@bridge/events':
         specifier: workspace:*
         version: link:../bridge-events
+      '@bridge/formats':
+        specifier: workspace:*
+        version: link:../bridge-formats
       '@bridge/table-config':
         specifier: workspace:*
         version: link:../bridge-table-config

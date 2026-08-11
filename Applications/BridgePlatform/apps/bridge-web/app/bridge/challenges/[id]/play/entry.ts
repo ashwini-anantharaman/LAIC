@@ -19,6 +19,7 @@
 
 import {
   boardParticipants,
+  challengeBoardIsOver,
   isBiddingOnly,
   type Challenge,
   type ChallengeBoard,
@@ -48,23 +49,11 @@ const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
 // ── freezing a finished board ───────────────────────────────────────────────
 
 /**
- * WHEN AN ATTEMPT IS OVER, in one place.
- *
- * A full board is over when the last trick has resolved. A BIDDING-ONLY board
- * is over the moment the auction closes (owner, 2026-08-10): the engine's
- * `play` phase belongs to nobody there — no participant and no robot will ever
- * enter it — so `auction → done` is the whole life of the board. A passed-out
- * board reaches `complete` straight from the auction and satisfies both.
- *
- * Exported because the table has to ask the same question a render earlier, to
- * decide whether the felt should still be inviting a card.
+ * WHEN AN ATTEMPT IS OVER — now @bridge/challenges' `challengeBoardIsOver`, so
+ * the embedded solo player (which has no server to ask) obeys the same rule.
+ * Re-exported here because the table imports it from this module.
  */
-export function challengeBoardIsOver(
-  phase: "auction" | "play" | "complete",
-  biddingOnly: boolean,
-): boolean {
-  return biddingOnly ? phase !== "auction" : phase === "complete";
-}
+export { challengeBoardIsOver };
 
 /**
  * If this attempt's session has finished, freeze the play: a render-ready

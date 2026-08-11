@@ -24,7 +24,39 @@
 // still decides what is tinted (a match, and only a match). The two paths meet
 // in `assemble` and share every part of the surface that is not a figure.
 
-import { biddingScores, challengeScores, isBiddingOnly } from "@bridge/challenges";
+import {
+  biddingScores,
+  cellValue,
+  challengeScores,
+  contractCell,
+  contractPhrase,
+  formatCell,
+  formatTotal,
+  isBiddingOnly,
+  scoringName,
+  scoringShort,
+  scoringUnit,
+  toneFor,
+  verdictLabel,
+  verdictTone,
+} from "@bridge/challenges";
+// The FORMATTERS now live in @bridge/challenges (src/format.ts) so the
+// embedded solo player prints the same fact the same way. Re-exported here
+// because this module is where the app — and this file's own unit test — have
+// always reached for them.
+export {
+  cellValue,
+  contractCell,
+  contractPhrase,
+  formatCell,
+  formatTotal,
+  scoringName,
+  scoringShort,
+  scoringUnit,
+  toneFor,
+  verdictLabel,
+  verdictTone,
+};
 import type {
   BiddingBoardResult,
   BiddingScores,
@@ -33,7 +65,6 @@ import type {
   ChallengeBoard,
   ChallengeInvite,
   ChallengePlay,
-  ChallengeScoring,
   ContractVerdict,
   ReachedContract,
 } from "@bridge/challenges";
@@ -58,62 +89,9 @@ const EMDASH = "\u2014";
 export const BEN_KEY = "BEN";
 
 // ── formatting ──────────────────────────────────────────────────────────────
-
-/** The unit chip over the standings, e.g. "IMPs vs datum". */
-export function scoringUnit(mode: ChallengeScoring): string {
-  return mode === "mp" ? "Matchpoints %" : mode === "total" ? "Total points" : "IMPs vs datum";
-}
-
-/** The standings column head, e.g. "IMPs". */
-export function scoringShort(mode: ChallengeScoring): string {
-  return mode === "mp" ? "MP %" : mode === "total" ? "Pts" : "IMPs";
-}
-
-/** The scoring name in the header subtitle. */
-export function scoringName(mode: ChallengeScoring): string {
-  return mode === "mp" ? "Matchpoints" : mode === "total" ? "Total points" : "IMPs";
-}
-
-/**
- * The figure printed in a grid cell or a board square. IMPs and total points
- * are signed integers; matchpoints are a bare rounded percentage (the "%" is
- * carried by the column head — a 46px cell has no room for it).
- */
-export function formatCell(mode: ChallengeScoring, value: number): string {
-  const r = Math.round(value);
-  if (mode === "mp") return `${r}`;
-  return r > 0 ? `+${r}` : `${r}`;
-}
-
-/**
- * The number BEHIND a printed cell — what the leader highlight reads. It is
- * the rounded figure, not the raw score, so what is tinted matches what is
- * read (A5).
- */
-export function cellValue(value: number): number {
-  const r = Math.round(value);
-  return r === 0 ? 0 : r;
-}
-
-/**
- * A challenge total. Matchpoints are a session percentage to one decimal;
- * IMPs are signed integers; total points are signed and grouped.
- */
-export function formatTotal(mode: ChallengeScoring, value: number): string {
-  if (mode === "mp") return `${value.toFixed(1)}%`;
-  const r = Math.round(value);
-  if (mode === "total") return `${r >= 0 ? "+" : ""}${r.toLocaleString("en-US")}`;
-  return `${r >= 0 ? "+" : ""}${r}`;
-}
-
-/**
- * How a figure reads. Matchpoints are NOT zero-centred — 50% is flat — so the
- * tone is always passed explicitly rather than derived from the sign.
- */
-export function toneFor(mode: ChallengeScoring, value: number): ChallengeTone {
-  if (mode === "mp") return value >= 55 ? "pos" : value <= 45 ? "neg" : "neutral";
-  return value > 0 ? "pos" : value < 0 ? "neg" : "neutral";
-}
+// The figure and contract formatters live in @bridge/challenges and are
+// re-exported at the top of this file. Only the ones that are about a FIELD of
+// named players stay here — a solo board has neither.
 
 /**
  * The 2-letter code a scorecard column head carries (the viewer reads "You").
@@ -127,52 +105,6 @@ export function shortCode(name: string): string {
       ? `${words[0]?.[0] ?? ""}${words[1]?.[0] ?? ""}`
       : (words[0] ?? name).slice(0, 2);
   return (code || name.slice(0, 2)).toUpperCase();
-}
-
-// ── bidding-only formatting ─────────────────────────────────────────────────
-
-const STRAIN_GLYPH: Record<string, string> = {
-  S: "♠",
-  H: "♥",
-  D: "♦",
-  C: "♣",
-  N: "NT",
-};
-
-/**
- * A contract in a 46px grid cell: "4♠S", "3NT×W", "Pass". Empty when there is
- * no line at all — a blank cell, never a zero.
- */
-export function contractCell(contract: ReachedContract | undefined): string {
-  if (contract === undefined) return "";
-  if (contract === null) return "Pass";
-  const dbl = contract.doubled === 1 ? "×" : contract.doubled === 2 ? "××" : "";
-  return `${contract.level}${STRAIN_GLYPH[contract.strain] ?? contract.strain}${dbl}${contract.declarer}`;
-}
-
-/** The same contract in prose: "4♠ by S", "Passed out", or an em-dash. */
-export function contractPhrase(contract: ReachedContract | undefined): string {
-  if (contract === undefined) return EMDASH;
-  if (contract === null) return "Passed out";
-  const dbl = contract.doubled === 1 ? " ×" : contract.doubled === 2 ? " ××" : "";
-  return `${contract.level}${STRAIN_GLYPH[contract.strain] ?? contract.strain}${dbl} by ${contract.declarer}`;
-}
-
-/**
- * How a board reads against BEN's auction. NEVER "wrong": BEN's bidding system
- * is not necessarily the convention a lesson teaches, so a different contract
- * is reported as a difference and toned NEUTRAL, not negative (owner,
- * 2026-08-10). Only a match is ever tinted.
- */
-export function verdictLabel(verdict: ContractVerdict, sameDeclarer: boolean): string {
-  if (verdict === "unrated") return "BEN has not bid this board yet";
-  if (verdict === "differed") return "A different contract";
-  return sameDeclarer ? "Matched BEN" : "Matched BEN, from the other side";
-}
-
-/** Matched tints; differed and unrated stay quiet. There is no negative tone. */
-export function verdictTone(verdict: ContractVerdict): ChallengeTone {
-  return verdict === "matched" ? "pos" : "neutral";
 }
 
 const VUL_LABEL: Record<Vul, string> = {
