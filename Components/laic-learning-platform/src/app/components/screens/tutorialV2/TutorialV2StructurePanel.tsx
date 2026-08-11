@@ -22,6 +22,17 @@ import { findLibraryLearningObject } from '../../../../lib/libraryEmbed';
 import type { V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
 import { LibraryPickerModal } from '../../LibraryPickerModal';
 
+/** Everything the Blank canvas "Add content" sidebar can generate. */
+const ADD_GENERATE_TYPES: { type: string; label: string }[] = [
+  { type: 'quiz', label: 'Quiz' },
+  { type: 'flashcard-set', label: 'Flashcards' },
+  { type: 'concept-card', label: 'Concept card' },
+  { type: 'summary', label: 'Summary' },
+  { type: 'reflection', label: 'Reflection' },
+  { type: 'assignment', label: 'Assignment' },
+  { type: 'drill', label: 'Drill' },
+];
+
 export function TutorialV2StructurePanel({
   template,
   slots,
@@ -31,6 +42,8 @@ export function TutorialV2StructurePanel({
   createdObjects = [],
   /** Write-it-yourself: freeform section count, no template framing. */
   writeYourself = false,
+  /** Blank canvas: free section count + an "Add content" sidebar (Sources/AI stay on). */
+  freeform = false,
 }: {
   template: TutorialTemplate;
   slots: V2TopLevelSlot[];
@@ -39,6 +52,7 @@ export function TutorialV2StructurePanel({
   onChangeSectionTitles: (next: StructureSectionTitle[]) => void;
   createdObjects?: LearningObject[];
   writeYourself?: boolean;
+  freeform?: boolean;
 }) {
   const analysis = useMemo(() => analyzeTemplateRecipe(template), [template]);
 
@@ -63,15 +77,18 @@ export function TutorialV2StructurePanel({
     return () => { cancelled = true; };
   }, [pickerSlotId, createdObjects]);
 
-  // Keep section title rows aligned with template section count (unless write-yourself).
+  // Keep section title rows aligned with template section count (unless free-structure).
   useEffect(() => {
-    if (writeYourself) {
-      if (!sectionTitles.length) {
+    if (writeYourself || freeform) {
+      if (!sectionTitles.length && !freeform) {
         onChangeSectionTitles([
           { title: 'Section 1', intent: '', learnerPage: 1 },
           { title: 'Section 2', intent: '', learnerPage: 2 },
           { title: 'Section 3', intent: '', learnerPage: 3 },
         ]);
+      }
+      if (!sectionTitles.length && freeform) {
+        onChangeSectionTitles([{ title: 'Section 1', intent: '', learnerPage: 1 }]);
       }
       return;
     }
@@ -90,7 +107,7 @@ export function TutorialV2StructurePanel({
       });
     }
     onChangeSectionTitles(next);
-  }, [analysis.hasSections, analysis.sectionCount, writeYourself]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [analysis.hasSections, analysis.sectionCount, writeYourself, freeform]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Ensure every outline row has a learnerPage once Structure is shown.
   useEffect(() => {
@@ -124,18 +141,106 @@ export function TutorialV2StructurePanel({
     && !analysis.libraryEmbeds.length
     && !analysis.topLevelGenerateEmbeds.length;
 
+  const addSection = () => onChangeSectionTitles([
+    ...sectionTitles,
+    {
+      title: `Section ${sectionTitles.length + 1}`,
+      intent: '',
+      learnerPage: sectionTitles.length + 1,
+    },
+  ]);
+
+  /** Blank canvas: append an author-created slot (recipeIndex -1 = not from the recipe). */
+  const addContentSlot = (kind: 'generate' | 'library', objectType: string) => {
+    const id = `slot-add-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    onChangeSlots([...slots, {
+      id,
+      kind,
+      objectType,
+      required: false,
+      recipeIndex: -1,
+      done: false,
+      learnerPage: sectionTitles.length + slots.length + 1,
+    }]);
+    if (kind === 'library') {
+      setPickerSlotId(id);
+      setPickerType(objectType);
+    }
+  };
+
+  const addSidebar = freeform ? (
+    <aside
+      className="w-60 shrink-0 rounded-2xl px-3.5 py-4 space-y-4"
+      style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)', position: 'sticky', top: 12 }}
+    >
+      <p style={{ fontSize: 11.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', textTransform: 'uppercase' }}>
+        Add to tutorial
+      </p>
+      <button
+        type="button"
+        onClick={addSection}
+        className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full border"
+        style={{ fontSize: 12.5, fontWeight: 650, borderColor: 'rgba(0,0,0,0.12)', color: '#0B1220', background: '#fff' }}
+      >
+        <Plus size={13} /> Section
+      </button>
+      <div>
+        <p style={{ fontSize: 11, fontWeight: 650, color: '#6D28D9', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
+          <Sparkles size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+          Generate with AI
+        </p>
+        <div className="flex flex-wrap gap-1.5">
+          {ADD_GENERATE_TYPES.map((g) => (
+            <button
+              key={g.type}
+              type="button"
+              onClick={() => addContentSlot('generate', g.type)}
+              className="px-2.5 py-1.5 rounded-full border"
+              style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(109,40,217,0.25)', background: 'rgba(109,40,217,0.05)', color: '#5B21B6' }}
+            >
+              {g.label}
+            </button>
+          ))}
+        </div>
+        <p style={{ fontSize: 11, color: '#6B7280', marginTop: 6, lineHeight: 1.4 }}>
+          Each becomes a slot you'll ground in Sources and generate in Author.
+        </p>
+      </div>
+      <div>
+        <p style={{ fontSize: 11, fontWeight: 650, color: '#065F46', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
+          <Library size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+          From Content Library
+        </p>
+        <button
+          type="button"
+          onClick={() => addContentSlot('library', 'reused-from-library')}
+          className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full border"
+          style={{ fontSize: 12, fontWeight: 600, borderColor: 'rgba(5,150,105,0.3)', background: 'rgba(5,150,105,0.05)', color: '#065F46' }}
+        >
+          Embed existing content…
+        </button>
+      </div>
+      <p style={{ fontSize: 11, color: '#9AA3AF', lineHeight: 1.45 }}>
+        Text, images, and videos are authored inside each section — plus the Review sidebar's image picker.
+      </p>
+    </aside>
+  ) : null;
+
   return (
-    <div className="space-y-5 px-1">
+    <div className={freeform ? 'px-1 flex gap-5 items-start' : 'px-1'}>
+    <div className="space-y-5 flex-1 min-w-0">
       <div>
         <p style={{ fontSize: 13.5, color: '#6B7280' }}>
           {writeYourself
             ? 'Name the sections you want to write. You’ll add text, images, and videos in Author.'
-            : (
-              <>
-                From template <span style={{ fontWeight: 650, color: '#374151' }}>{template.name}</span>
-                {' — '}fill library slots and name sections. Steps that need generation come next.
-              </>
-            )}
+            : freeform
+              ? 'Blank canvas — add as many sections and content items as you want using the panel on the right. Text, images, and videos are authored inside each section.'
+              : (
+                <>
+                  From template <span style={{ fontWeight: 650, color: '#374151' }}>{template.name}</span>
+                  {' — '}fill library slots and name sections. Steps that need generation come next.
+                </>
+              )}
         </p>
       </div>
 
@@ -215,6 +320,9 @@ export function TutorialV2StructurePanel({
                   setPickerSlotId(slot.id);
                   setPickerType(slot.objectType);
                 }}
+                onRemove={freeform && slot.recipeIndex === -1
+                  ? () => onChangeSlots(slots.filter((s) => s.id !== slot.id))
+                  : undefined}
               />
             ))}
           </div>
@@ -236,6 +344,9 @@ export function TutorialV2StructurePanel({
                 onChangePage={(page) => {
                   onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
                 }}
+                onRemove={freeform && slot.recipeIndex === -1
+                  ? () => onChangeSlots(slots.filter((s) => s.id !== slot.id))
+                  : undefined}
               />
             ))}
           </div>
@@ -246,9 +357,9 @@ export function TutorialV2StructurePanel({
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase' }}>
-              Sections ({sectionTitles.length || (writeYourself ? 0 : analysis.sectionCount)})
+              Sections ({sectionTitles.length || ((writeYourself || freeform) ? 0 : analysis.sectionCount)})
             </p>
-            {writeYourself && (
+            {(writeYourself || freeform) && (
               <button
                 type="button"
                 onClick={() => onChangeSectionTitles([
@@ -267,7 +378,7 @@ export function TutorialV2StructurePanel({
             )}
           </div>
           <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8 }}>
-            {writeYourself
+            {(writeYourself || freeform)
               ? 'Add as many sections as you need. Use the page dropdown to control student preview paging.'
               : (
                 <>
@@ -326,7 +437,7 @@ export function TutorialV2StructurePanel({
                     />
                   </label>
                 </div>
-                {writeYourself && sectionTitles.length > 1 && (
+                {(writeYourself || freeform) && sectionTitles.length > 1 && (
                   <button
                     type="button"
                     onClick={() => onChangeSectionTitles(sectionTitles.filter((_, j) => j !== i))}
@@ -341,6 +452,10 @@ export function TutorialV2StructurePanel({
           </div>
         </div>
       )}
+
+      </div>
+
+      {addSidebar}
 
       <LibraryPickerModal
         open={!!pickerSlotId}
@@ -406,12 +521,14 @@ function LibrarySlotRow({
   pageOptionCount,
   learnerPage,
   onChangePage,
+  onRemove,
 }: {
   slot: V2TopLevelSlot;
   onBrowse: () => void;
   pageOptionCount: number;
   learnerPage: number;
   onChangePage: (page: number) => void;
+  onRemove?: () => void;
 }) {
   const label = embedTypeLabel(String(slot.objectType));
   const picked = !!slot.versionPin?.objectId;
@@ -449,6 +566,16 @@ function LibrarySlotRow({
             </label>
           </div>
         </div>
+        {onRemove && (
+          <button
+            type="button"
+            onClick={onRemove}
+            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 shrink-0"
+            title="Remove"
+          >
+            <Trash2 size={13} style={{ color: '#EF4444' }} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -459,11 +586,13 @@ function GenerateSlotRow({
   pageOptionCount,
   learnerPage,
   onChangePage,
+  onRemove,
 }: {
   slot: V2TopLevelSlot;
   pageOptionCount: number;
   learnerPage: number;
   onChangePage: (page: number) => void;
+  onRemove?: () => void;
 }) {
   const label = embedTypeLabel(String(slot.objectType));
   return (
@@ -488,6 +617,16 @@ function GenerateSlotRow({
           <PageSelect value={learnerPage} max={pageOptionCount} onChange={onChangePage} />
         </label>
       </div>
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 shrink-0"
+          title="Remove"
+        >
+          <Trash2 size={13} style={{ color: '#EF4444' }} />
+        </button>
+      )}
     </div>
   );
 }

@@ -15,11 +15,13 @@ import { getDefaultTemplateId } from '../../../lib/templateDefaults';
 import { analyzeTemplateRecipe } from '../../../lib/tutorialV2/recipeStructure';
 import {
   ATOMIC_BLOCK_OPTIONS,
+  BLANK_CANVAS_TUTORIAL_TEMPLATE_ID,
   DEFAULT_TUTORIAL_TEMPLATE_ID,
   EMBEDDED_OBJECT_OPTIONS,
   SOURCE_MODE_OPTIONS,
   getTutorialTemplate,
 } from '../../../lib/tutorialV2/tutorialTemplates';
+import { setTutorialV2LaunchTemplate } from '../../../lib/tutorialV2/launchTemplate';
 import type { RecipeItem, TutorialTemplate } from '../../../lib/types';
 import { getObjectTemplate, type TemplateObjectType } from '../../../lib/objectTemplates';
 import {
@@ -670,8 +672,8 @@ function AuthoringPathModal({
   /** Org-assigned / Template Library default template. */
   defaultTemplateName: string;
   defaultTemplateId: string;
-  value: 'template' | 'write-yourself' | null;
-  onChange: (v: 'template' | 'write-yourself') => void;
+  value: 'template' | 'write-yourself' | 'blank' | null;
+  onChange: (v: 'template' | 'write-yourself' | 'blank') => void;
   onContinue: () => void;
   onBack: () => void;
   onClose: () => void;
@@ -839,6 +841,36 @@ function AuthoringPathModal({
                 )}
               </div>
             </button>
+            {objectType === 'tutorial-v2' && (
+              <button
+                type="button"
+                onClick={() => onChange('blank')}
+                className="w-full text-left rounded-2xl px-4 py-4 border transition-colors"
+                style={{
+                  background: value === 'blank' ? 'rgba(29,78,216,0.07)' : '#fff',
+                  borderColor: value === 'blank' ? 'rgba(29,78,216,0.35)' : 'rgba(0,0,0,0.08)',
+                  boxShadow: value === 'blank' ? '0 0 0 1px rgba(29,78,216,0.15)' : undefined,
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#1E40AF' }}>Blank canvas</p>
+                    <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4, lineHeight: 1.45 }}>
+                      No set structure. Add any number of sections plus quizzes, flashcards, concept cards,
+                      library embeds, and media — Sources and AI generation stay available.
+                    </p>
+                  </div>
+                  {value === 'blank' && (
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                      style={{ background: '#059669', color: '#fff' }}
+                    >
+                      <Check size={11} strokeWidth={3} />
+                    </span>
+                  )}
+                </div>
+              </button>
+            )}
           </div>
         </div>
 
@@ -862,7 +894,7 @@ function AuthoringPathModal({
               <p style={{ fontSize: 12.5, color: '#6B7280' }}>
                 <strong style={{ color: '#0B1220' }}>Selected</strong>
                 {' · '}
-                Write it yourself
+                {value === 'blank' ? 'Blank canvas' : 'Write it yourself'}
               </p>
             )}
           </div>
@@ -918,7 +950,7 @@ export function CDCreate() {
   const [showNewCol, setShowNewCol] = useState(false);
   const [newColParentId, setNewColParentId] = useState<string | null>(null);
   const [showPathPicker, setShowPathPicker] = useState(false);
-  const [pathChoice, setPathChoice] = useState<'template' | 'write-yourself' | null>(null);
+  const [pathChoice, setPathChoice] = useState<'template' | 'write-yourself' | 'blank' | null>(null);
 
   const pendingTile = TILES.find((t) => t.id === pendingType) ?? null;
   const newColParentName = newColParentId
@@ -967,7 +999,13 @@ export function CDCreate() {
 
   const proceedWithAuthoringPath = () => {
     if (!pathChoice || !pendingType || !PATH_PICKER_TYPES.includes(pendingType)) return;
-    setPendingAuthoringPath(pathChoice);
+    if (pathChoice === 'blank') {
+      // Blank canvas rides the template path with the blank-canvas template.
+      setTutorialV2LaunchTemplate(BLANK_CANVAS_TUTORIAL_TEMPLATE_ID);
+      setPendingAuthoringPath('template');
+    } else {
+      setPendingAuthoringPath(pathChoice);
+    }
     setCreatorObjectType(pendingType);
     closeCreateFlow();
     navigate('cd-creator');
