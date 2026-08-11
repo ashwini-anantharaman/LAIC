@@ -10,6 +10,7 @@ import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/type
 import { useApp } from '../../App';
 import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
+import { saveObject, setObjectShared } from '../../../lib/supabase';
 import {
   objectCollectionIds,
   getRootCollections,
@@ -108,6 +109,8 @@ export function ObjectLibrary() {
   const [collectionSearch, setCollectionSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<ObjectStatus | 'all'>('all');
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  /** Per object: did publishing succeed? Absent = not attempted this session. */
+  const [linkPublic, setLinkPublic] = useState<Record<string, boolean>>({});
   const [showNewCol, setShowNewCol] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -231,6 +234,17 @@ export function ObjectLibrary() {
     return kids.filter((c) => c.name.toLowerCase().includes(q));
   }, [objectCollections, opened, collectionSearch]);
 
+  /**
+   * Copy the object's link AND publish it, because a link nobody else can open is
+   * not a link. /o/<id> used to resolve only in the browser that authored the
+   * object, so a copied URL failed everywhere it was pasted.
+   *
+   * The clipboard write happens FIRST and unawaited-on-network: browsers only
+   * allow it inside the user's gesture, and putting a round trip in front of it
+   * loses that gesture in Safari. Publishing then follows, and its outcome is
+   * reported on the button — a link that is merely copied and a link that
+   * actually works must not look the same.
+   */
   const copyObjectUrl = async (objectId: string) => {
     const url = objectEmbedUrl(objectId);
     try {
@@ -240,6 +254,23 @@ export function ObjectLibrary() {
     } catch {
       window.prompt('Copy this content URL:', url);
     }
+
+    // Publishing needs the row to exist server-side first: object saves are
+    // fire-and-forget (App.tsx), so an object authored in a session without a
+    // Nexus token was never persisted and has nothing to share.
+    // `allObjects` is declared just below; this only runs from a click, long
+    // after the component body has evaluated.
+    const obj = allObjects.find((o) => o.id === objectId);
+    let ok = false;
+    if (obj) {
+      try {
+        await saveObject(obj);
+        ok = await setObjectShared(objectId, true);
+      } catch {
+        ok = false;
+      }
+    }
+    setLinkPublic((m) => ({ ...m, [objectId]: ok }));
   };
 
   const allObjects = useMemo(() => {
@@ -483,9 +514,22 @@ export function ObjectLibrary() {
                 type="button"
                 onClick={() => void copyObjectUrl(item.id)}
                 className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
-                title={copiedId === item.id ? 'Copied' : 'Copy content URL'}
+                title={
+                  copiedId !== item.id
+                    ? 'Copy content URL'
+                    : linkPublic[item.id] === false
+                      ? 'Copied — but this link only opens in this browser (publishing failed; sign in with authoring access)'
+                      : 'Copied — this link opens anywhere'
+                }
               >
-                {copiedId === item.id ? <Check size={13} className="text-emerald-600" /> : <Link2 size={13} />}
+                {copiedId === item.id ? (
+                  <Check
+                    size={13}
+                    className={linkPublic[item.id] === false ? 'text-amber-600' : 'text-emerald-600'}
+                  />
+                ) : (
+                  <Link2 size={13} />
+                )}
               </button>
               <button
                 type="button"

@@ -6,6 +6,8 @@ export function ContentWebView({
   url,
   onUrlChange,
   onHostMessage,
+  onLoadEnd,
+  onError,
 }: {
   url: string;
   /** Fires as the user navigates inside the embed (native only — the web
@@ -14,6 +16,11 @@ export function ContentWebView({
   /** Structured messages posted BY the embedded page to its host (e.g. the
    *  LP's "play this board" request). */
   onHostMessage?: (data: unknown) => void;
+  /** The embed finished loading (success or HTTP error page) — lets a host
+   *  screen drop its spinner instead of showing one forever. */
+  onLoadEnd?: () => void;
+  /** The embed could not be reached at all. */
+  onError?: () => void;
 }) {
   return (
     <WebView
@@ -26,6 +33,8 @@ export function ContentWebView({
       overScrollMode="never"
       contentInsetAdjustmentBehavior="never"
       onNavigationStateChange={(e) => onUrlChange?.(e.url)}
+      onLoadEnd={() => onLoadEnd?.()}
+      onError={() => onError?.()}
       onMessage={(e) => {
         if (!onHostMessage) return;
         try {

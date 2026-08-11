@@ -173,6 +173,11 @@ export function ContentWebView(props: {
   onUrlChange?: (url: string) => void;
   /** Structured messages posted BY the embedded page (postMessage). */
   onHostMessage?: (data: unknown) => void;
+  /** Mirrors the native props. Honoured by the inline iframe; the POOL cannot
+   *  report them per-screen (one iframe outlives many mounts), so a pooled
+   *  host must not depend on them. The pool is off — see POOL_ENABLED. */
+  onLoadEnd?: () => void;
+  onError?: () => void;
 }) {
   return POOL_ENABLED ? PooledView(props) : InlineView(props);
 }
@@ -184,10 +189,14 @@ function InlineView({
   url,
   onUrlChange,
   onHostMessage,
+  onLoadEnd,
+  onError,
 }: {
   url: string;
   onUrlChange?: (url: string) => void;
   onHostMessage?: (data: unknown) => void;
+  onLoadEnd?: () => void;
+  onError?: () => void;
 }) {
   useEffect(() => {
     const listener = (e: MessageEvent) => {
@@ -205,6 +214,8 @@ function InlineView({
   return createElement("iframe", {
     src: url,
     style: { flex: 1, width: "100%", height: "100%", border: 0 },
+    onLoad: () => onLoadEnd?.(),
+    onError: () => onError?.(),
   });
 }
 

@@ -160,6 +160,45 @@ export async function setProfileAvatar(
 }
 
 /**
+ * Set a person's own display name across EVERY profile they hold.
+ *
+ * A profile row is per (person, organization), so someone in more than one org has
+ * more than one row and a single-row update would rename them in one place and not
+ * the others. The name is the person's, not a club's, so this is deliberately
+ * global: one edit, every club.
+ *
+ * Matched by auth user id OR email, because an invited profile carries the email
+ * before it is ever linked to an auth user — without the email arm, a person's
+ * not-yet-linked rows would keep the old name forever. Email identifies the person
+ * here (one credential, one person), which is the same assumption the login path
+ * makes.
+ *
+ * `name` is written alongside `display_name` because several readers fall back to
+ * it (`display_name || name || email`); leaving it stale would let the old name
+ * resurface wherever that fallback runs.
+ *
+ * Returns how many rows changed, so a caller can tell a real rename from a no-op.
+ */
+export async function setOwnDisplayName(
+  authUserId: string,
+  email: string | null,
+  displayName: string,
+): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .update(profiles)
+      .set({ displayName, name: displayName, updatedAt: new Date() })
+      .where(
+        email
+          ? sql`(${profiles.authUserId} = ${authUserId} or lower(${profiles.email}) = lower(${email}))`
+          : eq(profiles.authUserId, authUserId),
+      )
+      .returning({ id: profiles.id });
+    return rows.length;
+  });
+}
+
+/**
  * Set or clear a profile's username. Pass null to clear.
  *
  * Uniqueness is enforced by the partial unique index, so a race between two

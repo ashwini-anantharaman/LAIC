@@ -1834,6 +1834,35 @@ platformRouter.post("/auth/password", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Change your OWN display name — the app's profile editor.
+ *
+ * Self-service and global: it renames the person everywhere they appear, in every
+ * club, because a name belongs to the person and not to a club. An admin renaming
+ * someone else still goes through the console's people surface; this route only
+ * ever touches the caller's own rows.
+ *
+ * The name is what the roster, the leaderboard and every chat message are labelled
+ * with, so it is trimmed, length-capped, and stripped of control characters (a
+ * newline would break a single-line row wherever one is rendered).
+ */
+platformRouter.patch("/auth/me", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = parseBody(
+    z.object({
+      display_name: z
+        .string()
+        .transform((v) => v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+        .refine((v) => v.length >= 1, "A name cannot be empty")
+        .refine((v) => v.length <= 80, "That name is too long"),
+    }),
+    await c.req.json(),
+  );
+  const changed = await db.setOwnDisplayName(user.id, user.email ?? null, body.display_name);
+  if (!changed) throw new HttpError(404, "No profile to rename");
+  return c.json({ ok: true, display_name: body.display_name, profiles_updated: changed });
+});
+
 // The person's display name in THIS org (their org-scoped profile), falling
 // back to the session-level name/email so platforms never render a raw id.
 async function _platformDisplayName(profileId: string, user: PlatformUser): Promise<string> {
@@ -1958,6 +1987,42 @@ platformRouter.put("/learning/objects", async (c) => {
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
   await graph.upsertLearningObject(access.orgId, body, access.programId);
   return c.json({ ok: true });
+});
+
+// ── Public share links for Content Studio objects ───────────────────────────
+//
+// A /o/<id> link used to resolve only in the browser that authored the object
+// (the viewer fell back to localStorage), so the link was permanent but the data
+// was not portable. These two routes make it portable: the author publishes, and
+// anyone holding the link can then read it with no session at all.
+
+/** Publish or unpublish. Org-scoped: only someone who can see the object may
+ *  share it, and content-author access is required to change its visibility. */
+platformRouter.put("/learning/objects/:object_id/share", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = (await c.req.json().catch(() => ({}))) as { shared?: boolean; program_id?: string };
+  const access = await resolvePlatformAccess(user, "learning", body.program_id ?? c.req.query("program_id") ?? null);
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const shared = body.shared !== false; // default: publish
+  let ok: boolean;
+  try {
+    ok = await graph.setLearningObjectShared(access.orgId, c.req.param("object_id"), shared);
+  } catch (e) {
+    // The column arrives with migration 0002_public_share.sql. Until it is
+    // applied, say so plainly — an author must never be told a link is public
+    // when it is not.
+    if (e instanceof Error && e.message.startsWith("share-unavailable")) {
+      throw new HttpError(503, "Share links are not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true, shared });
 });
 
 // ── Learning Platform custom roles (the learning app's own People tab) ──────
