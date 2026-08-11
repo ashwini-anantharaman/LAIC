@@ -31,9 +31,11 @@ import { useAuth } from "../lib/auth-context";
 import {
   fetchClubChallenges,
   getCachedChallenge,
+  respondToChallengeInvite,
   type ClubChallenge,
 } from "../lib/challenges";
 import { useSelectedClubId } from "../lib/club-context";
+import { notify } from "../lib/dialogs";
 
 const DESIGN_WIDTH = 390;
 const TILE = 155.47; // the Club home's thumbnail size — a poster, not a carousel
@@ -77,23 +79,39 @@ export default function ChallengeInfoScreen() {
     };
   }, [challenge, token, clubId, id]);
 
-  const needsInviteResponse =
-    challenge?.inviteStatus === "pending" || challenge?.inviteStatus === "declined";
+  // The invite is answered HERE (owner direction 2026-08-11): this screen
+  // wears the app's own face, and "Respond to invite" used to hand the reader
+  // to the platform's list page for one tap — a different-looking product in
+  // the middle of a themed flow. The platform's rule is unchanged (only a
+  // pending invite transitions; POST /challenges/:id/invite), so a declined
+  // invite reads as declined rather than offering a button that cannot act.
+  const invitePending = challenge?.inviteStatus === "pending";
+  const inviteDeclined = challenge?.inviteStatus === "declined";
+  const [responding, setResponding] = useState<"accept" | "decline" | null>(null);
+  const respond = async (action: "accept" | "decline") => {
+    if (!token || !challenge || responding) return;
+    setResponding(action);
+    try {
+      const status = await respondToChallengeInvite(token, clubId, challenge.id, action);
+      setChallenge({ ...challenge, inviteStatus: status });
+    } catch {
+      notify("Couldn't send your response", "Please try again.");
+    } finally {
+      setResponding(null);
+    }
+  };
+
   const buttonLabel = !challenge
     ? ""
-    : needsInviteResponse
-      ? "Respond to invite"
-      : challenge.finished
-        ? "See results"
-        : challenge.finishedBoards > 0
-          ? "Continue"
-          : "Start";
+    : challenge.finished
+      ? "See results"
+      : challenge.finishedBoards > 0
+        ? "Continue"
+        : "Start";
   const open = () => {
     if (!challenge) return;
-    // The accept flow lives on the platform's list; everything else opens the
-    // challenge itself and lets its entry page route play vs results.
-    if (needsInviteResponse) router.push("/live-challenges");
-    else router.push({ pathname: "/challenge-play", params: { id: challenge.id } });
+    // Opens the challenge itself; its entry page routes play vs results.
+    router.push({ pathname: "/challenge-play", params: { id: challenge.id } });
   };
 
   return (
@@ -139,9 +157,10 @@ export default function ChallengeInfoScreen() {
                   }
                   scale={s}
                 />
-                {needsInviteResponse ? (
+                {invitePending ? (
                   <FactRow label="Invite" value="Awaiting your response" scale={s} />
                 ) : null}
+                {inviteDeclined ? <FactRow label="Invite" value="Declined" scale={s} /> : null}
               </View>
 
               <Text style={[styles.heading, { paddingTop: 20 * s, paddingBottom: 8 * s }]}>
@@ -153,18 +172,64 @@ export default function ChallengeInfoScreen() {
               </Text>
             </ScrollView>
 
-            <Pressable
-              onPress={open}
-              accessibilityRole="button"
-              accessibilityLabel={buttonLabel}
-              style={({ pressed }) => [
-                styles.start,
-                { marginHorizontal: 25, marginBottom: 14 * s, paddingVertical: 13 * s },
-                pressed && styles.pressed,
-              ]}
-            >
-              <Text style={[styles.startText, { fontSize: 15 * s }]}>{buttonLabel}</Text>
-            </Pressable>
+            {invitePending ? (
+              // Accept and Decline, side by side, in place — nothing leaves
+              // this screen to answer an invitation.
+              <View style={{ flexDirection: "row", gap: 10, marginHorizontal: 25, marginBottom: 14 * s }}>
+                <Pressable
+                  onPress={() => void respond("accept")}
+                  disabled={responding !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel="Accept challenge"
+                  style={({ pressed }) => [
+                    styles.start,
+                    { flex: 1, paddingVertical: 13 * s },
+                    (pressed || responding !== null) && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.startText, { fontSize: 15 * s }]}>
+                    {responding === "accept" ? "Accepting…" : "Accept challenge"}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void respond("decline")}
+                  disabled={responding !== null}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decline challenge"
+                  style={({ pressed }) => [
+                    styles.decline,
+                    { flex: 1, paddingVertical: 13 * s },
+                    (pressed || responding !== null) && styles.pressed,
+                  ]}
+                >
+                  <Text style={[styles.declineText, { fontSize: 15 * s }]}>
+                    {responding === "decline" ? "Declining…" : "Decline"}
+                  </Text>
+                </Pressable>
+              </View>
+            ) : inviteDeclined ? (
+              <Text
+                style={[
+                  styles.emptyText,
+                  { marginHorizontal: 25, marginBottom: 18 * s },
+                ]}
+              >
+                You declined this invitation.
+              </Text>
+            ) : (
+              <Pressable
+                onPress={open}
+                accessibilityRole="button"
+                accessibilityLabel={buttonLabel}
+                style={({ pressed }) => [
+                  styles.start,
+                  { marginHorizontal: 25, marginBottom: 14 * s, paddingVertical: 13 * s },
+                  pressed && styles.pressed,
+                ]}
+              >
+                <Text style={[styles.startText, { fontSize: 15 * s }]}>{buttonLabel}</Text>
+              </Pressable>
+            )}
           </>
         )}
       </View>
@@ -220,5 +285,15 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.green,
   },
   startText: { fontFamily: Fonts.bodySemibold, color: Brand.cream },
+  /** Decline: the quiet twin — outlined, never louder than Accept. */
+  decline: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: Brand.green,
+    backgroundColor: "transparent",
+  },
+  declineText: { fontFamily: Fonts.bodySemibold, color: Brand.green },
   pressed: { opacity: 0.6 },
 });

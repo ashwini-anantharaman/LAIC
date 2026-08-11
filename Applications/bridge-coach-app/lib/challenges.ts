@@ -169,3 +169,49 @@ export async function fetchClubChallenges(
   for (const row of rows) lastFetched.set(row.id, row);
   return rows;
 }
+
+/**
+ * Answer an invite IN PLACE — the app's own screens accept/decline without a
+ * round trip through the platform's list page (which reads as a different
+ * product inside the app's frame). Same platform, same rules: only a pending
+ * invite transitions. Returns the invite's status afterwards, and refreshes
+ * the info-screen cache so the button under the reader's thumb tells the
+ * truth immediately.
+ */
+export async function respondToChallengeInvite(
+  token: string,
+  programId: string | null,
+  challengeId: string,
+  action: "accept" | "decline",
+): Promise<"pending" | "accepted" | "declined" | "none"> {
+  const base = bridgeApiBase();
+  if (!base) throw new ChallengesError(0, "No bridge platform configured.");
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${base}/api/bridge/challenges/${encodeURIComponent(challengeId)}/invite`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(programId ? { "x-program-id": programId } : {}),
+        },
+        body: JSON.stringify({ action }),
+      },
+    );
+  } catch {
+    throw new ChallengesError(0, "Cannot reach the bridge platform.");
+  }
+  if (!response.ok) {
+    throw new ChallengesError(response.status, `Invite response failed (${response.status})`);
+  }
+  const json = (await response.json().catch(() => ({}))) as {
+    inviteStatus?: "pending" | "accepted" | "declined" | "none";
+  };
+  const status = json.inviteStatus ?? "none";
+  const cached = lastFetched.get(challengeId);
+  if (cached) lastFetched.set(challengeId, { ...cached, inviteStatus: status });
+  return status;
+}
