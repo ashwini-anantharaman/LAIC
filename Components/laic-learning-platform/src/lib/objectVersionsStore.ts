@@ -334,6 +334,52 @@ export function syncWorkingVersion(
   return v;
 }
 
+/**
+ * Guarantee every object has a v1, and keep it publishable.
+ *
+ * Draft saves deliberately do not add versions — that is what stopped history
+ * growing on its own. But it also left a brand-new object with an empty
+ * history and nothing to publish until the author happened to submit.
+ *
+ * So: the first save commits v1, and while v1 is still the ONLY version it
+ * tracks the working copy, so it always holds real content rather than the
+ * empty shell the object was created as. The moment an author deliberately
+ * makes a v2, v1 freezes — from then on it is the original state, which is
+ * exactly what the rest of the model promises about it.
+ *
+ * Never adds a second version, so this cannot reintroduce surprise versions.
+ */
+export function ensureInitialVersion(
+  userId: string,
+  obj: LearningObject,
+  createdBy: string,
+): Version | null {
+  const existing = listVersionsForObject(userId, obj.id);
+
+  if (!existing.length) {
+    const v = makeVersion(obj, createdBy, 1, 'Initial version');
+    upsertLocal(userId, v);
+    return v;
+  }
+
+  // Only ever touch a lone v1 — and not once it is locked or published, where
+  // the content has been promised to someone.
+  if (existing.length !== 1) return null;
+  const v1 = existing[0];
+  if (v1.versionNumber !== 1 || v1.locked || v1.publishedAt) return null;
+  if (!readAll(userId).some((v) => v.id === v1.id)) return null; // seed row
+  if (v1.snapshot && contentEqualsSnapshot(v1.snapshot, obj)) return null;
+
+  const refreshed: Version = {
+    ...v1,
+    objectTitle: obj.title,
+    status: obj.status,
+    snapshot: snapshotFromObject(obj),
+  };
+  upsertLocal(userId, refreshed);
+  return refreshed;
+}
+
 /** Explicit “Save as new version” — appends a new numbered snapshot (skips if identical & no note). */
 export function saveAsNewVersion(
   userId: string,

@@ -38,6 +38,7 @@ import {
   objectFromVersion,
   truncateVersionsAfter as storeTruncateVersionsAfter,
   markVersionPublished,
+  ensureInitialVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -597,7 +598,11 @@ function StudioApp() {
         } else if (typeof versionMode === 'object' && versionMode.overwriteId) {
           const res = storeOverwriteVersion(ownerId, versionMode.overwriteId, obj, createdBy);
           if (!res.ok && res.error) onVersionError?.(res.error);
-        } else if (versionMode !== 'skip') {
+        } else if (versionMode === 'skip') {
+          // Draft saves add nothing — but every object still needs a v1 in the
+          // history, ready to publish, from the moment it exists.
+          ensureInitialVersion(ownerId, obj, createdBy);
+        } else {
           syncWorkingVersion(ownerId, obj, createdBy);
         }
       } catch (err: any) {
