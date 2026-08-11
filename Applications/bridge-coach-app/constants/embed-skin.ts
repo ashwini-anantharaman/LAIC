@@ -96,6 +96,39 @@ b, strong, th {
 /* Neco carries its own weight; the browser must not synthesise a bolder one. */
 h1, h2, h3, h4, h5, h6, b, strong { font-synthesis: none; }
 
+/* ── The reader's sticky toolbar ──────────────────────────────────────────── */
+/* The bar above the content (title, "10 min · concept-card", Glossary / Ask AI)
+   is the embedded reader's own, and it arrives a pale blue-grey — the one seam
+   left once the page around it is cream. It becomes the app's maroon, which is
+   what the tab bar and the sheets already use.
+
+   Matched on the bar's OWN inline style rather than on Tailwind classes alone:
+   .sticky.top-0 is generic enough to catch other things, while the translucent
+   blue-grey fill and the 16px backdrop blur are specific to this bar. If the
+   reader restyles it, these selectors stop matching and the bar simply returns to
+   its own colour — a visible no-op rather than a mangled header. */
+body div[style*="242,245,248"],
+body div[style*="blur(16px)"] {
+  background: ${Brand.maroon} !important;
+  border-bottom-color: rgba(255, 244, 215, 0.22) !important;
+}
+
+/* Its text has inline colours (#0B1220 title, #9AA3AF meta) that only an
+   !important rule can beat. The title goes cream-white; the meta line stays a step
+   quieter so the hierarchy survives the change. */
+body div[style*="242,245,248"] > div > p,
+body div[style*="blur(16px)"] > div > p {
+  color: ${Brand.cream} !important;
+}
+body div[style*="242,245,248"] > div > p + p,
+body div[style*="blur(16px)"] > div > p + p {
+  color: rgba(255, 244, 215, 0.72) !important;
+}
+
+/* The Glossary and Ask AI pills keep their pale fills and dark labels: they are
+   white-on-maroon buttons now, which reads correctly and stays legible. Forcing
+   their text white would have put white on a white pill. */
+
 /* Buttons keep their own fills — only the face changes, so an action still reads
    as an action. */
 button, [role="button"] { color: inherit !important; }
