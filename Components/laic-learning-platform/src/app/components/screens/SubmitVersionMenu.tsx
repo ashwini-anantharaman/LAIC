@@ -16,6 +16,7 @@
  * someone reviewed cannot change underneath them.
  */
 import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { History, Lock, Send, X } from 'lucide-react';
 import type { Version } from '../../../lib/types';
 
@@ -83,10 +84,10 @@ export function SubmitVersionMenu({
         <History size={13} /> {label} as…
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           className="fixed inset-0 z-[80] flex items-center justify-center p-4"
-          style={{ background: 'rgba(15,23,42,0.5)', backdropFilter: 'blur(3px)' }}
+          style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
           onClick={() => setOpen(false)}
           role="presentation"
         >
@@ -174,7 +175,8 @@ export function SubmitVersionMenu({
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
