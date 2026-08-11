@@ -20,6 +20,7 @@ export function ObjectVersionsModal({
     saveObjectAsNewVersion,
     restoreObjectVersion,
     publishObjectVersion,
+    ensureObjectInitialVersion,
     lockObjectVersion,
     deleteObjectVersion,
     openReaderVersion,
@@ -31,9 +32,14 @@ export function ObjectVersionsModal({
   const [publishingId, setPublishingId] = useState<string | null>(null);
 
   // Opening this modal used to commit a version whenever the working copy had
-  // drifted from the tip — so looking at the history changed it. Versions are
-  // now created only by an explicit act: Submit as…, or Save as new version
-  // below.
+  // drifted from the tip — looking at the history changed it. It now only
+  // guarantees v1 exists: objects created before versions were tracked (or
+  // never re-saved since) would otherwise show an empty history with nothing
+  // to publish. This can never add a second version.
+  useEffect(() => {
+    if (!object || !activeUserId) return;
+    ensureObjectInitialVersion(object.id);
+  }, [object?.id, activeUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const versions = useMemo(
     () => (typeof listObjectVersions === 'function' ? (listObjectVersions(object.id) || []) : []),

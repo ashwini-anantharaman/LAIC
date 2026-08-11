@@ -932,6 +932,32 @@ async function publishLearningObjectRow(row, share = false) {
   return { ok: true, id };
 }
 
+/** Every object this org/program owns — the library's durable home. */
+async function listLearningObjectsForLibrary() {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const params = new URLSearchParams({
+    select: 'id,type,title,owner_id,owner_name,status,scope,reuse_count,description,'
+      + 'estimated_time,blocks,tags,source_ids,collection_ids,collection_names,'
+      + 'pipeline_draft,version_number,published_at,created_at,updated_at',
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+    order: 'updated_at.desc',
+  });
+  if (LEARNING_PROGRAM_ID) params.set('program_id', `eq.${LEARNING_PROGRAM_ID}`);
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library read failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return await res.json();
+}
+
 async function fetchWebsitePage(rawUrl) {
   let url = assertPublicHttpUrl(rawUrl);
   let html = '';
@@ -3883,6 +3909,21 @@ export async function handler(req, res) {
     try {
       const out = await fetchWebsitePage(body.url);
       return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- The author's library, server-side ---- */
+  // Everything this org/program has, drafts included, so a browser can rebuild
+  // the library after a refresh (or on another machine) without the baked
+  // snapshot. `published_at` is what separates "live for reader apps" from
+  // "still being written"; readers filter on it, this does not.
+  if (method === 'GET' && path === '/api/learning/objects') {
+    try {
+      const rows = await listLearningObjectsForLibrary();
+      return send(res, 200, rows);
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
       return send(res, status, { code: e.code || 'error', message: e.message });

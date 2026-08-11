@@ -2,7 +2,58 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { publishLearningObject } from '../lib/api';
+import { fetchSharedLibrary, publishLearningObject } from '../lib/api';
+
+/**
+ * Back the library up to the shared store, coalesced per object.
+ *
+ * Saves fire on nearly every edit and each row can carry megabytes of inlined
+ * images, so pushing every one would flood the API and the author's uplink.
+ * The last write within the window wins, which is the one that matters.
+ */
+const SHARED_SYNC_DELAY_MS = 2500;
+const sharedSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
+  const pending = sharedSyncTimers.get(obj.id);
+  if (pending) clearTimeout(pending);
+  sharedSyncTimers.set(obj.id, setTimeout(() => {
+    sharedSyncTimers.delete(obj.id);
+    publishLearningObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
+      console.warn('[library] could not back up to the shared store:', err?.message || err);
+    });
+  }, SHARED_SYNC_DELAY_MS));
+}
+
+/** A shared-store row (snake_case) back into the app's LearningObject shape. */
+function sharedRowToObject(row: any): LearningObject {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || 'Untitled',
+    ownerId: row.owner_id || '',
+    ownerName: row.owner_name || 'You',
+    status: row.status || 'draft',
+    scope: row.scope || 'bridge',
+    reuseCount: row.reuse_count ?? 0,
+    description: row.description || '',
+    estimatedTime: row.estimated_time || '',
+    blocks: row.blocks || [],
+    createdAt: String(row.created_at || '').slice(0, 10),
+    updatedAt: String(row.updated_at || '').slice(0, 10),
+    tags: row.tags || [],
+    sourceIds: row.source_ids || [],
+    collectionIds: Array.isArray(row.collection_ids) && row.collection_ids.length
+      ? row.collection_ids
+      : undefined,
+    pipelineDraft: row.pipeline_draft ?? undefined,
+    // The authoring draft rides along in pipeline_draft's sibling fields when
+    // present, so reopening a synced tutorial resumes where it left off.
+    ...(row.pipeline_draft?.tutorialV2Draft
+      ? { tutorialV2Draft: row.pipeline_draft.tutorialV2Draft }
+      : {}),
+  } as LearningObject;
+}
 import {
   loadUserObjects,
   saveUserObjects,
@@ -128,6 +179,8 @@ export interface AppState {
     objectId: string,
     versionId: string,
   ) => Promise<{ ok: boolean; version?: Version; error?: string }>;
+  /** Guarantee this object has a v1 (never adds a second version). */
+  ensureObjectInitialVersion: (objectId: string) => Version | null;
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -303,6 +356,24 @@ function StudioApp() {
     }
     // Local load is enough to start persisting again (don't wait on network).
     setLibraryReady(true);
+
+    // Rebuild from the shared store too, so content an author created here
+    // survives a refresh, a cleared cache, or a different machine — this is
+    // what replaced baking a snapshot into the build.
+    try {
+      const shared = await fetchSharedLibrary();
+      if (gen !== hydrateGenRef.current) return;
+      if (Array.isArray(shared) && shared.length) {
+        const claimed = shared.map((r) => ({ ...sharedRowToObject(r), ownerId: userId }));
+        setCreatedObjects((prev) => {
+          const merged = withCollectionIds(userId, mergeObjects(prev, claimed));
+          saveUserObjects(userId, merged);
+          return merged;
+        });
+      }
+    } catch (err: any) {
+      console.warn('[library] shared store unavailable:', err?.message || err);
+    }
 
     if (!supabaseEnabled()) return;
     try {
@@ -611,9 +682,11 @@ function StudioApp() {
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
       }
-      // Nothing is pushed to the shared library here. Publishing is a per-version
-      // act (Versions → Publish): an implicit publish on every submit would let
-      // later work silently replace the version an author chose to ship.
+      // Back the library up to the shared store so it survives a refresh, a
+      // cleared cache, or another machine. This is a SAVE, not a publish: no
+      // version_number goes with it, so published_at stays untouched and
+      // reader apps keep showing whichever version was deliberately published.
+      queueSharedSync(obj, cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name));
       return nextList;
     });
     // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
@@ -721,6 +794,15 @@ function StudioApp() {
     // Only after the upload lands — see markVersionPublished.
     markVersionPublished(ownerId, objectId, versionId);
     return { ok: true, version };
+  }, []);
+
+  const ensureObjectInitialVersion = useCallback((objectId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const obj = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!obj) return null;
+    const user = USERS.find((u) => u.id === ownerId);
+    return ensureInitialVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
   }, []);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
@@ -889,6 +971,7 @@ function StudioApp() {
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
     saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
+    ensureObjectInitialVersion,
     lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,

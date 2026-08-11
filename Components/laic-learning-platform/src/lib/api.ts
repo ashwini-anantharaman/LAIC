@@ -453,6 +453,11 @@ export function publishLearningObject(
   });
 }
 
+/** GET /api/learning/objects — the author's whole library from the shared store. */
+export function fetchSharedLibrary(signal?: AbortSignal): Promise<any[]> {
+  return apiFetch<any[]>('/api/learning/objects', { signal });
+}
+
 /** POST /api/tutorials/fetch-image — server fetches a public image and inlines it as a data: URI. */
 export function fetchWebImage(
   url: string,
