@@ -2129,6 +2129,63 @@ export async function listClubCoaches(
 }
 
 /**
+ * A CLUB LEARNER'S COACHES: the club's whole coaching tier, with THIS
+ * learner's own submission tallies per coach.
+ *
+ * In a club there is no hire step — a member's coaches ARE the club's coaches
+ * (owner direction 2026-08-11: adding people to a club with roles is the
+ * whole subscription; nothing further to click on either side). This is the
+ * learner-side mirror of listClubCoaches/countClubLearners: the coach's
+ * screen counts the club's learners, so the learner's screen must list the
+ * club's coaches, or the two sides describe different relationships.
+ *
+ * Tallies are scoped to the CLUB's program id — bridge-web stamps a club
+ * member's submissions with the pinned club, not the parent (see the
+ * summary's dataProgramId note).
+ */
+export async function listClubCoachesWithTallies(
+  orgId: string,
+  clubProgramId: string,
+  learnerProfileId: string | null,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      with counts as (
+        select s.coach_id,
+               count(*) as sent,
+               count(*) filter (where s.status = 'reviewed') as reviewed,
+               count(*) filter (where s.status <> 'reviewed') as pending
+        from bridge_play_submissions s
+        where ${learnerProfileId}::text is not null
+          and s.learner_id = ${learnerProfileId}
+          and s.program_organization_id = ${orgId}
+          and s.nexus_program_id = ${clubProgramId}
+        group by s.coach_id
+      )
+      select p.id as coach_id,
+             coalesce(p.display_name, p.name, split_part(p.email, '@', 1)) as name,
+             coalesce(c.sent, 0)::int as sent,
+             coalesce(c.reviewed, 0)::int as reviewed,
+             coalesce(c.pending, 0)::int as pending
+      from org_memberships m
+      join profiles p on p.id = m.profile_id
+      left join program_role_assignments a
+        on a.program_id = ${clubProgramId} and lower(a.email) = lower(p.email)
+      left join program_roles r on r.id = a.role_id
+      left join counts c on c.coach_id = p.id::text
+      where m.org_id = ${orgId} and m.program_id = ${clubProgramId}
+        and (m.status is null or m.status = 'active')
+        and (
+          m.role in ('owner', 'administrator')
+          or r.perms->>'clubapp' = 'administrator'
+          or r.perms->'capabilities' @> '["app.coaching.view"]'::jsonb
+        )
+      order by name`);
+    return rows as unknown as Row[];
+  });
+}
+
+/**
  * How many of a club's people a coach is there FOR — the club's learners: its
  * active members minus the coaching tier. The exact inverse of listClubCoaches
  * (same capability rule, negated), so the coach screen's headline count and
@@ -2149,6 +2206,35 @@ export async function countClubLearners(orgId: string, clubProgramId: string): P
         and coalesce(r.perms->>'clubapp', '') <> 'administrator'
         and not coalesce(r.perms->'capabilities' @> '["app.coaching.view"]'::jsonb, false)`);
     return Number((rows as unknown as Row[])[0]?.n ?? 0);
+  });
+}
+
+/**
+ * The same people countClubLearners counts, as rows — the club coach's
+ * assignable roster, in listProgramLearners' exact shape ({user_id, email,
+ * name, joined_at}) so the callers that alternate between the two sources
+ * (the /bridge/learners endpoint, bridge-web's assign picker) need no
+ * translation.
+ */
+export async function listClubLearners(orgId: string, clubProgramId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select p.id as user_id,
+             p.email,
+             coalesce(p.display_name, p.name, split_part(p.email, '@', 1)) as name,
+             m.created_at as joined_at
+      from org_memberships m
+      join profiles p on p.id = m.profile_id
+      left join program_role_assignments a
+        on a.program_id = ${clubProgramId} and lower(a.email) = lower(p.email)
+      left join program_roles r on r.id = a.role_id
+      where m.org_id = ${orgId} and m.program_id = ${clubProgramId}
+        and (m.status is null or m.status = 'active')
+        and m.role not in ('owner', 'administrator')
+        and coalesce(r.perms->>'clubapp', '') <> 'administrator'
+        and not coalesce(r.perms->'capabilities' @> '["app.coaching.view"]'::jsonb, false)
+      order by name`);
+    return rows as unknown as Row[];
   });
 }
 

@@ -1113,6 +1113,21 @@ platformRouter.get("/bridge/learners", async (c) => {
     return c.json(await graph.listProgramLearners(access.orgId, access.programId));
   }
   if (access.level !== "edit") throw new HttpError(403, "Coach access required");
+  // A CLUB coach's assignable roster is the club's learners — membership is
+  // the whole subscription (owner direction 2026-08-11), so the hire-scoped
+  // union below (which would say "nobody yet" forever) never applies here.
+  // Gated on actually BEING the club's coaching tier: the partner grant's
+  // level is a flat "edit" for every club member, so the level check above
+  // cannot tell a club's coach from its learners.
+  if (access.partnerClub && access.partnerProgramId) {
+    const clubCoaches = await graph.listClubCoaches(
+      access.orgId, access.partnerProgramId, access.programId,
+    );
+    if (!clubCoaches.some((co) => co.coach_id === access.profileId)) {
+      throw new HttpError(403, "Coach access required");
+    }
+    return c.json(await graph.listClubLearners(access.orgId, access.partnerProgramId));
+  }
   const coaches = await graph.listProgramCoaches(access.orgId, access.programId);
   const me = coaches.find((co) => co.coach_id === access.profileId);
   // The roster is the UNION of the legacy roster group (learners whose
@@ -1192,6 +1207,24 @@ platformRouter.get("/bridge/summary", async (c) => {
   // tab focus — so its shape IS the app's felt baseline.
   const coachStrand = (async (): Promise<{ coach: Row | null; coachList: Row[] }> => {
     if (!user.email) return { coach: null, coachList: [] };
+    // IN A CLUB, membership IS the subscription (owner direction 2026-08-11):
+    // a member's coaches are the club's whole coaching tier, with no hire
+    // step on either side — the console added them to the club, and that is
+    // the entire relationship. The hire model below stays the MAIN program's:
+    // there, learners pick their coaches one by one. Without this branch a
+    // club learner's Coach tab said "hire a coach" forever, while the coach's
+    // own screen already counted that learner — the two sides of one
+    // relationship, read from two different stores.
+    if (access.partnerClub && access.partnerProgramId) {
+      const list = (
+        await graph.listClubCoachesWithTallies(
+          access.orgId,
+          access.partnerProgramId,
+          access.profileId,
+        )
+      ).filter((co) => co.coach_id !== access.profileId); // never your own coach
+      return { coach: list[0] ?? null, coachList: list };
+    }
     const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
     if (!participant) return { coach: null, coachList: [] };
     const [coachList, groupCoach] = await Promise.all([
