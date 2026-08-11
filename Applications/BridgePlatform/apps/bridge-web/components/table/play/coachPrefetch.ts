@@ -1,0 +1,131 @@
+"use client";
+
+// The coach answers before it is asked (owner direction 2026-08-11).
+//
+// The hint ladder and the play advice each cost seconds of model time, and
+// both used to start fetching at the tap that wanted them — so every tap paid
+// the full wait. Now the fetches fire the moment a decision lands on the
+// table (useCoachPrefetch, called by the coach's always-mounted hosts), and
+// the screens read the same promise when they open: usually resolved, so the
+// answer is just THERE. Nothing shows earlier than it used to — the hints
+// stay face-down until revealed — only the waiting moved off-screen.
+//
+// ONE FETCH PER DECISION, shared. Each request is cached by session + epoch
+// (the board's current section — a new trick is a new epoch and refetches),
+// so the prefetch and however many screens open afterwards all share a single
+// network call. The server dedups by position too; this cache exists so the
+// CLIENT doesn't even ask twice, and so a component mounting later gets the
+// already-resolved promise instead of a spinner.
+//
+// A MISS IS NOT CACHED. "No answer" can be transient (a cold function, a slow
+// model); pinning it for the whole epoch would turn one hiccup into a dead
+// screen. Failed or empty results drop out of the cache so the next open
+// retries.
+
+import { useEffect } from "react";
+
+/** What /api/bridge/play-hint answers with — the coach's card. */
+export interface PlayHint {
+  best: string[];
+  prefer?: string;
+  source: "system" | "convention" | "solution";
+  because?: string;
+}
+
+/** The card and its reason, gathered from play-hint + play-why. */
+export interface PlayAdvice {
+  hint: PlayHint | null;
+  reason?: string;
+  why?: string;
+}
+
+/** The five hints, or why there are none. */
+export interface HintsAnswer {
+  hints: string[] | null;
+  reason?: string;
+}
+
+// Promises, not results: a screen that opens mid-flight joins the wait
+// instead of starting its own. Bounded so an all-night session can't grow it
+// without limit — oldest first, and 40 epochs is several boards of history.
+const cache = new Map<string, Promise<unknown>>();
+const MAX_ENTRIES = 40;
+
+function once<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const hit = cache.get(key);
+  if (hit) return hit as Promise<T>;
+  const p = fn().catch((err) => {
+    // A rejected promise must not be the cached answer for this epoch.
+    cache.delete(key);
+    throw err;
+  });
+  if (cache.size >= MAX_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== undefined) cache.delete(oldest);
+  }
+  cache.set(key, p);
+  return p;
+}
+
+/** The five hints for the current decision — auction or play. */
+export function fetchHints(sessionId: string, epoch: string): Promise<HintsAnswer> {
+  const key = `hints:${sessionId}:${epoch}`;
+  return once(key, async () => {
+    const res = await fetch(`/api/bridge/play-hints?sessionId=${encodeURIComponent(sessionId)}`);
+    const body = (await res.json()) as { hints?: string[] | null; reason?: string };
+    if (!body.hints?.length) {
+      cache.delete(key); // a miss stays retryable
+      return { hints: null, ...(body.reason ? { reason: body.reason } : {}) };
+    }
+    return { hints: body.hints };
+  });
+}
+
+/**
+ * The coach's card for the current play decision, with its reason. The same
+ * two requests the old button made — the card first, the explanation after —
+ * rolled into one shared promise.
+ */
+export function fetchPlayAdvice(sessionId: string, epoch: string): Promise<PlayAdvice> {
+  const key = `advice:${sessionId}:${epoch}`;
+  return once(key, async () => {
+    const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
+    const body = (await res.json()) as { hint?: PlayHint | null; reason?: string };
+    if (!body.hint?.best?.length) {
+      cache.delete(key); // a miss stays retryable
+      return { hint: null, reason: body.reason ?? "no answer" };
+    }
+    let why: string | undefined;
+    try {
+      const whyRes = await fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`);
+      const whyBody = (await whyRes.json()) as { explanation?: { why: string } | null };
+      why = whyBody.explanation?.why;
+    } catch {
+      // The authority's own wording still stands; the rewrite just didn't arrive.
+    }
+    return { hint: body.hint, ...(why ? { why } : {}) };
+  });
+}
+
+/**
+ * Fire the fetches the moment the decision is the learner's — called by the
+ * coach's always-mounted hosts (the dock, the sheet), NOT by the screens that
+ * display the answers. Results land in the shared cache above; errors are
+ * swallowed here because a failed prefetch simply means the screen that
+ * eventually opens pays the wait it would have paid anyway.
+ */
+export function useCoachPrefetch(
+  ask: { sessionId: string; active: boolean; phase: "auction" | "play" | "other" } | undefined,
+  epoch: string,
+): void {
+  const sessionId = ask?.sessionId;
+  const active = ask?.active ?? false;
+  const phase = ask?.phase;
+  useEffect(() => {
+    if (!sessionId || !active || phase === "other") return;
+    void fetchHints(sessionId, epoch).catch(() => {});
+    // The card advice exists only during the play; the auction's answer lives
+    // at the top of the hint ladder instead.
+    if (phase === "play") void fetchPlayAdvice(sessionId, epoch).catch(() => {});
+  }, [sessionId, active, phase, epoch]);
+}

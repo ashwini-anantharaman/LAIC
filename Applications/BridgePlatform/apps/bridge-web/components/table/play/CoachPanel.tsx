@@ -42,7 +42,9 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
-import { CoachChat, CoachEventAsk, WhatShouldIPlay } from "./CoachEventAsk";
+import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
+import { CoachHints, CoachTell } from "./CoachHintsTell";
+import { useCoachPrefetch } from "./coachPrefetch";
 
 // ── the BirdBridge palette (owner direction 2026-08-06: the coach wears the
 // app's brand — bridge-coach-app/constants/theme.ts is the source of truth).
@@ -550,11 +552,18 @@ export function CoachSheet({
   // The auction renders as a bidding diagram, and one call at a time is
   // selected: its meaning and its ask box show below the grid.
   const [selectedCall, setSelectedCall] = useState<string | null>(null);
-  // THREE SCREENS (owner direction 2026-08-06). "Now" is the default and
-  // faces forward: the position, the think-it-through scaffold, the advice
-  // button, the chat. The history split in two: "Play" holds every trick,
-  // "Auction" holds the bidding diagram.
-  const [view, setView] = useState<"now" | "play" | "auction">("now");
+  // Start writing the hints and the play advice the moment the decision is
+  // the learner's — the screens that show them then open onto answers, not
+  // spinners (owner direction 2026-08-11). Keyed per CARD, not per trick:
+  // each play is its own decision with its own answers.
+  useCoachPrefetch(data.ask, decisionEpoch(data));
+  // FIVE SCREENS (owner direction 2026-08-11, extending 2026-08-06's three).
+  // "Now" is the default and faces forward: the position, the think-it-through
+  // scaffold, the advice button, the chat. "Hints" is the ladder — five hints
+  // for the current decision, opened one at a time. "Tell" is the answers side
+  // by side: the coach's card and what BEN would do. The history split in two:
+  // "Play" holds every trick, "Auction" holds the bidding diagram.
+  const [view, setView] = useState<"now" | "hints" | "tell" | "play" | "auction">("now");
 
   // Escape closes it, like every other overlay at this table.
   useEffect(() => {
@@ -674,9 +683,24 @@ export function CoachSheet({
           </div>
         </div>
 
-        {/* ── the three screens: Now faces forward; Play and Auction face back ── */}
-        <div style={{ flex: "none", display: "flex", gap: 6, padding: "10px 14px 0" }}>
-          {(["now", "play", "auction"] as const).map((v) => {
+        {/* ── the five screens: Now, Hints and Tell face forward; Play and
+            Auction face back. Five pills outgrow a phone's width, so the row
+            scrolls sideways rather than shrinking the pills below a thumb. ── */}
+        <div
+          style={{
+            flex: "none", display: "flex", gap: 6, padding: "10px 14px 0",
+            overflowX: "auto", scrollbarWidth: "none",
+          }}
+        >
+          {(
+            [
+              ["now", "Now"],
+              ["hints", "Hints"],
+              ["tell", "Tell"],
+              ["play", "Play"],
+              ["auction", "Auction"],
+            ] as const
+          ).map(([v, label]) => {
             const on = view === v;
             return (
               <button
@@ -685,14 +709,14 @@ export function CoachSheet({
                 aria-pressed={on}
                 onClick={() => setView(v)}
                 style={{
-                  minHeight: 30, padding: "4px 15px", borderRadius: 15,
+                  flex: "none", minHeight: 30, padding: "4px 13px", borderRadius: 15,
                   background: on ? FELT_MID : "transparent",
                   borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
                   color: on ? "#fff" : "#8a8071", fontSize: 12, fontWeight: 700,
-                  fontFamily: "inherit", cursor: "pointer",
+                  fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
                 }}
               >
-                {v === "now" ? "Now" : v === "play" ? "Play" : "Auction"}
+                {label}
               </button>
             );
           })}
@@ -701,6 +725,41 @@ export function CoachSheet({
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "13px 14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
           {/* ── NOW: the default screen, shared with the table's coach band ── */}
           {view === "now" && <CoachNow data={data} />}
+
+          {/* ── HINTS: five hints for this decision, opened one at a time.
+              Keyed per decision (every card, every call) so each play deals
+              a fresh, unopened ladder. ── */}
+          {view === "hints" &&
+            (data.ask ? (
+              <CoachHints
+                key={decisionEpoch(data)}
+                sessionId={data.ask.sessionId}
+                epoch={decisionEpoch(data)}
+                active={data.ask.active}
+              />
+            ) : (
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                Hints are for a player with a decision in front of them — take a seat to use
+                them.
+              </p>
+            ))}
+
+          {/* ── TELL: the answers, side by side — the coach's card and BEN's ── */}
+          {view === "tell" &&
+            (data.ask ? (
+              <CoachTell
+                key={decisionEpoch(data)}
+                sessionId={data.ask.sessionId}
+                epoch={decisionEpoch(data)}
+                phase={data.ask.phase}
+                active={data.ask.active}
+              />
+            ) : (
+              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                The answers are for a player with a decision in front of them — take a seat to
+                see them.
+              </p>
+            ))}
 
           {/* ── PLAY: every trick, in collapsible sections ── */}
           {view === "play" &&
@@ -922,6 +981,37 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
   );
 }
 
+/** The board's current history section — the open trick, or the auction. */
+function currentGroup(data: CoachPanelData): CoachEventGroup | undefined {
+  return (
+    data.eventGroups?.find((g) => g.current) ??
+    data.eventGroups?.[data.eventGroups.length - 1]
+  );
+}
+
+/**
+ * Where the board is, per TRICK, as a remount key. A new trick is a new
+ * conversation: the chat keys on this, so it survives the cards inside a
+ * trick but empties for the next one.
+ */
+function boardEpoch(data: CoachPanelData): string {
+  return currentGroup(data)?.id ?? "start";
+}
+
+/**
+ * Where the board is, per CARD. The hint ladder, the advice and BEN's tell
+ * are about ONE decision, and a trick holds up to four — declarer decides for
+ * dummy at trick one and again from hand three cards later, and serving the
+ * first decision's ladder to the second is coaching the wrong position (the
+ * bug this fixes: hints "not resetting for every play"). Counting the current
+ * section's events makes every card — and every call in the auction — a new
+ * epoch, which is a new cache key and a fresh, face-down ladder.
+ */
+function decisionEpoch(data: CoachPanelData): string {
+  const g = currentGroup(data);
+  return g ? `${g.id}#${g.events.length}` : "start";
+}
+
 /**
  * The Now screen's content — the position, the scaffold, the advice before
  * the card is played, the chat. Exported standalone because it is also the
@@ -938,10 +1028,7 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
   // their exchanges in component state, so they are keyed by where the board
   // is (the current history section): the next trick remounts them empty
   // rather than carrying last trick's answers into a different position.
-  const epoch =
-    data.eventGroups?.find((g) => g.current)?.id ??
-    data.eventGroups?.[data.eventGroups.length - 1]?.id ??
-    "start";
+  const epoch = boardEpoch(data);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* THE GAME STATE (owner direction 2026-08-10): "What I'm looking at"
@@ -964,10 +1051,9 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
         <ThinkCard aid={data.aid} />
       )}
 
-      {/* the advice, before the card is played */}
-      {data.ask && data.ask.phase === "play" && data.ask.active && (
-        <WhatShouldIPlay key={epoch} sessionId={data.ask.sessionId} />
-      )}
+      {/* NO ADVICE HERE (owner direction 2026-08-11). "What should I play?"
+          left the Now screen for TELL, where the answer now shows itself —
+          Now stays the screen that helps you think, Tell the one that tells. */}
 
       {/* the chat — anything about the position */}
       {data.ask && (
@@ -981,6 +1067,18 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
 }
 
 /**
+ * Renders nothing; starts writing the current decision's hints and play
+ * advice into the shared prefetch cache. For hosts where the coach's own
+ * surfaces mount late — the phone table shows only the FAB until the sheet
+ * opens — so the answers are ready before any coach UI exists to ask for
+ * them. Hosts whose coach is always mounted (the dock) don't need this.
+ */
+export function CoachPrefetch({ data }: Readonly<{ data: CoachPanelData }>) {
+  useCoachPrefetch(data.ask, decisionEpoch(data));
+  return null;
+}
+
+/**
  * The original coach, inside the NEW table's reserved coach band (owner
  * direction 2026-08-05: "the panel displays the default screen; an icon
  * expands the entire original coach panel"). Inline it shows CoachNow; the
@@ -990,6 +1088,10 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
  */
 export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
   const [open, setOpen] = useState(false);
+  // The dock never unmounts while the table is up, which makes it the one
+  // reliable place to start writing this decision's hints and advice — the
+  // sheet's own prefetch only helps while the sheet is open.
+  useCoachPrefetch(data.ask, decisionEpoch(data));
   return (
     // The dock IS the panel (owner direction 2026-08-05: "the entire default
     // screen occupies the entire coach panel"): the shell hands over the whole

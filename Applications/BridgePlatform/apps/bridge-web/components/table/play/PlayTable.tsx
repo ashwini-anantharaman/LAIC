@@ -29,7 +29,7 @@
 import Link from "next/link";
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { CoachFab, CoachSheet, type CoachFabPos, type CoachPanelData, type CoachPresence } from "./CoachPanel";
+import { CoachFab, CoachPrefetch, CoachSheet, type CoachFabPos, type CoachPanelData, type CoachPresence } from "./CoachPanel";
 // The shared table-ui package carries its own SettingsMenu now, but without
 // the `extra` slot this table's phone menu leans on — so the legacy table
 // keeps its original local copy.
@@ -1405,6 +1405,10 @@ export function PlayTable({
             {complete ? resultCard : null}
             {sides ? phoneSideHand("E") : null}
           </div>
+          {/* Invisible: starts writing this decision's hints and advice the
+              moment it lands, so the sheet opens onto answers. Rendered here
+              because until the sheet opens the FAB is the only coach UI. */}
+          {coach ? <CoachPrefetch data={coach} /> : null}
           {/* The coach's icon. Inside the felt so it can never sit over the
               hand, the bidding box or the tray — which is the whole reason it
               replaced a row that competed with them. */}

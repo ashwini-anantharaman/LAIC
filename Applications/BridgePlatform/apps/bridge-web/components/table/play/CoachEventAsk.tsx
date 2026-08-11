@@ -9,19 +9,21 @@
 //     blind to the concealed hands (lib/coach/eventQa.ts). Questions only:
 //     the advice button is NOT in here, because an event row is something
 //     that already happened and advice is about what happens next.
-//   · WhatShouldIPlay — the advice for the CURRENT decision, standalone, so
-//     the host can show it BEFORE the card is played (owner decision
-//     2026-08-05: the learner asks before playing, not after). Same two
-//     endpoints the big button used (play-hint for the card, play-why for
-//     the reason), compact rendering. "Help me think" is deliberately NOT
-//     here yet — one action at a time.
+//   · WhatShouldIPlay — the advice for the CURRENT decision. No button any
+//     more (owner direction 2026-08-11): the answer is prefetched the moment
+//     the decision lands (coachPrefetch.ts) and this just shows it, so the
+//     TELL screen opens onto the answer instead of onto a wait. Same two
+//     endpoints as ever (play-hint for the card, play-why for the reason),
+//     read through the shared client cache.
 //
 // A NEW FILE rather than a CoachPrompts variant, on purpose: CoachPrompts is
 // mid-rework in another session, and this rendering is deliberately simpler —
 // a chip and a sentence, not the full answer block. When CoachPrompts
 // settles, the fetch plumbing here should fold into it.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+
+import { fetchPlayAdvice, type PlayHint } from "./coachPrefetch";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -60,16 +62,9 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
   );
 }
 
-type Hint = {
-  best: string[];
-  prefer?: string;
-  source: "system" | "convention" | "solution";
-  because?: string;
-};
-
 type PlayAnswer =
   | { kind: "loading" }
-  | { kind: "done"; hint: Hint; why?: string }
+  | { kind: "done"; hint: PlayHint; why?: string }
   | { kind: "empty"; reason: string };
 
 /** "DT" → "10♦" in the table's notation. */
@@ -277,7 +272,7 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
 }
 
 /** Where each kind of answer comes from, for the ⓘ popup. */
-const SOURCE_INFO: Record<Hint["source"], { title: string; from: string }> = {
+const SOURCE_INFO: Record<PlayHint["source"], { title: string; from: string }> = {
   system: {
     title: "Your system plays",
     from: "Your partnership's system notes cover this position — this is what your side agreed to play.",
@@ -296,74 +291,57 @@ const WHY_DIFFERENT =
   "Your realistic choices is a neutral checklist of what you can see — it never peeks at the answer. This is the answer. A sensible-looking card can still cost a trick once every hand is known.";
 
 /**
- * The advice for the decision ON the table — standalone, shown by the host
- * while it is the learner's turn and BEFORE their card is played. Not part of
- * any event row: a played card is history, and "what should I play?" is a
- * question about the future.
+ * The advice for the decision ON the table — shown while it is the learner's
+ * turn and BEFORE their card is played. Not part of any event row: a played
+ * card is history, and "what should I play?" is a question about the future.
+ *
+ * Loads itself on mount, through the prefetch cache — the fetch usually
+ * started when the decision landed, so mounting this mostly just reads the
+ * answer. Keyed by the host on the board's epoch, so a new trick shows a
+ * fresh answer, never last trick's.
  */
-export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) {
-  const [play, setPlay] = useState<PlayAnswer | null>(null);
+export function WhatShouldIPlay({
+  sessionId,
+  epoch = "now",
+}: Readonly<{ sessionId: string; epoch?: string }>) {
+  const [play, setPlay] = useState<PlayAnswer>({ kind: "loading" });
   // The ⓘ beside the answer's source line — where this came from, and why it
   // can differ from the realistic-choices scaffold above it.
   const [infoOpen, setInfoOpen] = useState(false);
 
-  // The same two requests the big button made: the card lands first, the
-  // reason catches up, and a slow model never delays the answer itself.
-  async function whatShouldIPlay() {
-    setPlay({ kind: "loading" });
-    try {
-      const res = await fetch(`/api/bridge/play-hint?sessionId=${encodeURIComponent(sessionId)}`);
-      const body = (await res.json()) as { hint?: Hint | null; reason?: string };
-      if (!body.hint?.best?.length) {
-        setPlay({ kind: "empty", reason: body.reason ?? "no answer" });
-        return;
-      }
-      const hint = body.hint;
-      setPlay({ kind: "done", hint });
+  useEffect(() => {
+    let alive = true;
+    (async () => {
       try {
-        const whyRes = await fetch(`/api/bridge/play-why?sessionId=${encodeURIComponent(sessionId)}`);
-        const whyBody = (await whyRes.json()) as { explanation?: { why: string } | null };
-        setPlay((prev) =>
-          prev?.kind === "done" && prev.hint === hint
-            ? { kind: "done", hint, ...(whyBody.explanation ? { why: whyBody.explanation.why } : {}) }
-            : prev,
+        const advice = await fetchPlayAdvice(sessionId, epoch);
+        if (!alive) return;
+        setPlay(
+          advice.hint
+            ? { kind: "done", hint: advice.hint, ...(advice.why ? { why: advice.why } : {}) }
+            : { kind: "empty", reason: advice.reason ?? "no answer" },
         );
       } catch {
-        // The authority's own wording still stands; the rewrite just didn't arrive.
+        if (alive) setPlay({ kind: "empty", reason: "unreachable" });
       }
-    } catch {
-      setPlay({ kind: "empty", reason: "unreachable" });
-    }
-  }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, epoch]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <button
-        type="button"
-        onClick={() => void whatShouldIPlay()}
-        disabled={play?.kind === "loading"}
-        style={{
-          alignSelf: "flex-start", minHeight: 32, padding: "6px 14px",
-          background: FELT_MID, borderWidth: 1, borderStyle: "solid", borderColor: FELT_MID,
-          borderRadius: 16, color: "#fff", fontSize: 12, fontWeight: 700,
-          fontFamily: "inherit", cursor: play?.kind === "loading" ? "default" : "pointer",
-          opacity: play?.kind === "loading" ? 0.6 : 1,
-        }}
-      >
-        What should I play?
-      </button>
-
-      {play?.kind === "loading" && (
+      {play.kind === "loading" && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
           Working it out — a few seconds…
         </p>
       )}
-      {play?.kind === "empty" && (
+      {play.kind === "empty" && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
           {play.reason === "not your turn" ? "Not your turn." : "No suggestion for this position."}
         </p>
       )}
-      {play?.kind === "done" && (
+      {play.kind === "done" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
@@ -415,7 +393,7 @@ export function WhatShouldIPlay({ sessionId }: Readonly<{ sessionId: string }>) 
 
       {/* ── the ⓘ popup: where the answer comes from, and why it can differ
           from the realistic-choices scaffold ── */}
-      {infoOpen && play?.kind === "done" && (
+      {infoOpen && play.kind === "done" && (
         <div
           role="presentation"
           onClick={() => setInfoOpen(false)}
