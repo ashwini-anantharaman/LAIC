@@ -1,13 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
-  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2,
+  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
 import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
+import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 import {
   objectCollectionIds,
@@ -118,6 +119,7 @@ export function ObjectLibrary() {
   const [versionToast, setVersionToast] = useState<string | null>(null);
 
   const {
+    activeUserId,
     openReader,
     openEditor,
     createdObjects: createdObjectsRaw,
@@ -612,6 +614,15 @@ export function ObjectLibrary() {
                 style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
               >
                 <Plus size={14} /> New folder
+              </button>
+              <button
+                type="button"
+                onClick={() => exportLibrarySnapshot(activeUserId, createdObjects || [])}
+                title="Download the whole library (folders + content) as a snapshot JSON — commit it as src/lib/seed/librarySnapshot.json to make it the baseline for every visitor."
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
+                style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
+              >
+                <Download size={14} /> Export snapshot
               </button>
             </div>
           </div>

@@ -28,6 +28,7 @@ import {
   BB_TUTORIALS_LEGACY_COLLECTION_ID,
 } from '../lib/objectCollectionsStore';
 import { mergeBbTutorialsIntoLibrary } from '../lib/bbTutorialsSeed';
+import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/librarySnapshotSeed';
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
@@ -245,10 +246,14 @@ function StudioApp() {
   const hydrateForUser = useCallback(async (userId: string) => {
     const gen = ++hydrateGenRef.current;
     setLibraryReady(false);
+    ensureSnapshotCollections(userId);
     refreshObjectCollections(userId);
 
     const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
-    const local = mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw));
+    const local = mergeLibrarySnapshot(
+      userId,
+      mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw)),
+    );
     if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
     if (local !== localRaw) {
@@ -268,9 +273,12 @@ function StudioApp() {
             ownerName: o.ownerName || 'Course Dev Demo',
           }))
         : remote;
-      const merged = mergeBbTutorialsIntoLibrary(
+      const merged = mergeLibrarySnapshot(
         userId,
-        withCollectionIds(userId, mergeObjects(local, claimedRemote)),
+        mergeBbTutorialsIntoLibrary(
+          userId,
+          withCollectionIds(userId, mergeObjects(local, claimedRemote)),
+        ),
       );
       setCreatedObjects(merged);
       if (merged.length > 0) saveUserObjects(userId, merged);
