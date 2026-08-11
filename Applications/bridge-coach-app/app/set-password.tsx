@@ -11,6 +11,7 @@
 // way past it.
 
 import { router } from "expo-router";
+import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -147,6 +148,11 @@ function Field({
   placeholder: string;
   hint?: string;
 }) {
+  // This screen is where someone INVENTS a password they cannot yet have saved
+  // anywhere, and a typo here locks them out until an admin issues a claim code —
+  // so being able to see what was typed matters more here than on sign-in.
+  const [revealed, setRevealed] = useState(false);
+
   return (
     <View style={styles.fieldWrap}>
       <Text style={styles.fieldLabel}>{label}</Text>
@@ -156,11 +162,24 @@ function Field({
           onChangeText={onChange}
           placeholder={placeholder}
           placeholderTextColor="rgba(255,255,255,0.5)"
-          style={styles.input}
-          secureTextEntry
+          style={[styles.input, styles.inputWithAction]}
+          secureTextEntry={!revealed}
           autoCapitalize="none"
           autoCorrect={false}
         />
+        <Pressable
+          onPress={() => setRevealed((v) => !v)}
+          hitSlop={10}
+          style={styles.fieldAction}
+          accessibilityRole="button"
+          accessibilityLabel={revealed ? "Hide password" : "Show password"}
+        >
+          <Ionicons
+            name={revealed ? "eye-off-outline" : "eye-outline"}
+            size={20}
+            color={Brand.cream}
+          />
+        </Pressable>
       </View>
       {hint ? <Text style={styles.hint}>{hint}</Text> : null}
     </View>
@@ -198,6 +217,17 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: Brand.cream,
     paddingHorizontal: 18,
+    justifyContent: "center",
+  },
+  /** Room for the reveal toggle, so a long password never runs under the glyph. */
+  inputWithAction: { paddingRight: 40 },
+  fieldAction: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 44,
+    alignItems: "center",
     justifyContent: "center",
   },
   input: { fontFamily: Fonts.body, fontSize: 16, color: Brand.white, padding: 0 },

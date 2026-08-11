@@ -7,8 +7,9 @@
 // Box colours follow the deck: cards are the maroon/green "suits" with cream and
 // white type on them, and pass an `index` to alternate the way a dealt row does.
 
+import { Ionicons } from "@expo/vector-icons";
 import { router, type Href } from "expo-router";
-import { ReactNode } from "react";
+import { ReactNode, useState } from "react";
 import {
   Pressable,
   StyleSheet,
@@ -161,14 +162,48 @@ export function FormField({
   label,
   ...inputProps
 }: { label: string } & TextInputProps) {
+  // A masked field gets a reveal toggle. Typing a password you cannot see, on a
+  // phone keyboard, is the most common reason a correct password gets rejected —
+  // and the field is where the fix belongs, so login, register and the forced
+  // password screen all get it from here.
+  const masked = inputProps.secureTextEntry === true;
+  const [revealed, setRevealed] = useState(false);
+
+  const input = (
+    <TextInput
+      style={[styles.fieldInput, masked && styles.fieldInputWithAction]}
+      placeholderTextColor="rgba(255,255,255,0.5)"
+      {...inputProps}
+      // The prop is re-derived rather than passed through, so a revealed field
+      // really is unmasked even though the caller asked for secure entry.
+      secureTextEntry={masked ? !revealed : inputProps.secureTextEntry}
+    />
+  );
+
   return (
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
-      <TextInput
-        style={styles.fieldInput}
-        placeholderTextColor="rgba(255,255,255,0.5)"
-        {...inputProps}
-      />
+      {masked ? (
+        <View style={styles.fieldRow}>
+          {input}
+          <Pressable
+            onPress={() => setRevealed((v) => !v)}
+            // Inside the field's own box, so the target is bigger than the glyph.
+            hitSlop={10}
+            style={styles.fieldAction}
+            accessibilityRole="button"
+            accessibilityLabel={revealed ? "Hide password" : "Show password"}
+          >
+            <Ionicons
+              name={revealed ? "eye-off-outline" : "eye-outline"}
+              size={20}
+              color={Brand.cream}
+            />
+          </Pressable>
+        </View>
+      ) : (
+        input
+      )}
     </View>
   );
 }
@@ -291,6 +326,19 @@ const styles = StyleSheet.create({
     fontSize: Type.fieldLabel,
     color: Brand.ink,
     marginBottom: 8,
+  },
+  /** The input and its trailing action share one box. */
+  fieldRow: { position: "relative", justifyContent: "center" },
+  /** Room for the toggle, so a long password never runs under the glyph. */
+  fieldInputWithAction: { paddingRight: 48 },
+  fieldAction: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 46,
+    alignItems: "center",
+    justifyContent: "center",
   },
   fieldInput: {
     fontFamily: Fonts.body,
