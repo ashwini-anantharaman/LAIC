@@ -1,8 +1,12 @@
-// Learn — two horizontal decks of playing cards (Figma 476:663).
+// Learn — the Content Library dealt as horizontal decks (Figma 476:663).
 //
-// "Concept Cards" is REAL: the same learning objects this screen always fetched,
-// now dealt as cards instead of listed as rows, and still opening the platform's
-// reader on tap. Loading / error / empty states are preserved.
+// ONE DECK PER FOLDER (owner direction 2026-08-11): the studio's library
+// folders are named for their content types — concept cards, flashcards,
+// quiz, bb-tutorials — so each published type deals as its own row, titled
+// like its folder, in the library's own order. A folder with nothing
+// published deals no row (an empty shelf is noise, not information). Only
+// PUBLISHED objects appear: drafts and in-review content are authoring
+// state, which is the studio's business.
 //
 // "Browse Lessons" is a design-only shelf — the Nexus API has no lessons,
 // chapters or coach-authored courses — so SAMPLE_LESSONS below is placeholder
@@ -37,6 +41,46 @@ const SAMPLE_LESSONS = [
   { title: "Bridge Advanced", author: "Coach Miland", chapters: 10 },
 ] as const;
 
+/**
+ * Folder rows, in the library's own order. Known types get their folder's
+ * display name; anything the studio adds later still deals (prettified from
+ * its type id) rather than silently vanishing from Learn.
+ */
+const FOLDER_ROWS: readonly { type: string; title: string }[] = [
+  { type: "concept-card", title: "Concept Cards" },
+  { type: "flashcard-set", title: "Flashcards" },
+  { type: "quiz", title: "Quiz" },
+  { type: "tutorial", title: "Tutorials" },
+  { type: "tutorial-v2", title: "Tutorials" },
+];
+
+function rowsFor(objects: LearningObject[]): { title: string; items: LearningObject[] }[] {
+  const rows: { title: string; items: LearningObject[] }[] = [];
+  const rowByTitle = new Map<string, LearningObject[]>();
+  const claim = (title: string): LearningObject[] => {
+    let items = rowByTitle.get(title);
+    if (!items) {
+      items = [];
+      rowByTitle.set(title, items);
+      rows.push({ title, items });
+    }
+    return items;
+  };
+  const known = new Map(FOLDER_ROWS.map((r) => [r.type, r.title]));
+  // Known folders first, in their order; unknown types afterwards, prettified.
+  for (const r of FOLDER_ROWS) claim(r.title);
+  for (const o of objects) {
+    const title =
+      known.get(o.type) ??
+      o.type
+        .split("-")
+        .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(" ") + "s";
+    claim(title).push(o);
+  }
+  return rows.filter((r) => r.items.length > 0);
+}
+
 function SectionHeading({ children }: { children: string }) {
   return <Text style={styles.sectionHeading}>{children}</Text>;
 }
@@ -70,9 +114,8 @@ export default function LearnScreen() {
       if (!token) return;
       setError(null);
       try {
-        const objects = await getLearningObjects(token, { refresh, programId: clubId ?? undefined });
-        // Boss demo scope: concept cards only. Widen to more types later.
-        setCards(objects.filter((o) => o.type === "concept-card"));
+        // Every published object — rowsFor() deals them one deck per folder.
+        setCards(await getLearningObjects(token, { refresh, programId: clubId ?? undefined }));
       } catch (e) {
         setError(
           e instanceof NexusError && e.status === 403
@@ -101,8 +144,6 @@ export default function LearnScreen() {
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Learn</Text>
 
-        <SectionHeading>Concept Cards</SectionHeading>
-
         {!cards && !error && (
           <View style={styles.state}>
             <ActivityIndicator color={Brand.maroon} />
@@ -118,24 +159,29 @@ export default function LearnScreen() {
 
         {cards && !error && cards.length === 0 && (
           <Text style={styles.stateText}>
-            No concept cards yet. Content published in the learning platform will
-            appear here.
+            Nothing published yet. Content published in the learning platform
+            will appear here, one row per folder.
           </Text>
         )}
 
-        {cards && !error && cards.length > 0 && (
-          <Deck>
-            {cards.map((item, i) => (
-              <PlayingCard
-                key={item.id}
-                index={i}
-                title={item.title}
-                body={item.description ?? undefined}
-                onPress={() => router.push(`/learn/${item.id}`)}
-              />
-            ))}
-          </Deck>
-        )}
+        {cards &&
+          !error &&
+          rowsFor(cards).map((row) => (
+            <View key={row.title}>
+              <SectionHeading>{row.title}</SectionHeading>
+              <Deck>
+                {row.items.map((item, i) => (
+                  <PlayingCard
+                    key={item.id}
+                    index={i}
+                    title={item.title}
+                    body={item.description ?? undefined}
+                    onPress={() => router.push(`/learn/${item.id}`)}
+                  />
+                ))}
+              </Deck>
+            </View>
+          ))}
 
         <SectionHeading>Browse Lessons</SectionHeading>
         <Deck>
