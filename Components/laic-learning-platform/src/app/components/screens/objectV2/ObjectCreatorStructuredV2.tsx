@@ -39,6 +39,7 @@ import { XV2StructurePanel } from './XV2StructurePanel';
 import { XV2Navigator } from './XV2Navigator';
 import { XV2UnitWorkspace } from './XV2UnitWorkspace';
 import { XV2ReviewEditor } from './XV2ReviewEditor';
+import { XV2BatchGeneratePane } from './XV2BatchGeneratePane';
 import { AssistantPanel } from '../AssistantPanel';
 import {
   buildAssistantContext,
@@ -111,6 +112,7 @@ export function ObjectCreatorStructuredV2() {
   });
   const [phase, setPhase] = useState<XV2Phase>('start');
   const [hootOpen, setHootOpen] = useState(false);
+  const [batchUnitIds, setBatchUnitIds] = useState<string[] | null>(null);
   const restored = useRef(false);
   const persistTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingApplied = useRef(false);
@@ -835,6 +837,29 @@ export function ObjectCreatorStructuredV2() {
   }
 
   /* ── D. Navigator (default) ───────────────────────────────── */
+  if (batchUnitIds?.length) {
+    return (
+      <>
+        <div className="min-h-full px-4 py-5" style={{ ...bg, paddingBottom: 88 }}>
+          {header({
+            title: 'Generate categories with AI',
+            subtitle: 'One pick-sources → mark-up → generate run fills every selected category',
+            backLabel: 'Back to outline',
+            onBack: () => setBatchUnitIds(null),
+          })}
+          <XV2BatchGeneratePane
+            draft={draft}
+            unitIds={batchUnitIds}
+            onChangeDraft={(next) => commit(next)}
+            onDone={() => setBatchUnitIds(null)}
+          />
+        </div>
+        {saveButton}
+        {globalHoot}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="min-h-full px-4 py-5" style={{ ...bg, paddingBottom: 88 }}>
@@ -848,6 +873,9 @@ export function ObjectCreatorStructuredV2() {
           draft={draft}
           onOpenUnit={(unitId) => commit(touchXDraft(draft, { activeUnitId: unitId }), 'unit')}
           onReview={() => goToPhase('review')}
+          onBatchGenerate={typeId === 'concept-card' && !writeYourself
+            ? (ids) => setBatchUnitIds(ids)
+            : undefined}
         />
       </div>
       {saveButton}
