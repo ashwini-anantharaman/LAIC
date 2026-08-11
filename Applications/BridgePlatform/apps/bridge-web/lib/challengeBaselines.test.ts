@@ -14,7 +14,12 @@
 //   · BEN failing is recorded as `failed` WITH the reason — never faked;
 //   · asking for a line that does not exist is an input error, not a record.
 
-import { InMemoryChallengeStore, type ChallengeBoard, type ChallengePlay } from "@bridge/challenges";
+import {
+  InMemoryChallengeStore,
+  type Challenge,
+  type ChallengeBoard,
+  type ChallengePlay,
+} from "@bridge/challenges";
 import { applyEvent, initialState, legalPlays, seededDeal, type GameState } from "@bridge/engine";
 import type { ActionEvent, Call, Card, Seat } from "@bridge/events";
 import { describe, expect, it } from "vitest";
@@ -353,5 +358,86 @@ describe("the on-demand baselines", () => {
     await expect(
       ensureFromPointBaseline(CHALLENGE, 11, "u1", 999, { store, client: brokenBen, now }),
     ).rejects.toThrow(BaselineInputError);
+  });
+});
+
+// ── bidding-only ────────────────────────────────────────────────────────────
+//
+// The board ends when the auction ends, so the reference line does too. This is
+// the single biggest latency win in the feature: /bid is ~1.5 s while /play is
+// ~21 s (and /lead ~42 s), so dropping the 52 cards drops ~97% of the wall
+// clock and turns five resumable invocations into one.
+
+function biddingChallenge(): Challenge {
+  return {
+    challengeId: CHALLENGE,
+    title: "Auction drill",
+    scoring: "imps",
+    createdBy: "u-marta",
+    status: "open",
+    format: "bidding-only",
+    editorBadge: false,
+    standingsVisibility: "after-finish",
+    createdAt: "2026-08-07T00:00:00.000Z",
+  };
+}
+
+describe("a bidding-only baseline", () => {
+  it("bids the board and stops — the mode is read off the CHALLENGE, not the caller", async () => {
+    const board = testBoard(41);
+    const store = await storeWith(board);
+    await store.putChallenge(biddingChallenge());
+    const ben = mirrorBen(board, { open: "1N" });
+
+    const out = await ensureFullBenBaseline(CHALLENGE, 41, { store, client: ben.client, now });
+
+    expect(out.baseline.status).toBe("ready");
+    expect(out.baseline.snapshot?.auction).toHaveLength(4); // 1N + three passes
+    expect(out.baseline.snapshot?.play).toEqual([]);
+    // The contract IS the result, structured so a learner's compares with it.
+    expect(out.baseline.snapshot?.contract).toMatchObject({ level: 1, strain: "N" });
+    // No cards, so no score — and an absent score, never a zero.
+    expect(out.baseline.rawScore).toBeUndefined();
+    expect(out.baseline.snapshot?.resultLabel).toBeUndefined();
+    expect(out.resumable).toBe(false);
+  });
+
+  it("costs 4 BEN calls where the full board costs 56 — and never asks for a card", async () => {
+    const board = testBoard(42);
+    const store = await storeWith(board);
+    await store.putChallenge(biddingChallenge());
+    const ben = mirrorBen(board, { open: "1N" });
+
+    const out = await ensureFullBenBaseline(CHALLENGE, 42, { store, client: ben.client, now });
+
+    expect(out.benCalls).toBe(4);
+    expect(ben.calls).toEqual({ bid: 4, lead: 0, play: 0 });
+  });
+
+  it("leaves a challenge with no format on the full playout — nothing changes for it", async () => {
+    const board = testBoard(43);
+    const store = await storeWith(board);
+    const ben = mirrorBen(board, { open: "1N" });
+
+    const out = await ensureFullBenBaseline(CHALLENGE, 43, { store, client: ben.client, now });
+
+    expect(out.baseline.snapshot?.play).toHaveLength(52);
+    expect(out.benCalls).toBe(56);
+    expect(typeof out.baseline.rawScore).toBe("number");
+  });
+
+  it("stops a passed-out auction in the same place either way", async () => {
+    const board = testBoard(44);
+    const store = await storeWith(board);
+    await store.putChallenge(biddingChallenge());
+    const ben = mirrorBen(board); // every seat passes
+
+    const out = await ensureFullBenBaseline(CHALLENGE, 44, { store, client: ben.client, now });
+
+    expect(out.baseline.status).toBe("ready");
+    // A passout reaches `complete` straight from the auction, so the board is
+    // scored: a flat zero, which is a real result and not a missing one.
+    expect(out.baseline.snapshot?.contract).toBeNull();
+    expect(out.baseline.rawScore).toBe(0);
   });
 });

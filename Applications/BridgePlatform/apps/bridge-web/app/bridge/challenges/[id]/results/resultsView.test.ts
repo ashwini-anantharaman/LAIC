@@ -12,9 +12,12 @@ import type {
   ChallengePlay,
   ChallengeScoring,
 } from "@bridge/challenges";
+import type { Contract } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 import {
   BEN_KEY,
+  BIDDING_PRACTICE_LABEL,
+  PRACTICE_LABEL,
   buildResultsView,
   formatCell,
   formatTotal,
@@ -397,5 +400,238 @@ describe("the header", () => {
       const view = buildResultsView({ ...baseInput(), challenge: challenge({ scoring }) });
       expect(view.subtitle).toContain(label);
     }
+  });
+});
+
+// ── bidding-only ────────────────────────────────────────────────────────────
+//
+// The board ends with the auction, so the surface stops being about scores and
+// starts being about contracts. What is pinned here: no raw score is ever
+// printed where there is none, nobody is called wrong, and BEN is the yardstick
+// rather than a rival.
+
+const CONTRACT = (
+  level: number,
+  strain: Contract["strain"],
+  declarer: Contract["declarer"],
+  doubled: Contract["doubled"] = 0,
+): Contract => ({ level, strain, declarer, doubled });
+
+/** A frozen bidding-only attempt: a contract, and NO raw score. */
+function bidPlay(
+  userId: string,
+  boardNo: number,
+  contract: Contract | null,
+  status: ChallengePlay["status"] = "completed",
+): ChallengePlay {
+  return {
+    challengeId: "ch1",
+    boardNo,
+    userId,
+    sessionId: `s-${userId}-${boardNo}`,
+    status,
+    snapshot:
+      status === "completed"
+        ? {
+            name: `Board ${boardNo}`,
+            dealer: "N",
+            vul: "none",
+            hands: { N: [], E: [], S: [], W: [] },
+            auction: [],
+            play: [],
+            contractLabel: contract ? "4♠ by S" : undefined,
+            contract,
+          }
+        : undefined,
+    startedAt: "2026-08-02T00:00:00.000Z",
+    completedAt: status === "completed" ? "2026-08-02T01:00:00.000Z" : undefined,
+  };
+}
+
+/** A bidding-only reference line: a contract, and no rawScore either. */
+function benBidBaseline(boardNo: number, contract: Contract | null): ChallengeBaseline {
+  return {
+    challengeId: "ch1",
+    boardNo,
+    kind: "full_ben",
+    status: "ready",
+    snapshot: {
+      name: `Board ${boardNo} — BEN`,
+      dealer: "N",
+      vul: "none",
+      hands: { N: [], E: [], S: [], W: [] },
+      auction: [],
+      play: [],
+      contract,
+    },
+    createdAt: "2026-08-01T00:00:00.000Z",
+  };
+}
+
+/**
+ * Two boards, two humans. Board 1: BEN 4♠S — you 4♠S (matched), Devang 3NT S
+ * (differed). Board 2: BEN 3NT N — you 2♥S (differed), Devang 3NT S (matched
+ * from the other side). So both finish 1 of 2.
+ */
+function biddingInput(overrides: Partial<ResultsViewInput> = {}): ResultsViewInput {
+  return {
+    challenge: challenge({ format: "bidding-only" }),
+    boards: [board(1), board(2)],
+    plays: [
+      bidPlay(VIEWER, 1, CONTRACT(4, "S", "S")),
+      bidPlay("u-devang", 1, CONTRACT(3, "N", "S")),
+      bidPlay(VIEWER, 2, CONTRACT(2, "H", "S")),
+      bidPlay("u-devang", 2, CONTRACT(3, "N", "S")),
+    ],
+    invites: [invite("u-marta", "accepted", true), invite(VIEWER), invite("u-devang")],
+    baselines: [
+      benBidBaseline(1, CONTRACT(4, "S", "S")),
+      benBidBaseline(2, CONTRACT(3, "N", "N")),
+    ],
+    viewerId: VIEWER,
+    viewerFinished: true,
+    viewerIsModerator: false,
+    resultsUnlocked: true,
+    names: { "u-marta": "Marta Okonkwo", "u-devang": "Devang Rao" },
+    ...overrides,
+  };
+}
+
+describe("bidding-only results", () => {
+  it('names the format, not a scoring mode, everywhere the unit is printed', () => {
+    const view = buildResultsView(biddingInput());
+    expect(view.subtitle).toContain("Bidding only");
+    expect(view.subtitle).not.toContain("IMPs");
+    expect(view.scoringUnit).toBe("Contract vs BEN");
+    expect(view.scoringLabel).toBe("vs BEN");
+  });
+
+  it('tallies "matched on N of M" instead of a score', () => {
+    const view = buildResultsView(biddingInput());
+    expect(view.leaderboard.map((r) => [r.name, r.total])).toEqual([
+      ["Devang Rao", "1/2"],
+      ["You", "1/2"],
+    ]);
+    // Tied, so both share rank 1 — the same rule the scored challenge uses.
+    expect(view.leaderboard.map((r) => r.rank)).toEqual([1, 1]);
+  });
+
+  it("prints contracts in the grid, never a raw score", () => {
+    const view = buildResultsView(biddingInput());
+    const row1 = view.scorecard!.rows[0]!;
+    expect(row1.cells.map((c) => c.text)).toEqual(["3NTS", "4♠S", "4♠S"]);
+    // Columns are the field in rank order, then BEN.
+    expect(view.scorecard!.columns.map((c) => c.key)).toEqual([
+      "u-devang",
+      VIEWER,
+      BEN_KEY,
+    ]);
+    expect(view.scorecard!.columns[2]!.isBenchmark).toBe(true);
+  });
+
+  it("tints only the players who matched — and BEN's own cell never", () => {
+    const view = buildResultsView(biddingInput());
+    const [devang, you, ben] = view.scorecard!.rows[0]!.cells;
+    expect(you!.tone).toBe("pos");
+    expect(you!.value).toBe(1);
+    // A different contract is NEUTRAL, never negative: nobody is told they are
+    // wrong, because BEN's system is not necessarily the lesson's.
+    expect(devang!.tone).toBe("neutral");
+    expect(devang!.value).toBeUndefined();
+    expect(ben!.value).toBeUndefined();
+  });
+
+  it("carries no BEN benchmark row — BEN is the yardstick, not a rival", () => {
+    expect(buildResultsView(biddingInput()).benRow).toBeNull();
+    expect(buildResultsView(biddingInput()).scorecard!.totals.at(-1)).toEqual({ text: "" });
+  });
+
+  it("sets your contract beside BEN's in the board detail, in neutral language", () => {
+    const view = buildResultsView(biddingInput());
+    expect(view.details[1]).toMatchObject({
+      contract: "4♠ by S",
+      raw: "BEN: 4♠ by S",
+      rawTone: "neutral",
+      unit: "Contract vs BEN",
+      score: "Matched BEN",
+      scoreTone: "pos",
+      benReady: true,
+    });
+    expect(view.details[2]).toMatchObject({
+      raw: "BEN: 3NT by N",
+      score: "A different contract",
+      scoreTone: "neutral",
+    });
+    // Nothing anywhere on this surface calls the learner wrong.
+    expect(JSON.stringify(view)).not.toMatch(/wrong|incorrect/i);
+  });
+
+  it("says so, and rates nobody, when BEN has not bid a board yet", () => {
+    const view = buildResultsView(biddingInput({ baselines: [] }));
+    expect(view.details[1]!.score).toBe("BEN has not bid this board yet");
+    expect(view.details[1]!.benReady).toBe(false);
+    expect(view.scorecard!.rows[0]!.cells.every((c) => c.value === undefined)).toBe(true);
+    // An unrated card is still a complete card, so the ranks stand — at 0 of 0.
+    expect(view.leaderboard.map((r) => r.total)).toEqual(["—", "—"]);
+  });
+
+  it("reads a shared passout as a match", () => {
+    const view = buildResultsView(
+      biddingInput({
+        boards: [board(1)],
+        plays: [bidPlay(VIEWER, 1, null)],
+        baselines: [benBidBaseline(1, null)],
+      }),
+    );
+    expect(view.details[1]).toMatchObject({
+      contract: "Passed out",
+      raw: "BEN: Passed out",
+      score: "Matched BEN",
+    });
+    expect(view.squares[0]!.score).toBe("Pass");
+  });
+
+  it("shows the contract in the viewer's own board square, tinted only on a match", () => {
+    const view = buildResultsView(biddingInput());
+    expect(view.squares.map((s) => [s.score, s.tone])).toEqual([
+      ["4♠S", "pos"],
+      ["2♥S", "neutral"],
+    ]);
+  });
+
+  it("offers a replay that names the exercise it opens, not a board to play out", () => {
+    // The practice copy honours the format, so the affordance says which of the
+    // two it is BEFORE it is tapped — a bidding-only replay ends where the
+    // scored board ended, with the auction.
+    expect(buildResultsView(biddingInput()).practiceLabel).toBe(BIDDING_PRACTICE_LABEL);
+    expect(BIDDING_PRACTICE_LABEL).toMatch(/Bid it again/);
+    expect(buildResultsView(baseInput()).practiceLabel).toBe(PRACTICE_LABEL);
+    expect(PRACTICE_LABEL).not.toBe(BIDDING_PRACTICE_LABEL);
+  });
+
+  it("keeps a half-finished player out of the standings, exactly as a scored one does", () => {
+    const view = buildResultsView(
+      biddingInput({
+        plays: [
+          bidPlay(VIEWER, 1, CONTRACT(4, "S", "S")),
+          bidPlay(VIEWER, 2, CONTRACT(3, "N", "N")),
+          bidPlay("u-devang", 1, CONTRACT(3, "N", "S")),
+        ],
+      }),
+    );
+    expect(view.leaderboard.map((r) => r.name)).toEqual(["You"]);
+    expect(view.summaryLine).toBe("1 finished · 2 still playing · 0 invited");
+  });
+});
+
+describe("an existing challenge is untouched by the new option", () => {
+  it("behaves identically with no format field and with format: full", () => {
+    const withoutFlag = buildResultsView(baseInput());
+    const withFull = buildResultsView(
+      baseInput({ challenge: challenge({ format: "full" }) }),
+    );
+    expect(withFull).toEqual(withoutFlag);
+    expect(withoutFlag.scoringLabel).toBe("IMPs");
+    expect(withoutFlag.benRow).not.toBeNull();
   });
 });

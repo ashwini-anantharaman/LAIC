@@ -17,6 +17,7 @@ import {
   MIN_BOARDS,
   standardDealer,
   standardVul,
+  type ChallengeFormat,
   type ChallengeScoring,
   type StandingsVisibility,
 } from "@bridge/challenges";
@@ -30,6 +31,7 @@ import {
   CONTROL_STATES,
   controlOverridesOf,
   defaultControlStates,
+  FORMAT_OPTIONS,
   SCORING_OPTIONS,
   STANDINGS_OPTIONS,
   validateDraft,
@@ -94,6 +96,7 @@ export function CreateChallenge({
   const [step, setStep] = useState<StepKey>("basics");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [format, setFormat] = useState<ChallengeFormat>("full");
   const [scoring, setScoring] = useState<ChallengeScoring>("imps");
   const [standings, setStandings] = useState<StandingsVisibility>("after-finish");
   const [boards, setBoards] = useState<BoardDraftState[]>(() =>
@@ -235,19 +238,28 @@ export function CreateChallenge({
 
   const moderatorCount = 1 + invited.filter((i) => i.moderator).length;
   const seatsUsed = [...new Set(boards.map((b) => b.humanSeat))];
+  const formatInfo = FORMAT_OPTIONS.find((f) => f.key === format)!;
   const scoringInfo = SCORING_OPTIONS.find((s) => s.key === scoring)!;
   const standingsInfo = STANDINGS_OPTIONS.find((s) => s.key === standings)!;
+
+  // A bidding-only board is never scored against the field, so the scoring
+  // question is not asked at all — an inert control the creator cannot act on
+  // is exactly the clutter this wizard has been trimmed of twice.
+  const biddingOnly = format === "bidding-only";
+  /** What every summary strip names: the scoring mode, or the format. */
+  const unitLabel = biddingOnly ? formatInfo.label : scoringInfo.label;
 
   // Nothing but boards and invites is actually required: an unnamed challenge
   // takes a name that describes it, so Quick create can be two taps and the
   // wizard never blocks on a text field (owner, 2026-08-08).
-  const autoTitle = `${boards.length}-board ${scoringInfo.label}`;
+  const autoTitle = `${boards.length}-board ${unitLabel}`;
   const named = title.trim().length > 0;
   const effectiveTitle = named ? title.trim() : autoTitle;
 
   const draft = (): ChallengeDraft => ({
     title: effectiveTitle,
     description: description.trim(),
+    format,
     scoring,
     standingsVisibility: standings,
     boards: boards.map((b) => ({
@@ -395,7 +407,7 @@ export function CreateChallenge({
           </button>
           <p className="mt-1.5 text-center text-[11.5px] leading-snug text-emerald-900/70">
             {boards.length} boards · {1 + invited.length} player
-            {invited.length === 0 ? "" : "s"} · {scoringInfo.label} · random deals
+            {invited.length === 0 ? "" : "s"} · {unitLabel} · random deals
             {named ? "" : ` · named “${autoTitle}”`}
           </p>
         </section>
@@ -428,24 +440,51 @@ export function CreateChallenge({
             className="h-10 w-full rounded-lg border border-neutral-300 px-3 text-[13.5px] text-neutral-700"
           />
 
-          <Label className="mt-4">Scoring</Label>
+          <Label className="mt-4">What a board asks</Label>
           <div className="flex gap-1.5">
-            {SCORING_OPTIONS.map((s) => (
+            {FORMAT_OPTIONS.map((f) => (
               <button
-                key={s.key}
+                key={f.key}
                 type="button"
-                onClick={() => setScoring(s.key)}
+                aria-pressed={format === f.key}
+                onClick={() => setFormat(f.key)}
                 className={`h-11 flex-1 rounded-lg border px-1.5 text-[13px] ${
-                  scoring === s.key
+                  format === f.key
                     ? "border-emerald-700 bg-emerald-700 font-extrabold text-white"
                     : "border-neutral-300 bg-white font-semibold text-neutral-600"
                 }`}
               >
-                {s.label}
+                {f.label}
               </button>
             ))}
           </div>
-          <Note>{scoringInfo.note}</Note>
+          <Note>{formatInfo.note}</Note>
+
+          {/* Scoring is a question about a FIELD of played boards. A
+              bidding-only challenge has none, so it is not asked — the tally
+              is "matched BEN's contract on N of M boards" and nothing else. */}
+          {!biddingOnly && (
+            <>
+              <Label className="mt-4">Scoring</Label>
+              <div className="flex gap-1.5">
+                {SCORING_OPTIONS.map((s) => (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => setScoring(s.key)}
+                    className={`h-11 flex-1 rounded-lg border px-1.5 text-[13px] ${
+                      scoring === s.key
+                        ? "border-emerald-700 bg-emerald-700 font-extrabold text-white"
+                        : "border-neutral-300 bg-white font-semibold text-neutral-600"
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <Note>{scoringInfo.note}</Note>
+            </>
+          )}
 
           <Label className="mt-4">Boards</Label>
           <BoardCountPicker count={boards.length} onCount={setBoardCount} />
@@ -748,8 +787,9 @@ export function CreateChallenge({
         {/* ── 05 · Review ── */}
         <Section refFn={sectionRef("review")} num="05" title="Review & create">
           <p className="mb-3.5 text-[12.5px] leading-relaxed text-neutral-600">
-            A silent full-BEN baseline is computed for every board after you
-            create.
+            {biddingOnly
+              ? "BEN bids every board silently after you create — that auction is the one yours is set beside. It needs no card play, so it is quick."
+              : "A silent full-BEN baseline is computed for every board after you create."}
           </p>
           {error && (
             <p className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2.5 text-[12.5px] text-invalid">
@@ -761,7 +801,15 @@ export function CreateChallenge({
               k="Title"
               v={named ? effectiveTitle : `${effectiveTitle} — auto-named`}
             />
-            <ReviewLine k="Scoring" v={scoringInfo.full} />
+            <ReviewLine k="Format" v={formatInfo.review} />
+            <ReviewLine
+              k="Scoring"
+              v={
+                biddingOnly
+                  ? "Matched BEN's contract, board by board — no field scoring"
+                  : scoringInfo.full
+              }
+            />
             <ReviewLine k="Standings" v={standingsInfo.review} />
             <ReviewLine
               k="Boards"
@@ -776,7 +824,14 @@ export function CreateChallenge({
               }
             />
             <ReviewLine k="Controls" v={controlsSummary} />
-            <ReviewLine k="Opponents" v="3 BEN robots per seat · silent BEN baseline" />
+            <ReviewLine
+              k="Opponents"
+              v={
+                biddingOnly
+                  ? "3 BEN robots per seat · BEN's own auction is the reference"
+                  : "3 BEN robots per seat · silent BEN baseline"
+              }
+            />
             <ReviewLine k="Invites" v={`You + ${invited.length} pending`} />
             <ReviewLine
               k="Moderators"
@@ -796,9 +851,19 @@ export function CreateChallenge({
             />
           </dl>
           <p className="mt-3 rounded-lg border border-dashed border-neutral-300 bg-neutral-50 px-3 py-2.5 text-[11.5px] leading-relaxed text-neutral-500">
-            One attempt, resume-only — first completion is scored forever. After
-            finishing, a practice replay opens an unscored copy. BEN is the
-            unranked benchmark line; it never enters the field math.
+            {biddingOnly ? (
+              <>
+                One attempt, resume-only — the contract you reach first is your
+                result forever. BEN is the reference, not a rival: a different
+                contract is a difference, not a mistake.
+              </>
+            ) : (
+              <>
+                One attempt, resume-only — first completion is scored forever.
+                After finishing, a practice replay opens an unscored copy. BEN
+                is the unranked benchmark line; it never enters the field math.
+              </>
+            )}
           </p>
           <button
             type="button"
@@ -820,7 +885,7 @@ export function CreateChallenge({
               {effectiveTitle}
             </div>
             <div className="truncate text-[11px] text-neutral-500">
-              {boards.length} boards · {scoringInfo.label} · {1 + invited.length} players
+              {boards.length} boards · {unitLabel} · {1 + invited.length} players
             </div>
           </div>
           <button
@@ -841,7 +906,8 @@ export function CreateChallenge({
             Draft
           </p>
           <SummaryLine k="Boards" v={String(boards.length)} />
-          <SummaryLine k="Scoring" v={scoringInfo.label} />
+          <SummaryLine k="Format" v={formatInfo.label} />
+          <SummaryLine k="Scoring" v={biddingOnly ? "vs BEN" : scoringInfo.label} />
           <SummaryLine k="Invited" v={`1 + ${invited.length}`} />
           <SummaryLine
             k="Editor badge"

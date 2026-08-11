@@ -1,0 +1,44 @@
+{
+  "name": "@bridge/table-embed",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Bridge table as a portable, self-contained React component: real game law, real table, no platform.",
+  "type": "module",
+  "main": "./dist/table-embed.js",
+  "module": "./dist/table-embed.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/table-embed.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "//types-beside-the-bundle": "The build also copies index.d.ts to dist/table-embed.d.ts, so a host that VENDORS the artifact and imports './table-embed.js' by path — rather than resolving the package name — still gets types: TypeScript substitutes a sibling .d.ts for a .js import. Without it such a host typechecks against whatever tsc can infer from a rolled-up bundle, which is worse than nothing: it reports every optional prop as required.",
+  "scripts": {
+    "build": "vite build && tsc -p tsconfig.build.json && cp dist/index.d.ts dist/table-embed.d.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/challenges": "workspace:*",
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/formats": "workspace:*",
+    "@bridge/table-config": "workspace:*",
+    "@bridge/table-ui": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=18",
+    "react-dom": ">=18"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  }
+}

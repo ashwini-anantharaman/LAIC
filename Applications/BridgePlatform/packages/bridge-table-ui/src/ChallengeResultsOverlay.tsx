@@ -17,7 +17,7 @@
 // it does not need stays visible. Wide = a centred 540px card, no grabber.
 
 import { useEffect } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { Leaderboard, type LeaderboardProps } from "./Leaderboard";
 import {
   CHALLENGE_ACCENT,
@@ -48,8 +48,17 @@ export interface ChallengeResultsOverlayProps {
   open: boolean;
   /** Scrim tap, close button, grabber and Escape all call this. */
   onClose: () => void;
-  /** The standings, handed straight to <Leaderboard>. */
-  standings: LeaderboardProps;
+  /**
+   * The standings, handed straight to <Leaderboard>.
+   *
+   * OMITTED WHEN THERE IS NO FIELD. A solo challenge is played against BEN
+   * alone, so there is nobody to rank: it passes `children` instead and the
+   * sheet shows the comparison where the table of players would have been. An
+   * empty leaderboard would be a promise of a field that does not exist.
+   */
+  standings?: LeaderboardProps;
+  /** Rendered in the standings' place (or under them, when both are given). */
+  children?: ReactNode;
   /** The viewer's board-by-board line, as a compact scrolling strip. */
   boards: readonly ChallengeBoardCell[];
   /** Phone tier (default true): bottom sheet + grabber. False: centred card. */
@@ -68,6 +77,7 @@ export function ChallengeResultsOverlay({
   open,
   onClose,
   standings,
+  children,
   boards,
   viewportPhone = true,
   heading = "Results",
@@ -208,7 +218,8 @@ export function ChallengeResultsOverlay({
             padding: phone ? "0 18px 22px" : "0 20px 20px",
           }}
         >
-          <Leaderboard {...standings} accent={standings.accent ?? accent} />
+          {standings && <Leaderboard {...standings} accent={standings.accent ?? accent} />}
+          {children}
 
           {boards.length > 0 && (
             <>

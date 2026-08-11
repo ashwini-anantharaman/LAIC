@@ -11,6 +11,7 @@
 import {
   MAX_BOARDS,
   MIN_BOARDS,
+  type ChallengeFormat,
   type ChallengeScoring,
   type ControlOverride,
   type StandingsVisibility,
@@ -22,6 +23,43 @@ import { handFromSerialized } from "../../../lib/dealText";
 
 export const TITLE_MAX = 120;
 export const DESCRIPTION_MAX = 240;
+
+/**
+ * WHAT A BOARD ASKS FOR — the first question in `01 · Basics`, because it
+ * decides whether the scoring question is asked at all.
+ *
+ * `bidding-only` is not a variant of a scored board: it ends the board at the
+ * end of the auction and replaces the whole field calculation with one
+ * comparison against BEN's own auction on the same deal. So the copy here has
+ * to be honest that IMPs/matchpoints/total points do not apply.
+ */
+export const FORMAT_OPTIONS: readonly {
+  key: ChallengeFormat;
+  label: string;
+  sub: string;
+  note: string;
+  /** The line the Review step and the draft rail read. */
+  review: string;
+  /** The one-word form the summary strips use. */
+  short: string;
+}[] = [
+  {
+    key: "full",
+    label: "Bid & play",
+    sub: "The whole board",
+    note: "The full board: bid it, play all thirteen tricks, and score it against everyone else who finished.",
+    review: "Bid & play — the whole board, scored against the field",
+    short: "bid & play",
+  },
+  {
+    key: "bidding-only",
+    label: "Bidding only",
+    sub: "The auction is the board",
+    note: "The board ends when the auction ends — no cards are played. Your result is the contract you reached, set beside the contract BEN reached on the same deal.",
+    review: "Bidding only — the board ends with the auction, your contract beside BEN's",
+    short: "bidding only",
+  },
+];
 
 export const SCORING_OPTIONS: readonly {
   key: ChallengeScoring;
@@ -169,6 +207,17 @@ export interface ChallengeInviteDraft {
 export interface ChallengeDraft {
   title: string;
   description: string;
+  /**
+   * What a board asks for. Absent is tolerated and MEANS `full` — the record
+   * written before the option existed reads the same way (see
+   * `challengeFormat`), so a draft that predates it is not an error.
+   */
+  format?: ChallengeFormat;
+  /**
+   * Ignored entirely by a `bidding-only` challenge, which has no field maths
+   * to run — it is still carried so switching the format back restores the
+   * creator's choice rather than silently resetting it.
+   */
   scoring: ChallengeScoring;
   standingsVisibility: StandingsVisibility;
   boards: ChallengeBoardDraft[];
@@ -180,6 +229,7 @@ export interface ChallengeDraft {
 
 const SEAT_SET = new Set<string>(SEATS);
 const VUL_SET = new Set<string>(Object.keys(VUL_LABEL));
+const FORMATS = new Set<string>(FORMAT_OPTIONS.map((f) => f.key));
 const SCORINGS = new Set<string>(SCORING_OPTIONS.map((s) => s.key));
 const STANDINGS = new Set<string>(STANDINGS_OPTIONS.map((s) => s.key));
 const CONTROL_KEYS = new Set(CHALLENGE_CONTROLS.map((c) => c.key));
@@ -216,6 +266,12 @@ export function validateDraft(draft: ChallengeDraft): string[] {
   if (title.length > TITLE_MAX) errors.push(`Titles are at most ${TITLE_MAX} characters.`);
   if (draft.description.trim().length > DESCRIPTION_MAX)
     errors.push(`Descriptions are at most ${DESCRIPTION_MAX} characters.`);
+  // Absent is the default, not a mistake — an older draft carries no format
+  // and means the full board. Anything else present must be one of the two.
+  if (draft.format !== undefined && !FORMATS.has(draft.format))
+    errors.push("Pick whether the board is bid and played, or bidding only.");
+  // A bidding-only challenge never runs the field maths, but it still stores a
+  // scoring mode (see ChallengeDraft), so the value must stay legal either way.
   if (!SCORINGS.has(draft.scoring)) errors.push("Pick a scoring method.");
   if (!STANDINGS.has(draft.standingsVisibility)) errors.push("Pick when standings are visible.");
 

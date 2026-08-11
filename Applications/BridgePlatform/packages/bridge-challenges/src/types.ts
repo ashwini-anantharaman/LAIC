@@ -10,12 +10,28 @@
 // @bridge/events import is type-only, so nothing of the event bus is pulled
 // into a browser bundle.
 
-import type { Call, Card, Seat, Vul } from "@bridge/events";
+import type { Call, Card, Contract, Seat, Vul } from "@bridge/events";
 
 // ── the challenge ───────────────────────────────────────────────────────────
 
 /** How a board is scored against the field. Creator picks one at create. */
 export type ChallengeScoring = "imps" | "mp" | "total";
+
+/**
+ * WHAT A BOARD ASKS OF THE PARTICIPANT (owner, 2026-08-10).
+ *
+ * - `full` — the v1 board: bid it, play all thirteen tricks, score it against
+ *   the field in the challenge's `scoring` mode.
+ * - `bidding-only` — **the board ends when the auction ends.** No cards are
+ *   played and there is no play score; the result is the contract the learner
+ *   reached, set beside the contract BEN reached on the same deal.
+ *
+ * Omitted on every record written before the option existed, and omitted MEANS
+ * `full` — so nothing stored changes and no migration is owed (the whole
+ * record lives in one `record jsonb` column, db/migrations/0027_challenges.sql).
+ * Read it through `challengeFormat`, never by touching the field.
+ */
+export type ChallengeFormat = "full" | "bidding-only";
 
 /** Open (playable) or archived by the creator. No deadline in v1. */
 export type ChallengeStatus = "open" | "archived";
@@ -36,6 +52,11 @@ export interface Challenge {
   createdByName?: string;
   status: ChallengeStatus;
   /**
+   * What a board asks for. Absent = `full`, which is what every challenge
+   * created before the option existed is. See `ChallengeFormat`.
+   */
+  format?: ChallengeFormat;
+  /**
    * When the first participant STARTED a board. Set once; from then on boards,
    * seats and control overrides are frozen (invites stay addable forever).
    */
@@ -53,6 +74,40 @@ export interface Challenge {
 /** True when boards/seats/control overrides may still be edited (spec §2). */
 export function challengeIsEditable(challenge: Challenge): boolean {
   return challenge.status === "open" && !challenge.lockedAt;
+}
+
+/**
+ * The challenge's format, defaulted. THE ONLY legitimate way to ask what a
+ * board asks for: a stored record may carry no `format` at all, and that is
+ * not a missing value — it is `full`.
+ */
+export function challengeFormat(challenge: Pick<Challenge, "format">): ChallengeFormat {
+  return challenge.format === "bidding-only" ? "bidding-only" : "full";
+}
+
+/** True when the board ends with the auction and nobody plays a card. */
+export function isBiddingOnly(challenge: Pick<Challenge, "format">): boolean {
+  return challengeFormat(challenge) === "bidding-only";
+}
+
+/**
+ * WHEN AN ATTEMPT IS OVER, in one place.
+ *
+ * A full board is over when the last trick has resolved. A BIDDING-ONLY board
+ * is over the moment the auction closes (owner, 2026-08-10): the engine's
+ * `play` phase belongs to nobody there — no participant and no robot will ever
+ * enter it — so `auction → done` is the whole life of the board. A passed-out
+ * board reaches `complete` straight from the auction and satisfies both.
+ *
+ * It lives in this client-safe package because THREE surfaces must agree: the
+ * server-side freeze, the table deciding whether the felt should still invite a
+ * card, and the embedded solo player, which has no server at all.
+ */
+export function challengeBoardIsOver(
+  phase: "auction" | "play" | "complete",
+  biddingOnly: boolean,
+): boolean {
+  return biddingOnly ? phase !== "auction" : phase === "complete";
 }
 
 // ── boards ──────────────────────────────────────────────────────────────────
@@ -176,6 +231,17 @@ export interface ChallengeSnapshot {
   play: { seat: Seat; card: Card }[];
   contractLabel?: string;
   resultLabel?: string;
+  /**
+   * The contract the auction produced, STRUCTURED — `null` when the board was
+   * passed out. `contractLabel` is what gets printed; this is what gets
+   * compared, because the label is a display string and two freeze sites are
+   * free to format one differently. A bidding-only board always carries it:
+   * the contract IS its result.
+   *
+   * Absent on lines frozen before the field existed. Those are full boards,
+   * whose result is a raw score, so nothing reads it there.
+   */
+  contract?: Contract | null;
 }
 
 export interface ChallengePlay {

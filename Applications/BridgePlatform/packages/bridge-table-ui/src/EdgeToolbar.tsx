@@ -19,7 +19,7 @@
 // Doing both compounds the division — that produced a 325px control in a 338px
 // bar — so `scale` only participates when the host actually passes it.
 
-import Link from "next/link";
+import { useTableHost } from "./host";
 import {
   useCallback,
   useEffect,
@@ -111,6 +111,7 @@ export function EdgeToolbar({
       scale ? Math.ceil(minTouch / Math.max(0.05, scale)) : 0,
     ),
   );
+  const { LinkComponent } = useTableHost();
   const gap = condensed ? 5 : 7;
   const ctrlPad = Math.round(ctrlH * (condensed ? 0.17 : 0.4));
   const ctrlFont = Math.max(condensed ? 11 : 13, Math.round(ctrlH * (condensed ? 0.28 : 0.4)));
@@ -232,8 +233,11 @@ export function EdgeToolbar({
     if (it.kind === "chip")
       return (
         <div key={i} title={it.title ?? it.label} style={{ flex: "none", display: "flex", alignItems: "baseline", gap: 5, padding: "0 8px", height: chipH, borderRadius: 5, background: "rgba(255,255,255,.07)", whiteSpace: "nowrap" }}>
-          <span style={{ fontSize: chipLabelFont, letterSpacing: ".09em", textTransform: "uppercase", color: "#8fa39a" }}>{it.label}</span>
-          <span style={{ fontSize: ctrlFont, fontWeight: 700, lineHeight: 1, color: it.color ?? "#eef4f1" }}>{it.value}</span>
+          {/* The condensed bar is the PHONE bar: it renders through the stage
+              scale, where a 400-weight micro-label smears. Bold it there only —
+              the wide bar reads at full size and keeps its authored weight. */}
+          <span style={{ fontSize: chipLabelFont, fontWeight: condensed ? 700 : 400, letterSpacing: ".09em", textTransform: "uppercase", color: condensed ? "#a3b7ae" : "#8fa39a" }}>{it.label}</span>
+          <span style={{ fontSize: ctrlFont, fontWeight: condensed ? 800 : 700, lineHeight: 1, color: it.color ?? "#eef4f1" }}>{it.value}</span>
         </div>
       );
     const tone = tones[it.tone ?? "plain"];
@@ -249,9 +253,9 @@ export function EdgeToolbar({
     };
     if (it.href && !dim)
       return (
-        <Link key={i} href={it.href} title={it.title ?? it.label} aria-label={it.ariaLabel} style={style}>
+        <LinkComponent key={i} href={it.href} title={it.title ?? it.label} aria-label={it.ariaLabel} style={style}>
           {it.label}
-        </Link>
+        </LinkComponent>
       );
     return (
       <button key={i} type="button" title={it.title ?? it.label} aria-label={it.ariaLabel} disabled={dim} onClick={dim ? undefined : (it.on ?? undefined)} style={style}>
@@ -290,9 +294,9 @@ export function EdgeToolbar({
     const close = () => setOpen(false);
     if (it.href && !dim)
       return (
-        <Link key={i} href={it.href} title={it.title ?? it.label} aria-label={it.ariaLabel} style={style} onClick={close}>
+        <LinkComponent key={i} href={it.href} title={it.title ?? it.label} aria-label={it.ariaLabel} style={style} onClick={close}>
           {it.label}
-        </Link>
+        </LinkComponent>
       );
     return (
       <button key={i} type="button" title={it.title ?? it.label} aria-label={it.ariaLabel} disabled={dim} onClick={dim ? undefined : () => { it.on?.(); close(); }} style={style}>

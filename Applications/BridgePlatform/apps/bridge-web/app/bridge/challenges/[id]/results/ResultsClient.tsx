@@ -98,6 +98,10 @@ export function ResultsClient({
    * once the whole challenge is finished (spec §2, Attempts). The entry route
    * reads `practice=1` and takes `enterChallengePractice`: a fresh session on
    * the same pack, nothing written to the play record, no pointer, no lock.
+   *
+   * It replays the SAME EXERCISE: on a bidding-only challenge the copy ends
+   * with the auction too, which is why the button's label comes from the view
+   * model rather than being written here.
    */
   const openPractice = (boardNo: number) => {
     router.push(`/bridge/challenges/${view.challengeId}/play?board=${boardNo}&practice=1`);
@@ -239,6 +243,7 @@ export function ResultsClient({
                 detail={detail}
                 accent={accent}
                 showPractice={view.viewerFinished}
+                practiceLabel={view.practiceLabel}
                 onClose={() => setSelectedBoard(null)}
                 onCompare={() => openComparison(detail.boardNo, viewerId, view.benKey)}
                 onPractice={() => openPractice(detail.boardNo)}
@@ -262,6 +267,7 @@ export function ResultsClient({
                 detail={detail}
                 accent={accent}
                 showPractice={view.viewerFinished}
+                practiceLabel={view.practiceLabel}
                 onClose={() => setSelectedBoard(null)}
                 onCompare={() => openComparison(detail.boardNo, viewerId, view.benKey)}
                 onPractice={() => openPractice(detail.boardNo)}
@@ -504,6 +510,7 @@ function BoardReview({
   detail,
   accent,
   showPractice,
+  practiceLabel,
   onClose,
   onCompare,
   onPractice,
@@ -511,6 +518,8 @@ function BoardReview({
   detail: BoardDetail;
   accent: string;
   showPractice: boolean;
+  /** What the replay opens — a full board, or the auction again. */
+  practiceLabel: string;
   onClose: () => void;
   onCompare: () => void;
   onPractice: () => void;
@@ -627,7 +636,7 @@ function BoardReview({
               cursor: "pointer",
             }}
           >
-            {`${GLYPH_REPLAY} Replay for practice (unscored)`}
+            {`${GLYPH_REPLAY} ${practiceLabel}`}
           </button>
         )}
       </div>

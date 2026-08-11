@@ -5,15 +5,19 @@
 // negative datums, shared ranks, and players who have not finished every board.
 
 import { describe, expect, it } from "vitest";
+import type { Contract } from "@bridge/events";
 import {
   benchmarkScore,
+  biddingScores,
   boardLeaders,
   challengeScores,
   combineBoardScores,
+  contractKey,
   fieldScores,
   IMP_TABLE,
   impFromDiff,
   rankStandings,
+  sameContractReached,
   type PlayerRawScore,
 } from "./scoring";
 
@@ -407,5 +411,169 @@ describe("challengeScores — nobody has finished anything", () => {
     expect(result.totals).toEqual([]);
     expect(result.standings).toEqual([]);
     expect(result.benTotal).toBeNull();
+  });
+});
+
+// ── bidding-only ────────────────────────────────────────────────────────────
+//
+// A different question from everything above: no field, no datum, no
+// matchpoints — one auction beside BEN's on the same deal.
+
+const C = (
+  level: number,
+  strain: Contract["strain"],
+  declarer: Contract["declarer"],
+  doubled: Contract["doubled"] = 0,
+): Contract => ({ level, strain, declarer, doubled });
+
+describe("contractKey", () => {
+  it("is level, strain and doubling — and NOT declarer", () => {
+    expect(contractKey(C(4, "S", "S"))).toBe(contractKey(C(4, "S", "N")));
+  });
+  it("separates level, strain and doubling", () => {
+    expect(contractKey(C(4, "S", "S"))).not.toBe(contractKey(C(3, "S", "S")));
+    expect(contractKey(C(4, "S", "S"))).not.toBe(contractKey(C(4, "H", "S")));
+    expect(contractKey(C(4, "S", "S"))).not.toBe(contractKey(C(4, "S", "S", 1)));
+  });
+  it("gives a passout its own key, and an unknown line a key that matches nothing", () => {
+    expect(contractKey(null)).toBe("PASS");
+    expect(contractKey(undefined)).toBe("?");
+  });
+});
+
+describe("sameContractReached", () => {
+  it("matches the same contract from either side of the table", () => {
+    expect(sameContractReached(C(3, "N", "S"), C(3, "N", "N"))).toBe(true);
+  });
+  it("matches two passouts — both auctions reached the same place", () => {
+    expect(sameContractReached(null, null)).toBe(true);
+  });
+  it("never matches when there is no reference line, not even against itself", () => {
+    expect(sameContractReached(C(4, "S", "S"), undefined)).toBe(false);
+    expect(sameContractReached(undefined, undefined)).toBe(false);
+  });
+  it("does not match a passout against a contract", () => {
+    expect(sameContractReached(null, C(1, "C", "W"))).toBe(false);
+  });
+});
+
+describe("biddingScores — one board", () => {
+  it("calls the same contract matched, a different one differed — never wrong", () => {
+    const result = biddingScores({
+      boards: [
+        {
+          boardNo: 1,
+          benContract: C(4, "S", "S"),
+          contracts: [
+            { userId: "alice", contract: C(4, "S", "S") },
+            { userId: "bob", contract: C(3, "N", "S") },
+          ],
+        },
+      ],
+    });
+    expect(result.boards[0]!.results.map((r) => r.verdict)).toEqual(["matched", "differed"]);
+    expect(result.boards[0]!.leaders).toEqual(["alice"]);
+  });
+
+  it("matches from the other side, and says so separately", () => {
+    const result = biddingScores({
+      boards: [
+        {
+          boardNo: 1,
+          benContract: C(4, "S", "N"),
+          contracts: [{ userId: "alice", contract: C(4, "S", "S") }],
+        },
+      ],
+    });
+    const [row] = result.boards[0]!.results;
+    expect(row!.verdict).toBe("matched");
+    expect(row!.sameDeclarer).toBe(false);
+  });
+
+  it("leaves the board UNRATED, and leaderless, until BEN has bid it", () => {
+    const result = biddingScores({
+      boards: [
+        { boardNo: 1, contracts: [{ userId: "alice", contract: C(4, "S", "S") }] },
+      ],
+    });
+    expect(result.boards[0]!.results[0]!.verdict).toBe("unrated");
+    expect(result.boards[0]!.leaders).toEqual([]);
+    expect(result.totals[0]).toMatchObject({ matched: 0, rated: 0, boardsScored: 1 });
+  });
+
+  it("counts a shared passout as a match", () => {
+    const result = biddingScores({
+      boards: [
+        { boardNo: 1, benContract: null, contracts: [{ userId: "alice", contract: null }] },
+      ],
+    });
+    expect(result.boards[0]!.results[0]!.verdict).toBe("matched");
+  });
+});
+
+describe("biddingScores — the whole challenge", () => {
+  const board = (
+    boardNo: number,
+    ben: Contract | null | undefined,
+    alice: Contract | null,
+    bob: Contract | null,
+  ) => ({
+    boardNo,
+    ...(ben === undefined ? {} : { benContract: ben }),
+    contracts: [
+      { userId: "alice", contract: alice },
+      { userId: "bob", contract: bob },
+    ],
+  });
+
+  it('tallies "matched on N of M", ranks by it, and shares a rank on a tie', () => {
+    const result = biddingScores({
+      boards: [
+        board(1, C(4, "S", "S"), C(4, "S", "S"), C(4, "S", "S")),
+        board(2, C(3, "N", "N"), C(3, "N", "N"), C(2, "H", "S")),
+        board(3, C(1, "C", "W"), C(2, "C", "W"), C(1, "C", "W")),
+      ],
+    });
+    expect(result.totals).toEqual([
+      { userId: "alice", total: 2, matched: 2, rated: 3, boardsScored: 3 },
+      { userId: "bob", total: 2, matched: 2, rated: 3, boardsScored: 3 },
+    ]);
+    expect(result.standings.map((s) => [s.userId, s.rank])).toEqual([
+      ["alice", 1],
+      ["bob", 1],
+    ]);
+  });
+
+  it("counts only the boards BEN has bid in `rated`", () => {
+    const result = biddingScores({
+      boards: [
+        board(1, C(4, "S", "S"), C(4, "S", "S"), C(4, "S", "S")),
+        board(2, undefined, C(3, "N", "N"), C(2, "H", "S")),
+      ],
+    });
+    expect(result.totals[0]).toMatchObject({ matched: 1, rated: 1, boardsScored: 2 });
+  });
+
+  it("keeps FINAL RANKS ONLY — a half-finished card is in totals but not standings", () => {
+    const result = biddingScores({
+      boards: [
+        board(1, C(4, "S", "S"), C(4, "S", "S"), C(4, "S", "S")),
+        {
+          boardNo: 2,
+          benContract: C(3, "N", "N"),
+          contracts: [{ userId: "alice", contract: C(3, "N", "N") }],
+        },
+      ],
+    });
+    expect(result.totals.map((t) => t.userId).sort()).toEqual(["alice", "bob"]);
+    expect(result.standings.map((s) => s.userId)).toEqual(["alice"]);
+  });
+
+  it("produces nothing at all when nobody has bid a board", () => {
+    const result = biddingScores({
+      boards: [{ boardNo: 1, contracts: [] }],
+    });
+    expect(result.totals).toEqual([]);
+    expect(result.standings).toEqual([]);
   });
 });

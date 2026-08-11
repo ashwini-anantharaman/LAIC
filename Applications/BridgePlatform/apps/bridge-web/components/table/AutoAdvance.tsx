@@ -42,7 +42,14 @@ export function AutoAdvance({
    * "bar": the page-toolbar pills (legacy workbench). "rail": compact chips in
    * the Play Table design's rail language, for mounting INSIDE the canvas.
    */
-  variant?: "bar" | "rail";
+  /**
+   * "headless" renders NOTHING but keeps the driver running. This component is
+   * two things at once — the engine that steps robot seats, and the transport
+   * buttons that pause it — and mounting it inside a toolbar meant hiding the
+   * toolbar silently unmounted the engine, so the robots simply stopped. A host
+   * that draws no toolbar still needs the boards to play.
+   */
+  variant?: "bar" | "rail" | "headless";
   /**
    * Rail chips only: multiply the design metrics for larger stages (the hand
    * viewer runs ~2x the table's chip scale). Real layout size — never a CSS
@@ -169,6 +176,9 @@ export function AutoAdvance({
       </div>
     );
   }
+  // The driver's effects have already run by here; returning no UI is exactly
+  // what a host without chrome wants.
+  if (variant === "headless") return null;
   if (variant === "rail") {
     // The EdgeToolbar design's transport pair: Pause/Play as a toolbar
     // button (warn tone while held), step as a ▶ icon. Boards run by

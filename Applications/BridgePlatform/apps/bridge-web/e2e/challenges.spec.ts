@@ -15,16 +15,27 @@
 //   · the in-table challenge chrome — the strip, `Board k of N`, the Results
 //     button's visibility rule, the standings overlay over the felt (A4;
 //     packages/bridge-table-ui/src/challengeComponents.test.ts);
-//   · the done bar — the way onward from a finished board (Next board / See
+//   · the result card's way onward from a finished board (Next board / See
 //     your results), which needs a board played to its last trick
-//     (challengeLogic.test.ts covers the choice, challengeComponents.test.ts
-//     the bar);
+//     (challengeLogic.test.ts covers the choice, resultCard.test.ts the card);
 //   · "BEN is thinking… / retry" — only reachable when a BEN call fails;
 //   · comparisons and baselines — full-BEN, your-contract, from-this-point;
 //   · the scored leaderboard and board-by-board grid with real figures
 //     (resultsView.test.ts covers the arithmetic);
 //   · "Replay for practice (unscored)" — it is gated on having FINISHED every
-//     board, which cannot happen without BEN.
+//     board, which cannot happen without BEN. Its GUARD is reachable and is
+//     asserted below; what the replay then opens (and, in a bidding-only
+//     challenge, where it stops) is unit-tested in challengeTable.test.ts.
+//
+// The same line runs through BIDDING-ONLY (owner, 2026-08-10): the option, its
+// effect on the wizard and its survival through create → list → results ARE
+// asserted below, because none of that needs a board to be played. What ends
+// the board — the freeze at the close of the auction, the felt refusing to
+// invite a card (in a practice replay as much as in the scored attempt), the
+// contract-vs-BEN figures with real contracts in them, and how a finished
+// auction-only line reads in a comparison — is downstream of BEN and lives in
+// resultsView.test.ts, scoring.test.ts, lineModel.test.ts, challengeTable.test.ts
+// and challengeBaselines.test.ts instead.
 //
 // State: this spec sorts SECOND (after access.spec, which leaves the catalogue
 // at defaults) and shares the JSON stores with every later spec, so the one
@@ -46,6 +57,7 @@ const MODERATOR_NAME = "Paul Osei";
 /** Titles are shared across the serial tests below. */
 const IMPS_TITLE = "E2E spoiler-safe challenge";
 const ALWAYS_TITLE = "E2E live-standings challenge";
+const BIDDING_TITLE = "E2E bidding-only challenge";
 
 /** Sign a fresh cookie in (each block clears the prior dev user first). */
 async function switchUser(context: BrowserContext, devUserId: string): Promise<void> {
@@ -93,6 +105,8 @@ async function createChallenge(
     title: string;
     boards: number;
     scoring?: "IMPs" | "Matchpoints" | "Total points";
+    /** Pick the bidding-only format in 01 · Basics. */
+    biddingOnly?: boolean;
     standingsAlways?: boolean;
     invite?: readonly { name: string; moderator?: boolean }[];
   }>,
@@ -100,6 +114,10 @@ async function createChallenge(
   await page.goto("/bridge/challenges/new");
   await page.getByLabel("Title").fill(opts.title);
 
+  // Format before scoring: a bidding-only challenge is not scored against a
+  // field, so the scoring chips are not on the page at all once it is picked.
+  if (opts.biddingOnly)
+    await page.getByRole("button", { name: "Bidding only", exact: true }).click();
   if (opts.scoring)
     await page.getByRole("button", { name: opts.scoring, exact: true }).click();
 
@@ -132,6 +150,7 @@ async function createChallenge(
 
 let impsId = "";
 let alwaysId = "";
+let biddingId = "";
 
 test.describe("challenges", () => {
   test.afterAll(async ({ browser }) => {
@@ -345,6 +364,87 @@ test.describe("challenges", () => {
     await expect(cardLink(page, "E2E imported board").first()).toContainText(
       "board 1 of 1",
     );
+  });
+
+  test("bidding-only: the wizard offers it, and it survives the round trip", async ({
+    page,
+    context,
+  }) => {
+    await switchUser(context, CREATOR);
+    await page.goto("/bridge/challenges/new");
+
+    // The default is the v1 board, and the scoring question belongs to it.
+    await expect(page.getByRole("button", { name: "Bid & play", exact: true })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.getByRole("button", { name: "IMPs", exact: true })).toBeVisible();
+
+    await page.getByRole("button", { name: "Bidding only", exact: true }).click();
+    // Scoring is a question about a field of played boards. There is none, so
+    // the control is GONE rather than sitting there inert.
+    await expect(page.getByRole("button", { name: "IMPs", exact: true })).toHaveCount(0);
+    await expect(page.getByText(/The board ends when the auction ends/)).toBeVisible();
+
+    // The Review step and the draft rail both say which mode it is in.
+    await expect(
+      page.getByText(/Bidding only — the board ends with the auction/),
+    ).toBeVisible();
+    await expect(
+      page.getByText("Matched BEN's contract, board by board — no field scoring"),
+    ).toBeVisible();
+    await expect(page.getByText("BEN's own auction is the reference")).toBeVisible();
+
+    biddingId = await createChallenge(page, {
+      title: BIDDING_TITLE,
+      boards: 2,
+      biddingOnly: true,
+      invite: [{ name: INVITEE_NAME }],
+    });
+    const id = biddingId;
+
+    // Round trip: the stored record reads back as bidding-only, and the card
+    // names the format rather than a scoring mode it does not use.
+    const card = cardLink(page, BIDDING_TITLE).first();
+    await expect(card).toContainText("2 boards");
+    await expect(card).toContainText("Bidding only");
+    await expect(card).not.toContainText("IMPs vs datum");
+
+    // The creator is always a moderator, so the results are open to them (A2).
+    await page.goto(`/bridge/challenges/${id}/results`);
+    await expect(page.getByText("2 boards · Bidding only · by you")).toBeVisible();
+    await expect(page.getByText("Contract vs BEN")).toBeVisible();
+    await expect(page.getByText("Nobody has finished every board yet.")).toBeVisible();
+    // Nothing prints a score where there is none.
+    await expect(page.getByText("IMPs vs datum")).toHaveCount(0);
+
+    // A bidding-only board still refuses to start without BEN — the format
+    // changes what a board asks for, never the no-fallback rule (spec §2).
+    await page.goto("/bridge/challenges");
+    await cardLink(page, BIDDING_TITLE).first().click();
+    await page.waitForURL(/\/bridge\/challenges\?error=/);
+    await expect(
+      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
+    ).toBeVisible();
+  });
+
+  test("a practice replay opens nothing until the challenge is finished", async ({
+    page,
+    context,
+  }) => {
+    // The replay link itself needs a finished board, so it is out of reach here
+    // — but the door it points at is addressable, and it must refuse. Nothing
+    // is started, in either format: a practice copy sitting beside a live
+    // attempt on the same deal is the spoiler the whole-challenge unlock
+    // forbids, and this is the guard that stops it.
+    await switchUser(context, CREATOR);
+    await page.goto(`/bridge/challenges/${biddingId}/play?board=1&practice=1`);
+    await page.waitForURL(new RegExp(`/bridge/challenges/${biddingId}/results$`));
+    await expect(page.getByText("2 boards · Bidding only · by you")).toBeVisible();
+
+    // …and the attempt was not burned: board 1 is still there to be started.
+    await page.goto("/bridge/challenges");
+    await expect(cardLink(page, BIDDING_TITLE).first()).toContainText("board 1 of 2");
   });
 
   test("phone viewport: the list and the results fit 390px", async ({ page, context }) => {

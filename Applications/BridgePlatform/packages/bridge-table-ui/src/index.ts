@@ -46,6 +46,9 @@ export type { CoachPanelProps, CoachLine, CoachAction } from "./CoachPanel";
 // Props-driven like every leaf above: no data fetching, no server imports and
 // no dependency on the challenges data package — the page layer adapts whatever
 // its store returns into these plain shapes.
+export { TableHostProvider, useTableHost, DEFAULT_TABLE_HOST } from "./host";
+export type { TableHost } from "./host";
+
 export { ChallengeStrip, CHALLENGE_STRIP_HEIGHT } from "./ChallengeStrip";
 export type { ChallengeStripProps } from "./ChallengeStrip";
 

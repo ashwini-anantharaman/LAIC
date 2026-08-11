@@ -15,7 +15,8 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import type { Card, Seat } from "@bridge/events";
 import { bidAction, playCardAction } from "@/app/bridge/table/actions";
-import { PlayTable, type PlayTableProps } from "@bridge/table-ui";
+import NextLink from "next/link";
+import { PlayTable, TableHostProvider, type PlayTableProps } from "@bridge/table-ui";
 import {
   AUCTION_ADVICE_PENDING,
   coachActions,
@@ -84,7 +85,16 @@ export function LivePlayTable({
       }
     : {};
 
+  // The table family is framework-free; THIS app is the Next host, so it hands
+  // the leaves its Link and its router. Without this they fall back to plain
+  // <a> + location, which is right for an embed and wrong here.
   return (
+    <TableHostProvider
+      LinkComponent={NextLink}
+      navigate={(href, { replace }) =>
+        replace ? router.replace(href, { scroll: false }) : router.push(href)
+      }
+    >
     <PlayTable
       {...rest}
       {...coachProps}
@@ -94,5 +104,6 @@ export function LivePlayTable({
       onCall={(call) => run(bidAction, { call })}
       onPlay={(_seat: Seat, card: Card) => run(playCardAction, { suit: card.suit, rank: String(card.rank) })}
     />
+    </TableHostProvider>
   );
 }

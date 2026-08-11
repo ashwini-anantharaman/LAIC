@@ -2,7 +2,7 @@
   "name": "@bridge/table-ui",
   "version": "0.1.0",
   "private": true,
-  "description": "The play-table component family: PlayTable and the props-driven leaves it composes (SeatHand, SeatPlate, SeatDiagram, AuctionBox, TrickArea, ResultCard, SeatsPopup) plus the bidding pad, edge toolbar, settings menu and hand viewer. Client-only React with inline styles — mounted by both the live app and the component tester.",
+  "description": "The play-table component family: PlayTable and the props-driven leaves it composes (SeatHand, SeatPlate, SeatDiagram, AuctionBox, TrickArea, ResultCard, SeatsPopup) plus the bidding pad, edge toolbar, settings menu and hand viewer. Client-only React with inline styles \u2014 mounted by both the live app and the component tester.",
   "type": "module",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -14,7 +14,8 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:ds": "vite build && tsc -p tsconfig.build.json"
   },
   "dependencies": {
     "@bridge/events": "workspace:*",
@@ -29,6 +30,8 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5",
+    "@vitejs/plugin-react": "^4.3.4"
   }
 }

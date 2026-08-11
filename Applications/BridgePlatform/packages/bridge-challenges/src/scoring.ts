@@ -8,8 +8,15 @@
 // reference line whose figure is computed AGAINST the human field without
 // joining it (`benchmarkScore`), so a benchmark never moves a human's score.
 //
+// A BIDDING-ONLY challenge does not use any of that (see the last section of
+// this file). Its board ends with the auction, so there is no raw score to put
+// in a field at all: the result is the contract reached, measured against the
+// contract BEN reached on the same deal. Two different questions, two separate
+// functions — `challengeScores` is untouched by the new mode.
+//
 // Pure functions, no IO, no dates, no randomness.
 
+import type { Contract } from "@bridge/events";
 import type { ChallengeScoring } from "./types";
 
 // ── the IMP table ───────────────────────────────────────────────────────────
@@ -345,4 +352,183 @@ export function challengeScores(input: ChallengeScoresInput): ChallengeScores {
   const benTotal = benFigures.length ? combineBoardScores(mode, benFigures) : null;
 
   return { mode, boards, totals, standings, benTotal };
+}
+
+// ── bidding-only: the contract reached, beside BEN's ────────────────────────
+//
+// THE OWNER'S RULE (2026-08-10): the board ends when the auction ends, and the
+// result is the contract the learner reached next to the contract BEN reached
+// on the same deal. There is no play score, so nothing above this line applies
+// — a bidding-only challenge never builds a field, never takes a datum, never
+// matchpoints anything.
+//
+// A learner is NEVER told they are wrong. BEN's bidding system is not
+// necessarily the convention a lesson teaches, so the only claim this module
+// makes is factual: the two auctions arrived at the same contract, or they
+// arrived at different ones. `differed` is a statement about two auctions, not
+// a verdict on one of them, and every caller must keep that tone.
+
+/** A contract as reached. `null` = the board was passed out. */
+export type ReachedContract = Contract | null;
+
+/**
+ * The canonical comparison key: level, strain and doubling — **not** declarer.
+ *
+ * In a bidding-only board the learner bids ONE seat while BEN bids the other
+ * three, and the reference line bids all four; which of two partners ends up
+ * declarer therefore is not a decision the learner made, while the denomination
+ * and the level are. So the tally turns on the contract, and declarer is
+ * reported separately (`sameDeclarer`) for a surface that wants to say "from
+ * the other side". A passout is its own key, so two passouts match.
+ */
+export function contractKey(contract: ReachedContract | undefined): string {
+  if (contract === undefined) return "?";
+  if (contract === null) return "PASS";
+  return `${contract.level}${contract.strain}${contract.doubled}`;
+}
+
+/**
+ * Whether two auctions reached the same contract. An unknown contract (no BEN
+ * reference yet) matches nothing — not even another unknown.
+ */
+export function sameContractReached(
+  a: ReachedContract | undefined,
+  b: ReachedContract | undefined,
+): boolean {
+  if (a === undefined || b === undefined) return false;
+  return contractKey(a) === contractKey(b);
+}
+
+/** How one learner's auction stands beside BEN's. Never a judgement. */
+export type ContractVerdict =
+  /** The same contract as BEN's. */
+  | "matched"
+  /** A different contract from BEN's — a fact about two auctions, not a fault. */
+  | "differed"
+  /** BEN has no line on this board yet, so there is nothing to set it beside. */
+  | "unrated";
+
+/** One completed human auction on a board. */
+export interface PlayerContract {
+  userId: string;
+  contract: ReachedContract;
+}
+
+/** One board's completed human auctions, plus BEN's on the same deal. */
+export interface BoardContracts {
+  boardNo: number;
+  contracts: readonly PlayerContract[];
+  /**
+   * BEN's own contract on this deal. `undefined` = the full-BEN baseline is
+   * not ready, so the board is unrated for everyone; `null` = BEN passed it out.
+   */
+  benContract?: ReachedContract;
+}
+
+export interface BiddingBoardResult {
+  userId: string;
+  contract: ReachedContract;
+  verdict: ContractVerdict;
+  /** True when the contract also ended up in the same hand as BEN's. */
+  sameDeclarer: boolean;
+}
+
+export interface BiddingBoardScores {
+  boardNo: number;
+  /** BEN's contract, or undefined when there is no reference line yet. */
+  benContract: ReachedContract | undefined;
+  /** One entry per input auction, in input order. */
+  results: BiddingBoardResult[];
+  /**
+   * The userIds who reached BEN's contract — what the board-by-board grid
+   * highlights. The analogue of `boardLeaders`, on the displayed fact.
+   */
+  leaders: string[];
+}
+
+/**
+ * A player's bidding-only card. `total` is the matched count, so
+ * `rankStandings` ranks these exactly as it ranks any other total.
+ */
+export interface BiddingTotal extends PlayerTotal {
+  /** Boards where this player reached BEN's contract. */
+  matched: number;
+  /** Boards where a comparison could be made at all (BEN's line is ready). */
+  rated: number;
+}
+
+export interface BiddingScores {
+  boards: BiddingBoardScores[];
+  /** Everyone with at least one completed auction, ordered by matched count. */
+  totals: BiddingTotal[];
+  /**
+   * FINAL RANKS ONLY, the same rule the scored challenge uses: only players
+   * with a completed auction on every board appear. Ties share a rank.
+   */
+  standings: StandingRow[];
+}
+
+export interface BiddingScoresInput {
+  /** Every board of the challenge, whether or not anyone has bid it. */
+  boards: readonly BoardContracts[];
+}
+
+/**
+ * Score a whole bidding-only challenge: every board's auctions against BEN's,
+ * then the "matched BEN's contract on N of M boards" tally.
+ *
+ * BEN is the yardstick here, not a competitor, so there is no benchmark total
+ * to hand back — a BEN row would read "matched itself on every board".
+ */
+export function biddingScores(input: BiddingScoresInput): BiddingScores {
+  const boards: BiddingBoardScores[] = input.boards.map((b) => {
+    const results = b.contracts.map<BiddingBoardResult>((c) => ({
+      userId: c.userId,
+      contract: c.contract,
+      verdict:
+        b.benContract === undefined
+          ? "unrated"
+          : sameContractReached(c.contract, b.benContract)
+            ? "matched"
+            : "differed",
+      sameDeclarer:
+        b.benContract != null && c.contract != null
+          ? c.contract.declarer === b.benContract.declarer
+          : // Two passouts have no declarer to differ over; an unknown or
+            // one-sided pair has nothing to say.
+            b.benContract === null && c.contract === null,
+    }));
+    return {
+      boardNo: b.boardNo,
+      benContract: b.benContract,
+      results,
+      leaders: results.filter((r) => r.verdict === "matched").map((r) => r.userId),
+    };
+  });
+
+  const tally = new Map<string, { matched: number; rated: number; bid: number }>();
+  for (const board of boards) {
+    for (const result of board.results) {
+      const row = tally.get(result.userId) ?? { matched: 0, rated: 0, bid: 0 };
+      row.bid += 1;
+      if (result.verdict !== "unrated") row.rated += 1;
+      if (result.verdict === "matched") row.matched += 1;
+      tally.set(result.userId, row);
+    }
+  }
+
+  const totals: BiddingTotal[] = [...tally.entries()]
+    .map(([userId, row]) => ({
+      userId,
+      total: row.matched,
+      matched: row.matched,
+      rated: row.rated,
+      boardsScored: row.bid,
+    }))
+    .sort((a, b) => b.total - a.total || a.userId.localeCompare(b.userId));
+
+  const boardCount = input.boards.length;
+  const standings = rankStandings(totals.filter((t) => t.boardsScored === boardCount));
+
+  return { boards, totals, standings };
 }

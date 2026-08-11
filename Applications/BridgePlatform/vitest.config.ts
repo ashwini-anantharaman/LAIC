@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Single root config: all workspace packages' tests run via `pnpm test` at the
@@ -18,4 +19,16 @@ export default defineConfig({
   // reaching for a global `React`. The automatic runtime is what Next uses in
   // the real build, so tests transform the same way the app does.
   esbuild: { jsx: "automatic" },
+  // `@/…` is the app's own tsconfig path (apps/bridge-web/tsconfig.json), and
+  // Next resolves it in the real build. Vitest reads no tsconfig paths, so
+  // without this any app module that uses the alias — or that imports one that
+  // does — is untestable: the import simply fails to resolve. Mirrors the
+  // tsconfig entry exactly; there is only one app.
+  resolve: {
+    // Keyed "@", not "@/": a string find only matches `id === find` or
+    // `id.startsWith(find + "/")`, so the trailing-slash key could never
+    // match "@/lib/…" and the alias silently did nothing — every test that
+    // traversed an app-aliased import failed with "Failed to load url @/…".
+    alias: { "@": fileURLToPath(new URL("./apps/bridge-web", import.meta.url)) },
+  },
 });

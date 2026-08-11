@@ -7,10 +7,16 @@
 // every ordinary table, and null again when the challenge store is unreachable:
 // a challenge read must never take the table down.
 //
+// It also answers the same question for a PRACTICE replay, which has no chrome
+// and no play record but is still a board of this challenge's format —
+// `practiceIsBiddingOnly`, below.
+//
 // It is also where a challenge board's COMPLETION is noticed. The freeze runs
-// here, on the render that first sees `phase === "complete"` — the same lazy
-// reconcile as assignments — and the frozen play IS the sequential pointer, so
+// here, on the render that first sees the board run out — the last trick
+// resolved, or, in a BIDDING-ONLY challenge, the auction closed — the same lazy
+// reconcile as assignments; and the frozen play IS the sequential pointer, so
 // the next entry lands on the next board with no separate cursor to keep true.
+// `challengeBoardIsOver` (play/entry.ts) is the one place that rule is written.
 //
 // The standings the overlay shows are built by the RESULTS view model, not by a
 // second adapter: a viewer who opens the overlay mid-board and then walks to
@@ -19,7 +25,7 @@
 //
 // SERVER-ONLY.
 
-import type { ChallengeBoard, ChallengePlay } from "@bridge/challenges";
+import { isBiddingOnly, type ChallengeBoard, type ChallengePlay } from "@bridge/challenges";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import type { SessionView } from "@bridge/sessions";
 import type {
@@ -29,12 +35,16 @@ import type {
   OnwardStep,
 } from "@bridge/table-ui";
 import { onwardFromBoard } from "@bridge/table-ui";
-import { freezeChallengePlay } from "@/app/bridge/challenges/[id]/play/entry";
+import {
+  challengeBoardIsOver,
+  freezeChallengePlay,
+} from "@/app/bridge/challenges/[id]/play/entry";
 import { buildResultsView } from "@/app/bridge/challenges/[id]/results/resultsView";
 import { canUse } from "@/lib/access";
 import {
   challengeStore,
   challengeViewerAccess,
+  getChallenge,
   getChallengeBoard,
   listChallengeBaselines,
   listChallengeBoards,
@@ -49,6 +59,13 @@ export interface ChallengeTableContext {
   boardNo: number;
   /** Carries `controlOverrides` — the exception layer over the catalogue. */
   board: ChallengeBoard;
+  /**
+   * The board ends with the auction — no card is legal, no robot steps, and
+   * the felt shows its result the moment the last pass lands. True from the
+   * challenge's format alone, NOT from the freeze: if the freeze failed the
+   * table must still refuse to play on.
+   */
+  biddingOnly: boolean;
   /** The strip above the top toolbar; the host binds `onResults`. */
   strip: Omit<ChallengeStripProps, "onResults">;
   /** Fed straight to the overlay's <Leaderboard>. Empty while results are locked. */
@@ -61,6 +78,31 @@ export interface ChallengeTableContext {
   done: boolean;
   /** Where the done bar sends you: the next board, or the results. */
   onward: OnwardStep;
+}
+
+/**
+ * DOES THIS UNSCORED REPLAY END WITH THE AUCTION? (owner, 2026-08-10.)
+ *
+ * A practice replay wears no challenge chrome — no strip, no Results button, no
+ * control overrides — and that is exactly what makes it practice (spec §2,
+ * "Attempts"). But the chrome is not what a board ASKS FOR: the format is, and
+ * it belongs to the challenge, not to the decoration. A bidding-only board that
+ * could be played out here would set the learner a different exercise from the
+ * one they were given, silently, on the same deal.
+ *
+ * `challengeTableContext` cannot answer this — a practice sitting deliberately
+ * writes no play record, so the reverse lookup finds nothing — so the answer
+ * comes from the SESSION'S OWN STAMP, which every challenge sitting carries.
+ * False for every ordinary table and for a scored challenge board, whose format
+ * arrives on the chrome instead.
+ */
+export async function practiceIsBiddingOnly(view: SessionView): Promise<boolean> {
+  const stamp = view.record.challenge;
+  if (!stamp?.practice) return false;
+  // Degrades to `false` on an unreadable challenge, like every other read here:
+  // nothing is scored on a practice board, so the worst case is an ordinary
+  // table — never a broken one.
+  return isBiddingOnly((await getChallenge(stamp.challengeId)) ?? {});
 }
 
 /** The access catalogue's answer for every control the table gates on. */
@@ -105,15 +147,23 @@ export async function challengeTableContext(
   }
   if (!play) return null;
 
-  // COMPLETION: the last trick has resolved, so freeze the snapshot + rawScore
-  // into the play record. This also advances the pointer — `nextBoardNo` is the
-  // first board without a completed play.
-  if (play.status === "in_progress" && view.state.phase === "complete") {
+  const challengeId = play.challengeId;
+  const boardNo = play.boardNo;
+
+  // The format first, because it decides when this board is OVER. Reading the
+  // challenge here is safe ahead of the freeze — the freeze never touches the
+  // challenge record, and `getChallenge` is the same request-cached reader
+  // `challengeViewerAccess` will use below.
+  const biddingOnly = isBiddingOnly((await getChallenge(challengeId)) ?? {});
+
+  // COMPLETION: the board has run out — the last trick resolved, or (bidding
+  // only) the auction closed — so freeze the snapshot into the play record.
+  // This also advances the pointer: `nextBoardNo` is the first board without a
+  // completed play.
+  if (play.status === "in_progress" && challengeBoardIsOver(view.state.phase, biddingOnly)) {
     play = await freezeChallengePlay(play);
   }
 
-  const challengeId = play.challengeId;
-  const boardNo = play.boardNo;
   const [access, board] = await Promise.all([
     challengeViewerAccess(challengeId, userId),
     getChallengeBoard(challengeId, boardNo),
@@ -146,6 +196,7 @@ export async function challengeTableContext(
       challengeId,
       boardNo,
       board,
+      biddingOnly,
       strip,
       subtitle: challenge.title,
       standings: { rows: [], scoringLabel: "" },
@@ -183,6 +234,7 @@ export async function challengeTableContext(
     challengeId,
     boardNo,
     board,
+    biddingOnly,
     strip,
     subtitle: results.subtitle,
     standings: {

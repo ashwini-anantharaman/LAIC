@@ -33,7 +33,7 @@ import { CoachDock, type CoachPanelData } from "@/components/table/play/CoachPan
 import { patchAppearanceAction } from "./actions";
 import { ChallengeTableChrome } from "./ChallengeTableChrome";
 import { applyControlOverrides } from "./challengeControls";
-import { challengeTableContext, tableControlAccess } from "./challengeTable";
+import { challengeTableContext, practiceIsBiddingOnly, tableControlAccess } from "./challengeTable";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -52,7 +52,7 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -88,7 +88,11 @@ export default async function PlayTablePage({
     fanRadius: appearance.fanRadius,
   };
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
+  // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
+  // without them. A LOOK, not a permission: every control they carry is still
+  // reachable from the ☰ menu, so this hides chrome, it never removes ability.
+  const showToolbars = bars !== "off";
 
   if (!viewResult.ok) {
     // EMBEDDED, a bare 404 is a dead end inside the host app's frame — and a
@@ -100,7 +104,12 @@ export default async function PlayTablePage({
   }
   const view = viewResult.v;
   const { record, state, actingSeat, actingIsHuman } = view;
-  const complete = state.phase === "complete";
+  // PLAYED OUT, narrowly — the engine's own "complete" phase. Distinct from
+  // `boardOver` below (which a bidding-only board reaches with the auction)
+  // and from the later `complete` alias main's result card reads; the two
+  // gates here want the strict sense: an assignment delivers when the play
+  // finished, and the hands-record peek opens only on a truly played board.
+  const playedOut = state.phase === "complete";
 
   // THE COMPLETION EVENT. If this board belongs to an assignment, finishing it
   // is what sends the play to its reviewers — and this is the moment we know it
@@ -109,7 +118,7 @@ export default async function PlayTablePage({
   //
   // after() so the player waits on nothing: the response is already sent, and
   // delivery is idempotent, so a repeat render costs one cheap read.
-  if (complete) {
+  if (playedOut) {
     after(async () => {
       const { deliverForSession } = await import("@/lib/assignments");
       await deliverForSession(sessionId);
@@ -121,6 +130,23 @@ export default async function PlayTablePage({
   // disturbed by anything below. This is also where a finished challenge board
   // is frozen into its play record.
   const challenge = await challengeTableContext(view, context);
+
+  // BIDDING-ONLY (owner, 2026-08-10): the board ends when the auction ends.
+  // The engine still moves to `play` and puts the opening leader on turn, but
+  // in this format that phase belongs to nobody — so from here down the board
+  // is treated as FINISHED. Derived from the challenge's format and the phase,
+  // never from the freeze: a freeze that failed to store must not leave the
+  // robots free to start playing the board out.
+  //
+  // A PRACTICE REPLAY IS THE SAME BOARD. It carries no chrome, so the format
+  // does not arrive on `challenge`; it comes off the session's own stamp
+  // instead. The alternative — cards in practice on a board the challenge
+  // never asked anyone to play — would be a different exercise wearing the
+  // same deal.
+  const biddingOnly = challenge ? challenge.biddingOnly : await practiceIsBiddingOnly(view);
+  const auctionWasTheBoard = biddingOnly && state.phase !== "auction";
+  /** The board has nothing left to do — either phase, either format. */
+  const boardOver = state.phase === "complete" || auctionWasTheBoard;
 
   // Access catalogue first, then the board's controlOverrides laid OVER it in
   // BOTH directions (spec §7): a control the creator hid is ABSENT from the
@@ -148,7 +174,7 @@ export default async function PlayTablePage({
   // (canSee below already opens every hand); My Games' "View board" links
   // straight here. A CHALLENGE board keeps the gate even when complete — its
   // controlOverrides govern the capability itself.
-  const handsView = viewParam === "hands" && (canHandsView || (complete && !challenge));
+  const handsView = viewParam === "hands" && (canHandsView || (playedOut && !challenge));
 
   const mySeat =
     (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
@@ -167,10 +193,14 @@ export default async function PlayTablePage({
   const showAll = (handsParam === "all" || (handsParam !== "mine" && !mySeat)) && canSeeAllHands;
   // Dummy spreads only after the opening lead — real-bridge timing.
   const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
+  // A finished board is face-up — and a bidding-only board is finished the
+  // moment the auction is, so the four hands open then, exactly as they would
+  // after the thirteenth trick.
   const canSee = (seat: Seat) =>
-    showAll || seat === mySeat || (seat === dummy && leadMade) || state.phase === "complete";
+    showAll || seat === mySeat || (seat === dummy && leadMade) || boardOver;
 
   const myTurn =
+    !boardOver &&
     actingIsHuman &&
     record.seats[actingSeat].kind === "human" &&
     (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
@@ -188,7 +218,15 @@ export default async function PlayTablePage({
   const coachAid = showCoach ? thinkAid(coachState, mySeat) : null;
   const coachData: CoachData | undefined = showCoach
     ? {
-        phase: state.phase === "auction" ? "auction" : state.phase === "play" ? "play" : "other",
+        // A finished board asks nothing, so the coach offers no question —
+        // including a bidding-only board, which never has a card to play.
+        phase: boardOver
+          ? "other"
+          : state.phase === "auction"
+            ? "auction"
+            : state.phase === "play"
+              ? "play"
+              : "other",
         active: myTurn,
         looking: coachLooking,
         think: coachAid,
@@ -376,9 +414,12 @@ export default async function PlayTablePage({
       <AutoAdvance
         key={paused ?? "run"}
         sessionId={sessionId}
-        active={!actingIsHuman && state.phase !== "complete"}
+        // `boardOver`, not the phase: on a bidding-only board the robots must
+        // not step past the last pass, or they would play out a board nobody
+        // is scored on and burn BEN calls doing it.
+        active={!actingIsHuman && !boardOver}
         seq={record.events.length}
-        complete={state.phase === "complete"}
+        complete={boardOver}
         beatMs={beatMs}
         initialPaused={Boolean(paused)}
         variant="rail"
@@ -388,7 +429,10 @@ export default async function PlayTablePage({
         // needs the same thinking/retry honesty.
         strictBen={Boolean(record.challenge)}
       />
-      {canUndo && record.events.length > 0 && state.phase !== "complete" && (
+      {/* Undo is off by default in challenges, but a creator may force it on.
+          It still stops at the end of the board — on a bidding-only board that
+          is the end of the auction, whose last pass is already frozen. */}
+      {canUndo && record.events.length > 0 && !boardOver && (
         <form action={undoAction} style={{ display: "flex" }}>
           <input type="hidden" name="sessionId" value={sessionId} />
           <button
@@ -407,6 +451,7 @@ export default async function PlayTablePage({
   // The hand-record view (HandViewer design): all four panels big, the full
   // auction, and honest info panels. Mid-play it shows the REMAINING cards
   // (and respects visibility); a completed board shows the original deal.
+  const complete = boardOver;
   const viewerHands = complete
     ? { N: originalHand(state, "N"), E: originalHand(state, "E"), S: originalHand(state, "S"), W: originalHand(state, "W") }
     : state.hands;
@@ -415,6 +460,19 @@ export default async function PlayTablePage({
     : state.phase === "auction"
       ? "Auction in progress"
       : "Passed out";
+
+  // THE RESULT CARD on a bidding-only board. There is no score and no trick
+  // tally, so the card leads with the contract that was reached and says why
+  // nothing follows it — rather than printing "NS 0 · EW 0", which would read
+  // as a board played badly instead of a board never played.
+  const resultLine = score ? resultLabel(score) : auctionWasTheBoard ? contractText : "";
+  const resultScore = score
+    ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
+    : "";
+  const resultDetail = auctionWasTheBoard
+    ? "Bidding only · the auction was the board"
+    : undefined;
+
   const handViewer = (
     <HandViewer
       boardLabel={boardNumber}
@@ -483,7 +541,17 @@ export default async function PlayTablePage({
     >
       <LivePlayTable
         sessionId={sessionId}
-        state={{ ...state, dealer: record.board.dealer, vul: state.vul }}
+        // The table is shown a COMPLETE board once the auction was the board:
+        // PlayTable derives all its "is there anything left to do" chrome from
+        // the phase, so this is what puts the result card on the felt, folds the
+        // bid tray away, drops the turn highlight and stops any card lifting to
+        // a tap. It is not a fiction — in this format the board really is over.
+        state={{
+          ...state,
+          ...(auctionWasTheBoard ? { phase: "complete" as const } : {}),
+          dealer: record.board.dealer,
+          vul: state.vul,
+        }}
         seats={{
           N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
           E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
@@ -501,8 +569,17 @@ export default async function PlayTablePage({
         bootNeutral={embedded}
         auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
         confirmBids={confirmBids}
-        resultLine={score ? resultLabel(score) : ""}
-        resultScore={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+        resultLine={resultLine}
+        resultScore={resultScore}
+        resultDetail={resultDetail}
+        // A finished challenge board draws its way onward ON the canvas — the
+        // result card in the centre, not a band stacked around the table.
+        completedAction={
+          challenge?.done
+            ? { label: `${challenge.onward.label} →`, href: challenge.onward.href }
+            : undefined
+        }
+        completedNote={challenge?.done ? challenge.onward.note : undefined}
         controlsExtra={canStepControls ? controlsAt(1) : undefined}
         controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
         railExtra={seatsPanel}
@@ -513,6 +590,7 @@ export default async function PlayTablePage({
         // the position). The desktop platform keeps its chips.
         hideTopBar={embedded}
         appearance={resolvedAppearance}
+        showToolbars={showToolbars}
         showCoach={showCoach}
         coach={coachData}
         {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
@@ -520,11 +598,30 @@ export default async function PlayTablePage({
     </div>
   );
 
+  // With no toolbars there is no controlsExtra, and AutoAdvance lives inside it
+  // — so the engine that steps the robot seats would never mount and the board
+  // would sit there looking frozen. Mount it headless instead: same driver, no
+  // transport buttons. Exactly one instance either way; never both.
+  const headlessDriver = showToolbars ? null : (
+    <AutoAdvance
+      key={paused ?? "run"}
+      sessionId={sessionId}
+      active={!actingIsHuman && !boardOver}
+      seq={record.events.length}
+      complete={boardOver}
+      beatMs={beatMs}
+      initialPaused={Boolean(paused)}
+      variant="headless"
+      strictBen={Boolean(record.challenge)}
+    />
+  );
+
   return (
     <div className="mx-auto w-full">
       {/* The host app's back arrow asks this page's state before deciding
           whether leaving needs a save-or-discard prompt. */}
       <EmbedTableState sessionId={sessionId} phase={state.phase} />
+      {headlessDriver}
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}

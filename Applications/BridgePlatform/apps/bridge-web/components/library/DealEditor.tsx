@@ -207,7 +207,24 @@ export function DealEditor({
   );
 
   return (
-    <div className="space-y-4" style={app ? { fontFamily: APP_FONT } : undefined}>
+    // The whole editor carries its own verdict: red until all four hands hold
+    // exactly 13, green the moment they do. `complete` is the same value that
+    // gates the submit button, so the frame can never disagree with it. The
+    // per-seat n/13 counts stay the detail — they say WHICH hand is short —
+    // and the label repeats the state in words, because a colour alone is not
+    // a signal everyone receives. (The app embed keeps its own font on top.)
+    <div
+      role="group"
+      aria-label={
+        complete
+          ? "Deal editor — all four hands hold 13 cards"
+          : "Deal editor — hands are not yet 13 cards each"
+      }
+      className={`space-y-4 rounded-xl border-2 p-3 transition-colors ${
+        complete ? "border-emerald-500" : "border-rose-400"
+      }`}
+      style={app ? { fontFamily: APP_FONT } : undefined}
+    >
       {/* Prefill from LIN/PBN */}
       <details
         className={app ? "rounded-xl border border-[#e0d7c2] bg-white" : "rounded-lg border border-neutral-200"}

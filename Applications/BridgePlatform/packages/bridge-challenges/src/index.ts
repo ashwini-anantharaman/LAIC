@@ -7,6 +7,7 @@
 
 export * from "./types";
 export * from "./scoring";
+export * from "./format";
 
 import type {
   BaselineKey,
