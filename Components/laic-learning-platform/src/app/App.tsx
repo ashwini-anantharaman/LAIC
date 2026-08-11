@@ -34,6 +34,8 @@ import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
   overwriteVersion as storeOverwriteVersion,
+  getVersion,
+  objectFromVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -112,6 +114,11 @@ export interface AppState {
     objectId: string,
     versionId: string,
     notes?: string,
+  ) => { ok: boolean; version?: Version; error?: string };
+  /** Roll the object's content back to a version (history is left untouched). */
+  restoreObjectVersion: (
+    objectId: string,
+    versionId: string,
   ) => { ok: boolean; version?: Version; error?: string };
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
@@ -635,6 +642,34 @@ function StudioApp() {
     return storeOverwriteVersion(ownerId, versionId, obj, obj.ownerName || user?.name || 'You', notes);
   }, []);
 
+  /**
+   * Roll the live object back to a version's snapshot.
+   *
+   * Restoring is a content change, not a history event: it writes the object
+   * and leaves the version list exactly as it was, so the version you restored
+   * from is still sitting there to restore again. Commit the restored state
+   * with Submit as… if you want it recorded.
+   */
+  const restoreObjectVersion = useCallback((objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+    if (!version.snapshot) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to restore.` };
+    }
+    const restored = objectFromVersion(base, version);
+    addObject({
+      ...restored,
+      // Keep the object where it lives now; the snapshot predates any moves.
+      collectionIds: objectCollectionIds(base),
+      status: base.status,
+    } as any, { version: 'skip' });
+    return { ok: true, version };
+  }, [addObject]);
+
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
     return storeSetVersionLocked(activeUserIdRef.current, versionId, locked);
   }, []);
@@ -800,7 +835,8 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, overwriteObjectVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion,
+    lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,

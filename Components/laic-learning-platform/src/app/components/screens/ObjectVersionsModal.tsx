@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, GitBranch, Lock, LockOpen, Trash2, X } from 'lucide-react';
+import { Eye, GitBranch, Lock, LockOpen, RotateCcw, Trash2, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
@@ -18,6 +18,7 @@ export function ObjectVersionsModal({
     objectVersionsTick,
     listObjectVersions,
     saveObjectAsNewVersion,
+    restoreObjectVersion,
     lockObjectVersion,
     deleteObjectVersion,
     openReaderVersion,
@@ -51,6 +52,26 @@ export function ObjectVersionsModal({
     }
     setNotes('');
     flash(`Saved v${v.versionNumber}`);
+  };
+
+  const onRestore = async (v: Version) => {
+    setError(null);
+    const ok = await confirm({
+      title: `Restore to v${v.versionNumber}?`,
+      description:
+        `“${object.title}” goes back to the content saved in v${v.versionNumber}`
+        + `${v.createdAt ? ` on ${v.createdAt}` : ''}. Your current unsaved content is replaced, and no version is added —`
+        + ' submit afterwards if you want the restored state recorded.',
+      confirmLabel: `Restore to v${v.versionNumber}`,
+      destructive: true,
+    });
+    if (!ok) return;
+    const res = restoreObjectVersion(object.id, v.id);
+    if (!res.ok) {
+      setError(res.error || 'Could not restore that version.');
+      return;
+    }
+    flash(`Restored to v${v.versionNumber}`);
   };
 
   const onToggleLock = (v: Version) => {
@@ -191,6 +212,18 @@ export function ObjectVersionsModal({
                 ) : null}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void onRestore(v)}
+                  disabled={!v.snapshot}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                  style={{ fontSize: 11.5, fontWeight: 650, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)' }}
+                  title={v.snapshot
+                    ? `Restore the content to v${v.versionNumber}`
+                    : 'This version has no saved content to restore'}
+                >
+                  <RotateCcw size={12} /> Restore to v{v.versionNumber}
+                </button>
                 <button
                   type="button"
                   onClick={() => { onClose(); openReaderVersion(object.id, v.id); }}
