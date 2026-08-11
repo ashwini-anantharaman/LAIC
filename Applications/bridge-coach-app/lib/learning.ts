@@ -1,3 +1,4 @@
+import { fetchLiveLearningObjects } from "./learning-live";
 import { fetchLearningObjects, LearningObject } from "./nexus";
 
 /**
@@ -44,10 +45,23 @@ export async function getLearningObjects(
 ): Promise<LearningObject[]> {
   const key = `${token}::${opts.programId ?? ""}`;
   if (!cached || cached.token !== key || opts.refresh) {
-    const objects = await fetchLearningObjects(token, opts.programId);
+    // Straight from Supabase first — that path can also stream updates, so
+    // preferring it keeps one source behind both the list and the live channel.
+    // It returns null for "unavailable" (unconfigured, errored, or RLS gave
+    // nothing), which is NOT the same as "the org has nothing": falling back on
+    // null is what stops a working tab going blank.
+    const live = await fetchLiveLearningObjects(token);
+    const objects = live ?? (await fetchLearningObjects(token, opts.programId));
     cached = { token: key, objects: objects.filter(isVisibleToLearners) };
   }
   return cached.objects;
+}
+
+/** Replace the cache with rows a live update brought in. */
+export function primeLearningCache(token: string, programId: string | undefined, objects: LearningObject[]): LearningObject[] {
+  const filtered = objects.filter(isVisibleToLearners);
+  cached = { token: `${token}::${programId ?? ""}`, objects: filtered };
+  return filtered;
 }
 
 export function getCachedObject(id: string): LearningObject | null {

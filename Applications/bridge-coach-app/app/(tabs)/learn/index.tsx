@@ -30,7 +30,8 @@ import {
 import { useAuth } from "../../../lib/auth-context";
 import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
-import { getLearningObjects } from "../../../lib/learning";
+import { getLearningObjects, primeLearningCache } from "../../../lib/learning";
+import { subscribeToLiveLearning } from "../../../lib/learning-live";
 import { LearningObject, NexusError } from "../../../lib/nexus";
 
 /**
@@ -130,6 +131,24 @@ export default function LearnScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  /**
+   * Live updates: an author publishes elsewhere and this list changes under us.
+   *
+   * The subscription hands back the whole fresh list (see subscribeToLiveLearning),
+   * which is primed into the shared cache so the reader screen and a later focus
+   * both see the same rows rather than the tab holding a private newer copy.
+   *
+   * Does nothing when the direct path is unavailable — the foreground and focus
+   * refetches below are then the only liveness, which is the behaviour that shipped
+   * before this and remains the fallback.
+   */
+  useEffect(() => {
+    if (!token) return;
+    return subscribeToLiveLearning(token, (objects) => {
+      setCards(primeLearningCache(token, clubId ?? undefined, objects));
+    });
+  }, [token, clubId]);
 
   /**
    * Refetch when the app comes back to the foreground.

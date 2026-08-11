@@ -100,3 +100,26 @@ export const GATE_SLUG = "student-signup";
 
 /** The Bridge Program id (fixed — the app is published for this program). */
 export const PROGRAM_ID = "eef9985b-b85f-4eeb-bd1e-bcc1f66b0f83";
+
+/**
+ * Direct Supabase reads for published learning content.
+ *
+ * The ANON key belongs in a client: it identifies the project and grants nothing on
+ * its own — the row filter comes from the signed-in user's JWT, which RLS reads. A
+ * service_role key must never appear here or anywhere else in the app.
+ *
+ * Absent values simply disable the direct path; the app then reads learning content
+ * through the Nexus API exactly as before.
+ */
+export const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "") || null;
+export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? null;
+
+/**
+ * The organisation whose published content the Learn tab reads directly.
+ *
+ * Hardcoded to the owner's org for now, like PROGRAM_ID: RLS scopes by the CALLER's
+ * org regardless, so this is a filter rather than a permission — a member of another
+ * org would get nothing back even if this named theirs.
+ */
+export const LEARNING_ORG_ID =
+  process.env.EXPO_PUBLIC_LEARNING_ORG_ID ?? "c2a81633-c9fa-46d4-962b-f21457137778";
