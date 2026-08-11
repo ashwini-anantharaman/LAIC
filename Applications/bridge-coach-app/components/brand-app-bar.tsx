@@ -160,7 +160,7 @@ export function BrandAppBar({
 
       {showWordmark ? (
         <View style={styles.wordmarkRow}>
-          <Text style={styles.wordmark}>Bridge Bird</Text>
+          <Text style={styles.wordmark}>BridgeBird</Text>
           <SvgXml xml={ICON_BIRD_GLYPH} width={21} height={16.99} />
         </View>
       ) : null}

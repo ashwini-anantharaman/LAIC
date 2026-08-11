@@ -46,7 +46,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Bridge Bird uses your photos so you can set a profile picture, a club header, and send pictures in a club chat.",
+          "photosPermission": "BridgeBird uses your photos so you can set a profile picture, a club header, and send pictures in a club chat.",
           "cameraPermission": false,
           "microphonePermission": false
         }

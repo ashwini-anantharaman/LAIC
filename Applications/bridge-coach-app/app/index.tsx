@@ -161,7 +161,7 @@ export default function LandingScreen() {
           style={[styles.wordmark, { top: WORDMARK.top * s, fontSize: WORDMARK.size * s }]}
           numberOfLines={1}
         >
-          Bridge Bird
+          BridgeBird
         </Text>
 
         <StackedButton
