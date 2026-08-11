@@ -684,8 +684,13 @@ export function CoachSheet({
         </div>
 
         {/* ── the five screens: Now, Hints and Tell face forward; Play and
-            Auction face back. Five pills outgrow a phone's width, so the row
-            scrolls sideways rather than shrinking the pills below a thumb. ── */}
+            Auction face back. The forward three wear ICONS (owner direction
+            2026-08-11): a speech bubble carrying an eye (what's in front of
+            you), a bulb (a nudge), and a check (the answer) — the coach's
+            three voices, at a glance. Play and Auction keep their words;
+            they are history, not modes of help, and five pictograms is a
+            puzzle where three is a language. The row still scrolls sideways
+            rather than shrinking the pills below a thumb. ── */}
         <div
           style={{
             flex: "none", display: "flex", gap: 6, padding: "10px 14px 0",
@@ -694,29 +699,33 @@ export function CoachSheet({
         >
           {(
             [
-              ["now", "Now"],
-              ["hints", "Hints"],
-              ["tell", "Tell"],
-              ["play", "Play"],
-              ["auction", "Auction"],
+              ["now", "Now", true],
+              ["hints", "Hints", true],
+              ["tell", "Tell", true],
+              ["play", "Play", false],
+              ["auction", "Auction", false],
             ] as const
-          ).map(([v, label]) => {
+          ).map(([v, label, iconed]) => {
             const on = view === v;
             return (
               <button
                 key={v}
                 type="button"
                 aria-pressed={on}
+                aria-label={label}
+                title={label}
                 onClick={() => setView(v)}
                 style={{
-                  flex: "none", minHeight: 30, padding: "4px 13px", borderRadius: 15,
+                  flex: "none", minHeight: 30, padding: iconed ? "3px 12px" : "4px 13px",
+                  borderRadius: 15,
                   background: on ? FELT_MID : "transparent",
                   borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
                   color: on ? "#fff" : "#8a8071", fontSize: 12, fontWeight: 700,
                   fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap",
+                  display: "flex", alignItems: "center", justifyContent: "center",
                 }}
               >
-                {label}
+                {iconed ? <TabGlyph kind={v as "now" | "hints" | "tell"} /> : label}
               </button>
             );
           })}
@@ -949,6 +958,58 @@ export function CoachSheet({
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * The forward tabs' pictograms (owner-supplied concept, restyled to the
+ * app's own theme): a speech bubble — the coach speaking — carrying the
+ * screen's symbol.
+ *   now    an eye — what the coach is looking at with you
+ *   hints  a bulb — a nudge, not the answer
+ *   tell   a check — the answer itself
+ * MONOCHROME IN currentColor, deliberately: the icons wear exactly what the
+ * text labels wore — the muted ink on cream when idle, white on the brand
+ * green when active — so the row introduces no hue the sheet doesn't already
+ * speak (the reference art's leaf green was nobody's palette here).
+ */
+function TabGlyph({ kind }: Readonly<{ kind: "now" | "hints" | "tell" }>) {
+  return (
+    <svg
+      width={20}
+      height={20}
+      viewBox="0 0 24 24"
+      aria-hidden
+      style={{ display: "block" }}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {/* the bubble, tail bottom-left — as the reference art has it */}
+      <path d="M6 3h12a3.5 3.5 0 0 1 3.5 3.5v7.5a3.5 3.5 0 0 1-3.5 3.5h-7.4l-3.85 3.6v-3.6H6A3.5 3.5 0 0 1 2.5 14V6.5A3.5 3.5 0 0 1 6 3Z" />
+      {kind === "now" && (
+        <>
+          <path d="M6.2 10.4c1.1-2 3.2-3.4 5.8-3.4s4.7 1.4 5.8 3.4c-1.1 2-3.2 3.4-5.8 3.4s-4.7-1.4-5.8-3.4Z" />
+          <circle cx="12" cy="10.4" r="1.7" fill="currentColor" stroke="none" />
+        </>
+      )}
+      {kind === "hints" && (
+        <>
+          <path d="M12 6.6a3.3 3.3 0 0 1 1.5 6.24c-.25.14-.4.3-.4.52v.24h-2.2v-.24c0-.22-.15-.38-.4-.52A3.3 3.3 0 0 1 12 6.6Z" />
+          <path d="M10.9 15.5h2.2" />
+          <g strokeWidth="1.3">
+            <path d="M12 3.8v1" />
+            <path d="M7.4 5.7l.7.7" />
+            <path d="M16.6 5.7l-.7.7" />
+            <path d="M5.4 10.2h1" />
+            <path d="M17.6 10.2h1" />
+          </g>
+        </>
+      )}
+      {kind === "tell" && <path d="M7.8 10.8l3 3.1 5.4-6.3" strokeWidth="2.1" />}
+    </svg>
   );
 }
 
