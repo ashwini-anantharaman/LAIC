@@ -180,9 +180,13 @@ function trimForStorage(list: Version[], pass: number): Version[] {
   for (const v of order) {
     if (!v.snapshot) continue;
     if (pass < 2 && SNAPSHOT_PROTECTED(v, newest)) continue;
-    // Pass 2 is the last resort: only the published and locked versions keep
-    // their content, because losing those loses something irreplaceable.
-    if (pass >= 2 && (v.publishedAt || v.locked)) continue;
+    // Pass 2: published and locked versions keep their content, because losing
+    // those loses something irreplaceable.
+    if (pass === 2 && (v.publishedAt || v.locked)) continue;
+    // Pass 3 spares nothing. A version ROW with no content still tells an
+    // author it exists; refusing the write told them their history was empty —
+    // which is how a new tutorial ended up with no v1 to publish on a browser
+    // whose storage was already full.
     doomed.add(v.id);
     if (pass === 0) break;      // shed one at a time first — stay cheap
     if (pass === 1 && doomed.size >= 3) break;
@@ -197,16 +201,20 @@ function trimForStorage(list: Version[], pass: number): Version[] {
 
 function writeAll(userId: string, list: Version[]) {
   let candidate = list;
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    try {
-      localStorage.setItem(KEY(userId), JSON.stringify(candidate));
-      emit();
-      return;
-    } catch {
-      const pass = attempt < 8 ? 0 : attempt < 20 ? 1 : 2;
-      const slimmer = trimForStorage(candidate, pass);
-      if (slimmer === candidate) break; // nothing left to shed
-      candidate = slimmer;
+  // Escalate through the passes: a pass that finds nothing to shed must move
+  // to a less forgiving one, not give up. Stopping at the first unhelpful pass
+  // is what let a lone (and therefore fully protected) v1 fail to save at all.
+  for (let pass = 0; pass <= 3; pass += 1) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        localStorage.setItem(KEY(userId), JSON.stringify(candidate));
+        emit();
+        return;
+      } catch {
+        const slimmer = trimForStorage(candidate, pass);
+        if (slimmer === candidate) break; // this pass has nothing more to give
+        candidate = slimmer;
+      }
     }
   }
   // Even metadata-only did not fit. Leave whatever is already stored rather
