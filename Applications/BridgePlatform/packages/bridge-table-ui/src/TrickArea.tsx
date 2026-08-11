@@ -1,13 +1,15 @@
 "use client";
 
 // TrickArea — the current trick in the centre: real card faces on a cross
-// (wide + phone, scalable) or compact pills (stacked-narrow). Lifted verbatim
-// from PlayTable's trickCross() / trickPills closures. The host supplies the
-// plays and whose turn it is; this leaf draws the four positions.
+// (wide, scalable), a tight overlapping CLUSTER (phone), or compact pills
+// (stacked-narrow). Lifted verbatim from PlayTable's trickCross() / trickPills
+// closures. The host supplies the plays and whose turn it is; this leaf draws
+// the four positions.
 
 import type { Card, Seat } from "@bridge/events";
 import type { CSSProperties } from "react";
 import { RED, GLYPH, isRed, rankText } from "./tokens";
+import { DEAL, TableMotion } from "./motion";
 
 export interface TrickPlay {
   seat: Seat;
@@ -17,10 +19,38 @@ export interface TrickPlay {
 export interface TrickAreaProps {
   plays: readonly TrickPlay[];
   turn: Seat;
-  /** Cross scale (1, or 1.6 on phones). Ignored by the pill variant. */
+  /** Box scale (1, or up to CLUSTER_MAX_K on phones). Ignored by the pill variant. */
   scale?: number;
-  variant?: "cross" | "pill";
+  variant?: "cross" | "cluster" | "pill";
 }
+
+/**
+ * The CLUSTER geometry (phone tier). Same 56x80 card as the cross — the card is
+ * the one metric both layouts share, which is what keeps a phone trick card and
+ * a wide one recognisably the same object — but the four seats sit on a tight
+ * diamond that OVERLAPS instead of a 262px compass that spreads to the corners.
+ * dx/dy are the seat offsets; the box is exactly their union, so the whole
+ * cluster is `CLUSTER.w x CLUSTER.h` and scales as ONE unit like the cross.
+ */
+const CARD = { w: 56, h: 80 };
+const CLUSTER_DX = 34;
+const CLUSTER_DY = 19;
+export const CLUSTER = { w: CLUSTER_DX * 2 + CARD.w, h: CLUSTER_DY * 2 + CARD.h };
+/** Seat -> top-left inside the cluster box. N sits high, S low, W/E flank. */
+const CLUSTER_POS: Record<Seat, { left: number; top: number }> = {
+  N: { left: CLUSTER_DX, top: 0 },
+  W: { left: 0, top: CLUSTER_DY },
+  E: { left: CLUSTER_DX * 2, top: CLUSTER_DY },
+  S: { left: CLUSTER_DX, top: CLUSTER_DY * 2 },
+};
+/**
+ * Paint order is SPATIAL, not play order: left-to-right, top-to-bottom, so
+ * every card keeps its leftmost CLUSTER_DX px — the strip its index sits in —
+ * uncovered. Layering by play order instead let a later card land to the LEFT
+ * of an earlier one and bury the earlier one's rank, and it re-layered the pile
+ * on every play. Fixed order means the fan never reshuffles under the eye.
+ */
+const CLUSTER_ORDER: Seat[] = ["W", "N", "S", "E"];
 
 export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
@@ -41,6 +71,55 @@ export function TrickArea({ plays, turn, scale = 1, variant = "cross" }: Readonl
             </div>
           );
         })}
+      </div>
+    );
+  }
+
+  if (variant === "cluster") {
+    // Phone tier. Same ONE-BOX SCALE contract as the cross: the card metrics
+    // and the seat offsets are fixed integers and the WHOLE box is transformed,
+    // so the four cards can never desync in size. What changes is the geometry
+    // — the trick reads as one object in the middle of the felt rather than
+    // four cards pinned to the corners of a compass twice its size.
+    return (
+      <div style={{ width: CLUSTER.w * scale, height: CLUSTER.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <TableMotion />
+        <div style={{ position: "relative", width: CLUSTER.w, height: CLUSTER.h, flex: "none", transform: `scale(${scale})`, transformOrigin: "center center" }}>
+          {CLUSTER_ORDER.map((seat, z) => {
+            const play = plays.find((p) => p.seat === seat);
+            const pos = CLUSTER_POS[seat];
+            const onTurn = seat === turn;
+            const rank = play ? rankText(play.card.rank) : "";
+            return (
+              <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, zIndex: z + 1 }}>
+                {play ? (
+                  // Keyed on the card so a NEW card mounts (and deals in); a
+                  // re-render of the same card must not replay the animation.
+                  <span
+                    key={`${play.card.suit}${play.card.rank}`}
+                    data-testid="trick-card"
+                    className={DEAL}
+                    style={{ position: "relative", display: "block", width: CARD.w, height: CARD.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)" }}
+                  >
+                    {/* Bold face: a heavy rank with the pip directly beneath it,
+                        both pinned to the card's TOP-LEFT — that strip is the
+                        one the neighbouring card never covers, so every card in
+                        the pile still says what it is. "10" is the only
+                        two-glyph rank and takes the narrower size. */}
+                    <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
+                      <span style={{ fontSize: rank.length > 1 ? 26 : 38, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
+                      <span style={{ fontSize: 30, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
+                    </span>
+                  </span>
+                ) : (
+                  <span style={{ display: "flex", width: CARD.w, height: CARD.h, alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ display: "block", width: onTurn ? 24 : 0, height: 5, borderRadius: 3, background: onTurn ? "rgba(255,255,255,.62)" : "transparent" }} />
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   }

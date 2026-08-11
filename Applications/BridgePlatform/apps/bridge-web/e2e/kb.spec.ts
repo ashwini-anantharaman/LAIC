@@ -810,13 +810,20 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.getByRole("button", { name: /Confirm Pass/ }).click();
   await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
 
-  // PHONE tier (Mobile Table design): one vertical stack — big Pass button,
-  // and NO West/East seats anywhere (only your hand and, in play, dummy's).
+  // PHONE tier (Mobile Table design): one vertical stack, and NO West/East
+  // seats anywhere (only your hand and, in play, dummy's). Pass now sits INLINE
+  // with the levels (BBO's two-row phone bid box) rather than owning a row of
+  // its own, so what it promises is no longer "wide" but "the widest cell in
+  // the row, and no shorter than the levels beside it".
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/bridge/table2/${sid}?paused=1`);
   await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
   const narrowPass = await page.getByRole("button", { name: "Pass", exact: true }).boundingBox();
-  if (narrowPass) expect(narrowPass.width).toBeGreaterThan(80);
+  const narrowLevel = await page.getByRole("button", { name: "Level 1" }).boundingBox();
+  if (narrowPass && narrowLevel) {
+    expect(narrowPass.width).toBeGreaterThan(narrowLevel.width);
+    expect(narrowPass.height).toBeCloseTo(narrowLevel.height, 0);
+  }
   await expect(page.getByText(/House · Full/)).toHaveCount(0);
 
   // STACKED tier (Play Table narrow — Device Preview's split pane): portrait

@@ -39,7 +39,7 @@ import { SeatHand, type SeatHandMetrics } from "./SeatHand";
 import { SeatPlate } from "./SeatPlate";
 import { SeatDiagram } from "./SeatDiagram";
 import { AuctionBox, type AuctionBoxSizing } from "./AuctionBox";
-import { TrickArea } from "./TrickArea";
+import { TrickArea, CLUSTER } from "./TrickArea";
 import { ResultCard, type ResultCardAction } from "./ResultCard";
 import { SeatsPopup } from "./SeatsPopup";
 import { CoachPanel, type CoachLine, type CoachAction } from "./CoachPanel";
@@ -55,8 +55,15 @@ import {
 /** Wide stage; the mobile stack is 720 wide with a COMPUTED height. */
 const BASE_WIDE = { w: 1040, h: 678 };
 const MOBILE_W = 720;
-/** Mobile hand-card metrics (Mobile Table.dc.html). */
-const M_CARD = { w: 54, h: 128, rank: 42, glyph: 38, inset: 5, backW: 52 };
+/** Mobile hand-card metrics (Mobile Table.dc.html). Narrow, heavily overlapped
+    and BOLD: thirteen cards at a 48px pitch read as one held hand rather than a
+    strip spanning the whole stage, and the index is heavy enough to be read
+    through the stage scale. `overlap` only ever applies to the row layout. */
+const M_CARD: SeatHandMetrics & { backW: number } = {
+  w: 56, h: 128, rank: 44, glyph: 40, inset: 5, overlap: 8, weight: 800, backW: 52,
+};
+/** Pitch of the mobile row: what one more card adds to the hand's width. */
+const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
 
 // ---------------------------------------------------------------------------
 // Phone-tier band constants (Mobile Table.dc.html). The stack's content height
@@ -69,16 +76,33 @@ const BAR_BASE = 52;
 const TOUCH = 44;
 const DUMMY_LINE = 54;
 const HAND_H = { row: 172, fan: 238 };
-/** The tray is three touch-floored rows plus its padding, so like the bars its
-    authored height is a function of the scale, not a constant. */
-const TRAY_ROW_MIN = 52;
-/** Row gaps + the tray's own padding: 8/10 top/bottom and two 6px gaps. */
-const TRAY_PAD = 30;
-/** The tray's ceiling as a share of the table budget. At the reference phone
-    (390x844) the tray lands at 28%, so this does not bind there — it only bites
-    in a box shorter than the design's, which is exactly where the unyielding
-    version took a third of the table and left the auction shorter than itself. */
-const TRAY_MAX_SHARE = 0.3;
+/**
+ * The tray is TWO touch-floored rows plus its padding (BBO's phone bid box:
+ * `Pass 1 2 3 4 5 6 7` over `♣ ♦ ♥ ♠ NT` + the doubles), so like the bars its
+ * authored height is a function of the scale, not a constant. It used to be
+ * THREE rows and ate 28% of the table; folding Pass up into the levels row is
+ * the single biggest compactness win the phone tier had available.
+ */
+const TRAY_ROWS = 2;
+const TRAY_ROW_MIN = 40;
+/**
+ * The tray's OWN touch floor, in rendered px, lower than the bars' 44. A bid
+ * button is pressed from a hand already resting on the tray and it sits in a
+ * fixed 8-cell grid the thumb learns, where a toolbar chip is hunted for once;
+ * the reference tray runs 34-40px and is comfortable. 36 is the floor, and it
+ * is a FLOOR — the rows only ever grow from here, never shrink past it, so no
+ * bid button is ever smaller than 36 rendered px until TRAY_MAX_SHARE bites,
+ * which cannot take it below TRAY_ROW_MIN authored (~32 rendered) either.
+ */
+const TRAY_TOUCH = 36;
+/** Row gap + the tray's own padding: 6/8 top/bottom and one 5px gap. */
+const TRAY_PAD = 19;
+/** The tray's ceiling as a share of the table budget. Two rows at the touch
+    floor land at ~14% of the reference phone (390x844), so this does not bind
+    there — it only bites in a box shorter than the design's, which is exactly
+    where the unyielding version took a third of the table and left the auction
+    shorter than itself. */
+const TRAY_MAX_SHARE = 0.22;
 /** The centre is the flexible band: it absorbs the leftover so the table fills
     exactly its share. The floor is what a four-row auction needs INSIDE the
     inset — below it the grid scrolls internally rather than being cut. */
@@ -402,18 +426,18 @@ export function PlayTable({
     const want = Math.max(BAR_BASE, Math.ceil(TOUCH / (k || 1)) + 14);
     return Math.min(want, Math.max(BAR_BASE, Math.round((0.13 * availPx) / (k || 1))));
   };
-  // The tray gets the bars' bargain: a touch floor that YIELDS. Its three rows
-  // are floored at 44 RENDERED px like every other target, but capped together
-  // at a share of the budget — so they shrink as one (nothing moves mid-bid)
-  // instead of the tray holding its physical size while the felt scales away
-  // beneath it. Uncapped, a short box spent a third of the table on the tray and
-  // pinned the auction it feeds to CENTRE_MIN, where the newest row was clipped.
+  // The tray gets the bars' bargain: a touch floor that YIELDS. Its TRAY_ROWS
+  // rows are floored at TRAY_TOUCH rendered px, but capped together at a share
+  // of the budget — so they shrink as one (nothing moves mid-bid) instead of the
+  // tray holding its physical size while the felt scales away beneath it.
+  // Uncapped, a short box spent a third of the table on the tray and pinned the
+  // auction it feeds to CENTRE_MIN, where the newest row was clipped.
   const trayRowFor = (k: number) => {
-    const want = Math.max(TRAY_ROW_MIN, Math.ceil(TOUCH / (k || 1)));
+    const want = Math.max(TRAY_ROW_MIN, Math.ceil(TRAY_TOUCH / (k || 1)));
     const room = (TRAY_MAX_SHARE * availPx) / (k || 1) - TRAY_PAD;
-    return Math.min(want, Math.max(TRAY_ROW_MIN, Math.floor(room / 3)));
+    return Math.min(want, Math.max(TRAY_ROW_MIN, Math.floor(room / TRAY_ROWS)));
   };
-  const trayFor = (k: number) => 3 * trayRowFor(k) + TRAY_PAD;
+  const trayFor = (k: number) => TRAY_ROWS * trayRowFor(k) + TRAY_PAD;
   const fit = (k: number, usePad: boolean) => {
     const bar = barFor(k);
     const avail = availPx / (k || 1);
@@ -455,12 +479,13 @@ export function PlayTable({
   const phonePadShown = phoneFit.usePad;
   const phonePadCell = phoneFit.usePad ? phoneFit.cell : 38;
   const feltH = phoneFit.centre;
-  /** The compass at phone prominence, CLAMPED to the band it is actually given.
-   *  A fixed 1.6 asks for 419px; the centre is the flexible band and can sit at
-   *  CENTRE_MIN, and `align-items:center` + `overflow:hidden` then sliced the
-   *  North card off the top. The box scales as one unit, so clamping keeps the
-   *  four cards identical — it just makes the trick fit. */
-  const trickK = Math.max(0.6, Math.min(1.6, (feltH - 8) / 262));
+  /** The CLUSTER at phone prominence, CLAMPED to the band it is actually given.
+   *  Prominence is a scale on the WHOLE box, so clamping keeps the four cards
+   *  identical — it just makes the trick fit. The ceiling is a real ceiling: the
+   *  cluster is a tight object in the MIDDLE of the felt, and left to fill the
+   *  band it would spread back out into the compass this replaced. */
+  const CLUSTER_MAX_K = 2.4;
+  const trickK = Math.max(0.7, Math.min(CLUSTER_MAX_K, (feltH - 16) / CLUSTER.h));
 
   // Wide/stacked: scale to FIT, down or up. Phone: a fixed 720-wide column at
   // the computed fixed-point scale (never up — thumb reach, not magnification).
@@ -517,7 +542,7 @@ export function PlayTable({
   const plate = (
     seat: Seat,
     width: number | string,
-    m: { height?: number; badge?: number; font?: number; tagFont?: number } = {},
+    m: { height?: number; badge?: number; font?: number; tagFont?: number; weight?: number } = {},
   ) => (
     <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} metrics={m} />
   );
@@ -649,8 +674,12 @@ export function PlayTable({
 
   const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
-  /** The trick as real card faces; `k` scales the whole cross (1.6 on phones). */
+  /** The trick as real card faces; `k` scales the whole box. Wide keeps the
+      262px compass; the phone gets the tight overlapping cluster. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
+  const trickCluster = (k: number) => (
+    <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} />
+  );
 
   const resultCard = (
     <ResultCard
@@ -789,62 +818,82 @@ export function PlayTable({
     ? phoneFit.trayRow
     : Math.max(52, Math.ceil(44 / Math.max(0.05, scale)));
 
-  /** The strain row is ALWAYS five slots tall, empty until a level is armed —
-      rendering it only when armed grew the tray on the first tap and shoved
-      every control under it down. The buttons must not move mid-bid. */
-  const strainSlots = [0, 1, 2, 3, 4].map((i) => {
-    const st = armedStrains[i];
-    if (!st) return <span key={i} style={{ height: touchH, pointerEvents: "none" }} />;
+  /**
+   * TWO ROWS (BBO's phone bid box):
+   *
+   *     Pass │ 1 2 3 4 5 6 7
+   *     ♣ ♦ ♥ ♠ │ NT │ X XX
+   *
+   * Pass folds up beside the levels — it was a full-width row of its own, and
+   * the third row is what made the tray a third of the table. Both rows are
+   * grids of the SAME fr total (8.75), so the two rows line up down the tray
+   * even though one has eight cells and the other seven.
+   *
+   * Every slot is ALWAYS rendered, empty until it is legal or a level is armed:
+   * rendering the strains only when armed grew the tray on the first tap and
+   * shoved every control under it down. The buttons must not move mid-bid.
+   */
+  const TRAY_R1 = "1.75fr repeat(7,1fr)";
+  // Doubles get their two cells only when a double is legal — and legality is
+  // fixed for the whole of your turn, so this can never move a button MID-bid.
+  // Reserving them unconditionally left a quarter of the strain row permanently
+  // blank, which read as a row that had failed to render.
+  const TRAY_R2 = anyLegalDouble ? "repeat(4,1fr) 1.75fr 1fr 1fr" : "repeat(4,1fr) 1.75fr";
+  const trayCell = (extra: CSSProperties): CSSProperties => ({
+    minWidth: 0, height: touchH, border: "1px solid #8a8a6a", borderRadius: skinRadius,
+    fontWeight: 800, lineHeight: 1, padding: 0, ...extra,
+  });
+
+  const strainSlots = STRAINS.map((st) => {
+    const live = !!armed && armedStrains.includes(st);
+    if (!live) return <span key={st} style={{ minWidth: 0, height: touchH, pointerEvents: "none" }} />;
     return (
       <button
-        key={i}
+        key={st}
         type="button"
         onClick={() => stageCall(`${armed}${st}`)}
         aria-label={`${armed}${st === "N" ? "NT" : st}`}
-        style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: 26, lineHeight: 1, cursor: "pointer" }}
+        style={trayCell({ background: "#f8f8f8", color: isRed(st) ? RED : "#000", fontSize: st === "N" ? 28 : 38, cursor: "pointer" })}
       >
         {GLYPH[st]}
       </button>
     );
   });
 
+  const doubleSlots = !anyLegalDouble ? null : (["X", "XX"] as const).map((d) => {
+    const live = boxLive && legalSet.has(d);
+    if (!live) return <span key={d} style={{ minWidth: 0, height: touchH }} />;
+    return (
+      <button
+        key={d}
+        type="button"
+        onClick={() => stageCall(d)}
+        aria-label={d === "X" ? "Double" : "Redouble"}
+        style={trayCell({ border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 28, cursor: "pointer" })}
+      >
+        {d}
+      </button>
+    );
+  });
+
   const bidBoxNarrow = (
-    <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "8px 10px 10px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+    <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
       {pending ? (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 10, padding: "8px 0" }}>
-          <span style={{ fontSize: 20, color: "#3a3a20" }}>Confirm your call</span>
-          <div style={{ display: "flex", gap: 10 }}>{confirmButtons(52, 28)}</div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: TRAY_ROWS * touchH + 5 }}>
+          <span style={{ fontSize: 20, fontWeight: 700, color: "#3a3a20" }}>Confirm your call</span>
+          {confirmButtons(touchH, 26)}
         </div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 6 }}>
-          {/* Same 7-column grid as the levels row, so Pass ends exactly where
-              the "3" ends instead of landing a few px off from a flex ratio. */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5 }}>
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: TRAY_R1, gap: 5 }}>
             <button
               type="button"
               onClick={boxLive ? () => stageCall("P") : undefined}
               aria-label="Pass"
-              style={{ gridColumn: "span 3", minWidth: 0, height: touchH, border: "1px solid #0c4b0b", borderRadius: skinRadius, background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 }}
+              style={trayCell({ border: "1px solid #0c4b0b", background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 28, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 })}
             >
               Pass
             </button>
-            {(["X", "XX"] as const).map((d) => {
-              const live = boxLive && legalSet.has(d);
-              if (!live) return <span key={d} style={{ gridColumn: "span 2", minWidth: 0, height: touchH }} />;
-              return (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => stageCall(d)}
-                  aria-label={d === "X" ? "Double" : "Redouble"}
-                  style={{ gridColumn: "span 2", minWidth: 0, height: touchH, border: `1px solid ${d === "X" ? "#8f0000" : "#0a2170"}`, borderRadius: skinRadius, background: d === "X" ? RED : "#1034a6", color: "#fff", fontSize: 24, fontWeight: 700, lineHeight: 1, cursor: "pointer" }}
-                >
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 5 }}>
             {[1, 2, 3, 4, 5, 6, 7].map((l) => {
               const any = STRAINS.some((st) => legalSet.has(`${l}${st}`));
               const live = boxLive && any;
@@ -854,15 +903,18 @@ export function PlayTable({
                   type="button"
                   onClick={live ? () => setArmed(armed === l ? null : l) : undefined}
                   aria-label={`Level ${l}`}
-                  style={{ height: touchH, border: "1px solid #8a8a6a", borderRadius: skinRadius, background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: 26, lineHeight: 1, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 }}
+                  style={trayCell({ background: armed === l ? GOLD : "#f8f8f8", color: "#000", fontSize: 30, cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42 })}
                 >
                   {l}
                 </button>
               );
             })}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 5 }}>{strainSlots}</div>
-        </div>
+          <div style={{ display: "grid", gridTemplateColumns: TRAY_R2, gap: 5 }}>
+            {strainSlots}
+            {doubleSlots}
+          </div>
+        </>
       )}
     </div>
   );
@@ -993,7 +1045,7 @@ export function PlayTable({
             past feltH and overflow:hidden would eat the newest row. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
           <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
-            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "100%", headFont: 26, cellFont: 24, radius: 0, cellMinH: 56 }) : null}
+            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: 52 }) : null}
             {inAuction && auctionDisplay === "seats" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
                 {(["N", "E", "S", "W"] as Seat[]).map((s) => (
@@ -1004,7 +1056,7 @@ export function PlayTable({
                 ))}
               </div>
             ) : null}
-            {inPlay ? trickCross(trickK) : null}
+            {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
         </div>
@@ -1032,9 +1084,10 @@ export function PlayTable({
                 ? fanHand("S", M_CARD)
                 : cardRow("S", M_CARD)
               : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {/* Default plate metrics — the design keeps SeatPlate stock here,
-                and the plate narrows with the hand in fan mode too. */}
-            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * (M_CARD.w - 1) : 390)}
+            {/* The plate spans the hand, so it narrows at the hand's PITCH as
+                cards are played (the row overlaps, so pitch < card width). Bold
+                name/tag: the phone plate reads through the stage scale. */}
+            {plate("S", visible.S ? M_CARD.w + Math.max(0, state.hands.S.length - 1) * M_PITCH : 390, { weight: 700 })}
           </div>
         </div>
       </div>

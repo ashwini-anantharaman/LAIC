@@ -16,6 +16,14 @@ export interface AuctionBoxSizing {
   cellFont: number;
   radius?: number;
   cellMinH?: number;
+  /**
+   * Ceiling for a content-sized (`height: "auto"`) grid. The phone hands it the
+   * band's own height: the grid then takes the rows it HAS and leaves the rest
+   * as felt, instead of stretching a four-call auction over a wall of empty
+   * cells — and it still scrolls, pinned to the newest call, once the auction
+   * outgrows the band. Defaults to the authored 340 cap.
+   */
+  maxH?: number;
 }
 
 export interface AuctionHead {
@@ -57,7 +65,7 @@ export function AuctionBox({
   }, [rows.length]);
 
   return (
-    <div style={{ width: m.width, height: m.height, maxHeight: m.height === "auto" ? 340 : undefined, background: bg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+    <div style={{ width: m.width, height: m.height, maxHeight: m.maxH ?? (m.height === "auto" ? 340 : undefined), background: bg, borderRadius: m.radius ?? 0, boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: "none", display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 2, padding: 2, textAlign: "center" }}>
         {heads.map((head) => (
           <span key={head.seat} style={{ padding: "2px 0", fontSize: m.headFont, fontWeight: 700, lineHeight: 1.1, background: head.vul ? "#cc1111" : head.isDealer ? DEALER_TINT : "#fff", color: head.vul ? "#fff" : "#000" }}>

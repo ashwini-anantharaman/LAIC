@@ -233,8 +233,11 @@ export function EdgeToolbar({
     if (it.kind === "chip")
       return (
         <div key={i} title={it.title ?? it.label} style={{ flex: "none", display: "flex", alignItems: "baseline", gap: 5, padding: "0 8px", height: chipH, borderRadius: 5, background: "rgba(255,255,255,.07)", whiteSpace: "nowrap" }}>
-          <span style={{ fontSize: chipLabelFont, letterSpacing: ".09em", textTransform: "uppercase", color: "#8fa39a" }}>{it.label}</span>
-          <span style={{ fontSize: ctrlFont, fontWeight: 700, lineHeight: 1, color: it.color ?? "#eef4f1" }}>{it.value}</span>
+          {/* The condensed bar is the PHONE bar: it renders through the stage
+              scale, where a 400-weight micro-label smears. Bold it there only —
+              the wide bar reads at full size and keeps its authored weight. */}
+          <span style={{ fontSize: chipLabelFont, fontWeight: condensed ? 700 : 400, letterSpacing: ".09em", textTransform: "uppercase", color: condensed ? "#a3b7ae" : "#8fa39a" }}>{it.label}</span>
+          <span style={{ fontSize: ctrlFont, fontWeight: condensed ? 800 : 700, lineHeight: 1, color: it.color ?? "#eef4f1" }}>{it.value}</span>
         </div>
       );
     const tone = tones[it.tone ?? "plain"];

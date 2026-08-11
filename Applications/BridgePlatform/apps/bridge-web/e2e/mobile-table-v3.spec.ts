@@ -58,31 +58,49 @@ test.describe("mobile table v3 — phone tier", () => {
       expect(overflow, `bar ${i} horizontal overflow`).toBeLessThanOrEqual(1);
     }
 
-    // The tray's touch floor YIELDS, like the bars'. At the reference phone it
-    // does not bind (three 44px rows, 28% of the table); in a shorter box the
-    // three rows shrink TOGETHER rather than the tray holding its physical size
-    // while the felt scales away under it — which left the auction it feeds
-    // shorter than the tray itself, pinned at CENTRE_MIN and clipped.
-    const trayShare = async () => {
-      const tray = await page.getByTestId("bid-tray").boundingBox();
-      const band = await page.getByTestId("centre-band").boundingBox();
-      const stage = await page
-        .locator('div[style*="matrix"], div[style*="scale("]')
-        .first()
-        .boundingBox();
-      return { tray: tray!.height, centre: band!.height, stage: stage!.height };
-    };
+    // The tray is TWO rows (`Pass 1 2 3 4 5 6 7` over `♣ ♦ ♥ ♠ NT` + doubles),
+    // not three, and its touch floor YIELDS like the bars'. Three rows spent 28%
+    // of the table on the bid box; two spend about half that. What the numbers
+    // below protect is the SHAPE of that bargain, not the pixels:
+    //   · the tray stays a small share of the table, at both box heights;
+    //   · a bid button never falls under 32 rendered px (the floor is lower than
+    //     the bars' 44 on purpose — a fixed grid the thumb learns — but it is
+    //     still a floor);
+    //   · the auction band the tray FEEDS is never shorter than the tray, which
+    //     is the failure the share cap was introduced for.
+    // All four boxes come from ONE layout snapshot: read a round-trip at a time
+    // they can straddle the ResizeObserver-driven re-render that answers a
+    // viewport change, and a ratio of two different renders means nothing.
+    const trayShare = () =>
+      page.evaluate(() => {
+        const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+        return {
+          tray: r('[data-testid="bid-tray"]').height,
+          centre: r('[data-testid="centre-band"]').height,
+          row: r('[aria-label="Level 1"]').height,
+          stage: r('div[style*="matrix"], div[style*="scale("]').height,
+        };
+      });
     const tall = await trayShare();
-    expect(tall.tray / tall.stage, "tray share at 390x844").toBeLessThanOrEqual(0.32);
-    expect(tall.tray, "three 44px rows plus padding where there is room").toBeGreaterThan(120);
+    expect(tall.tray / tall.stage, "tray share at 390x844").toBeLessThanOrEqual(0.2);
+    expect(tall.row, "a bid button stays thumb-sized").toBeGreaterThanOrEqual(32);
+    expect(
+      tall.centre,
+      "the auction band outsizes the tray that feeds it",
+    ).toBeGreaterThan(tall.tray);
 
     await page.setViewportSize({ width: 430, height: 600 });
     await expect(page.getByTestId("bid-tray")).toBeVisible();
+    await page.waitForTimeout(300);
     const short = await trayShare();
-    expect(short.tray / short.stage, "tray share in a short box").toBeLessThanOrEqual(0.32);
-    // It yields in absolute terms too, rather than holding its physical size
-    // while the felt scales away beneath it.
-    expect(short.tray, "the tray shrinks with the box").toBeLessThan(tall.tray);
+    expect(short.tray / short.stage, "tray share in a short box").toBeLessThanOrEqual(0.24);
+    expect(short.row, "the floor holds in a short box too").toBeGreaterThanOrEqual(32);
+    expect(short.centre, "the auction still outsizes its tray").toBeGreaterThan(short.tray);
+    // It never GROWS as the box shrinks — the old failure was a tray holding its
+    // physical size while the felt scaled away beneath it.
+    expect(short.tray, "the tray never grows as the box shrinks").toBeLessThanOrEqual(
+      tall.tray + 2,
+    );
 
     // Whatever the band's height, the grid FOLLOWS the auction: the newest call
     // is on screen, and it is the oldest rows that scroll off the top.
@@ -109,10 +127,12 @@ test.describe("mobile table v3 — phone tier", () => {
     }
   });
 
-  // ADDENDUM E — phone-tier PLAY fidelity. Two invariants of the design's
-  // Mobile Table centre + dummy line, exercised on a REAL play state:
-  //   (1) the trick cross scales as ONE box, so every rendered card is the same
-  //       size (the old per-card scaling let the four cards desync);
+  // ADDENDUM E — phone-tier PLAY fidelity. Invariants of the design's Mobile
+  // Table centre + dummy line, exercised on a REAL play state:
+  //   (1) the trick scales as ONE box, so every rendered card is the same size
+  //       (the old per-card scaling let the four cards desync);
+  //   (1c) it is a tight OVERLAPPING cluster in the middle of the felt, not four
+  //       cards spread to the corners of a box twice their size;
   //   (2) the one-line dummy strip labels the SEAT, not the player.
   // Reaching play deterministically: seat four robots (a "watch" board — a human
   // seat would stall stepping at its turn) and step via the session API until a
@@ -188,39 +208,104 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.setViewportSize(PHONE);
     await page.goto(`/bridge/table2/${sid}`);
 
-    // (1) The 262-box is scaled as a single unit, so any two trick cards render
-    // at identical width AND height (the per-card model desynced them).
     const cards = page.getByTestId("trick-card");
     await expect.poll(() => cards.count()).toBeGreaterThanOrEqual(2);
-    const b0 = await cards.nth(0).boundingBox();
-    const b1 = await cards.nth(1).boundingBox();
-    expect(b0, "first trick card box").toBeTruthy();
-    expect(b1, "second trick card box").toBeTruthy();
-    expect(Math.abs(b0!.width - b1!.width), "trick card widths equal").toBeLessThanOrEqual(0.6);
-    expect(Math.abs(b0!.height - b1!.height), "trick card heights equal").toBeLessThanOrEqual(0.6);
 
-    // (1b) The compass FITS its band. Prominence was a fixed 1.6 — a 419px ask
+    // ONE LAYOUT SNAPSHOT for the band and every card. Read one Playwright
+    // round-trip at a time, the band's rect and the cards' rects can come from
+    // DIFFERENT renders: a viewport change is answered by a ResizeObserver, so
+    // it lands asynchronously and used to slip in between the band read and the
+    // card reads — which reported the cluster sitting outside a band it was in
+    // fact centred inside. And a card DEALS IN (a ~170ms scale/fade), so the
+    // snapshot waits for animations to finish first: these invariants are about
+    // laid-out geometry, not about what a frame grab caught.
+    const snapshot = async () => {
+      await page.waitForFunction(() =>
+        [...document.querySelectorAll('[data-testid="trick-card"]')]
+          .flatMap((el) => el.getAnimations())
+          .every((a) => a.playState === "finished"),
+      );
+      return page.evaluate(() => {
+        const r = (sel: string) => document.querySelector(sel)!.getBoundingClientRect();
+        const band = r('[data-testid="centre-band"]');
+        const stage = r('div[style*="matrix"], div[style*="scale("]');
+        const cards = [...document.querySelectorAll('[data-testid="trick-card"]')].map((el) => {
+          const b = el.getBoundingClientRect();
+          return { x: b.x, y: b.y, w: b.width, h: b.height };
+        });
+        return {
+          band: { y: band.y, h: band.height },
+          stage: { w: stage.width },
+          cards,
+        };
+      });
+    };
+
+    // The viewport change has to be ANSWERED before the snapshot means anything
+    // — otherwise it is a self-consistent picture of the size we just left.
+    const atSize = async (size: { width: number; height: number }) => {
+      await page.setViewportSize(size);
+      await expect(cards.first()).toBeVisible();
+      // The observer + re-render is well inside this; the poll then guards
+      // against any further reflow before the snapshot is taken.
+      await page.waitForTimeout(300);
+      let prev = -1;
+      await expect
+        .poll(async () => {
+          const { band } = await snapshot();
+          const same = Math.abs(band.h - prev) < 0.5;
+          prev = band.h;
+          return same;
+        })
+        .toBe(true);
+      return snapshot();
+    };
+
+    const tallShot = await snapshot();
+
+    // (1) The cluster box is scaled as a single unit, so any two trick cards
+    // render at identical width AND height (the per-card model desynced them).
+    expect(tallShot.cards.length, "at least two cards on the felt").toBeGreaterThanOrEqual(2);
+    const c0 = tallShot.cards[0]!;
+    const c1 = tallShot.cards[1]!;
+    expect(Math.abs(c0.w - c1.w), "trick card widths equal").toBeLessThanOrEqual(0.6);
+    expect(Math.abs(c0.h - c1.h), "trick card heights equal").toBeLessThanOrEqual(0.6);
+
+    // (1c) The cluster is TIGHT and OVERLAPPING. Laid side by side the same
+    // cards would need `n × width`; the union of their boxes is far less than
+    // that, which is what "overlapping" means in pixels — and the whole pile is
+    // a fraction of the stage rather than a compass twice the cards' size.
+    const pileW =
+      Math.max(...tallShot.cards.map((c) => c.x + c.w)) -
+      Math.min(...tallShot.cards.map((c) => c.x));
+    expect(pileW, "the cards overlap rather than sitting side by side").toBeLessThan(
+      tallShot.cards.length * c0.w * 0.85,
+    );
+    expect(
+      pileW / tallShot.stage.w,
+      "the trick is a cluster, not a compass",
+    ).toBeLessThanOrEqual(0.6);
+
+    // (1b) The trick FITS its band. Prominence was a fixed 1.6 — a 419px ask
     // against a centre band that can sit at its floor — and `align-items:center`
     // with `overflow:hidden` sliced the North card off the top. Every trick card
     // must lie fully inside the band, at both the reference phone and a short box.
-    const insideBand = async (label: string) => {
-      const band = (await page.getByTestId("centre-band").boundingBox())!;
-      const n = await cards.count();
-      for (let i = 0; i < n; i++) {
-        const c = (await cards.nth(i).boundingBox())!;
+    const insideBand = (
+      label: string,
+      shot: { band: { y: number; h: number }; cards: { y: number; h: number }[] },
+    ) => {
+      shot.cards.forEach((c, i) => {
         expect(c.y, `${label}: trick card ${i} top clipped`).toBeGreaterThanOrEqual(
-          band.y - 0.5,
+          shot.band.y - 0.5,
         );
         expect(
-          c.y + c.height,
+          c.y + c.h,
           `${label}: trick card ${i} bottom clipped`,
-        ).toBeLessThanOrEqual(band.y + band.height + 0.5);
-      }
+        ).toBeLessThanOrEqual(shot.band.y + shot.band.h + 0.5);
+      });
     };
-    await insideBand("390x844");
-    await page.setViewportSize({ width: 430, height: 560 });
-    await expect(cards.first()).toBeVisible();
-    await insideBand("430x560");
+    insideBand("390x844", tallShot);
+    insideBand("430x560", await atSize({ width: 430, height: 560 }));
     await page.setViewportSize(PHONE);
 
     // (2) The dummy strip is labelled with the SEAT name, not the player name.

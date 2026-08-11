@@ -7,6 +7,7 @@
 
 import type { Card } from "@bridge/events";
 import { RED, GLYPH, DISPLAY, isRed, rankText } from "./tokens";
+import { LIFT, TableMotion } from "./motion";
 
 export interface SeatHandMetrics {
   w: number;
@@ -14,6 +15,16 @@ export interface SeatHandMetrics {
   rank: number;
   glyph: number;
   inset: number;
+  /**
+   * Row layout: how far each card slides UNDER the one before it. The default 1
+   * is the hairline the wide tier has always drawn; the phone passes a real
+   * overlap so thirteen cards read as one tight held hand instead of a strip
+   * that spans the whole stage. The rank+pip index lives at the card's LEFT
+   * edge, so the visible sliver still says which card it is.
+   */
+  overlap?: number;
+  /** Font weight for the rank AND the pip. Default 700/400 (the authored look). */
+  weight?: number;
 }
 
 export interface SeatHandProps {
@@ -69,9 +80,13 @@ export function SeatHand({
     (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
   );
 
+  const rankWeight = m.weight ?? 700;
+  const glyphWeight = m.weight ?? 400;
+
   if (layout === "row") {
     return (
       <div style={{ display: "flex", boxShadow: "0 2px 5px rgba(0,0,0,.35)" }}>
+        <TableMotion />
         {hand.map((card, i) => {
           const on = isPlayable ? isPlayable(card) : false;
           return (
@@ -80,19 +95,23 @@ export function SeatHand({
               type="button"
               onClick={on ? () => onPlay?.(card) : undefined}
               aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
+              className={LIFT}
               style={{
                 position: "relative", display: "block", width: m.w, height: m.h, flex: "none",
                 background: "#fff", border: "1px solid #6b6b6b",
                 borderRadius: i === 0 ? "3px 0 0 3px" : "0 3px 3px 0",
-                marginLeft: i === 0 ? 0 : -1, padding: 0,
+                marginLeft: i === 0 ? 0 : -(m.overlap ?? 1), padding: 0,
                 cursor: on ? "pointer" : "default",
                 transform: on ? "translateY(-6px)" : "none",
-                transition: "transform 120ms ease",
+                // A lifted card rises ABOVE its neighbours: overlapped cards
+                // paint in hand order, so without this the next card clips the
+                // one the thumb is about to press.
+                zIndex: on ? 2 : 1,
               }}
             >
               <span style={{ position: "absolute", left: m.inset, top: m.inset > 3 ? m.inset : 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
-                <span style={{ fontSize: m.rank, fontWeight: 700 }}>{rankText(card.rank)}</span>
-                <span style={{ fontSize: m.glyph }}>{GLYPH[card.suit]}</span>
+                <span style={{ fontSize: m.rank, fontWeight: rankWeight }}>{rankText(card.rank)}</span>
+                <span style={{ fontSize: m.glyph, fontWeight: glyphWeight }}>{GLYPH[card.suit]}</span>
               </span>
             </button>
           );
@@ -132,6 +151,7 @@ export function SeatHand({
   const glyphF = m.glyph;
   return (
     <div style={{ position: "relative", width: boxW, height: boxH }}>
+      <TableMotion />
       {hand.map((card, i) => {
         const on = isPlayable ? isPlayable(card) : false;
         return (
@@ -140,19 +160,20 @@ export function SeatHand({
             type="button"
             onClick={on ? () => onPlay?.(card) : undefined}
             aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
+            className={LIFT}
             style={{
               position: "absolute", left: "50%", top: fanTop, width: cw, height: ch, padding: 0,
               background: "#fff", border: "1px solid #6b6b6b", borderRadius: 4,
               boxShadow: "-2px 1px 4px rgba(0,0,0,.28)",
               transform: `translateX(-50%) rotate(${angleAt(i)}deg)${on ? " translateY(-14px)" : ""}`,
               transformOrigin: `50% ${radius}px`,
-              transition: "transform 120ms ease",
+              zIndex: on ? 2 : 1,
               cursor: on ? "pointer" : "default",
             }}
           >
             <span style={{ position: "absolute", left: m.inset, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
-              <span style={{ fontSize: rankF, fontWeight: 700 }}>{rankText(card.rank)}</span>
-              <span style={{ fontSize: glyphF }}>{GLYPH[card.suit]}</span>
+              <span style={{ fontSize: rankF, fontWeight: rankWeight }}>{rankText(card.rank)}</span>
+              <span style={{ fontSize: glyphF, fontWeight: glyphWeight }}>{GLYPH[card.suit]}</span>
             </span>
           </button>
         );

@@ -13,6 +13,8 @@ export interface SeatPlateMetrics {
   badge?: number;
   font?: number;
   tagFont?: number;
+  /** Name/tag weight. Default 400/400 — the phone tier asks for bold. */
+  weight?: number;
 }
 
 export interface SeatPlateProps {
@@ -43,15 +45,16 @@ export function SeatPlate({
   const badge = metrics.badge ?? 20;
   const font = metrics.font ?? 15;
   const tagFont = metrics.tagFont ?? 11;
+  const weight = metrics.weight ?? 400;
   return (
     <div style={{ display: "flex", alignItems: "stretch", gap: 5, width, height: h, padding: "0 3px 0 0", background: bg, boxShadow: "0 1px 2px rgba(0,0,0,.45)", border: `2px solid ${isDealer ? DEALER_RING : "transparent"}`, boxSizing: "border-box", overflow: "hidden" }}>
       <span style={{ flex: "none", width: 6, background: strip ?? "transparent" }} />
       <span style={{ flex: "none", width: badge, height: badge, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: font - 1, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
-      <span style={{ alignSelf: "center", fontSize: font, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
+      <span style={{ alignSelf: "center", fontSize: font, fontWeight: weight, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>
       {isDealer && (
         <span style={{ alignSelf: "center", flex: "none", padding: "0 2px", fontSize: tagFont, fontWeight: 700, color: "#7a5a12" }}>DEALER</span>
       )}
-      <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: tagFont, color: "#555" }}>{tag ?? ""}</span>
+      <span style={{ marginLeft: "auto", alignSelf: "center", flex: "none", fontSize: tagFont, fontWeight: weight, color: "#555" }}>{tag ?? ""}</span>
     </div>
   );
 }
