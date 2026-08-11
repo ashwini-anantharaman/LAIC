@@ -56,6 +56,22 @@ import {
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { defaultScreenForCapabilities } from '../lib/roleAccess';
 
+/**
+ * What a save should do to version history.
+ *  'auto'  — the usual working-version sync (amend the tip, or commit the next)
+ *  'skip'  — touch nothing
+ *  'new'   — always commit the next version, even if content is unchanged
+ *  { overwriteId } — replace that version in place, bumping its edit count
+ * Submit passes an explicit mode so the amend window cannot reinterpret it.
+ */
+export type AddObjectVersionMode = 'auto' | 'skip' | 'new' | { overwriteId: string };
+
+export interface AddObjectOptions {
+  version?: AddObjectVersionMode;
+  /** Reported when an overwrite is refused (locked version, v1, …). */
+  onVersionError?: (message: string) => void;
+}
+
 export interface AppState {
   role: Role;
   program: Program;
@@ -144,7 +160,7 @@ export interface AppState {
   setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
   addObject: (
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
-    opts?: { skipVersionSync?: boolean },
+    opts?: AddObjectOptions,
   ) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
@@ -505,9 +521,10 @@ function StudioApp() {
 
   const addObject = useCallback((
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
-    opts?: { skipVersionSync?: boolean },
+    opts?: AddObjectOptions,
   ) => {
-    const skipVersionSync = !!opts?.skipVersionSync;
+    const versionMode = opts?.version ?? 'auto';
+    const onVersionError = opts?.onVersionError;
     const ownerId = activeUserIdRef.current;
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
@@ -554,15 +571,23 @@ function StudioApp() {
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
       }
-      // Submit decides its own versioning ("new version" vs "replace v2"), so it
-      // opts out of the implicit sync — otherwise the amend window would swallow
-      // a requested new version, or mint a spare one right before an overwrite.
-      if (!skipVersionSync) {
-        try {
-          syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
-        } catch (err: any) {
-          console.warn('[versions] sync failed:', err?.message || err);
+      // Versioning happens HERE, against the object just built — not in the
+      // caller. createdObjectsRef only refreshes on render, so a caller acting
+      // right after this returns would version the PRE-EDIT content: the
+      // overwrite would store stale blocks, and the next save would then see a
+      // difference and mint the spare version this is meant to avoid.
+      const createdBy = obj.ownerName || user?.name || 'You';
+      try {
+        if (versionMode === 'new') {
+          storeSaveAsNewVersion(ownerId, obj, createdBy, undefined, true);
+        } else if (typeof versionMode === 'object' && versionMode.overwriteId) {
+          const res = storeOverwriteVersion(ownerId, versionMode.overwriteId, obj, createdBy);
+          if (!res.ok && res.error) onVersionError?.(res.error);
+        } else if (versionMode !== 'skip') {
+          syncWorkingVersion(ownerId, obj, createdBy);
         }
+      } catch (err: any) {
+        console.warn('[versions] sync failed:', err?.message || err);
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
