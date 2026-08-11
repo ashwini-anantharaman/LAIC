@@ -256,6 +256,12 @@ export function ObjectVersionsModal({
                 {v.notes ? (
                   <p style={{ fontSize: 12.5, color: '#374151', marginTop: 4 }}>{v.notes}</p>
                 ) : null}
+                {v.snapshotTrimmed && (
+                  <p style={{ fontSize: 11.5, color: '#B45309', marginTop: 4 }}>
+                    Content dropped to free browser storage — this version is kept for the record
+                    but can’t be restored or published.
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 <button
