@@ -293,6 +293,45 @@ export function saveAsNewVersion(
 }
 
 /**
+ * Overwrite an EXISTING version in place, keeping its id and number.
+ *
+ * Submitting always minted a new version, so an author fixing a typo three
+ * times ended up at v5 with four dead versions behind it. "Submit as → v2"
+ * replaces v2's snapshot instead of growing the history.
+ *
+ * Refuses on a locked version and on seed rows (which live in data.ts and have
+ * no local record to replace) rather than silently creating a new version —
+ * the author asked to overwrite a specific one, and quietly doing something
+ * else is worse than saying no.
+ */
+export function overwriteVersion(
+  userId: string,
+  versionId: string,
+  obj: LearningObject,
+  createdBy: string,
+  notes?: string,
+): { ok: boolean; version?: Version; error?: string } {
+  const target = listVersionsForObject(userId, obj.id).find((v) => v.id === versionId);
+  if (!target) return { ok: false, error: 'That version no longer exists.' };
+  if (target.locked) return { ok: false, error: `v${target.versionNumber} is locked.` };
+
+  const version: Version = {
+    ...target,
+    objectTitle: obj.title,
+    status: obj.status,
+    createdAt: today(),
+    createdBy,
+    notes: (notes || '').trim() || target.notes,
+    snapshot: snapshotFromObject(obj),
+    // Amend clock reset: an overwrite is a deliberate commit, not the tail of
+    // an earlier edit burst, so the next save must not fold into it.
+    ...({ createdAtMs: 0 } as any),
+  };
+  upsertLocal(userId, version);
+  return { ok: true, version };
+}
+
+/**
  * Close the amend window on the tip so the next content-differing save
  * commits a new version (e.g. author reopened the object from the library).
  */

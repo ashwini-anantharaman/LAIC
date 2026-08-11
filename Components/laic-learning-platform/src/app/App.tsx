@@ -33,6 +33,7 @@ import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/libraryS
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
+  overwriteVersion as storeOverwriteVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -90,6 +91,12 @@ export interface AppState {
   listObjectVersions: (objectId: string) => Version[];
   listAllObjectVersions: () => Version[];
   saveObjectAsNewVersion: (objectId: string, notes?: string) => Version | null;
+  /** Replace an existing version in place (Submit as → v2) instead of adding one. */
+  overwriteObjectVersion: (
+    objectId: string,
+    versionId: string,
+    notes?: string,
+  ) => { ok: boolean; version?: Version; error?: string };
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -578,6 +585,19 @@ function StudioApp() {
     return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes);
   }, []);
 
+  const overwriteObjectVersion = useCallback((
+    objectId: string,
+    versionId: string,
+    notes?: string,
+  ) => {
+    const ownerId = activeUserIdRef.current;
+    const obj = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!obj) return { ok: false, error: 'Content not found.' };
+    const user = USERS.find((u) => u.id === ownerId);
+    return storeOverwriteVersion(ownerId, versionId, obj, obj.ownerName || user?.name || 'You', notes);
+  }, []);
+
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
     return storeSetVersionLocked(activeUserIdRef.current, versionId, locked);
   }, []);
@@ -743,7 +763,7 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,

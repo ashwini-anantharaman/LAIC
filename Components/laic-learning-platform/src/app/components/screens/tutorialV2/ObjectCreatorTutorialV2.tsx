@@ -148,6 +148,7 @@ export function ObjectCreatorTutorialV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
+    listObjectVersions, overwriteObjectVersion, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -388,6 +389,12 @@ export function ObjectCreatorTutorialV2() {
     } as any);
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects]);
+
+  /** Versions the author may overwrite instead of adding another. */
+  const submitVersions = useMemo(
+    () => listObjectVersions(draft.id).filter((v) => !!v.snapshot),
+    [listObjectVersions, draft.id, objectVersionsTick],
+  );
 
   const draftCollectionLabel = useCallback((collectionIds?: string[]) => {
     const existing = createdObjects.find((o) => o.id === draft.id);
@@ -1348,7 +1355,7 @@ export function ObjectCreatorTutorialV2() {
           }}
           onBack={() => commit(touchDraft(draft, { phase: 'navigator', activeSectionId: null, activeSlotId: null }), 'navigator')}
           onSave={() => void saveDraft()}
-          onSubmit={() => {
+          onSubmit={(target) => {
             const blocks = partsToBlocks(parts, {
               passOn: true,
               pass: draft.structure.pass || '70%',
@@ -1356,10 +1363,18 @@ export function ObjectCreatorTutorialV2() {
             const next = touchDraft(draft, { status: 'submitted', phase: 'review', assembledParts: parts });
             persist(next, blocks);
             setDraft(next);
+            // Overwrite runs AFTER the save: persist() syncs a working version,
+            // so replacing the chosen one last is what makes "Submit as v2"
+            // land on v2 instead of trailing a fresh version behind it.
+            if (target?.versionId) {
+              const res = overwriteObjectVersion(next.id, target.versionId);
+              if (!res.ok && res.error) window.alert(res.error);
+            }
             clearEditingObject?.();
             navigate('cd-library');
           }}
           canSubmit={canSubmit}
+          submitVersions={submitVersions}
           rail={pipelineRail}
           onBackToPlan={() => goToPipelinePhase('start')}
           onBackToStructure={() => goToPipelinePhase('structure')}

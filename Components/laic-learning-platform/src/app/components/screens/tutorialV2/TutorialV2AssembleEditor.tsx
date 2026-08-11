@@ -22,6 +22,8 @@ import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
 import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { RichTextEditor } from '../../RichTextEditor';
+import { SubmitVersionMenu, type SubmitTarget } from '../SubmitVersionMenu';
+import type { Version } from '../../../../lib/types';
 
 export function TutorialV2AssembleEditor({
   draft,
@@ -33,6 +35,7 @@ export function TutorialV2AssembleEditor({
   onSave,
   onSubmit,
   canSubmit,
+  submitVersions = [],
   rail,
   onBackToPlan,
   onBackToStructure,
@@ -44,8 +47,10 @@ export function TutorialV2AssembleEditor({
   onChangeDraft: (patch: Partial<TutorialV2Draft>) => void;
   onBack: () => void;
   onSave: () => void;
-  onSubmit: () => void;
+  onSubmit: (target: SubmitTarget) => void;
   canSubmit: boolean;
+  /** Existing versions of this object, so the author can overwrite one. */
+  submitVersions?: Version[];
   rail?: React.ReactNode;
   onBackToPlan?: () => void;
   onBackToStructure?: () => void;
@@ -134,16 +139,12 @@ export function TutorialV2AssembleEditor({
           >
             <ArrowLeft size={14} /> Back to outline
           </button>
-          <button
-            type="button"
-            disabled={!parts.length}
-            onClick={onSubmit}
-            title={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
-            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
-            style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
-          >
-            <Send size={13} /> Submit
-          </button>
+          <SubmitVersionMenu
+            versions={submitVersions}
+            canSubmit={parts.length > 0}
+            onSubmit={onSubmit}
+            disabledTitle={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
+          />
         </div>
         {rail}
         {(onBackToPlan || onBackToStructure) && (
