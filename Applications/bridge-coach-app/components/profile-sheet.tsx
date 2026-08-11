@@ -1,11 +1,14 @@
 // Profile — the sheet behind the avatar in the top app bar.
 //
-// Fidelity note: the design shows a pencil on every field. First and Last name
-// are now genuinely editable — PATCH /auth/me renames the person across EVERY
-// club, because a name belongs to the person, not to a club. The rest stay
-// read-only: email is the credential, role/program/org are facts about the
-// membership, and the API still exposes no phone number. Those keep the dimmed,
-// inert pencil rather than a control that would do nothing.
+// Fidelity note: the design shows a pencil on every field. NAME is genuinely
+// editable — PATCH /auth/me renames the person across EVERY club, because a name
+// belongs to the person, not to a club. It is ONE field rather than the design's
+// First and Last: the server stores one display name, and splitting it imposed a
+// two-part western shape that a mononym or a three-part name has to be forced into.
+//
+// The rest stay read-only: email is the credential, role/program/org are facts
+// about the membership, and the API still exposes no phone number. Those keep the
+// dimmed, inert pencil rather than a control that would do nothing.
 
 import { Image } from "expo-image";
 import { useEffect, useState } from "react";
@@ -42,14 +45,6 @@ import { NexusError, updateMyDisplayName } from "../lib/nexus";
 
 /** The avatar ships dark for the cream app bar; on the maroon sheet it must be white. */
 const AVATAR_WHITE = tintSvg(ICON_AVATAR, "#ffffff");
-
-/** Split a single display name into the design's First / Last fields. */
-function splitName(displayName: string | null | undefined): [string, string] {
-  const parts = (displayName ?? "").trim().split(/\s+/).filter(Boolean);
-  if (parts.length === 0) return ["", ""];
-  if (parts.length === 1) return [parts[0]!, ""];
-  return [parts[0]!, parts.slice(1).join(" ")];
-}
 
 function Field({
   label,
@@ -147,24 +142,23 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
    * exactly like the edit was rejected.
    */
   const [pendingName, setPendingName] = useState<string | null>(null);
-  const [first, last] = splitName(pendingName ?? user?.display_name);
+  const name = pendingName ?? user?.display_name ?? "";
 
   /**
-   * Save a renamed first or last half.
+   * Save the name, whatever shape it is.
    *
-   * The server stores ONE display name, so the two fields are halves of it and a
-   * change to either recombines both. An empty other half is dropped rather than
-   * leaving a trailing space.
+   * ONE field, because the server stores one display name. It used to be split into
+   * First and Last, which had to be recombined on every edit and quietly imposed a
+   * two-part western shape — a mononym left a blank field, and anything with three
+   * parts or a particle had nowhere sensible to go. Whatever is typed here is the
+   * name.
    *
-   * refreshUser() afterwards is what makes the new name appear everywhere in the
-   * app — the roster, the leaderboard and chat all label from the session user.
+   * refreshUser() afterwards is what makes it appear everywhere in the app — the
+   * roster, the leaderboard and chat all label from the session user.
    */
-  const saveName = async (part: "first" | "last", next: string) => {
+  const saveName = async (next: string) => {
     if (!token) return;
-    const combined = [part === "first" ? next : first, part === "last" ? next : last]
-      .map((v) => v.trim())
-      .filter(Boolean)
-      .join(" ");
+    const combined = next.trim();
     if (!combined) return;
     setSavingName(true);
     setPendingName(combined);
@@ -280,18 +274,11 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
       </Pressable>
 
       <Field
-        label="First Name"
-        value={first}
+        label="Name"
+        value={name}
         placeholder="Not set"
         saving={savingName}
-        onSave={(v) => void saveName("first", v)}
-      />
-      <Field
-        label="Last Name"
-        value={last}
-        placeholder="Not set"
-        saving={savingName}
-        onSave={(v) => void saveName("last", v)}
+        onSave={(v) => void saveName(v)}
       />
       <Field label="Email Address" value={user?.email ?? ""} />
       {/* The design's fourth field is a phone number, which the API does not
