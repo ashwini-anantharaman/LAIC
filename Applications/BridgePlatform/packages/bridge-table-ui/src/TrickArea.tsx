@@ -58,12 +58,18 @@ export interface TrickAreaProps {
  */
 const CARD = { w: 56, h: 80 };
 /**
- * Top of the W/E flanks: HALF a card down, which puts their own midline on the
- * seam the vertical pair makes. It is also the point that spreads the cost of
- * the tighter box evenly (see CLUSTER_ORDER): the flanks reach a card's index
- * from below by exactly as much as they are reached from above.
+ * Top of the W/E flanks. Half a card down put their edge straight through the
+ * TOP card's suit pip, so the leader's card showed a rank with no suit — the one
+ * thing a player reads the trick for. They now start BELOW that pip (0.7 of a
+ * card, measured against the index's ink: rank ends ~0.4h, pip ~0.66h), which
+ * costs nothing: the vertical pair still touches, the box is still two cards by
+ * two, and the flanks still cross both neighbours enough to interlock.
+ *
+ * The cost this shifts rather than removes is on the flanks themselves — see
+ * CLUSTER_ORDER. On a 2x2 footprint no arrangement leaves all four indexes
+ * whole; this spends that on a flank's pip instead of the top card's.
  */
-const flankTop = (h: number) => Math.round(h / 2);
+const flankTop = (h: number) => Math.round(h * 0.7);
 /** The compass's box for a card box: exactly the union of the four positions —
     two cards wide (the flanks) by two tall (the touching vertical pair). */
 export function clusterBox(card: { w: number; h: number } = CARD) {

@@ -411,16 +411,25 @@ test.describe("mobile table v3 — phone tier", () => {
           Math.abs(Math.abs(f.x - bySeat.N.x) - c0.w / 2),
           `${flank} flanks the column by half a card`,
         ).toBeLessThanOrEqual(1.5);
-        expect(
-          Math.abs(f.y - bySeat.N.y - c0.h * 0.5),
-          `${flank} straddles the seam — half a card below N`,
-        ).toBeLessThanOrEqual(1.5);
+        // The flanks start BELOW the top card's suit pip. Half a card down cut
+        // straight through it, so the leader's card showed a rank with no suit —
+        // the one thing a player reads the trick for. What is protected here is
+        // that property, not the old constant: the flank clears N's index, and
+        // still overlaps N enough to interlock rather than float free.
+        const drop = f.y - bySeat.N.y;
+        expect(drop, `${flank} clears N's index`).toBeGreaterThanOrEqual(c0.h * 0.62);
+        expect(drop, `${flank} still overlaps N`).toBeLessThan(c0.h);
       }
       if (bySeat.S) {
+        // …and still crosses the seam into S, so the cross stays one shape.
         expect(
-          Math.abs(bySeat.S.y - f.y - c0.h * 0.5),
-          `${flank} straddles the seam — half a card above S`,
-        ).toBeLessThanOrEqual(1.5);
+          bySeat.S.y - f.y,
+          `${flank} straddles the seam into S`,
+        ).toBeGreaterThan(0);
+        expect(
+          bySeat.S.y - f.y,
+          `${flank} overlaps S rather than clearing it`,
+        ).toBeLessThan(c0.h);
       }
     }
     if (bySeat.W && bySeat.E)
