@@ -44,6 +44,13 @@
  * own system, and a drill that contradicts the lesson above it is worse than no
  * drill. Which one a lesson wants is a question about the lesson.
  */
+// The box an embeddable component stands in, and the opt-in reset that stops
+// a host page's font and colour flowing into it. Exported so a host can fence
+// off a component that does not carry the box itself — <BridgeTable/> and
+// <ChallengePlayer/> are meant to FILL a box the host sizes, so they don't.
+export { EmbedRoot, embedBox } from "./EmbedRoot";
+export type { EmbedRootProps, EmbedBoxOptions } from "./EmbedRoot";
+
 export { BridgeTable } from "./BridgeTable";
 export { BiddingDrill } from "./BiddingDrill";
 export { DealDiagram } from "./DealDiagram";

@@ -42,6 +42,7 @@ import {
   type DrillHand,
   type DrillHandProblem,
 } from "./openingBidHands";
+import { embedBox, type EmbedBoxOptions } from "./EmbedRoot";
 import {
   judgeHand,
   markAnswers,
@@ -77,7 +78,7 @@ const WARN_INK = "#8a5a00";
 const WARN_BG = "#fff8e6";
 const WARN_LINE = "rgba(180,130,0,0.35)";
 
-export interface BiddingChallengeProps {
+export interface BiddingChallengeProps extends EmbedBoxOptions {
   /**
    * The hands, in order. Defaults to the authored set so the drill is a drill
    * with no configuration at all; an author with their own set passes it here
@@ -156,9 +157,12 @@ export function BiddingChallenge({
   hands = OPENING_BID_HANDS,
   limit,
   showDataNotice = true,
+  isolate,
+  fontFamily,
   onProgress,
   onComplete,
 }: Readonly<BiddingChallengeProps>) {
+  const box = embedBox({ isolate, fontFamily });
   const asked = useMemo(
     () => (limit && limit > 0 ? hands.slice(0, limit) : hands.slice()),
     [hands, limit],
@@ -265,7 +269,7 @@ export function BiddingChallenge({
 
   if (asked.length === 0)
     return (
-      <div style={{ padding: 16, fontSize: 13, color: QUIET, background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12 }}>
+      <div style={{ ...box, padding: 16, fontSize: 13, color: QUIET, background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12 }}>
         This drill has no hands yet.
       </div>
     );
@@ -302,7 +306,7 @@ export function BiddingChallenge({
   // ── the end ──────────────────────────────────────────────────────────────
   if (finished)
     return (
-      <div ref={wrap} style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: 14 }}>
+      <div ref={wrap} style={{ ...box, background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: 14 }}>
         <div style={{ display: "flex", justifyContent: "center" }}>
           <ResultCard
             line="Drill complete"
@@ -471,7 +475,7 @@ export function BiddingChallenge({
   );
 
   return (
-    <div ref={wrap} style={{ background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: PAD }}>
+    <div ref={wrap} style={{ ...box, background: SURFACE, border: `1px solid ${LINE}`, borderRadius: 12, padding: PAD }}>
       {/* Counter and dots together on the LEFT, clear of whatever the host floats
           in the top-right corner — the learning platform floats a Close there. */}
       <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: "2px 10px", marginBottom: 8 }}>
