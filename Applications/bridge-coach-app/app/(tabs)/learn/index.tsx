@@ -176,7 +176,7 @@ export default function LearnScreen() {
                     index={i}
                     title={item.title}
                     body={item.description ?? undefined}
-                    onPress={() => router.push(`/learn/${item.id}`)}
+                    onPress={() => router.push(`/learn-object/${item.id}`)}
                   />
                 ))}
               </Deck>

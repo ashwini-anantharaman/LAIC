@@ -2,14 +2,14 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { ContentWebView } from "../../../components/content-webview";
-import { PrimaryButton, Screen, ScreenHeader } from "../../../components/ui";
-import { Colors, Fonts, Spacing } from "../../../constants/theme";
-import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
-import { useAuth } from "../../../lib/auth-context";
-import { useSelectedClubId } from "../../../lib/club-context";
-import { takeLaunch } from "../../../lib/launch-cache";
-import { getCachedObject } from "../../../lib/learning";
+import { ContentWebView } from "../../components/content-webview";
+import { PrimaryButton, Screen, ScreenHeader } from "../../components/ui";
+import { Colors, Fonts, Spacing } from "../../constants/theme";
+import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../lib/config";
+import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
+import { takeLaunch } from "../../lib/launch-cache";
+import { getCachedObject } from "../../lib/learning";
 
 /**
  * Opens one learning object in the learning platform's own student view:
