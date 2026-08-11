@@ -178,6 +178,15 @@ export function ContentWebView(props: {
    *  host must not depend on them. The pool is off — see POOL_ENABLED. */
   onLoadEnd?: () => void;
   onError?: () => void;
+  /**
+   * Accepted for parity with native and deliberately IGNORED here: styling a
+   * cross-origin iframe's document from the host is exactly what the same-origin
+   * policy forbids, and there is no WebView-style injection hook on the web. A
+   * web build therefore shows the embed in its own skin. Dressing it there would
+   * mean the embedded app applying the styling itself, which is a change to that
+   * deployment rather than to this one.
+   */
+  injectedCSS?: string;
 }) {
   return POOL_ENABLED ? PooledView(props) : InlineView(props);
 }

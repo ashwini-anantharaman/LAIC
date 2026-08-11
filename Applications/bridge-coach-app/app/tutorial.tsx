@@ -19,6 +19,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ContentWebView } from "../components/content-webview";
 import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
+import { EMBED_SKIN_CSS } from "../constants/embed-skin";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { LEARNING_PLATFORM_URL } from "../lib/config";
 import { useState } from "react";
@@ -64,6 +65,9 @@ export default function TutorialScreen() {
       ) : (
         <ContentWebView
           url={TUTORIAL_URL}
+          // Dress the page in the app's type and ground so the embed does not read
+          // as a browser inside a screen. See constants/embed-skin.ts.
+          injectedCSS={EMBED_SKIN_CSS}
           onLoadEnd={() => setLoaded(true)}
           onError={() => setFailed(true)}
         />
