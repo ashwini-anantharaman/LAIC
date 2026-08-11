@@ -25,6 +25,7 @@ import {
   Type,
 } from "../../../constants/theme";
 import { useAuth } from "../../../lib/auth-context";
+import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
 import { getLearningObjects } from "../../../lib/learning";
 import { LearningObject, NexusError } from "../../../lib/nexus";
@@ -59,6 +60,8 @@ function Deck({ children }: { children: ReactNode }) {
 
 export default function LearnScreen() {
   const { token } = useAuth();
+  // A club's Learn list is the club's own curriculum.
+  const clubId = useSelectedClubId();
   const [cards, setCards] = useState<LearningObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,7 +70,7 @@ export default function LearnScreen() {
       if (!token) return;
       setError(null);
       try {
-        const objects = await getLearningObjects(token, { refresh });
+        const objects = await getLearningObjects(token, { refresh, programId: clubId ?? undefined });
         // Boss demo scope: concept cards only. Widen to more types later.
         setCards(objects.filter((o) => o.type === "concept-card"));
       } catch (e) {
@@ -90,7 +93,7 @@ export default function LearnScreen() {
   useFocusEffect(
     useCallback(() => {
       if (token) prefetchLaunch(token, "learning");
-    }, [token]),
+    }, [token, clubId]),
   );
 
   return (

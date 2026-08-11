@@ -447,6 +447,15 @@ async function _grantLevel(
       const anyEdit = Object.values(((lr.perms as Row) ?? {})).includes("edit");
       return { level: anyEdit ? "edit" : "view" };
     }
+    // A program's BRIDGE COACH holds the learning platform too (owner direction
+    // 2026-08-11: "give learn access to the coach account") — as the learning
+    // app's own `coach` role, its weakest coaching tier, not as an author or
+    // admin. Without this, every coach needed a second, manually assigned
+    // learning role just to open the Learn tab, and in practice nobody got one.
+    const bridgeRole = await graph.getPlatformRoleForEmail(pid, "bridge", user.email).catch(() => null);
+    if (bridgeRole === "bridge_coach") {
+      return { level: LEARNING_ROLE_LEVEL["coach"] ?? "edit", platformRole: "coach" };
+    }
   }
   return null;
 }

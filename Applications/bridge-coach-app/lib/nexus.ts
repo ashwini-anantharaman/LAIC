@@ -376,9 +376,12 @@ export function fetchMe(token: string): Promise<NexusUser> {
 
 /** The org's learning objects, metadata only (no content payloads — the full
  *  list can run to tens of MB; content renders in the platform WebView). */
-export function fetchLearningObjects(token: string): Promise<LearningObject[]> {
+export function fetchLearningObjects(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<LearningObject[]> {
   return request<LearningObject[]>(
-    `/api/platform/learning/objects?program_id=${PROGRAM_ID}&meta=1`,
+    `/api/platform/learning/objects?program_id=${programId}&meta=1`,
     { token },
   );
 }
@@ -390,10 +393,14 @@ export type PlatformLaunch = {
   expires_at: string;
 };
 
-/** Mint a single-use launch into the learning platform (works for learners). */
-export function launchLearningPlatform(token: string): Promise<PlatformLaunch> {
+/** Mint a single-use launch into the learning platform (works for learners).
+ *  A club's people launch as THEIR CLUB, same as the bridge launch. */
+export function launchLearningPlatform(
+  token: string,
+  programId: string = PROGRAM_ID,
+): Promise<PlatformLaunch> {
   return request<PlatformLaunch>(
-    `/api/programs/${PROGRAM_ID}/learning-platform/launch`,
+    `/api/programs/${programId}/learning-platform/launch`,
     { method: "POST", token },
   );
 }

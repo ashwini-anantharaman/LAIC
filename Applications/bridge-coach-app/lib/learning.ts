@@ -4,17 +4,20 @@ import { fetchLearningObjects, LearningObject } from "./nexus";
 // Keyed by TOKEN: a fetch from a previous session resolving after sign-out
 // must never leak another user's list into the next session.
 
-let cached: { token: string; objects: LearningObject[] } | null = null;
+// ALSO keyed by program: a club's Learn list is the club's, not the app-wide
+// program's, and one slot serving both would flash the wrong curriculum.
+let cached: { key: string; objects: LearningObject[] } | null = null;
 
 export async function getLearningObjects(
   token: string,
-  opts: { refresh?: boolean } = {},
+  opts: { refresh?: boolean; programId?: string } = {},
 ): Promise<LearningObject[]> {
-  if (!cached || cached.token !== token || opts.refresh) {
-    const objects = await fetchLearningObjects(token);
+  const key = `${token}|${opts.programId ?? ""}`;
+  if (!cached || cached.key !== key || opts.refresh) {
+    const objects = await fetchLearningObjects(token, opts.programId);
     // Learners only ever see PUBLISHED content — drafts and in-review
     // objects are authoring state, not curriculum.
-    cached = { token, objects: objects.filter((o) => o.status === "published") };
+    cached = { key, objects: objects.filter((o) => o.status === "published") };
   }
   return cached.objects;
 }

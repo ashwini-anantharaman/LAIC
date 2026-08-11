@@ -1895,14 +1895,24 @@ platformRouter.get("/learning/context", async (c) => {
   } catch (e) {
     console.error("learning/context capability computation failed (using empty set):", e);
   }
+  // An exact pre-built learning role on the grant (picked in the role builder,
+  // or implied — a bridge coach arrives as the learning app's `coach`) is
+  // authoritative, same as the bridge context: flattening it through the
+  // level map turned `coach`/`object-reviewer` into `content-developer`/
+  // `course-reviewer`, which are different apps entirely.
+  const prebuiltLearning =
+    access.platformRole &&
+    platformRoleConfig("learning")?.prebuilt.includes(access.platformRole)
+      ? access.platformRole
+      : null;
   return c.json({
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
     programId: access.programId,
     appId: await platformAppSlug(access.programId, "learning-platform", "learning_platform"),
-    roles: mapped.roles,
+    roles: prebuiltLearning ? [prebuiltLearning] : mapped.roles,
     permissions: [`learning:${access.level}`],
-    accessLevel: mapped.accessLevel,
+    accessLevel: prebuiltLearning ?? mapped.accessLevel,
     capabilities, // effective learning-catalogue capability ids (screen gating)
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
