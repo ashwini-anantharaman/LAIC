@@ -20,10 +20,19 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { ContentWebView } from "../components/content-webview";
 import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
+import { LEARNING_PLATFORM_URL } from "../lib/config";
 import { useState } from "react";
 
-/** The one tutorial this card opens, until activities carry their own ids. */
-const TUTORIAL_URL = "https://laic-ashwini-learning.vercel.app/o/tv2-msj04a0i?embed=1";
+/**
+ * The one tutorial this card opens, until activities carry their own ids.
+ *
+ * The HOST comes from config rather than being written out again: it is the same
+ * learning platform the Learn tab uses (EXPO_PUBLIC_LEARNING_URL), so pointing the
+ * app at a different deployment moves this with it. The first version of this
+ * screen hardcoded a different origin, and the object simply did not exist there.
+ */
+const TUTORIAL_OBJECT_ID = "tv2-msj04a0i";
+const TUTORIAL_URL = `${(LEARNING_PLATFORM_URL ?? "").replace(/\/+$/, "")}/o/${TUTORIAL_OBJECT_ID}?embed=1`;
 
 export default function TutorialScreen() {
   // A WebView that cannot reach the page fires onError; without this the screen
