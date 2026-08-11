@@ -542,6 +542,10 @@ export function fetchAppContext(token: string, programId: string): Promise<AppCo
 export type AppMemberRow = ProgramMemberRow & {
   app_role_id?: string | null;
   app_role_name?: string | null;
+  /** Server-computed: their club role grants coaching (or they hold the club
+   *  structurally). The one signal that splits a club into coaches and
+   *  learners — the membership role cannot (every enrollee is "instructor"). */
+  is_coach?: boolean;
 };
 
 export function fetchAppMembers(token: string, programId: string): Promise<AppMemberRow[]> {
@@ -593,8 +597,14 @@ export type ProgramLearner = {
  * appear at all. /club-app/members resolves against the club itself, so this is
  * the roster a club actually has.
  *
- * Mentors, admins and owners are the people doing the coaching, so they are not
- * their own learners.
+ * WHO COUNTS AS A LEARNER: whoever the club's role assignments say — the
+ * server's `is_coach` (a role granting the coaching menu, or structural
+ * owner/admin) splits the roster, and everyone else is a learner. The old
+ * membership-role filter is kept ONLY as the fallback for a server that
+ * doesn't emit the flag yet, and it was quietly wrong both ways: every
+ * enrollee's membership is "instructor" (so the club's real Members were
+ * dropped), while people whose ROLES coach slipped through on a different
+ * membership value.
  */
 const _NOT_A_LEARNER = new Set(["owner", "administrator", "instructor"]);
 
@@ -604,7 +614,9 @@ export async function fetchClubLearners(
 ): Promise<ProgramLearner[]> {
   const members = await fetchAppMembers(token, programId);
   return members
-    .filter((m) => !_NOT_A_LEARNER.has(m.membership_role))
+    .filter((m) =>
+      m.is_coach !== undefined ? !m.is_coach : !_NOT_A_LEARNER.has(m.membership_role),
+    )
     .map((m) => ({
       user_id: m.profile_id ?? null,
       email: m.email,

@@ -2129,6 +2129,30 @@ export async function listClubCoaches(
 }
 
 /**
+ * How many of a club's people a coach is there FOR — the club's learners: its
+ * active members minus the coaching tier. The exact inverse of listClubCoaches
+ * (same capability rule, negated), so the coach screen's headline count and
+ * its "My Learners" roster can never disagree about who counts.
+ */
+export async function countClubLearners(orgId: string, clubProgramId: string): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select count(*)::int as n
+      from org_memberships m
+      join profiles p on p.id = m.profile_id
+      left join program_role_assignments a
+        on a.program_id = ${clubProgramId} and lower(a.email) = lower(p.email)
+      left join program_roles r on r.id = a.role_id
+      where m.org_id = ${orgId} and m.program_id = ${clubProgramId}
+        and (m.status is null or m.status = 'active')
+        and m.role not in ('owner', 'administrator')
+        and coalesce(r.perms->>'clubapp', '') <> 'administrator'
+        and not coalesce(r.perms->'capabilities' @> '["app.coaching.view"]'::jsonb, false)`);
+    return Number((rows as unknown as Row[])[0]?.n ?? 0);
+  });
+}
+
+/**
  * A learner participant for someone who never REGISTERED: a club member.
  *
  * The hire flow (and everything downstream: my-coaches, the summary's coach

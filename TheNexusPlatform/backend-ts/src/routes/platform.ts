@@ -1211,7 +1211,7 @@ platformRouter.get("/bridge/summary", async (c) => {
   // roster group) and content (deal of the day) stay parent-scoped — that is
   // where they actually live.
   const dataProgramId = access.partnerProgramId ?? access.programId;
-  const [s, { coach, coachList }, inProgress, deal] = await Promise.all([
+  const [s, { coach, coachList }, inProgress, deal, clubLearners] = await Promise.all([
     graph.getBridgeActivitySummary(access.orgId, dataProgramId, access.profileId),
     coachStrand,
     graph
@@ -1224,12 +1224,20 @@ platformRouter.get("/bridge/summary", async (c) => {
         Math.floor(Date.now() / 86_400_000),
       )
       .catch(() => null),
+    // IN A CLUB, "your learners" are the club's learners — its members minus
+    // the coaching tier — not the hired-roster count the activity summary
+    // measures. A club coach's screen said "0 learners" over a two-person "My
+    // Learners" list: the header counted who had HIRED them (parent-program
+    // roster groups), the list showed the club. One club, one answer.
+    access.partnerClub && access.partnerProgramId
+      ? graph.countClubLearners(access.orgId, access.partnerProgramId).catch(() => null)
+      : Promise.resolve(null),
   ]);
   return c.json({
     assignments_open: Number(s.assignments_open ?? 0),
     plays_reviewed: Number(s.plays_reviewed ?? 0),
     reviews_pending: Number(s.reviews_pending ?? 0),
-    roster_count: Number(s.roster_count ?? 0),
+    roster_count: clubLearners ?? Number(s.roster_count ?? 0),
     coach,
     coaches: coachList.map(learnerCoachOut),
     in_progress: inProgress.map((r) => ({
@@ -1780,7 +1788,25 @@ platformRouter.get("/club-app/context", async (c) => {
  *  labels, and the source of the club's role filter. */
 platformRouter.get("/club-app/members", async (c) => {
   const { programId, orgId } = await _clubAppActor(c);
-  const members = await graph.listProgramMembers(orgId, programId);
+  const [members, roles] = await Promise.all([
+    graph.listProgramMembers(orgId, programId),
+    graph.listProgramRoles(programId).catch(() => [] as Row[]),
+  ]);
+  // Which of the club's roles COACH — the same capability rule as
+  // /bridge/context's clubCoach: the role grants the coaching menu, or grants
+  // the whole app area at "administrator" (which stores no per-capability
+  // ids). Emitted per member as `is_coach` so the app can split its roster
+  // into coaches and learners WITHOUT re-deriving role semantics client-side
+  // — the membership role can't do that job (every enrollee is "instructor").
+  const coachingRoleIds = new Set(
+    roles
+      .filter((r: Row) => {
+        const perms = (r.perms as Record<string, unknown>) ?? {};
+        const caps = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+        return perms.clubapp === "administrator" || caps.includes("app.coaching.view");
+      })
+      .map((r: Row) => r.id as string),
+  );
   // listProgramMembers already carries `role_name` — the club role each person
   // holds — so the roster's label is a join it has done for us.
   return c.json(
@@ -1792,6 +1818,7 @@ platformRouter.get("/club-app/members", async (c) => {
         ...m,
         app_role_id: (m.role_id as string | null) ?? null,
         app_role_name: isAdmin ? "Administrator" : ((m.role_name as string | null) ?? null),
+        is_coach: isAdmin || coachingRoleIds.has((m.role_id as string | null) ?? ""),
       };
     }),
   );
