@@ -148,12 +148,22 @@ export function visiblePosition(state: GameState, seat: Seat | null): VisiblePos
  * The validator checks the model's prose against this set: a card named in an
  * explanation that is not in here could only have come from a concealed hand,
  * which means the whole response is discarded rather than shown.
+ *
+ * THE AUCTION IS IN THE SET, on purpose: a bid label ("2♠") is
+ * indistinguishable from a card token to the regex below, and every call is
+ * public record — yet the set never carried them, so any answer that merely
+ * NAMED an opponent's bid ("East's 2♠ shows…") was discarded whole as a
+ * leak. In a contested auction that killed virtually every hint ladder, and
+ * quietly ate chat answers too. Only levels 2-7 collide (a "1♠" or "7NT+1"
+ * never parses as a card; an "A♠" is never a call), so admitting the calls
+ * actually made concedes nothing a table's scorer couldn't see.
  */
 export function visibleCards(pos: VisiblePosition): ReadonlySet<string> {
   const out = new Set<string>(pos.myHand.cards);
   for (const c of pos.dummy?.cards ?? []) out.add(c);
   for (const t of pos.tricks) for (const p of t.plays) out.add(p.card);
   for (const l of pos.legal) out.add(l);
+  for (const a of pos.auction) out.add(a.call);
   return out;
 }
 

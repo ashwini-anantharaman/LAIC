@@ -58,6 +58,30 @@ describe("validateHints — the leak gate", () => {
     expect("hints" in r).toBe(true);
   });
 
+  it("allows the auction's own bids to be named — a call is not a card", () => {
+    // "2♠" parses exactly like a card token, and East's bid is public record;
+    // before the auction joined the visible set, a contested auction killed
+    // virtually every ladder as a "leak" (reported 2026-08-11: "No hints for
+    // this position right now" on every try).
+    const contested = visiblePosition(
+      state({
+        auction: [
+          { seat: "N", call: "2H" as never },
+          { seat: "E", call: "2S" as never },
+        ],
+      }),
+      "S",
+    )!;
+    const naming = ladder("Compete over their 2♠ — support partner's hearts.");
+    naming[0] = "East's 2♠ overcall crowds your auction; ask what partner's 2♥ promised.";
+    expect("hints" in validateHints({ hints: naming }, contested)).toBe(true);
+    // ...while a genuinely hidden CARD still kills the ladder whole (the
+    // learner's hand has no K♦, and K♦ can never be a call).
+    const leaking = ladder();
+    leaking[1] = "West's K♦ is onside, so the finesse works.";
+    expect(validateHints({ hints: leaking }, contested)).toEqual({ reason: "leaked" });
+  });
+
   it("rejects the wrong shape: not five, not strings, not an object", () => {
     expect(validateHints({ hints: ladder().slice(0, 4) }, pos)).toEqual({ reason: "malformed" });
     expect(validateHints({ hints: [...ladder(), "a sixth"] }, pos)).toEqual({ reason: "malformed" });
