@@ -107,7 +107,12 @@ export default function CoachScreen() {
     })),
     // Withheld while the summary is unknown: we cannot yet tell "a coach" from
     // "another coach", and guessing is the class of bug being fixed here.
-    ...(s
+    // NO HIRING IN A CLUB (owner direction 2026-08-11): membership already
+    // subscribes every member to the club's coaching tier, so there is
+    // nothing to hire and nothing to part with — the server rejects both.
+    // The cards above ARE the club's coaches; offering "+ Hire another"
+    // beside them was a button whose action could only fail.
+    ...(s && !clubId
       ? [
           {
             key: "hire",
@@ -205,7 +210,9 @@ export default function CoachScreen() {
                 ? "Tap a coach to see their feedback. You pick who reviews each game."
                 : coachList.length === 1
                   ? "Tap your coach to see their feedback on your games."
-                  : "Hire a coach and they'll review the boards you play."}
+                  : clubId
+                    ? "Your club's coaches will appear here."
+                    : "Hire a coach and they'll review the boards you play."}
           </Text>
         </View>
       )}

@@ -1167,12 +1167,20 @@ platformRouter.get("/bridge/coaches", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
   const coaches = await _hirableCoaches(access);
+  // In a club every coach coaches the whole club (membership IS the
+  // subscription), so each card carries the club's learner count — the
+  // per-roster count below is the hire model's, and for a club it read "0
+  // learners" beside a coach who demonstrably had eighteen.
+  const clubLearners =
+    access.partnerClub && access.partnerProgramId
+      ? await graph.countClubLearners(access.orgId, access.partnerProgramId).catch(() => null)
+      : null;
   // Names + ids only (people isolation: no emails to browsing learners).
   return c.json(
     coaches.map((co) => ({
       coach_id: co.coach_id,
       name: co.name,
-      learner_count: Number(co.learner_count ?? 0),
+      learner_count: clubLearners ?? Number(co.learner_count ?? 0),
     })),
   );
 });
@@ -1323,21 +1331,40 @@ platformRouter.put("/bridge/collection-designations", async (c) => {
   return c.json(await bridgeRoles.setCollectionDesignations(access.programId, body));
 });
 
+/** A club member's coaches: the club's whole coaching tier, minus themselves
+ *  — membership IS the subscription (owner direction 2026-08-11), the same
+ *  answer the summary's coach strand gives. Null outside clubs. */
+async function _clubCoachList(access: ResolvedPlatformAccess): Promise<Row[] | null> {
+  if (!access.partnerClub || !access.partnerProgramId) return null;
+  const list = await graph.listClubCoachesWithTallies(
+    access.orgId,
+    access.partnerProgramId,
+    access.profileId,
+  );
+  return list.filter((co) => co.coach_id !== access.profileId);
+}
+
 platformRouter.get("/bridge/my-coach", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
   if (!user.email) return c.json({ coach: null });
+  const clubList = await _clubCoachList(access);
+  if (clubList) return c.json({ coach: clubList[0] ?? null });
   const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
   if (!participant?.group_id) return c.json({ coach: null });
   return c.json({ coach: await graph.getCoachForGroup(participant.group_id as string) });
 });
 
 /** EVERY coach this learner has hired (multi-coach, 0040). The my-coach
- *  singular above stays as the PRIMARY (roster group) for older callers. */
+ *  singular above stays as the PRIMARY (roster group) for older callers.
+ *  In a club, "hired" is simply the club's coaching tier — same source as
+ *  the summary, so this can never disagree with the Coach tab's cards. */
 platformRouter.get("/bridge/my-coaches", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
   if (!user.email) return c.json({ coaches: [] });
+  const clubList = await _clubCoachList(access);
+  if (clubList) return c.json({ coaches: clubList.map(learnerCoachOut) });
   const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
   if (!participant) return c.json({ coaches: [] });
   const coachList = await graph.listLearnerCoaches(
@@ -1357,19 +1384,18 @@ platformRouter.get("/bridge/my-coaches", async (c) => {
 platformRouter.post("/bridge/my-coach", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  // A club has no hire step: membership already subscribes every member to
+  // the club's whole coaching tier (owner direction 2026-08-11). Accepting a
+  // hire here would mint relationship rows nothing reads any more — junk
+  // that resurfaces as phantom counts.
+  if (access.partnerClub) {
+    throw new HttpError(400, "A club's coaches already coach every member — there is nothing to hire.");
+  }
   const body = (await c.req.json()) as Row;
   const coachId = String(body.coach_id ?? "");
   if (!coachId) throw new HttpError(400, "coach_id is required");
   if (!user.email) throw new HttpError(403, "Only learners can hire a coach");
-  let participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
-  if (!participant && access.partnerClub) {
-    // A club member has no registration and therefore no participant row in
-    // the parent instance — their first hire mints one, which is what the
-    // relationship, the roster group, and every learner-side read key on.
-    participant = await graph.ensureClubLearnerParticipant(
-      access.orgId, access.programId, access.profileId,
-    );
-  }
+  const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
   if (!participant) throw new HttpError(403, "Only program learners can hire a coach");
   // THE POOL IS THE POLICY: entered through a club, only that club's own
   // instructors are offered — and only they pass validation here, so a
@@ -1402,6 +1428,11 @@ platformRouter.post("/bridge/my-coach", async (c) => {
 platformRouter.delete("/bridge/my-coach/:coach_id", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "bridge", c.req.query("program_id") ?? null);
+  // The mirror of the hire guard above: in a club there is no relationship
+  // row to dissolve — the subscription is the membership itself.
+  if (access.partnerClub) {
+    throw new HttpError(400, "A club's coaches coach every member — there is nothing to part with.");
+  }
   const coachId = c.req.param("coach_id");
   if (!user.email) throw new HttpError(403, "Only learners can part with a coach");
   const participant = await graph.getLearnerParticipant(access.orgId, access.programId, user.email);
