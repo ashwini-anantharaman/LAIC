@@ -166,6 +166,14 @@ export type LearningObject = {
    *  the migration, so a consumer can treat them as arrays unconditionally. */
   collection_ids?: string[];
   collection_names?: string[];
+  /** Which version's content this row holds, and when an author last published it
+   *  (0004). Publishing overwrites the row, so there is exactly one row per object
+   *  and it is always the current published version — no version filtering on the
+   *  read side. `published_at` null means either never explicitly published, or
+   *  published before versions were tracked; `version_number` null means the
+   *  latter. Absent entirely on a server that predates the migration. */
+  version_number?: number | null;
+  published_at?: string | null;
 };
 
 // ── Endpoints ────────────────────────────────────────────────────────────────

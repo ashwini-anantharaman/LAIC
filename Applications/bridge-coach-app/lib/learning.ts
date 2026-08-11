@@ -1,19 +1,32 @@
 import { fetchLearningObjects, LearningObject } from "./nexus";
 
 /**
- * Which authoring states reach a learner.
+ * Which content reaches a learner.
  *
- * Was `published` only, on the reasoning that anything else is authoring state.
- * The Content Studio in practice never leaves that state — content sits at
- * in-review or approved — so the Learn tab was empty while the library was full.
- * Owner direction: show both of those.
+ * `published_at` is the real answer, and it beats the status string: publishing is
+ * now a deliberate per-version act (migration 0004) that stamps the row, so a
+ * stamped row IS the version its author chose to ship. Status is authoring
+ * workflow — an object can sit at "in-review" while a previously published version
+ * is the one readers should see.
  *
- * `draft` stays out: it is genuinely unfinished, not merely unpublished. `published`
- * is kept so nothing that already qualified disappears.
+ * The status list survives as a FALLBACK for two cases, both real right now:
+ * a server that predates 0004 (the column is absent, so every row would look
+ * unpublished and the tab would go empty), and rows published before it (stamp
+ * null, version unknown — the migration says so). `draft` is excluded either way:
+ * genuinely unfinished, not merely unpublished.
+ *
+ * Publishing overwrites the row in place, so there is exactly one row per object
+ * and no version filtering is needed here.
  */
 const LEARNER_VISIBLE = new Set(["in-review", "approved", "published"]);
 
 function isVisibleToLearners(o: LearningObject): boolean {
+  // Stamped = published, whatever the authoring status now says.
+  if (o.published_at) return true;
+  // The column exists but this row was never published: honour that, rather than
+  // falling back to a status that would let unpublished work through.
+  if (o.published_at === null) return false;
+  // Column absent (pre-0004 server) — fall back to the authoring status.
   return LEARNER_VISIBLE.has((o.status ?? "").trim().toLowerCase());
 }
 

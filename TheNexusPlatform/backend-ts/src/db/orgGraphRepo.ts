@@ -2664,7 +2664,7 @@ export async function listLearningObjectsMeta(orgId: string, programId?: string 
     return await _listLearningObjectsMeta(orgId, programId, true);
   } catch (e) {
     if (!_isUndefinedColumn(e)) throw e;
-    console.warn("[nexus] learning_objects.collection_* missing — run migrations for folder labels");
+    console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
     return _listLearningObjectsMeta(orgId, programId, false);
   }
 }
@@ -2674,9 +2674,14 @@ async function _listLearningObjectsMeta(
   programId: string | null | undefined,
   withCollections: boolean,
 ): Promise<Row[]> {
+  // One optional group for every column added by 0003/0004. They land together in
+  // practice, and a single fallback keeps the pre-migration path to one query
+  // rather than a matrix of maybe-present columns.
   const cols = withCollections
     ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
-            coalesce(collection_names, '[]'::jsonb) as collection_names`
+            coalesce(collection_names, '[]'::jsonb) as collection_names,
+            version_number,
+            published_at::text as published_at`
     : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(
