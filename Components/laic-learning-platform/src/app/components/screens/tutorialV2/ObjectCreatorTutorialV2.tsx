@@ -39,6 +39,8 @@ import {
   sectionHasContent,
   slotSatisfied,
   structureFromTemplate,
+  movePartToPage,
+  partPageNumbers,
   syncAssembledPartsIntoDraft,
   topLevelSlotAsSection,
   touchDraft,
@@ -800,7 +802,15 @@ export function ObjectCreatorTutorialV2() {
 
   const hootParts = useMemo((): TutorialEditorPart[] => {
     if (phase === 'section' && activeSection) return activeSection.parts as TutorialEditorPart[];
-    if (phase === 'review') return assembleAllParts(draft) as TutorialEditorPart[];
+    if (phase === 'review') {
+      // Label parts with their student page so Hoot can move blocks across pages.
+      const assembled = assembleAllParts(draft);
+      const pages = partPageNumbers(assembled);
+      return assembled.map((p, i) => ({
+        ...p,
+        label: `${p.label || p.type || 'Part'} · page ${pages[i]}`,
+      })) as TutorialEditorPart[];
+    }
     if (phase === 'navigator' || phase === 'structure') {
       return (draft.sections || []).map((s) => ({
         id: s.id,
@@ -878,13 +888,29 @@ export function ObjectCreatorTutorialV2() {
 
     // Review / default: apply to assembled reading-order parts
     const parts = assembleAllParts(draft);
-    const result = applyEditActionsToParts(parts as TutorialEditorPart[], actions, {
+    // Hoot page moves: update_block { patch: { page: N } } relocates a block
+    // onto another student page (Review). Strip them out of the normal apply.
+    const flatForPages = flattenActions(actions);
+    const pageMoves: { blockId: string; page: number }[] = [];
+    const cleaned = flatForPages.map((a: any) => {
+      if (a?.type === 'update_block' && a.patch && a.patch.page != null) {
+        pageMoves.push({ blockId: String(a.blockId), page: Number(a.patch.page) || 1 });
+        const { page: _page, ...rest } = a.patch;
+        if (!Object.keys(rest).length) return null;
+        return { ...a, patch: rest };
+      }
+      return a;
+    }).filter(Boolean) as EditAction[];
+    const result = applyEditActionsToParts(parts as TutorialEditorPart[], cleaned, {
       title: draft.title,
       objective: String(draft.metadata.objective || ''),
     });
+    let nextParts = result.parts as any[];
+    for (const mv of pageMoves) nextParts = movePartToPage(nextParts as any, mv.blockId, mv.page) as any;
     const patch: Partial<typeof draft> = {
-      assembledParts: result.parts as any,
+      assembledParts: nextParts as any,
       phase: phase === 'review' ? 'review' : draft.phase,
+      ...(pageMoves.length ? { manualPageBreaks: true } : {}),
     };
     if (result.meta?.title) patch.title = result.meta.title;
     if (result.meta?.objective) {

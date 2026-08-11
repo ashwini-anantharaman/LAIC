@@ -169,6 +169,12 @@ export interface TutorialV2Draft {
    * When set, preferred over re-collecting from slots/sections.
    */
   assembledParts?: TutorialV2Part[];
+  /**
+   * True once the author reassigned block pages on Review — from then on the
+   * per-part pageBreakBefore flags are authoritative and Structure-level
+   * learnerPage stamping is skipped.
+   */
+  manualPageBreaks?: boolean;
   /** Legacy Plan definition (kept for reopen compatibility). */
   tutorialDefinition?: import('../types').TutorialDefinition;
   status: 'draft' | 'ready' | 'submitted';
