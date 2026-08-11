@@ -153,10 +153,19 @@ const CENTRE_MIN_AUCTION = AUCTION_HEAD + auctionRowsBoxH(2, AUCTION_CELL);
 const CENTRE_MIN_PLAY = Math.round(M_TRICK_BOX.h * 0.7) + 16;
 const CENTRE_MIN_RESULT = 200;
 const CENTRE_MAX = 900;
+/**
+ * What the centre band WANTS, per phase — its designed content height: the
+ * whole four-row auction grid, the full trick compass with air, the result
+ * card with margin. WITH THE COACH PANEL ON this is also its CEILING (owner
+ * direction 2026-08-11: "the table should be very compact and the rest of the
+ * space is given to the coach"): a taller window makes the coach taller, never
+ * the felt emptier — CENTRE_MAX-style absorption is for the standalone table,
+ * where there is nobody below to give the leftover to.
+ */
+const CENTRE_IDEAL_AUCTION = AUCTION_BOX_H;
+const CENTRE_IDEAL_PLAY = M_TRICK_BOX.h + 16;
+const CENTRE_IDEAL_RESULT = 300;
 const PAD_CENTRE = 150;
-// (FIXED-TABLE mode, 2026-08-09, is superseded: the centre band flexes between
-// its floors and CENTRE_MAX — owner direction 2026-08-11 — and the coach panel
-// still takes whatever the content-sized stack leaves.)
 /** Sub-pixel rounding across four bands lands a few px either way; the centre
     absorbs it, so this reserve guarantees the budget never UNDER-reserves (an
     over-reserve is invisible, an under-reserve clips the action bar off the
@@ -542,6 +551,11 @@ export function PlayTable({
   const trayFor = (k: number) => TRAY_ROWS * trayRowFor(k) + TRAY_PAD;
   /** What the centre band's content needs before it starts scrolling/scaling. */
   const centreMin = complete ? CENTRE_MIN_RESULT : inAuction ? CENTRE_MIN_AUCTION : CENTRE_MIN_PLAY;
+  /** …and what it WANTS. With the coach panel below, want is also the ceiling:
+      the table stays compact and the coach's flex band takes every remaining
+      pixel; standalone, the felt may still absorb up to CENTRE_MAX. */
+  const centreIdeal = complete ? CENTRE_IDEAL_RESULT : inAuction ? CENTRE_IDEAL_AUCTION : CENTRE_IDEAL_PLAY;
+  const centreCap = coachOn && coachSharePct > 0 ? centreIdeal : CENTRE_MAX;
   const fit = (k: number, usePad: boolean) => {
     const avail = availPx / (k || 1);
     const others =
@@ -574,7 +588,7 @@ export function PlayTable({
       cell = Math.max(30, Math.min(62, Math.floor((avail - base - PAD_CENTRE) / 8.3)));
       centre = Math.max(PAD_CENTRE, Math.round(avail - base - padHeight(cell)));
     } else {
-      centre = Math.max(centreMin, Math.min(CENTRE_MAX, Math.round(avail - base)));
+      centre = Math.max(centreMin, Math.min(centreCap, Math.round(avail - base)));
     }
     // Granular, not all-or-nothing: the app's shell hides the TOP bar
     // (hideTopBar) and shows the bottom one contextually (phoneBottomOn),
