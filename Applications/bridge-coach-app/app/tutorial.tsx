@@ -1,7 +1,7 @@
 // A tutorial from the Content Studio, embedded in the app.
 //
 // The Activities carousel's second card opens this. Unlike the Learn tab's
-// reader (app/(tabs)/learn/[id].tsx), there is NO launch token here: the page is
+// reader (app/learn-object/[id].tsx), there is NO launch token here: the page is
 // public, so it needs no sign-in handshake and none is minted. That also means
 // nothing to fail — the embed either loads or the page is down.
 //

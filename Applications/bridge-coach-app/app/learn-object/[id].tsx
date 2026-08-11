@@ -2,21 +2,27 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { ContentWebView } from "../../../components/content-webview";
-import { PrimaryButton, Screen, ScreenHeader } from "../../../components/ui";
-import { EMBED_SKIN_CSS } from "../../../constants/embed-skin";
-import { Colors, Fonts, Spacing } from "../../../constants/theme";
-import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
-import { useAuth } from "../../../lib/auth-context";
-import { useSelectedClubId } from "../../../lib/club-context";
-import { takeLaunch } from "../../../lib/launch-cache";
-import { getCachedObject } from "../../../lib/learning";
+import { ContentWebView } from "../../components/content-webview";
+import { PrimaryButton, Screen, ScreenHeader } from "../../components/ui";
+import { EMBED_SKIN_CSS } from "../../constants/embed-skin";
+import { Colors, Fonts, Spacing } from "../../constants/theme";
+import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../lib/config";
+import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
+import { takeLaunch } from "../../lib/launch-cache";
+import { getCachedObject } from "../../lib/learning";
 
 /**
  * Opens one learning object in the learning platform's own student view:
  * mint a single-use launch token, then load the platform with
  * ?launch_token=…&object=<id> — the platform signs itself in and opens its
  * reader on that object.
+ *
+ * A FULL-SCREEN ROUTE, outside the (tabs) group, on purpose: reading is a
+ * committed activity, and inside the tab navigator the bar floats over the
+ * content's last lines (reported twice — the fix predates the app-work merge
+ * and is reapplied here on top of it). The back chevron in the header is the
+ * way out.
  */
 export default function LearnContentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

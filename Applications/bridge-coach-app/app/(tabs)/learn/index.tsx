@@ -185,7 +185,7 @@ export default function LearnScreen() {
                     {[typeLabel(item.type), item.estimated_time].filter(Boolean).join(" · ")}
                   </Text>
                 }
-                onPress={() => router.push(`/learn/${item.id}`)}
+                onPress={() => router.push(`/learn-object/${item.id}`)}
               />
             ))}
           </Deck>
