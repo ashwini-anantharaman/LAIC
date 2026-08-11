@@ -1834,6 +1834,35 @@ platformRouter.post("/auth/password", async (c) => {
   return c.json({ ok: true });
 });
 
+/**
+ * Change your OWN display name — the app's profile editor.
+ *
+ * Self-service and global: it renames the person everywhere they appear, in every
+ * club, because a name belongs to the person and not to a club. An admin renaming
+ * someone else still goes through the console's people surface; this route only
+ * ever touches the caller's own rows.
+ *
+ * The name is what the roster, the leaderboard and every chat message are labelled
+ * with, so it is trimmed, length-capped, and stripped of control characters (a
+ * newline would break a single-line row wherever one is rendered).
+ */
+platformRouter.patch("/auth/me", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = parseBody(
+    z.object({
+      display_name: z
+        .string()
+        .transform((v) => v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+        .refine((v) => v.length >= 1, "A name cannot be empty")
+        .refine((v) => v.length <= 80, "That name is too long"),
+    }),
+    await c.req.json(),
+  );
+  const changed = await db.setOwnDisplayName(user.id, user.email ?? null, body.display_name);
+  if (!changed) throw new HttpError(404, "No profile to rename");
+  return c.json({ ok: true, display_name: body.display_name, profiles_updated: changed });
+});
+
 // The person's display name in THIS org (their org-scoped profile), falling
 // back to the session-level name/email so platforms never render a raw id.
 async function _platformDisplayName(profileId: string, user: PlatformUser): Promise<string> {

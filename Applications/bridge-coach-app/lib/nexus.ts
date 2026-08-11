@@ -542,6 +542,22 @@ export function fetchBridgeContext(
   );
 }
 
+/**
+ * Change your own display name — global, across every club.
+ *
+ * A profile row is per (person, org), so the server renames all of them: the name
+ * belongs to the person, not to a club. Returns the name the server stored, which
+ * may differ from what was sent (it trims and collapses whitespace).
+ */
+export async function updateMyDisplayName(token: string, displayName: string): Promise<string> {
+  const res = await request<{ ok: boolean; display_name: string }>("/api/platform/auth/me", {
+    method: "PATCH",
+    token,
+    body: { display_name: displayName },
+  });
+  return res.display_name;
+}
+
 export type ProgramLearner = {
   user_id: string | null;
   email: string | null;
