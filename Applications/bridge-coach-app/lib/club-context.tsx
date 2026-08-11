@@ -77,7 +77,22 @@ export function ClubProvider({ children }: { children: ReactNode }) {
           .sort((a, b) => a.name.localeCompare(b.name));
         setClubs(found);
         // One club is not a choice — skip My Clubs entirely.
-        setSelectedId(found.length === 1 ? found[0].programId : null);
+        //
+        // CLUB-ONLY accounts (no membership outside their clubs) always get a
+        // default, even with several: for them the app-wide program is not a
+        // fallback but a locked door — every screen scoped to it 403s, which
+        // surfaced as "no coach access" / "couldn't load your boards" on every
+        // tab until a club was picked. The switcher still lets them move; the
+        // first club (alphabetical, stable) is merely where they start.
+        const clubIds = new Set(found.map((c) => c.programId));
+        // Every membership is program-scoped AND that program is a club. An
+        // org-LEVEL membership (no program_id — owners, org admins) is standing
+        // everywhere, so it disqualifies: those people keep the app-wide start.
+        const clubOnly =
+          found.length > 0 &&
+          ctx.memberships.length > 0 &&
+          ctx.memberships.every((m) => m.program_id && clubIds.has(m.program_id));
+        setSelectedId(found.length === 1 || clubOnly ? found[0].programId : null);
       })
       .catch(() => !cancelled && setClubs([]))
       .finally(() => !cancelled && setLoading(false));

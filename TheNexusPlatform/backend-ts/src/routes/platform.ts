@@ -980,19 +980,25 @@ platformRouter.get("/bridge/context", async (c) => {
     // A pre-built role picked in the Nexus role builder is authoritative;
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
-    // A club's people all get bridge_club_member — deliberately narrow, and
-    // deliberately the same for a club's admin. The platform gates by role
-    // against ONE GLOBAL catalogue, so the parent program's coach role would open
-    // every page it reaches, and bridge_club_admin sits in the platform's ADMIN
-    // set (its admin & expert-review areas). Neither belongs to a club.
     //
-    // bridge_club_member holds page.challenges and challenge.create, nothing
-    // more. WHICH club people may create is then the app's own catalogue's
-    // business (app.challenge.create) — the platform permits, the club role gates.
+    // A club's people (owner direction 2026-08-10): members get
+    // bridge_club_member — the ordinary member surface, with their coach pool
+    // restricted to the club. The club's INSTRUCTOR is its coach and emits
+    // bridge_coach, or the hire loop dead-ends: their reviews queue, learner
+    // pages and assignment flows all sit behind the platform's coach gates,
+    // and every one of those surfaces is already scoped to their own hires by
+    // data. A club's admin still gets bridge_club_member here on purpose —
+    // bridge_club_admin sits in the platform's ADMIN set (admin & expert
+    // review areas), which does not belong to a club.
     roles: isPrebuilt
       ? [access.platformRole]
       : access.partnerClub
-        ? ["bridge_club_member"]
+        ? [
+            user.memberships.find((m) => m.program_id === access.partnerProgramId)?.role ===
+            "instructor"
+              ? "bridge_coach"
+              : "bridge_club_member",
+          ]
         : mapped.roles,
     permissions: [`bridge:${access.level}`],
     accessLevel: mapped.accessLevel,
