@@ -109,7 +109,7 @@ export function SeatHand({
                 zIndex: on ? 2 : 1,
               }}
             >
-              <span style={{ position: "absolute", left: m.inset, top: m.inset > 3 ? m.inset : 1, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
+              <span style={{ position: "absolute", left: m.inset, top: m.inset > 3 ? m.inset : 1, display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
                 <span style={{ fontSize: m.rank, fontWeight: rankWeight }}>{rankText(card.rank)}</span>
                 <span style={{ fontSize: m.glyph, fontWeight: glyphWeight }}>{GLYPH[card.suit]}</span>
               </span>
@@ -171,7 +171,7 @@ export function SeatHand({
               cursor: on ? "pointer" : "default",
             }}
           >
-            <span style={{ position: "absolute", left: m.inset, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
+            <span style={{ position: "absolute", left: m.inset, top: 2, display: "flex", flexDirection: "column", alignItems: "flex-start", lineHeight: 0.95, color: isRed(card.suit) ? RED : "#000" }}>
               <span style={{ fontSize: rankF, fontWeight: rankWeight }}>{rankText(card.rank)}</span>
               <span style={{ fontSize: glyphF, fontWeight: glyphWeight }}>{GLYPH[card.suit]}</span>
             </span>
