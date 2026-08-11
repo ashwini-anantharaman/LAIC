@@ -44,6 +44,8 @@
  * own system, and a drill that contradicts the lesson above it is worse than no
  * drill. Which one a lesson wants is a question about the lesson.
  */
+export { EmbedRoot, embedBox } from "./EmbedRoot";
+export type { EmbedRootProps, EmbedBoxOptions } from "./EmbedRoot";
 export { BridgeTable } from "./BridgeTable";
 export { BiddingDrill } from "./BiddingDrill";
 export { DealDiagram } from "./DealDiagram";
