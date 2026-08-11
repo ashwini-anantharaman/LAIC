@@ -275,10 +275,12 @@ export function saveAsNewVersion(
   obj: LearningObject,
   createdBy: string,
   notes?: string,
+  /** Commit even when the content is unchanged — the author asked for a version. */
+  force = false,
 ): Version {
   const existing = listVersionsForObject(userId, obj.id);
   const tip = existing[0];
-  if (tip?.snapshot && contentEqualsSnapshot(tip.snapshot, obj) && !(notes || '').trim()) {
+  if (!force && tip?.snapshot && contentEqualsSnapshot(tip.snapshot, obj) && !(notes || '').trim()) {
     return tip;
   }
   const n = nextVersionNumber(existing);
@@ -314,6 +316,10 @@ export function overwriteVersion(
   const target = listVersionsForObject(userId, obj.id).find((v) => v.id === versionId);
   if (!target) return { ok: false, error: 'That version no longer exists.' };
   if (target.locked) return { ok: false, error: `v${target.versionNumber} is locked.` };
+  // v1 is the original state — the one thing you can always compare against.
+  if (target.versionNumber === 1) {
+    return { ok: false, error: 'v1 is the original state and cannot be replaced. Submit as a new version instead.' };
+  }
 
   const version: Version = {
     ...target,
@@ -322,6 +328,7 @@ export function overwriteVersion(
     createdAt: today(),
     createdBy,
     notes: (notes || '').trim() || target.notes,
+    editCount: (target.editCount || 0) + 1,
     snapshot: snapshotFromObject(obj),
     // Amend clock reset: an overwrite is a deliberate commit, not the tail of
     // an earlier edit burst, so the next save must not fold into it.

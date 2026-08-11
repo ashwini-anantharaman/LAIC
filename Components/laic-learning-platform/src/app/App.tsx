@@ -90,7 +90,7 @@ export interface AppState {
   objectVersionsTick: number;
   listObjectVersions: (objectId: string) => Version[];
   listAllObjectVersions: () => Version[];
-  saveObjectAsNewVersion: (objectId: string, notes?: string) => Version | null;
+  saveObjectAsNewVersion: (objectId: string, notes?: string, force?: boolean) => Version | null;
   /** Replace an existing version in place (Submit as → v2) instead of adding one. */
   overwriteObjectVersion: (
     objectId: string,
@@ -142,7 +142,10 @@ export interface AppState {
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
   setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
-  addObject: (partial: Partial<LearningObject> & { type: ObjectType; title: string }) => string;
+  addObject: (
+    partial: Partial<LearningObject> & { type: ObjectType; title: string },
+    opts?: { skipVersionSync?: boolean },
+  ) => string;
   openEditor: (objectId: string) => void;
   clearEditingObject: () => void;
 }
@@ -500,7 +503,11 @@ function StudioApp() {
     setCreatorObjectTypeState(type);
   }, []);
 
-  const addObject = useCallback((partial: Partial<LearningObject> & { type: ObjectType; title: string }) => {
+  const addObject = useCallback((
+    partial: Partial<LearningObject> & { type: ObjectType; title: string },
+    opts?: { skipVersionSync?: boolean },
+  ) => {
+    const skipVersionSync = !!opts?.skipVersionSync;
     const ownerId = activeUserIdRef.current;
     const user = USERS.find(u => u.id === ownerId);
     const now = new Date().toISOString().slice(0, 10);
@@ -547,10 +554,15 @@ function StudioApp() {
       if (!result.ok) {
         console.warn('[addObject] local persist failed:', result.error);
       }
-      try {
-        syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
-      } catch (err: any) {
-        console.warn('[versions] sync failed:', err?.message || err);
+      // Submit decides its own versioning ("new version" vs "replace v2"), so it
+      // opts out of the implicit sync — otherwise the amend window would swallow
+      // a requested new version, or mint a spare one right before an overwrite.
+      if (!skipVersionSync) {
+        try {
+          syncWorkingVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
+        } catch (err: any) {
+          console.warn('[versions] sync failed:', err?.message || err);
+        }
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
@@ -576,13 +588,13 @@ function StudioApp() {
     return listAllVersions(activeUserIdRef.current);
   }, [objectVersionsTick]);
 
-  const saveObjectAsNewVersion = useCallback((objectId: string, notes?: string) => {
+  const saveObjectAsNewVersion = useCallback((objectId: string, notes?: string, force = false) => {
     const ownerId = activeUserIdRef.current;
     const obj = createdObjectsRef.current.find((o) => o.id === objectId)
       || OBJECTS.find((o) => o.id === objectId);
     if (!obj) return null;
     const user = USERS.find((u) => u.id === ownerId);
-    return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes);
+    return storeSaveAsNewVersion(ownerId, obj, obj.ownerName || user?.name || 'You', notes, force);
   }, []);
 
   const overwriteObjectVersion = useCallback((

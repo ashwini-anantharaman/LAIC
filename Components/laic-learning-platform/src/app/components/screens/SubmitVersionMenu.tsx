@@ -130,31 +130,50 @@ export function SubmitVersionMenu({
                   Replace existing
                 </p>
               )}
-              {ordered.map((v) => (
-                <button
-                  key={v.id}
-                  type="button"
-                  disabled={!!v.locked}
-                  onClick={() => submit({ versionId: v.id, versionNumber: v.versionNumber })}
-                  className="w-full text-left rounded-xl px-3.5 py-2.5 border hover:bg-gray-50 disabled:opacity-45 disabled:hover:bg-transparent"
-                  style={{ borderColor: 'rgba(0,0,0,0.09)' }}
-                  title={v.locked ? `v${v.versionNumber} is locked` : `Overwrite v${v.versionNumber}`}
-                >
-                  <span className="flex items-center gap-1.5">
-                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }}>
-                      v{v.versionNumber}
+              {ordered.map((v) => {
+                const original = v.versionNumber === 1;
+                const blocked = !!v.locked || original;
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    disabled={blocked}
+                    onClick={() => submit({ versionId: v.id, versionNumber: v.versionNumber })}
+                    className="w-full text-left rounded-xl px-3.5 py-2.5 border hover:bg-gray-50 disabled:opacity-45 disabled:hover:bg-transparent"
+                    style={{ borderColor: 'rgba(0,0,0,0.09)' }}
+                    title={
+                      original
+                        ? 'v1 is the original state'
+                        : v.locked
+                          ? `v${v.versionNumber} is locked`
+                          : `Overwrite v${v.versionNumber}`
+                    }
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }}>
+                        v{v.versionNumber}
+                      </span>
+                      {v.locked && <Lock size={11} style={{ color: '#9AA3AF' }} />}
+                      {v.isLive && (
+                        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#047857' }}>LIVE</span>
+                      )}
+                      {!!v.editCount && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: '#B45309' }}>
+                          edited {v.editCount}x
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, color: '#9AA3AF' }}>· {v.createdAt}</span>
                     </span>
-                    {v.locked && <Lock size={11} style={{ color: '#9AA3AF' }} />}
-                    {v.isLive && (
-                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#047857' }}>LIVE</span>
-                    )}
-                    <span style={{ fontSize: 11, color: '#9AA3AF' }}>· {v.createdAt}</span>
-                  </span>
-                  <span className="block truncate" style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
-                    {v.locked ? 'Locked — cannot be replaced' : (v.notes || 'No note')}
-                  </span>
-                </button>
-              ))}
+                    <span className="block truncate" style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                      {original
+                        ? 'Original state — kept as the baseline'
+                        : v.locked
+                          ? 'Locked — cannot be replaced'
+                          : (v.notes || 'No note')}
+                    </span>
+                  </button>
+                );
+              })}
 
               {!ordered.length && (
                 <p className="px-1 py-2" style={{ fontSize: 12, color: '#9AA3AF' }}>

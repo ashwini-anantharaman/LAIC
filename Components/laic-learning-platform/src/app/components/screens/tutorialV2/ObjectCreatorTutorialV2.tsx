@@ -148,7 +148,7 @@ export function ObjectCreatorTutorialV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
-    listObjectVersions, overwriteObjectVersion, objectVersionsTick,
+    listObjectVersions, overwriteObjectVersion, saveObjectAsNewVersion, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -359,7 +359,11 @@ export function ObjectCreatorTutorialV2() {
     || pathMode === 'manual'
   );
 
-  const persist = useCallback((next: TutorialV2Draft, blocksOverride?: ReturnType<typeof partsToBlocks>) => {
+  const persist = useCallback((
+    next: TutorialV2Draft,
+    blocksOverride?: ReturnType<typeof partsToBlocks>,
+    saveOpts?: { skipVersionSync?: boolean },
+  ) => {
     const fv = {
       passOn: true,
       pass: next.structure.pass || '70%',
@@ -386,7 +390,7 @@ export function ObjectCreatorTutorialV2() {
       // which can lag a tick behind and corrupt reopen.
       tutorialV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any);
+    } as any, saveOpts);
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects]);
 
@@ -1361,14 +1365,15 @@ export function ObjectCreatorTutorialV2() {
               pass: draft.structure.pass || '70%',
             });
             const next = touchDraft(draft, { status: 'submitted', phase: 'review', assembledParts: parts });
-            persist(next, blocks);
+            // Save without the implicit version sync, then do exactly the one
+            // versioning act the author picked.
+            persist(next, blocks, { skipVersionSync: true });
             setDraft(next);
-            // Overwrite runs AFTER the save: persist() syncs a working version,
-            // so replacing the chosen one last is what makes "Submit as v2"
-            // land on v2 instead of trailing a fresh version behind it.
             if (target?.versionId) {
               const res = overwriteObjectVersion(next.id, target.versionId);
               if (!res.ok && res.error) window.alert(res.error);
+            } else {
+              saveObjectAsNewVersion(next.id, undefined, true);
             }
             clearEditingObject?.();
             navigate('cd-library');
