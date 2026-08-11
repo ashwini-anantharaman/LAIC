@@ -371,19 +371,61 @@ async function fetchYoutubeTranscriptInnertube(id) {
       client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' },
       ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
     },
+    // Embedded players are the standard way past an age gate: a video that
+    // answers LOGIN_REQUIRED to the app clients often plays as an embed.
+    {
+      client: {
+        clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.0', hl: 'en',
+        clientScreen: 'EMBED',
+      },
+      ua: 'Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15',
+      embedded: true,
+    },
+    {
+      client: {
+        clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250101.00.00', hl: 'en',
+        clientScreen: 'EMBED',
+      },
+      ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
+      embedded: true,
+    },
   ];
+
+  /** Why a video refused us, in words an author can act on. */
+  const PLAYABILITY_HELP = {
+    LOGIN_REQUIRED: 'that video is age-restricted, private, or members-only, so YouTube will not release its transcript to an app',
+    UNPLAYABLE: 'YouTube will not play that video here (it may be private, removed, or blocked in this region)',
+    LIVE_STREAM_OFFLINE: 'that live stream is offline, so it has no transcript yet',
+    ERROR: 'YouTube could not load that video (check the link is still valid)',
+  };
   let lastErr = null;
-  for (const { client, ua } of CLIENTS) {
+  let lastStatus = null;
+  for (const { client, ua, embedded } of CLIENTS) {
     try {
       const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': ua },
-        body: JSON.stringify({ videoId: id, context: { client } }),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': ua,
+          // Embed requests are only honored when they look like they came from
+          // a page embedding the video.
+          ...(embedded ? { Referer: `https://www.youtube.com/embed/${id}`, Origin: 'https://www.youtube.com' } : {}),
+        },
+        body: JSON.stringify({
+          videoId: id,
+          context: {
+            client,
+            ...(embedded
+              ? { thirdParty: { embedUrl: `https://www.youtube.com/watch?v=${id}` } }
+              : {}),
+          },
+        }),
       });
       if (!res.ok) { lastErr = new Error(`player API ${res.status}`); continue; }
       const player = await res.json();
       if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') {
-        lastErr = new Error(`video not playable (${player.playabilityStatus.status})`);
+        lastStatus = String(player.playabilityStatus.status);
+        lastErr = new Error(`video not playable (${lastStatus})`);
         continue;
       }
       const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
@@ -406,6 +448,16 @@ async function fetchYoutubeTranscriptInnertube(id) {
     }
   }
   if (lastErr instanceof LlmError) throw lastErr;
+  // A raw status code tells an author nothing they can act on. Say what the
+  // block means and what to do instead — pasting the transcript always works.
+  if (lastStatus) {
+    const why = PLAYABILITY_HELP[lastStatus] || `YouTube refused the video (${lastStatus})`;
+    throw new LlmError(
+      422,
+      'yt_blocked',
+      `Couldn’t get the transcript — ${why}. Open the video on YouTube, copy the transcript from the “…” menu, and add it with Paste text instead.`,
+    );
+  }
   throw new LlmError(502, 'yt_fetch', `Could not fetch the transcript from YouTube${lastErr ? ` (${lastErr.message})` : ''}.`);
 }
 
