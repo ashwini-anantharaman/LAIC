@@ -397,7 +397,10 @@ export default function ClubScreen() {
             <View style={{ marginTop: HOME.tileGap * s, alignSelf: "center" }}>
               <ChallengeTile
                 size={HOME.tile * s}
-                onPress={() => router.push("/club-challenges")}
+                // The THUMBNAIL plays; the heading's own screen still lists them.
+                // The bridge resolves which challenge "latest" is — the app has no
+                // id to give it (see app/challenge-play.tsx).
+                onPress={() => router.push("/challenge-play")}
               />
               <ChallengeCaption
                 challenge={latest}
