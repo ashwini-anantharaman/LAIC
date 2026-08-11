@@ -13,7 +13,7 @@ import { useApp, type AddObjectOptions } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
 import {
-  errorMessage, ingestYoutube, ingestWeb,
+  errorMessage, ingestYoutube, ingestWeb, pasteYoutubeTranscript,
 } from '../../../../lib/api';
 import { supabaseEnabled, uploadImage } from '../../../../lib/supabase';
 import { getDefaultTemplateId } from '../../../../lib/templateDefaults';
@@ -208,6 +208,9 @@ export function ObjectCreatorTutorialV2() {
   const [pasteText, setPasteText] = useState('');
   const [ytUrl, setYtUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
+  /** Fallback when YouTube refuses our server the captions (see the panel). */
+  const [ytPasteOpen, setYtPasteOpen] = useState(false);
+  const [ytPasteText, setYtPasteText] = useState('');
   const [ytError, setYtError] = useState<string | null>(null);
   const [webUrl, setWebUrl] = useState('');
   const [webLoading, setWebLoading] = useState(false);
@@ -252,6 +255,38 @@ export function ObjectCreatorTutorialV2() {
     setTextSources((p) => [...p, { id: newSrcId('text'), doc: docFromText(pasteText, label) }]);
     setPasteText('');
   };
+  /** Use a transcript the author copied from YouTube, when the fetch is refused. */
+  const handleUseYoutubePaste = async () => {
+    if (!ytPasteText.trim()) return;
+    setYtError(null);
+    setYtLoading(true);
+    const url = ytUrl.trim();
+    try {
+      const out = await pasteYoutubeTranscript({ text: ytPasteText, url: url || undefined });
+      setPathModeState('material');
+      setEnabledTypes((prev) => new Set(prev).add('youtube'));
+      setYtSources((p) => [...p, {
+        id: newSrcId('yt'),
+        url,
+        videoId: out.videoId || parseYtId(url),
+        videoTitle: out.title || '',
+        segments: out.segments || [],
+        doc: {
+          fileName: out.title || 'YouTube transcript',
+          pageCount: 1,
+          sentences: (out.sentences || []).map((t) => ({ text: t, page: 1 })),
+        },
+      }]);
+      setYtUrl('');
+      setYtPasteText('');
+      setYtPasteOpen(false);
+    } catch (e) {
+      setYtError(errorMessage(e, 'Could not read that transcript.'));
+    } finally {
+      setYtLoading(false);
+    }
+  };
+
   const handleFetchYoutube = async () => {
     if (!ytUrl.trim()) return;
     setYtError(null);
@@ -1221,6 +1256,11 @@ export function ObjectCreatorTutorialV2() {
             ytLoading={ytLoading}
             ytError={ytError}
             onFetchYoutube={handleFetchYoutube}
+            ytPasteOpen={ytPasteOpen}
+            setYtPasteOpen={setYtPasteOpen}
+            ytPasteText={ytPasteText}
+            setYtPasteText={setYtPasteText}
+            onUseYoutubePaste={handleUseYoutubePaste}
             onRemoveYoutube={(id: string) => setYtSources((p) => p.filter((x) => x.id !== id))}
             webSources={webSources}
             webUrl={webUrl}

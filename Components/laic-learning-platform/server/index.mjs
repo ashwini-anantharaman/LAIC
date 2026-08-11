@@ -355,6 +355,124 @@ function json3ToSegments(raw, chunkSec = 8) {
  * Serverless-friendly transcript fetch — YouTube InnerTube player API, no
  * yt-dlp needed. Used on Vercel and as a fallback when yt_dlp is missing.
  */
+/**
+ * Last resort: read the watch page and lift the caption tracks out of it.
+ *
+ * The youtubei player API refuses some videos outright from datacenter IPs —
+ * the same video answers OK from a home connection — and the refusal is per
+ * video, so retrying does not help. The watch page is a different endpoint
+ * and is sometimes still served, which is enough: the signed caption URLs it
+ * carries work once we have them.
+ */
+async function fetchYoutubeCaptionsFromWatchPage(id) {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(id)}&hl=en`, {
+    headers: {
+      'User-Agent': ua,
+      'Accept-Language': 'en-US,en;q=0.9',
+      // Skips the EU consent interstitial, which otherwise replaces the page.
+      Cookie: 'CONSENT=YES+cb; SOCS=CAI',
+    },
+  });
+  if (!res.ok) throw new Error(`watch page ${res.status}`);
+  const html = await res.text();
+
+  const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;\s*(?:var\s|<\/script>)/s);
+  if (!m) throw new Error('watch page carried no player response');
+  let player;
+  try {
+    player = JSON.parse(m[1]);
+  } catch {
+    throw new Error('watch page player response did not parse');
+  }
+  const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  if (!tracks.length) throw new Error('watch page listed no caption tracks');
+
+  const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
+  const track = tracks.find((t) => String(t.languageCode || '').startsWith('en')) || tracks[0];
+  const sep = String(track.baseUrl).includes('?') ? '&' : '?';
+  const subRes = await fetch(`${track.baseUrl}${sep}fmt=json3`, { headers: { 'User-Agent': ua } });
+  if (!subRes.ok) throw new Error(`captions ${subRes.status}`);
+  const raw = await subRes.text();
+  if (!raw || raw.trimStart().startsWith('<')) throw new Error('captions came back in an unexpected format');
+  const transcript = json3ToText(raw);
+  if (!transcript) throw new Error('the transcript came back empty');
+  return { title, videoId: id, sentences: toSentences(transcript), segments: json3ToSegments(raw) };
+}
+
+/**
+ * Turn a transcript copied out of YouTube into the same shape the fetch
+ * returns, so everything downstream (markup, generation, video-script
+ * checkpoints) behaves identically.
+ *
+ * YouTube's transcript panel copies as alternating timestamp / text lines, or
+ * as "0:42 some words" on one line depending on where it is copied from. Both
+ * are handled, and a plain paste with no timestamps still works — it just has
+ * no segments to place checkpoints against.
+ */
+function parsePastedYoutubeTranscript(text, url, titleHint) {
+  const raw = String(text || '').replace(/\r/g, '').trim();
+  if (raw.length < 20) {
+    throw new LlmError(400, 'no_text', 'Paste the transcript text first.');
+  }
+
+  const toSeconds = (stamp) => {
+    const parts = String(stamp).split(':').map((n) => Number(n));
+    if (parts.some((n) => !Number.isFinite(n))) return null;
+    return parts.reduce((acc, n) => acc * 60 + n, 0);
+  };
+
+  const STAMP = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)$/;
+  const segments = [];
+  let pendingStart = null;
+  let carry = [];
+
+  const flush = () => {
+    const body = carry.join(' ').replace(/\s+/g, ' ').trim();
+    if (body && pendingStart != null) {
+      segments.push({ id: `yt-${segments.length}`, start: pendingStart, text: body });
+    }
+    carry = [];
+  };
+
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(STAMP);
+    if (m) {
+      flush();
+      pendingStart = toSeconds(m[1]);
+      if (m[2].trim()) carry.push(m[2].trim());
+      continue;
+    }
+    carry.push(trimmed);
+  }
+  flush();
+
+  // Give every segment an end from the next one's start, matching the fetched
+  // shape so checkpoint placement has a window to work with.
+  for (let i = 0; i < segments.length; i += 1) {
+    const next = segments[i + 1];
+    if (next) segments[i].end = next.start;
+  }
+
+  const plain = segments.length
+    ? segments.map((s) => s.text).join(' ')
+    : raw.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*/gm, '').replace(/\s+/g, ' ');
+  const sentences = toSentences(plain);
+  if (!sentences.length) {
+    throw new LlmError(422, 'no_sentences', 'Could not read any sentences out of that transcript.');
+  }
+
+  const videoId = url ? parseVideoId(url) : null;
+  return {
+    title: String(titleHint || '').trim() || (videoId ? `YouTube video ${videoId}` : 'Pasted transcript'),
+    videoId: videoId || undefined,
+    sentences,
+    segments,
+  };
+}
+
 async function fetchYoutubeTranscriptInnertube(id) {
   // The IOS player client returns caption URLs that work without a
   // proof-of-origin token, and honors fmt=json3. (The plain web timedtext
@@ -447,6 +565,13 @@ async function fetchYoutubeTranscriptInnertube(id) {
       lastErr = e;
     }
   }
+  // Every player client refused. Try the watch page before giving up.
+  try {
+    return await fetchYoutubeCaptionsFromWatchPage(id);
+  } catch (e) {
+    console.warn('[youtube] watch-page fallback failed:', e?.message || e);
+  }
+
   if (lastErr instanceof LlmError) throw lastErr;
   // A raw status code tells an author nothing they can act on. Say what the
   // block means and what to do instead — pasting the transcript always works.
@@ -3973,6 +4098,23 @@ export async function handler(req, res) {
     if (!body.url) return send(res, 400, { code: 'no_url', message: 'Provide a YouTube URL.' });
     try {
       const out = await fetchYoutubeTranscript(body.url);
+      return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Tutorial: a transcript pasted from YouTube ---- */
+  // YouTube refuses captions to datacenter IPs for some videos — the same
+  // video answers fine from a home connection — and no server-side client
+  // reliably gets past that. The author can always see the transcript though,
+  // so this takes what they copy and rebuilds what the fetch would have
+  // produced, timestamps included.
+  if (method === 'POST' && path === '/api/tutorials/paste-youtube-transcript') {
+    const body = await readJson(req);
+    try {
+      const out = parsePastedYoutubeTranscript(body.text, body.url, body.title);
       return send(res, 200, out);
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;

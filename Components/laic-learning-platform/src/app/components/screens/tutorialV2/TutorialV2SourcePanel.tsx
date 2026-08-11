@@ -205,6 +205,7 @@ export function TutorialV2SourcePanel(props: any) {
     pdfSources, onRemovePdf, onFile,
     textSources, pasteText, setPasteText, onLoadText, onRemoveText,
     ytSources, ytUrl, setYtUrl, ytLoading, ytError, onFetchYoutube, onRemoveYoutube,
+    ytPasteOpen, setYtPasteOpen, ytPasteText, setYtPasteText, onUseYoutubePaste,
     webSources, webUrl, setWebUrl, webLoading, webError, onFetchWeb, onRemoveWeb,
     promptText, setPromptText, expandPromptError, setExpandPromptError, showMedia, imagesOnly,
     media, addImagesFromFiles, addVideo, updateMedia, removeMedia,
@@ -681,6 +682,62 @@ export function TutorialV2SourcePanel(props: any) {
                 </div>
                 <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>Pulls the transcript for Mark up · add multiple videos if needed</p>
                 {ytError && <ErrorNote text={ytError} />}
+                {/* YouTube refuses captions to our server for some videos even
+                    though the author can see them. Pasting is the way through,
+                    and timestamps survive so video-script checkpoints work. */}
+                {(ytError || ytPasteOpen) && (
+                  <div className="rounded-2xl p-3" style={{ background: 'rgba(247,249,251,0.9)', border: '1px solid rgba(0,0,0,0.08)' }}>
+                    {!ytPasteOpen ? (
+                      <button
+                        type="button"
+                        onClick={() => setYtPasteOpen(true)}
+                        className="px-3 py-1.5 rounded-full border"
+                        style={{ fontSize: 12, fontWeight: 650, borderColor: 'rgba(0,0,0,0.14)', background: '#fff' }}
+                      >
+                        Paste the transcript instead →
+                      </button>
+                    ) : (
+                      <div className="space-y-2">
+                        <p style={{ fontSize: 12, color: '#374151', lineHeight: 1.5 }}>
+                          On the video, open <strong>…more → Show transcript</strong>, select it all and copy.
+                          Timestamps are fine — they’re kept so checkpoints still line up.
+                        </p>
+                        <textarea
+                          value={ytPasteText}
+                          onChange={(e) => setYtPasteText(e.target.value)}
+                          rows={7}
+                          placeholder={'0:00  Welcome to the lesson…\n0:14  Each player gets thirteen cards…'}
+                          className="w-full rounded-2xl px-3 py-2.5 resize-y"
+                          style={{ ...field, lineHeight: 1.6 }}
+                        />
+                        <div className="flex items-center justify-between gap-2">
+                          <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+                            {ytPasteText.trim() ? `${ytPasteText.trim().split(/\s+/).length} words` : 'Paste the copied transcript'}
+                          </span>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => { setYtPasteOpen(false); setYtPasteText(''); }}
+                              className="px-3 py-2 rounded-full border"
+                              style={{ fontSize: 12.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.12)', background: '#fff' }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={onUseYoutubePaste}
+                              disabled={!ytPasteText.trim() || ytLoading}
+                              className="px-4 py-2 rounded-full text-white disabled:opacity-50"
+                              style={{ fontSize: 12.5, fontWeight: 600, background: '#0B0F1A' }}
+                            >
+                              Use this transcript →
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

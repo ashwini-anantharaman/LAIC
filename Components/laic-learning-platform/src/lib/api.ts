@@ -427,6 +427,14 @@ export interface WebSourceImage {
   caption?: string;
 }
 
+/** POST /api/tutorials/paste-youtube-transcript — parse a transcript copied from YouTube. */
+export function pasteYoutubeTranscript(
+  args: { text: string; url?: string; title?: string },
+  signal?: AbortSignal,
+): Promise<{ title: string; videoId?: string; sentences: string[]; segments?: YtTranscriptSegment[] }> {
+  return apiFetch('/api/tutorials/paste-youtube-transcript', { method: 'POST', body: args, signal });
+}
+
 /** POST /api/tutorials/ingest-web — server fetches a public web page as sentences + HTML + content images. */
 export function ingestWeb(
   url: string,
