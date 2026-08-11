@@ -23,7 +23,63 @@ import { BridgeEmbedBlock } from './BridgeEmbedBlock';
 import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { RichTextEditor } from '../../RichTextEditor';
 import { SubmitVersionMenu, type SubmitTarget } from '../SubmitVersionMenu';
+import { readDraggedImage } from '../../../../lib/tutorialV2/imageDrag';
+import { fetchWebImage } from '../../../../lib/api';
 import type { Version } from '../../../../lib/types';
+
+/**
+ * The gap between two blocks, as a drop target.
+ *
+ * Collapsed to a thin strip until an image is dragged over it — a permanently
+ * visible gap between every block would be noise for the far more common case
+ * of just reading the outline.
+ */
+function ImageDropZone({
+  index,
+  activeIndex,
+  onOver,
+  onDrop,
+}: {
+  index: number;
+  activeIndex: number | null;
+  onOver: (index: number | null) => void;
+  onDrop: (index: number, img: { src: string; caption?: string }) => void;
+}) {
+  const active = activeIndex === index;
+  return (
+    <div
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes('application/x-laic-image')) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        onOver(index);
+      }}
+      onDragLeave={() => onOver(null)}
+      onDrop={(e) => {
+        const img = readDraggedImage(e.dataTransfer);
+        onOver(null);
+        if (!img) return;
+        e.preventDefault();
+        void onDrop(index, img);
+      }}
+      className="flex items-center justify-center transition-all"
+      style={{
+        height: active ? 44 : 10,
+        margin: active ? '2px 0' : '-4px 0',
+        borderRadius: 12,
+        border: active ? '2px dashed rgba(109,40,217,0.55)' : '2px dashed transparent',
+        background: active ? 'rgba(109,40,217,0.06)' : 'transparent',
+      }}
+      aria-hidden={!active}
+    >
+      {active && (
+        <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6D28D9' }}>
+          Drop image here
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function TutorialV2AssembleEditor({
   draft,
@@ -60,6 +116,8 @@ export function TutorialV2AssembleEditor({
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
   // Collapsed by default so write-yourself stays manual-first; open anytime (or via Ask Hoot).
   const [refineOpen, setRefineOpen] = useState(false);
+  /** Gap the dragged image would land in, or null when nothing is over us. */
+  const [dropIndex, setDropIndex] = useState<number | null>(null);
 
   const editingPart = editingPartId
     ? parts.find((p) => p.id === editingPartId) || null
@@ -117,6 +175,32 @@ export function TutorialV2AssembleEditor({
   const removePart = (id: string) => {
     onChangeParts(parts.filter((p) => p.id !== id));
     if (selectedPartId === id) setSelectedPartId(null);
+  };
+
+  /**
+   * Drop an image from the Refine sidebar between two blocks.
+   *
+   * Placement is the whole point: clicking appends, dragging says exactly
+   * where. The image is inlined server-side first (same as the click path) so
+   * the tutorial keeps working if the source site removes it later; a failed
+   * fetch falls back to the remote URL rather than losing the drop.
+   */
+  const dropImageAt = async (index: number, img: { src: string; caption?: string }) => {
+    let url = img.src;
+    if (!url.startsWith('data:')) {
+      try {
+        const out = await fetchWebImage(url);
+        if (out.dataUri) url = out.dataUri;
+      } catch { /* hotlink fallback */ }
+    }
+    const id = `p-drop-${Date.now().toString(36)}`;
+    const part: TutorialV2Part = {
+      id, type: 'image', label: 'Media · image', url, caption: img.caption || '', mediaKind: 'image',
+    };
+    const next = [...parts];
+    next.splice(Math.max(0, Math.min(index, next.length)), 0, part);
+    onChangeParts(next);
+    setSelectedPartId(id);
   };
 
   const openRefineForPart = (partId: string) => {
@@ -274,6 +358,7 @@ export function TutorialV2AssembleEditor({
                     const pageStartsHere = i === 0 || partPages[i] !== partPages[i - 1];
                     return (
                       <React.Fragment key={p.id}>
+                      <ImageDropZone index={i} activeIndex={dropIndex} onOver={setDropIndex} onDrop={dropImageAt} />
                       {pageStartsHere && (
                         <div className="flex items-center gap-2 pt-1" aria-label={`Student page ${partPages[i]}`}>
                           <span
@@ -462,6 +547,8 @@ export function TutorialV2AssembleEditor({
                       </React.Fragment>
                     );
                   })}
+                  {/* Trailing zone so an image can be dropped after the last block. */}
+                  <ImageDropZone index={parts.length} activeIndex={dropIndex} onOver={setDropIndex} onDrop={dropImageAt} />
                 </div>
               </>
             )}

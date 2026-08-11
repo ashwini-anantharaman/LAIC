@@ -1135,6 +1135,45 @@ async function listLearningObjectsForLibrary() {
   return await res.json();
 }
 
+/**
+ * Take a published object back out of circulation.
+ *
+ * status goes to 'draft' alongside clearing published_at, so a reader app that
+ * filters on either one drops the content — we cannot know which check a given
+ * consumer uses, and a withdrawal that half-works is worse than none.
+ */
+async function unpublishLearningObjectRow(id) {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const clean = String(id || '').trim();
+  if (!clean) throw new LlmError(400, 'bad_object', 'Object id is required.');
+  const params = new URLSearchParams({
+    id: `eq.${clean}`,
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+  });
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    method: 'PATCH',
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=minimal',
+    },
+    body: JSON.stringify({
+      published_at: null,
+      version_number: null,
+      status: 'draft',
+      updated_at: new Date().toISOString(),
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Unpublish failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return { ok: true, id: clean };
+}
+
 /** Remove one object from the shared library. Scoped to this org. */
 async function deleteLearningObjectRow(id) {
   if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
@@ -4144,6 +4183,22 @@ export async function handler(req, res) {
     try {
       const rows = await listLearningObjectsForLibrary();
       return send(res, 200, rows);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Withdraw a published version from reader apps ---- */
+  // Clears the published marker rather than deleting the row: the row is also
+  // this library's backup, and unpublishing is not deleting. Readers filter on
+  // published_at, so clearing it is what makes the content disappear for them
+  // while the author keeps their copy and their history.
+  if (method === 'POST' && path === '/api/learning/unpublish') {
+    const body = await readJson(req);
+    try {
+      const out = await unpublishLearningObjectRow(body.id);
+      return send(res, 200, out);
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
       return send(res, status, { code: e.code || 'error', message: e.message });

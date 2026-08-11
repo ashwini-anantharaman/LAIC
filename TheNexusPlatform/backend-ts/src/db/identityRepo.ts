@@ -202,6 +202,57 @@ export async function releaseUsernameIfOrphaned(profileId: string): Promise<stri
 }
 
 /**
+ * Set someone's display name, by email, across every profile they hold.
+ *
+ * GLOBAL for the same reason the self-service rename is: the app shows ONE name, and
+ * loadUser returns persons[0] from the rows matching the caller — an arbitrary one.
+ * A per-org name would therefore be indeterminate on the phone rather than merely
+ * inconsistent, so there is no coherent way to make it org-local while a person can
+ * hold profiles in several orgs.
+ *
+ * `name` is written alongside `display_name` because readers fall back to it.
+ * Returns how many rows changed, so a caller can 404 rather than silently succeed.
+ */
+export async function setDisplayNameByEmail(email: string, displayName: string): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .update(profiles)
+      .set({ displayName, name: displayName, updatedAt: new Date() })
+      .where(sql`lower(${profiles.email}) = lower(${email})`)
+      .returning({ id: profiles.id });
+    return rows.length;
+  });
+}
+
+/**
+ * The same release, addressed by EMAIL.
+ *
+ * An invited person can already hold a profile — that is how an admin sets their
+ * username and starting password before they ever sign in — but an invitation is
+ * not a membership. Revoking it therefore left a profile with a username, no
+ * membership, and no membership id for anything to address it by. This is the door
+ * for that case.
+ *
+ * Every profile on that email is considered, and each is released only if IT has no
+ * memberships, so a person who is invited to one org while active in another keeps
+ * their name.
+ */
+export async function releaseUsernameIfOrphanedByEmail(email: string): Promise<string | null> {
+  const ids = await asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(sql`lower(${profiles.email}) = lower(${email}) and ${profiles.username} is not null`);
+    return rows.map((r) => r.id);
+  });
+  for (const id of ids) {
+    const freed = await releaseUsernameIfOrphaned(id);
+    if (freed) return freed;
+  }
+  return null;
+}
+
+/**
  * Set a person's own display name across EVERY profile they hold.
  *
  * A profile row is per (person, organization), so someone in more than one org has

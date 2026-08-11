@@ -461,6 +461,11 @@ export function publishLearningObject(
   });
 }
 
+/** POST /api/learning/unpublish — withdraw content from reader apps, keeping the backup. */
+export function unpublishLearningObject(id: string, signal?: AbortSignal): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>('/api/learning/unpublish', { method: 'POST', body: { id }, signal });
+}
+
 /** DELETE /api/learning/objects/:id — remove content from the shared store for good. */
 export function deleteSharedObject(id: string, signal?: AbortSignal): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/api/learning/objects/${encodeURIComponent(id)}`, {

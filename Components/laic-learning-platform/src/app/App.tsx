@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { deleteSharedObject, fetchSharedLibrary, publishLearningObject } from '../lib/api';
+import { deleteSharedObject, fetchSharedLibrary, publishLearningObject, unpublishLearningObject } from '../lib/api';
 
 /**
  * Back the library up to the shared store, coalesced per object.
@@ -90,6 +90,7 @@ import {
   objectFromVersion,
   truncateVersionsAfter as storeTruncateVersionsAfter,
   markVersionPublished,
+  clearVersionPublished,
   ensureInitialVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
@@ -183,6 +184,8 @@ export interface AppState {
   ) => Promise<{ ok: boolean; version?: Version; error?: string }>;
   /** Guarantee this object has a v1 (never adds a second version). */
   ensureObjectInitialVersion: (objectId: string) => Version | null;
+  /** Withdraw this object from the shared library — reader apps stop showing it. */
+  unpublishObject: (objectId: string) => Promise<{ ok: boolean; error?: string }>;
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -826,6 +829,34 @@ function StudioApp() {
     return { ok: true, version };
   }, []);
 
+  /**
+   * Withdraw an object from the shared library.
+   *
+   * The row IS the publication — reader apps read that table — so taking it
+   * out is what makes the content disappear from them. The author's own copy
+   * is untouched: unpublishing is not deleting, and they keep editing.
+   *
+   * The local published mark is cleared only after the row is gone, so a
+   * failed withdrawal never leaves the library claiming nothing is live while
+   * readers still see it.
+   */
+  const unpublishObject = useCallback(async (objectId: string) => {
+    const ownerId = activeUserIdRef.current;
+    // A queued backup would put the row straight back.
+    const queued = sharedSyncTimers.get(objectId);
+    if (queued) {
+      clearTimeout(queued);
+      sharedSyncTimers.delete(objectId);
+    }
+    try {
+      await unpublishLearningObject(objectId);
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not reach the shared library.' };
+    }
+    clearVersionPublished(ownerId, objectId);
+    return { ok: true };
+  }, []);
+
   const ensureObjectInitialVersion = useCallback((objectId: string) => {
     const ownerId = activeUserIdRef.current;
     const obj = createdObjectsRef.current.find((o) => o.id === objectId)
@@ -1011,7 +1042,7 @@ function StudioApp() {
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
     saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
-    ensureObjectInitialVersion,
+    ensureObjectInitialVersion, unpublishObject,
     lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,

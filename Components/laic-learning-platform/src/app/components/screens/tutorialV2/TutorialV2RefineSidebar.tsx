@@ -32,6 +32,7 @@ import {
 import { parsePdf, docFromText } from '../../../../lib/pdf';
 import { makeBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
 import { errorMessage, fetchWebImage, ingestYoutube } from '../../../../lib/api';
+import { IMAGE_DRAG_MIME } from '../../../../lib/tutorialV2/imageDrag';
 import { useApp } from '../../../App';
 import type { TutorialV2Draft, TutorialV2Part, V2SourceRef, V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
 import type { AssistantMessage, EditAction, LearningObject, ObjectSelection, ObjectType } from '../../../../lib/types';
@@ -717,7 +718,7 @@ export function TutorialV2RefineSidebar({
               </p>
               <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, lineHeight: 1.4 }}>
                 {sourceImages.length
-                  ? 'Pulled from your website sources — click one to add it as an image block, then drag it into place. Or upload your own.'
+                  ? 'Pulled from your website sources — drag one between blocks to drop it exactly where you want, or click to add it at the end.'
                   : 'Upload your own images, or add a website source and its images will appear here automatically.'}
               </p>
               <input
@@ -747,6 +748,15 @@ export function TutorialV2RefineSidebar({
                     key={img.src}
                     type="button"
                     disabled={placingImageSrc !== null}
+                    // Drag to place it between blocks; click still appends.
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.effectAllowed = 'copy';
+                      e.dataTransfer.setData(
+                        IMAGE_DRAG_MIME,
+                        JSON.stringify({ src: img.src, caption: img.caption || img.alt || '' }),
+                      );
+                    }}
                     onClick={() => addImageFromSource(img)}
                     className="relative rounded-lg overflow-hidden border"
                     style={{ aspectRatio: '1', borderColor: 'rgba(0,0,0,0.1)', background: '#F3F4F6', cursor: placingImageSrc ? 'wait' : 'pointer' }}

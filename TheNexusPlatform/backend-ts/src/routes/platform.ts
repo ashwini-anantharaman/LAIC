@@ -3240,6 +3240,13 @@ platformRouter.delete("/invitations/:invitation_id", async (c) => {
   }
   const revoked = await graph.revokeInvitation(invId);
   if (!revoked) throw new HttpError(410, "This invitation is no longer pending");
+  // An invited person can already hold a profile — that is how their username and
+  // starting password get set before first sign-in — and an invitation is not a
+  // membership, so revoking it used to strand the username with nothing able to
+  // address it. Released only when that profile has no memberships at all.
+  const freedUsername = await db
+    .releaseUsernameIfOrphanedByEmail(inv.email as string)
+    .catch(() => null);
   await db.recordAuditEvent("invitation.revoked", {
     orgId: inv.organization_id as string,
     actorUserId: user.id,
@@ -3247,7 +3254,7 @@ platformRouter.delete("/invitations/:invitation_id", async (c) => {
     scopeId: (inv.program_id as string) ?? (inv.organization_id as string),
     targetType: "invitation",
     targetId: invId,
-    metadata: { email: inv.email },
+    metadata: { email: inv.email, ...(freedUsername ? { freed_username: freedUsername } : {}) },
   });
   return c.json({ ok: true });
 });

@@ -1469,6 +1469,50 @@ offeringsRouter.post("/programs/:program_id/invite", async (c) => {
 });
 
 const setMemberRoleSchema = z.object({ email: z.string().email(), role_id: z.string().nullable() });
+/**
+ * Renaming a member. The name labels rosters, leaderboards and every chat message,
+ * so it is trimmed, collapsed, capped and stripped of control characters — a newline
+ * would break any single-line row that renders it. Same rules as the self-service
+ * PATCH /auth/me, deliberately: two doors to one field should not disagree.
+ */
+const setMemberNameSchema = z.object({
+  email: z.string().email(),
+  display_name: z
+    .string()
+    .transform((v) => v.replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim())
+    .refine((v) => v.length >= 1, "A name cannot be empty")
+    .refine((v) => v.length <= 80, "That name is too long"),
+});
+
+/**
+ * Rename a member from the console.
+ *
+ * Addressed by EMAIL like the role assignment beside it, which also means it reaches
+ * someone still INVITED — they hold a profile (that is how their credentials get set)
+ * but no membership id.
+ *
+ * Same authority as assigning a role: this is people-administration, not a
+ * credential. It does not let anyone sign in as the person.
+ *
+ * The write is global across their profiles — see setDisplayNameByEmail for why a
+ * per-org name cannot be made coherent — so a rename here is what the app shows.
+ */
+offeringsRouter.put("/programs/:program_id/members/name", async (c) => {
+  const user = await getCurrentUser(c);
+  if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
+  const programId = c.req.param("program_id");
+  const req = parseBody(setMemberNameSchema, await c.req.json());
+  const program = await db.getProgram(programId);
+  if (!program) throw new HttpError(404, "Program not found");
+  _requireOfferingPeopleAdmin(user, program.org_id, programId);
+  const changed = await db.setDisplayNameByEmail(req.email, req.display_name);
+  if (!changed) throw new HttpError(404, "No profile for that email");
+  await db.recordAuditEvent("program.member.renamed", {
+    orgId: program.org_id, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { email: req.email, display_name: req.display_name, profiles_updated: changed },
+  });
+  return c.json({ ok: true, display_name: req.display_name });
+});
 
 offeringsRouter.put("/programs/:program_id/members/role", async (c) => {
   const user = await getCurrentUser(c);
