@@ -47,7 +47,13 @@ export function fmtTimestamp(sec?: number): string {
 
 export type PdfSrc = { id: string; file: File | null; doc: ParsedDoc | null };
 export type TextSrc = { id: string; doc: ParsedDoc };
-export type WebSrc = { id: string; url: string; doc: ParsedDoc };
+export type WebSrc = {
+  id: string;
+  url: string;
+  doc: ParsedDoc;
+  /** Content images harvested from the page (authoring image picker). */
+  images?: { src: string; alt?: string; caption?: string }[];
+};
 export type YtSrc = {
   id: string;
   url: string;

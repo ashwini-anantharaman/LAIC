@@ -14,6 +14,7 @@ import type { LearningObject } from './types';
 import {
   getObjectCollections,
   setObjectCollections,
+  objectCollectionIds,
   type ObjectCollection,
 } from './objectCollectionsStore';
 import { bbTutorialsSeedObjects } from './bbTutorialsSeed';
@@ -41,8 +42,40 @@ function snapshotObjects(userId: string): LearningObject[] {
   }));
 }
 
+/**
+ * Folders retired from the demo baseline — removed on every hydrate.
+ * Name match is exact (case-sensitive) so the seeded lowercase "quiz"
+ * folder is untouched; builtin and snapshot folders are always kept.
+ */
+const RETIRED_COLLECTION_NAMES = new Set([
+  'video script',
+  'Flashcard Set',
+  'Quiz',
+  'Concept Card',
+]);
+
+function pruneRetiredCollections(userId: string): void {
+  const existing = getObjectCollections(userId);
+  const keepIds = new Set(SNAPSHOT.collections.map((c) => c.id));
+  const retired = existing.filter((c) => (
+    !c.builtin && !keepIds.has(c.id) && RETIRED_COLLECTION_NAMES.has(c.name.trim())
+  ));
+  if (!retired.length) return;
+  const retiredIds = new Set(retired.map((c) => c.id));
+  const parentOf = new Map(retired.map((c) => [c.id, c.parentId ?? null]));
+  const next = existing
+    .filter((c) => !retiredIds.has(c.id))
+    .map((c) => {
+      let p = c.parentId ?? null;
+      while (p && retiredIds.has(p)) p = parentOf.get(p) ?? null;
+      return p === (c.parentId ?? null) ? c : { ...c, parentId: p };
+    });
+  if (next.length) setObjectCollections(userId, next);
+}
+
 /** Create any snapshot folders the user doesn't have yet (ids preserved). */
 export function ensureSnapshotCollections(userId: string): void {
+  pruneRetiredCollections(userId);
   if (!librarySnapshotActive() || !SNAPSHOT.collections.length) return;
   const existing = getObjectCollections(userId);
   const have = new Set(existing.map((c) => c.id));
@@ -53,8 +86,10 @@ export function ensureSnapshotCollections(userId: string): void {
 
 /**
  * Merge the baked snapshot into a user's library. Snapshot objects are
- * upserted by id (authoritative); everything the user created themselves
- * is left untouched.
+ * upserted by id (authoritative). Snapshot folders are locked to their
+ * snapshot contents: any other object filed in one is evicted — removed
+ * from the folder, deleted outright if that was its only folder.
+ * Objects living entirely outside snapshot folders are left untouched.
  */
 export function mergeLibrarySnapshot(
   userId: string,
@@ -63,15 +98,30 @@ export function mergeLibrarySnapshot(
   if (!librarySnapshotActive() || !SNAPSHOT.objects.length) return objs;
   const seed = snapshotObjects(userId);
   const seedById = new Map(seed.map((o) => [o.id, o]));
+  const lockedFolderIds = new Set(
+    SNAPSHOT.collections.filter((c) => !c.builtin).map((c) => c.id),
+  );
   let changed = false;
 
-  const next = objs.map((o) => {
+  const next: LearningObject[] = [];
+  for (const o of objs) {
     const seeded = seedById.get(o.id);
-    if (!seeded) return o;
-    seedById.delete(o.id);
-    changed = true;
-    return seeded;
-  });
+    if (seeded) {
+      seedById.delete(o.id);
+      changed = true;
+      next.push(seeded);
+      continue;
+    }
+    const ids = objectCollectionIds(o);
+    if (ids.some((id) => lockedFolderIds.has(id))) {
+      changed = true;
+      const rest = ids.filter((id) => !lockedFolderIds.has(id));
+      if (!rest.length) continue; // snapshot-folder-only stray — permanently removed
+      next.push({ ...o, collectionIds: rest, collectionId: undefined });
+      continue;
+    }
+    next.push(o);
+  }
 
   const missing = [...seedById.values()];
   if (!missing.length && !changed) return objs;

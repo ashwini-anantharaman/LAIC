@@ -21,6 +21,7 @@ import {
   DEFAULT_TUTORIAL_TEMPLATE_ID,
   WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID,
   getTutorialTemplate,
+  isBlankCanvasTutorial,
   isWriteYourselfTutorial,
   writeYourselfTutorialTemplate,
 } from '../../../../lib/tutorialV2/tutorialTemplates';
@@ -127,6 +128,7 @@ function buildPoolFromSources(args: {
       sentences: w.doc.sentences || [],
       html: w.doc.html,
       sourceUrl: w.doc.sourceUrl || w.url,
+      images: w.images?.length ? w.images : undefined,
     });
   }
   if (args.libraryDoc && args.librarySource) {
@@ -296,6 +298,7 @@ export function ObjectCreatorTutorialV2() {
           html: out.html || undefined,
           sourceUrl: out.url || url,
         },
+        images: out.images?.length ? out.images : undefined,
       }]);
       setWebUrl('');
     } catch (e) {
@@ -524,6 +527,7 @@ export function ObjectCreatorTutorialV2() {
         setWebSources(existing.sourcePool.filter((s) => s.kind === 'web').map((s) => ({
           id: s.id, url: s.sourceUrl || '',
           doc: { fileName: s.label, pageCount: 1, sentences: s.sentences || [], html: s.html, sourceUrl: s.sourceUrl },
+          images: s.images?.length ? s.images : undefined,
         })));
       }
     } else {
@@ -587,7 +591,10 @@ export function ObjectCreatorTutorialV2() {
       const titles = sectionTitles.length
         ? sectionTitles
         : synced.sections.map((s) => ({ id: s.id, title: s.title, intent: s.intent || '' }));
-      const sections = applySectionOutline(synced.sections, titles, analysis, { writeYourself: wy });
+      const sections = applySectionOutline(synced.sections, titles, analysis, {
+        writeYourself: wy,
+        freeSections: isBlankCanvasTutorial(draft.templateId),
+      });
       next = touchDraft(synced, {
         phase: 'structure',
         sections,
@@ -638,6 +645,8 @@ export function ObjectCreatorTutorialV2() {
 
   const writeYourself = isWriteYourselfTutorial(draft.templateId)
     || draft.metadata.authoringPath === 'write-yourself';
+  /** Blank canvas: free section count + author-added slots, but Sources and AI stay on. */
+  const freeform = isBlankCanvasTutorial(draft.templateId);
 
   const pipelineNeedsSources = useMemo(() => {
     if (writeYourself) return false;
@@ -1041,7 +1050,7 @@ export function ObjectCreatorTutorialV2() {
     const tpl = getTutorialTemplate(draft.templateId);
     const analysis = analyzeTemplateRecipe(tpl);
     const slots = writeYourself ? [] : (draft.topLevelSlots || []);
-    const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself });
+    const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself, freeform });
     const continueLabel = writeYourself
       ? 'Save skeleton & continue to author →'
       : analysis.needsSources
@@ -1055,10 +1064,12 @@ export function ObjectCreatorTutorialV2() {
         title="Structure"
         subtitle={writeYourself
           ? 'Name your sections — no template recipe'
-          : 'Slots and sections from your template recipe'}
+          : freeform
+            ? 'Blank canvas — add any sections and content you want'
+            : 'Slots and sections from your template recipe'}
         rail={pipelineRail}
       >
-        <div className="max-w-2xl mx-auto pb-8">
+        <div className={`${freeform ? 'max-w-4xl' : 'max-w-2xl'} mx-auto pb-8`}>
           <TutorialV2StructurePanel
             template={tpl}
             slots={slots}
@@ -1067,6 +1078,7 @@ export function ObjectCreatorTutorialV2() {
             onChangeSectionTitles={setSectionTitles}
             createdObjects={createdObjects || []}
             writeYourself={writeYourself}
+            freeform={freeform}
           />
 
           <div className="flex flex-wrap gap-2 px-1 mt-5">
@@ -1098,7 +1110,7 @@ export function ObjectCreatorTutorialV2() {
                   synced.sections,
                   sectionTitles,
                   analysis,
-                  { writeYourself: false },
+                  { writeYourself: false, freeSections: freeform },
                 );
                 const nextSlots = seedTopLevelSlots(analysis, synced.topLevelSlots?.length ? synced.topLevelSlots : slots);
                 const nextPhase: TutorialV2Phase = analysis.needsSources ? 'sources' : 'navigator';
@@ -1121,9 +1133,11 @@ export function ObjectCreatorTutorialV2() {
               <p style={{ fontSize: 12.5, color: '#B45309', width: '100%' }}>
                 {writeYourself
                   ? 'Name at least one section to continue.'
-                  : analysis.hasSections
-                    ? 'Name every section and pick required library content to continue.'
-                    : 'Pick required library content to continue.'}
+                  : freeform
+                    ? 'Add at least one section or content item (and pin any required library picks) to continue.'
+                    : analysis.hasSections
+                      ? 'Name every section and pick required library content to continue.'
+                      : 'Pick required library content to continue.'}
               </p>
             )}
           </div>
