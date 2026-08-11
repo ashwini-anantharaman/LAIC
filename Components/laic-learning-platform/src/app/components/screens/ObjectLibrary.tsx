@@ -1,14 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
-  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
+  BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { OBJECTS } from '../../../lib/data';
 import { StatusPill } from './StatusPill';
 import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
-import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 import { saveObject, setObjectShared } from '../../../lib/supabase';
 import {
@@ -122,7 +121,6 @@ export function ObjectLibrary() {
   const [versionToast, setVersionToast] = useState<string | null>(null);
 
   const {
-    activeUserId,
     openReader,
     openEditor,
     createdObjects: createdObjectsRaw,
@@ -234,17 +232,6 @@ export function ObjectLibrary() {
     return kids.filter((c) => c.name.toLowerCase().includes(q));
   }, [objectCollections, opened, collectionSearch]);
 
-  /**
-   * Copy the object's link AND publish it, because a link nobody else can open is
-   * not a link. /o/<id> used to resolve only in the browser that authored the
-   * object, so a copied URL failed everywhere it was pasted.
-   *
-   * The clipboard write happens FIRST and unawaited-on-network: browsers only
-   * allow it inside the user's gesture, and putting a round trip in front of it
-   * loses that gesture in Safari. Publishing then follows, and its outcome is
-   * reported on the button — a link that is merely copied and a link that
-   * actually works must not look the same.
-   */
   const copyObjectUrl = async (objectId: string) => {
     const url = objectEmbedUrl(objectId);
     try {
@@ -255,11 +242,11 @@ export function ObjectLibrary() {
       window.prompt('Copy this content URL:', url);
     }
 
-    // Publishing needs the row to exist server-side first: object saves are
-    // fire-and-forget (App.tsx), so an object authored in a session without a
-    // Nexus token was never persisted and has nothing to share.
-    // `allObjects` is declared just below; this only runs from a click, long
-    // after the component body has evaluated.
+    // Publish, so the link resolves outside this browser. The clipboard write
+    // above runs BEFORE any network call: browsers only allow it inside the
+    // user's gesture, and a round trip in front of it loses that gesture in
+    // Safari. Publishing needs the row server-side, and object saves are
+    // fire-and-forget, so save first.
     const obj = allObjects.find((o) => o.id === objectId);
     let ok = false;
     if (obj) {
@@ -658,15 +645,6 @@ export function ObjectLibrary() {
                 style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
               >
                 <Plus size={14} /> New folder
-              </button>
-              <button
-                type="button"
-                onClick={() => exportLibrarySnapshot(activeUserId, createdObjects || [])}
-                title="Download the whole library (folders + content) as a snapshot JSON — commit it as src/lib/seed/librarySnapshot.json to make it the baseline for every visitor."
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
-                style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
-              >
-                <Download size={14} /> Export snapshot
               </button>
             </div>
           </div>
