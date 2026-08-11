@@ -1,23 +1,21 @@
 /**
- * Submit controls for the authoring review step.
+ * Submit control for the authoring review step.
  *
  * Submitting used to always mint a version, so an author who fixed a typo and
  * resubmitted three times ended up at v5 with four dead versions behind them.
- * This splits the act into two plain buttons: "Submit as new version" commits a
- * new one, "Submit as…" opens the existing versions so the author can overwrite
- * one instead.
+ * "Submit as…" asks first: add a new version, or replace one that exists.
  *
- * Two buttons rather than a button with an attached caret: the review toolbar
- * clips its overflow, so an inline dropdown rendered there was invisible. The
- * chooser is a fixed overlay for the same reason — it cannot be clipped by
- * whatever ancestor the caller happens to render inside.
+ * The chooser is a dialog portalled to document.body, not an inline dropdown.
+ * The review toolbar clips its overflow (which hid an anchored menu entirely)
+ * and sits inside a transformed ancestor (which makes position:fixed resolve
+ * against that ancestor rather than the viewport). The portal escapes both.
  *
  * Locked versions are listed but not selectable — a lock is a promise that what
  * someone reviewed cannot change underneath them.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { History, Lock, Send, X } from 'lucide-react';
+import { Lock, Send, X } from 'lucide-react';
 import type { Version } from '../../../lib/types';
 
 export interface SubmitTarget {
@@ -66,22 +64,12 @@ export function SubmitVersionMenu({
       <button
         type="button"
         disabled={!canSubmit}
-        onClick={() => submit({})}
-        title={canSubmit ? `Submit as a new version (v${nextNumber})` : disabledTitle}
+        onClick={() => setOpen(true)}
+        title={canSubmit ? `Submit as a new version (v${nextNumber}) or replace an existing one` : disabledTitle}
         className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
         style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
       >
-        <Send size={13} /> {label} as new version
-      </button>
-      <button
-        type="button"
-        disabled={!canSubmit}
-        onClick={() => setOpen(true)}
-        title={canSubmit ? 'Submit onto an existing version…' : disabledTitle}
-        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border disabled:opacity-40"
-        style={{ fontSize: 12.5, fontWeight: 650, color: '#0B1220', background: '#fff', borderColor: 'rgba(0,0,0,0.18)' }}
-      >
-        <History size={13} /> {label} as…
+        <Send size={13} /> {label} as…
       </button>
 
       {open && createPortal(
