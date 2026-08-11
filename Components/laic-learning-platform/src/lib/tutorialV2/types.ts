@@ -26,6 +26,8 @@ export interface V2SourceRef {
   sentences: { text: string; page: number }[];
   html?: string;
   sourceUrl?: string;
+  /** Content images harvested from a website source (authoring image picker). */
+  images?: { src: string; alt?: string; caption?: string }[];
   /** Original file / paste / URL meta for reopen. */
   meta?: Record<string, unknown>;
 }

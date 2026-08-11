@@ -420,12 +420,31 @@ export function ingestYoutube(
   });
 }
 
-/** POST /api/tutorials/ingest-web — server fetches a public web page as sentences + HTML. */
+/** Content image harvested from an ingested website (authoring image picker). */
+export interface WebSourceImage {
+  src: string;
+  alt?: string;
+  caption?: string;
+}
+
+/** POST /api/tutorials/ingest-web — server fetches a public web page as sentences + HTML + content images. */
 export function ingestWeb(
   url: string,
   signal?: AbortSignal,
-): Promise<{ title: string; sentences: string[]; url?: string; html?: string }> {
-  return apiFetch<{ title: string; sentences: string[]; url?: string; html?: string }>('/api/tutorials/ingest-web', {
+): Promise<{ title: string; sentences: string[]; url?: string; html?: string; images?: WebSourceImage[] }> {
+  return apiFetch<{ title: string; sentences: string[]; url?: string; html?: string; images?: WebSourceImage[] }>('/api/tutorials/ingest-web', {
+    method: 'POST',
+    body: { url },
+    signal,
+  });
+}
+
+/** POST /api/tutorials/fetch-image — server fetches a public image and inlines it as a data: URI. */
+export function fetchWebImage(
+  url: string,
+  signal?: AbortSignal,
+): Promise<{ dataUri: string; contentType?: string; bytes?: number }> {
+  return apiFetch<{ dataUri: string; contentType?: string; bytes?: number }>('/api/tutorials/fetch-image', {
     method: 'POST',
     body: { url },
     signal,

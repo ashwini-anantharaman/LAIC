@@ -31,7 +31,7 @@ import {
 } from '../../../../lib/tutorialV2/tutorialTemplates';
 import { parsePdf, docFromText } from '../../../../lib/pdf';
 import { makeBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
-import { errorMessage, ingestYoutube } from '../../../../lib/api';
+import { errorMessage, fetchWebImage, ingestYoutube } from '../../../../lib/api';
 import { useApp } from '../../../App';
 import type { TutorialV2Draft, TutorialV2Part, V2SourceRef, V2TopLevelSlot } from '../../../../lib/tutorialV2/types';
 import type { AssistantMessage, EditAction, LearningObject, ObjectSelection, ObjectType } from '../../../../lib/types';
@@ -327,6 +327,65 @@ export function TutorialV2RefineSidebar({
         : { id, type: 'video', label: 'Media · YouTube', url: '', videoId: '', caption: '', mediaKind: 'video' };
     onChangeParts([...parts, part]);
     onSelectPart(id);
+  };
+
+  const addImagePart = (url: string, caption: string) => {
+    pushUndo();
+    const id = `p-refine-${Date.now().toString(36)}`;
+    onChangeParts([...parts, { id, type: 'image', label: 'Media · image', url, caption, mediaKind: 'image' }]);
+    onSelectPart(id);
+  };
+
+  /** Images harvested from website sources (deduped across sources). */
+  const sourceImages = useMemo(() => {
+    const out: { src: string; alt?: string; caption?: string; sourceLabel: string }[] = [];
+    const seen = new Set<string>();
+    for (const s of draft.sourcePool || []) {
+      for (const img of s.images || []) {
+        if (!img?.src || seen.has(img.src)) continue;
+        seen.add(img.src);
+        out.push({ ...img, sourceLabel: s.label });
+      }
+    }
+    return out;
+  }, [draft.sourcePool]);
+
+  const [placingImageSrc, setPlacingImageSrc] = useState<string | null>(null);
+  const imageUploadRef = useRef<HTMLInputElement | null>(null);
+
+  /** Place a website image: inline it via the server (durable) or fall back to hotlinking. */
+  const addImageFromSource = async (img: { src: string; alt?: string; caption?: string }) => {
+    if (placingImageSrc) return;
+    setPlacingImageSrc(img.src);
+    let url = img.src;
+    if (!url.startsWith('data:')) {
+      try {
+        const out = await fetchWebImage(url);
+        if (out.dataUri) url = out.dataUri;
+      } catch { /* hotlink fallback — image still renders from the original site */ }
+    }
+    addImagePart(url, img.caption || img.alt || '');
+    setPlacingImageSrc(null);
+  };
+
+  const addImagesFromUpload = async (files: File[]) => {
+    const imgs = files.filter((f) => f.type.startsWith('image/'));
+    if (!imgs.length) return;
+    const urls = await Promise.all(imgs.map((file) => new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => resolve('');
+      reader.readAsDataURL(file);
+    })));
+    const valid = urls.filter(Boolean);
+    if (!valid.length) return;
+    pushUndo();
+    const stamp = Date.now().toString(36);
+    const added: TutorialV2Part[] = valid.map((url, i) => (
+      { id: `p-refine-${stamp}-${i}`, type: 'image', label: 'Media · image', url, caption: '', mediaKind: 'image' }
+    ));
+    onChangeParts([...parts, ...added]);
+    onSelectPart(added[added.length - 1].id);
   };
 
   const startGenerate = (type: ObjectType) => {
@@ -649,6 +708,67 @@ export function TutorialV2RefineSidebar({
                 <button type="button" onClick={addBridgeEmbed} className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full border" style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.1)' }}>
                   <LayoutGrid size={12} /> Bridge table
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <p style={{ fontSize: 11.5, fontWeight: 650, color: '#9AA3AF', letterSpacing: '0.04em', textTransform: 'uppercase', marginBottom: 8 }}>
+                Images
+              </p>
+              <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 8, lineHeight: 1.4 }}>
+                {sourceImages.length
+                  ? 'Pulled from your website sources — click one to add it as an image block, then drag it into place. Or upload your own.'
+                  : 'Upload your own images, or add a website source and its images will appear here automatically.'}
+              </p>
+              <input
+                ref={imageUploadRef}
+                type="file"
+                accept="image/*"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addImagesFromUpload(Array.from(e.target.files || []));
+                  e.target.value = '';
+                }}
+              />
+              <div className="grid grid-cols-3 gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => imageUploadRef.current?.click()}
+                  className="flex flex-col items-center justify-center gap-1 rounded-lg border border-dashed"
+                  style={{ aspectRatio: '1', borderColor: 'rgba(0,0,0,0.18)', color: '#6B7280', fontSize: 11, fontWeight: 600, background: '#FAFAFA' }}
+                  title="Upload images from your computer"
+                >
+                  <ImageIcon size={16} />
+                  Upload
+                </button>
+                {sourceImages.map((img) => (
+                  <button
+                    key={img.src}
+                    type="button"
+                    disabled={placingImageSrc !== null}
+                    onClick={() => addImageFromSource(img)}
+                    className="relative rounded-lg overflow-hidden border"
+                    style={{ aspectRatio: '1', borderColor: 'rgba(0,0,0,0.1)', background: '#F3F4F6', cursor: placingImageSrc ? 'wait' : 'pointer' }}
+                    title={`${img.caption || img.alt || 'Image'} — ${img.sourceLabel}`}
+                  >
+                    <img
+                      src={img.src}
+                      alt={img.alt || ''}
+                      loading="lazy"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      onError={(e) => {
+                        const tile = (e.target as HTMLElement).closest('button');
+                        if (tile) tile.style.display = 'none'; // hotlink-blocked → hide tile
+                      }}
+                    />
+                    {placingImageSrc === img.src && (
+                      <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.7)' }}>
+                        <Loader2 size={16} className="animate-spin" style={{ color: '#6D28D9' }} />
+                      </span>
+                    )}
+                  </button>
+                ))}
               </div>
             </div>
 
