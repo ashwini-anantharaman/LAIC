@@ -1,3 +1,11 @@
+// react-native-url-polyfill FIRST: @supabase/supabase-js builds request URLs and
+// a websocket URL with the WHATWG URL API, which React Native's runtime only
+// partially implements. Importing it here — before anything that reaches for
+// Supabase — is the documented fix, and the failure without it is an obscure
+// "URL.protocol is not implemented" at the first live read rather than anything
+// pointing at the cause.
+import "react-native-url-polyfill/auto";
+
 import { useFonts } from "expo-font";
 import { router, Stack, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";

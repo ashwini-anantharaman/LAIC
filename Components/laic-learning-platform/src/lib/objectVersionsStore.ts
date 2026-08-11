@@ -145,8 +145,81 @@ function readAll(userId: string): Version[] {
   }
 }
 
+/**
+ * Persist history, shedding weight rather than failing.
+ *
+ * Snapshots carry whole blocks, and images are inlined base64, so a handful of
+ * illustrated versions fills the ~5MB localStorage budget. The old write threw
+ * QuotaExceededError straight through: nothing was stored, and the history an
+ * author could see vanished on the next refresh.
+ *
+ * The version LIST is what must never be lost — an author needs to see that v1…v9
+ * exist even if the browser cannot hold nine copies of their images. So on
+ * overflow we drop CONTENT from the least precious versions, oldest first, and
+ * keep every row. Protected from trimming while anything else remains: the
+ * published version (it is what readers are being served), locked versions (a
+ * lock promises the content will not change), v1 (the original state), and the
+ * newest version (the one being worked on).
+ */
+const SNAPSHOT_PROTECTED = (v: Version, newestPerObject: Map<string, number>) => (
+  !!v.publishedAt
+  || !!v.locked
+  || v.versionNumber === 1
+  || newestPerObject.get(v.objectId) === v.versionNumber
+);
+
+function trimForStorage(list: Version[], pass: number): Version[] {
+  const newest = new Map<string, number>();
+  for (const v of list) {
+    newest.set(v.objectId, Math.max(newest.get(v.objectId) ?? 0, v.versionNumber));
+  }
+  // Oldest first, so the versions an author is least likely to reach for lose
+  // their content before recent ones do.
+  const order = [...list].sort((a, b) => a.versionNumber - b.versionNumber);
+  const doomed = new Set<string>();
+  for (const v of order) {
+    if (!v.snapshot) continue;
+    if (pass < 2 && SNAPSHOT_PROTECTED(v, newest)) continue;
+    // Pass 2: published and locked versions keep their content, because losing
+    // those loses something irreplaceable.
+    if (pass === 2 && (v.publishedAt || v.locked)) continue;
+    // Pass 3 spares nothing. A version ROW with no content still tells an
+    // author it exists; refusing the write told them their history was empty —
+    // which is how a new tutorial ended up with no v1 to publish on a browser
+    // whose storage was already full.
+    doomed.add(v.id);
+    if (pass === 0) break;      // shed one at a time first — stay cheap
+    if (pass === 1 && doomed.size >= 3) break;
+  }
+  if (!doomed.size) return list;
+  return list.map((v) => (
+    doomed.has(v.id)
+      ? { ...v, snapshot: undefined, snapshotTrimmed: true }
+      : v
+  ));
+}
+
 function writeAll(userId: string, list: Version[]) {
-  localStorage.setItem(KEY(userId), JSON.stringify(list));
+  let candidate = list;
+  // Escalate through the passes: a pass that finds nothing to shed must move
+  // to a less forgiving one, not give up. Stopping at the first unhelpful pass
+  // is what let a lone (and therefore fully protected) v1 fail to save at all.
+  for (let pass = 0; pass <= 3; pass += 1) {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      try {
+        localStorage.setItem(KEY(userId), JSON.stringify(candidate));
+        emit();
+        return;
+      } catch {
+        const slimmer = trimForStorage(candidate, pass);
+        if (slimmer === candidate) break; // this pass has nothing more to give
+        candidate = slimmer;
+      }
+    }
+  }
+  // Even metadata-only did not fit. Leave whatever is already stored rather
+  // than clearing it — a stale history beats no history.
+  console.warn('[versions] could not persist history: storage is full');
   emit();
 }
 
@@ -269,6 +342,52 @@ export function syncWorkingVersion(
   return v;
 }
 
+/**
+ * Guarantee every object has a v1, and keep it publishable.
+ *
+ * Draft saves deliberately do not add versions — that is what stopped history
+ * growing on its own. But it also left a brand-new object with an empty
+ * history and nothing to publish until the author happened to submit.
+ *
+ * So: the first save commits v1, and while v1 is still the ONLY version it
+ * tracks the working copy, so it always holds real content rather than the
+ * empty shell the object was created as. The moment an author deliberately
+ * makes a v2, v1 freezes — from then on it is the original state, which is
+ * exactly what the rest of the model promises about it.
+ *
+ * Never adds a second version, so this cannot reintroduce surprise versions.
+ */
+export function ensureInitialVersion(
+  userId: string,
+  obj: LearningObject,
+  createdBy: string,
+): Version | null {
+  const existing = listVersionsForObject(userId, obj.id);
+
+  if (!existing.length) {
+    const v = makeVersion(obj, createdBy, 1, 'Initial version');
+    upsertLocal(userId, v);
+    return v;
+  }
+
+  // Only ever touch a lone v1 — and not once it is locked or published, where
+  // the content has been promised to someone.
+  if (existing.length !== 1) return null;
+  const v1 = existing[0];
+  if (v1.versionNumber !== 1 || v1.locked || v1.publishedAt) return null;
+  if (!readAll(userId).some((v) => v.id === v1.id)) return null; // seed row
+  if (v1.snapshot && contentEqualsSnapshot(v1.snapshot, obj)) return null;
+
+  const refreshed: Version = {
+    ...v1,
+    objectTitle: obj.title,
+    status: obj.status,
+    snapshot: snapshotFromObject(obj),
+  };
+  upsertLocal(userId, refreshed);
+  return refreshed;
+}
+
 /** Explicit “Save as new version” — appends a new numbered snapshot (skips if identical & no note). */
 export function saveAsNewVersion(
   userId: string,
@@ -370,6 +489,89 @@ export function deleteVersionsForObject(userId: string, objectId: string): void 
   const all = readAll(userId);
   const next = all.filter((v) => v.objectId !== objectId);
   if (next.length !== all.length) writeAll(userId, next);
+}
+
+/**
+ * Discard every version above `versionNumber` — the history side of a restore.
+ *
+ * Restoring to v2 with v3 and v4 still listed leaves the author looking at
+ * versions newer than the content they now have, so the list stops describing
+ * the object. Truncating makes the restored version the tip again.
+ *
+ * Refuses rather than partially applying when something above cannot be
+ * discarded: a locked version is a promise it will not change, and deleting it
+ * breaks that promise more thoroughly than editing would. Seed catalogue rows
+ * are likewise not ours to remove. The caller reports the reason so the author
+ * can unlock and retry.
+ */
+export function truncateVersionsAfter(
+  userId: string,
+  objectId: string,
+  versionNumber: number,
+): { ok: boolean; removed: number; error?: string } {
+  const above = listVersionsForObject(userId, objectId)
+    .filter((v) => v.versionNumber > versionNumber);
+  if (!above.length) return { ok: true, removed: 0 };
+
+  const locked = above.filter((v) => v.locked);
+  if (locked.length) {
+    const names = locked.map((v) => `v${v.versionNumber}`).join(', ');
+    return { ok: false, removed: 0, error: `Unlock ${names} before restoring past ${names.includes(',') ? 'them' : 'it'}.` };
+  }
+
+  const localIds = new Set(readAll(userId).map((v) => v.id));
+  const undeletable = above.filter((v) => !localIds.has(v.id));
+  if (undeletable.length) {
+    const names = undeletable.map((v) => `v${v.versionNumber}`).join(', ');
+    return { ok: false, removed: 0, error: `Demo catalog versions (${names}) can’t be removed.` };
+  }
+
+  const discard = new Set(above.map((v) => v.id));
+  const kept = readAll(userId).filter((v) => !discard.has(v.id));
+  // The restored version becomes the tip, and carries the live flag if the
+  // version that held it was just discarded.
+  const tookLive = above.some((v) => v.isLive);
+  writeAll(
+    userId,
+    tookLive
+      ? kept.map((v) => (
+        v.objectId === objectId
+          ? { ...v, isLive: v.versionNumber === versionNumber }
+          : v
+      ))
+      : kept,
+  );
+  return { ok: true, removed: above.length };
+}
+
+/**
+ * Record which version is live in the shared library.
+ *
+ * Exactly one per object: the shared table holds a single row per object, so
+ * two versions marked published would be a claim the data cannot support. The
+ * flag is cleared from every sibling as it is set here.
+ *
+ * Call this only after the upload succeeds — a version marked published that
+ * never reached the library is worse than one that is silently up to date.
+ */
+export function markVersionPublished(
+  userId: string,
+  objectId: string,
+  versionId: string,
+): Version | null {
+  const all = readAll(userId);
+  const hit = all.find((v) => v.id === versionId);
+  if (!hit) return null;
+  const stamp = new Date().toISOString();
+  writeAll(
+    userId,
+    all.map((v) => {
+      if (v.objectId !== objectId) return v;
+      if (v.id === versionId) return { ...v, publishedAt: stamp };
+      return v.publishedAt ? { ...v, publishedAt: undefined } : v;
+    }),
+  );
+  return { ...hit, publishedAt: stamp };
 }
 
 export function deleteVersion(userId: string, versionId: string): { ok: boolean; error?: string } {

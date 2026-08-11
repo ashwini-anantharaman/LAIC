@@ -427,6 +427,14 @@ export interface WebSourceImage {
   caption?: string;
 }
 
+/** POST /api/tutorials/paste-youtube-transcript — parse a transcript copied from YouTube. */
+export function pasteYoutubeTranscript(
+  args: { text: string; url?: string; title?: string },
+  signal?: AbortSignal,
+): Promise<{ title: string; videoId?: string; sentences: string[]; segments?: YtTranscriptSegment[] }> {
+  return apiFetch('/api/tutorials/paste-youtube-transcript', { method: 'POST', body: args, signal });
+}
+
 /** POST /api/tutorials/ingest-web — server fetches a public web page as sentences + HTML + content images. */
 export function ingestWeb(
   url: string,
@@ -451,6 +459,19 @@ export function publishLearningObject(
     body: { object: row, share },
     signal,
   });
+}
+
+/** DELETE /api/learning/objects/:id — remove content from the shared store for good. */
+export function deleteSharedObject(id: string, signal?: AbortSignal): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/learning/objects/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/** GET /api/learning/objects — the author's whole library from the shared store. */
+export function fetchSharedLibrary(signal?: AbortSignal): Promise<any[]> {
+  return apiFetch<any[]>('/api/learning/objects', { signal });
 }
 
 /** POST /api/tutorials/fetch-image — server fetches a public image and inlines it as a data: URI. */

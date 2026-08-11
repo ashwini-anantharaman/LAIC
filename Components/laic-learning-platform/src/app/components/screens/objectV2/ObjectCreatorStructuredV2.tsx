@@ -291,7 +291,9 @@ export function ObjectCreatorStructuredV2() {
       blocks: blocks as any,
       structuredV2Draft: { ...next, phase: next.phase || phase },
       collectionIds,
-    } as any, saveOpts);
+      // Draft saves keep content safe but leave history alone — see the same
+      // note in the Tutorial V2 creator.
+    } as any, saveOpts ?? { version: 'skip' });
     return collectionIds || [];
   }, [addObject, createCollectionIds, phase, createdObjects, noun]);
 

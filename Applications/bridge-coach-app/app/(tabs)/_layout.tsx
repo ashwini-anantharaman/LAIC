@@ -24,7 +24,7 @@ import {
   type MaterialTopTabNavigationOptions,
 } from "@react-navigation/material-top-tabs";
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
-import { withLayoutContext } from "expo-router";
+import { useSegments, withLayoutContext } from "expo-router";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -55,6 +55,25 @@ export default function TabsLayout() {
   // and leaves the status bar clear.
   const { open, sheets } = useBrandSheets(insets.top + CONTENT_TOP_GAP);
 
+  /**
+   * Inside a tab's own stack — a learn object's reader, and anything nested like it
+   * later — the bar goes away.
+   *
+   * Opening one of those is ENTERING something rather than moving between tabs: it
+   * has its own back arrow, and a bar offering five sideways moves undercuts that
+   * and steals the bottom of a full-bleed reader.
+   *
+   * Segments are ["(tabs)", <tab>, …rest], so depth alone answers it: a third
+   * segment means a nested route. A tab's own landing screen does NOT contribute an
+   * "index" segment — expo-router's generated types say so outright (segments[2] is
+   * typed "[id]" | undefined), so there is no index case to special-case.
+   *
+   * Depth rather than a list of screens, so a nested route added later inherits this
+   * by existing instead of by being remembered.
+   */
+  const segments = useSegments();
+  const inNestedScreen = segments.length > 2;
+
   return (
     <>
       {/* Runs the bridge launch handshake invisibly the moment the tabs
@@ -63,7 +82,7 @@ export default function TabsLayout() {
       <BridgeSessionWarmer />
       <SwipeTabs
       tabBarPosition="bottom"
-      tabBar={(props) => <BrandTabBar {...props} onOpenMenu={open} />}
+      tabBar={(props) => (inNestedScreen ? null : <BrandTabBar {...props} onOpenMenu={open} />)}
       screenOptions={{
         // Swiping between tabs is a NATIVE gesture. In a mobile browser it
         // fights Safari's own edge-swipes — and worse, the pager's gesture

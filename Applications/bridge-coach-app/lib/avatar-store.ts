@@ -141,7 +141,7 @@ export async function ensurePhotoAccess(): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
     Alert.alert(
       "Photo access is off",
-      "To choose a picture, allow photo access for Bridge Bird in Settings.",
+      "To choose a picture, allow photo access for BridgeBird in Settings.",
       [
         { text: "Not now", style: "cancel", onPress: () => resolve(false) },
         {

@@ -2,7 +2,58 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { publishLearningObject } from '../lib/api';
+import { deleteSharedObject, fetchSharedLibrary, publishLearningObject } from '../lib/api';
+
+/**
+ * Back the library up to the shared store, coalesced per object.
+ *
+ * Saves fire on nearly every edit and each row can carry megabytes of inlined
+ * images, so pushing every one would flood the API and the author's uplink.
+ * The last write within the window wins, which is the one that matters.
+ */
+const SHARED_SYNC_DELAY_MS = 2500;
+const sharedSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
+  const pending = sharedSyncTimers.get(obj.id);
+  if (pending) clearTimeout(pending);
+  sharedSyncTimers.set(obj.id, setTimeout(() => {
+    sharedSyncTimers.delete(obj.id);
+    publishLearningObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
+      console.warn('[library] could not back up to the shared store:', err?.message || err);
+    });
+  }, SHARED_SYNC_DELAY_MS));
+}
+
+/** A shared-store row (snake_case) back into the app's LearningObject shape. */
+function sharedRowToObject(row: any): LearningObject {
+  return {
+    id: row.id,
+    type: row.type,
+    title: row.title || 'Untitled',
+    ownerId: row.owner_id || '',
+    ownerName: row.owner_name || 'You',
+    status: row.status || 'draft',
+    scope: row.scope || 'bridge',
+    reuseCount: row.reuse_count ?? 0,
+    description: row.description || '',
+    estimatedTime: row.estimated_time || '',
+    blocks: row.blocks || [],
+    createdAt: String(row.created_at || '').slice(0, 10),
+    updatedAt: String(row.updated_at || '').slice(0, 10),
+    tags: row.tags || [],
+    sourceIds: row.source_ids || [],
+    collectionIds: Array.isArray(row.collection_ids) && row.collection_ids.length
+      ? row.collection_ids
+      : undefined,
+    pipelineDraft: row.pipeline_draft ?? undefined,
+    // The authoring draft rides along in pipeline_draft's sibling fields when
+    // present, so reopening a synced tutorial resumes where it left off.
+    ...(row.pipeline_draft?.tutorialV2Draft
+      ? { tutorialV2Draft: row.pipeline_draft.tutorialV2Draft }
+      : {}),
+  } as LearningObject;
+}
 import {
   loadUserObjects,
   saveUserObjects,
@@ -30,10 +81,16 @@ import {
 } from '../lib/objectCollectionsStore';
 import { mergeBbTutorialsIntoLibrary } from '../lib/bbTutorialsSeed';
 import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/librarySnapshotSeed';
+import { fileObjectsByType, folderIdForType } from '../lib/libraryFiling';
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
   overwriteVersion as storeOverwriteVersion,
+  getVersion,
+  objectFromVersion,
+  truncateVersionsAfter as storeTruncateVersionsAfter,
+  markVersionPublished,
+  ensureInitialVersion,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -114,6 +171,18 @@ export interface AppState {
     versionId: string,
     notes?: string,
   ) => { ok: boolean; version?: Version; error?: string };
+  /** Roll content AND history back to a version, discarding everything above it. */
+  restoreObjectVersion: (
+    objectId: string,
+    versionId: string,
+  ) => { ok: boolean; version?: Version; removed?: number; error?: string };
+  /** Push one version's content to the shared library partner apps read. */
+  publishObjectVersion: (
+    objectId: string,
+    versionId: string,
+  ) => Promise<{ ok: boolean; version?: Version; error?: string }>;
+  /** Guarantee this object has a v1 (never adds a second version). */
+  ensureObjectInitialVersion: (objectId: string) => Version | null;
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -284,10 +353,10 @@ function StudioApp() {
     refreshObjectCollections(userId);
 
     const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
-    const local = mergeLibrarySnapshot(
+    const local = fileObjectsByType(userId, mergeLibrarySnapshot(
       userId,
       mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw)),
-    );
+    ));
     if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
     if (local !== localRaw) {
@@ -295,6 +364,24 @@ function StudioApp() {
     }
     // Local load is enough to start persisting again (don't wait on network).
     setLibraryReady(true);
+
+    // Rebuild from the shared store too, so content an author created here
+    // survives a refresh, a cleared cache, or a different machine — this is
+    // what replaced baking a snapshot into the build.
+    try {
+      const shared = await fetchSharedLibrary();
+      if (gen !== hydrateGenRef.current) return;
+      if (Array.isArray(shared) && shared.length) {
+        const claimed = shared.map((r) => ({ ...sharedRowToObject(r), ownerId: userId }));
+        setCreatedObjects((prev) => {
+          const merged = fileObjectsByType(userId, withCollectionIds(userId, mergeObjects(prev, claimed)));
+          saveUserObjects(userId, merged);
+          return merged;
+        });
+      }
+    } catch (err: any) {
+      console.warn('[library] shared store unavailable:', err?.message || err);
+    }
 
     if (!supabaseEnabled()) return;
     try {
@@ -549,10 +636,16 @@ function StudioApp() {
       const fromPartial = objectCollectionIds(partial);
       const fromExisting = existing ? objectCollectionIds(existing) : [];
       const fromCreate = createCollectionIdsRef.current.filter((cid) => cols.some((c) => c.id === cid));
-      const collectionIds =
-        fromPartial.length
+      // The type decides the folder: a flashcard set belongs with flashcards
+      // even if the author happened to have a tutorials folder selected when
+      // they hit Create. Falls back to the picked folder for types with no
+      // home of their own.
+      const byType = folderIdForType(ownerId, partial.type);
+      const collectionIds = byType
+        ? [byType]
+        : (fromPartial.length
           ? fromPartial
-          : (fromExisting.length ? fromExisting : (fromCreate.length ? fromCreate : (fallback ? [fallback] : [])));
+          : (fromExisting.length ? fromExisting : (fromCreate.length ? fromCreate : (fallback ? [fallback] : []))));
       const obj: LearningObject = {
         id,
         type: partial.type,
@@ -596,7 +689,11 @@ function StudioApp() {
         } else if (typeof versionMode === 'object' && versionMode.overwriteId) {
           const res = storeOverwriteVersion(ownerId, versionMode.overwriteId, obj, createdBy);
           if (!res.ok && res.error) onVersionError?.(res.error);
-        } else if (versionMode !== 'skip') {
+        } else if (versionMode === 'skip') {
+          // Draft saves add nothing — but every object still needs a v1 in the
+          // history, ready to publish, from the moment it exists.
+          ensureInitialVersion(ownerId, obj, createdBy);
+        } else {
           syncWorkingVersion(ownerId, obj, createdBy);
         }
       } catch (err: any) {
@@ -604,13 +701,12 @@ function StudioApp() {
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
-      } else if (obj.status === 'in-review' || obj.status === 'approved') {
-        // Standalone site (no Nexus session): publish submitted content to the
-        // shared Nexus Supabase through the CS API so partner apps see it.
-        const names = cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name);
-        publishLearningObject(objectToPublishRow(obj, names)).catch((err) =>
-          console.warn('[publish] could not publish to shared library:', err?.message || err));
       }
+      // Back the library up to the shared store so it survives a refresh, a
+      // cleared cache, or another machine. This is a SAVE, not a publish: no
+      // version_number goes with it, so published_at stays untouched and
+      // reader apps keep showing whichever version was deliberately published.
+      queueSharedSync(obj, cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name));
       return nextList;
     });
     // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
@@ -646,6 +742,97 @@ function StudioApp() {
     if (!obj) return { ok: false, error: 'Content not found.' };
     const user = USERS.find((u) => u.id === ownerId);
     return storeOverwriteVersion(ownerId, versionId, obj, obj.ownerName || user?.name || 'You', notes);
+  }, []);
+
+  /**
+   * Roll the object back to a version: its content AND its history.
+   *
+   * Everything above the restored version is discarded, so the version you
+   * restored to becomes the tip and the list still describes the object you
+   * have. Nothing new is committed — the restored state is only recorded if
+   * the author submits afterwards.
+   *
+   * History is truncated FIRST: if something above is locked the whole restore
+   * is refused, and refusing after already overwriting the content would leave
+   * the object and its history disagreeing.
+   */
+  const restoreObjectVersion = useCallback((objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+    if (!version.snapshot) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to restore.` };
+    }
+
+    const trimmed = storeTruncateVersionsAfter(ownerId, objectId, version.versionNumber);
+    if (!trimmed.ok) return { ok: false, error: trimmed.error };
+
+    const restored = objectFromVersion(base, version);
+    addObject({
+      ...restored,
+      // Keep the object where it lives now; the snapshot predates any moves.
+      collectionIds: objectCollectionIds(base),
+      status: base.status,
+    } as any, { version: 'skip' });
+    return { ok: true, version, removed: trimmed.removed };
+  }, [addObject]);
+
+  /**
+   * Push ONE version's content to the shared library, where partner apps read.
+   *
+   * The snapshot is what ships — not the working copy — so an author can keep
+   * editing after publishing without that work leaking out. The shared table
+   * holds one row per object, so publishing a version is also what unpublishes
+   * the previous one: readers see exactly the version chosen here.
+   */
+  const publishObjectVersion = useCallback(async (objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+
+    // A snapshot can be missing because the browser's storage was full when it
+    // was written. For the NEWEST version that is recoverable rather than
+    // fatal: the working copy is that version's content until a later version
+    // freezes it, so the live object is exactly what would have been stored.
+    const isTip = listVersionsForObject(ownerId, objectId)
+      .every((v) => v.versionNumber <= version.versionNumber);
+    if (!version.snapshot && !isTip) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to publish.` };
+    }
+
+    const cols = getObjectCollections(ownerId);
+    const ids = objectCollectionIds(base);
+    const names = cols.filter((c) => ids.includes(c.id)).map((c) => c.name);
+    const shipped = {
+      ...(version.snapshot ? objectFromVersion(base, version) : base),
+      collectionIds: ids,
+    };
+
+    try {
+      await publishLearningObject(
+        objectToPublishRow(shipped, names, version.versionNumber),
+      );
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not reach the shared library.' };
+    }
+    // Only after the upload lands — see markVersionPublished.
+    markVersionPublished(ownerId, objectId, versionId);
+    return { ok: true, version };
+  }, []);
+
+  const ensureObjectInitialVersion = useCallback((objectId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const obj = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!obj) return null;
+    const user = USERS.find((u) => u.id === ownerId);
+    return ensureInitialVersion(ownerId, obj, obj.ownerName || user?.name || 'You');
   }, []);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
@@ -746,6 +933,16 @@ function StudioApp() {
     } catch (err: any) {
       console.warn('[versions] delete-for-object failed:', err?.message || err);
     }
+    // A queued backup would otherwise re-create the row moments after this.
+    const queued = sharedSyncTimers.get(objectId);
+    if (queued) {
+      clearTimeout(queued);
+      sharedSyncTimers.delete(objectId);
+    }
+    // Delete the durable copy too — otherwise the next hydrate rebuilds it.
+    deleteSharedObject(objectId).catch((err) => {
+      console.warn('[library] could not delete from the shared store:', err?.message || err);
+    });
     setEditingObjectId((cur) => (cur === objectId ? null : cur));
     setReaderObjectId((cur) => {
       if (cur === objectId) {
@@ -813,7 +1010,9 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, overwriteObjectVersion, lockObjectVersion, deleteObjectVersion, openReaderVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
+    ensureObjectInitialVersion,
+    lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,
     createObjectCollection, renameObjectCollection,

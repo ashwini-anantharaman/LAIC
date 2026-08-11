@@ -41,6 +41,9 @@ function SortableRow({
     padding: '10px 12px',
     cursor: locked ? 'default' : 'grab',
     color: '#0B1220',
+    // Reordering a vertical list inside a vertically scrolling page cannot work
+    // on touch unless the row opts out of the browser's scroll gesture.
+    touchAction: locked ? undefined : 'none',
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>

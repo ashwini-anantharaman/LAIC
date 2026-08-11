@@ -63,8 +63,26 @@ function toRow(obj: LearningObject) {
 export function objectToPublishRow(
   obj: LearningObject,
   collectionNames: string[],
+  /** Version this content came from, when publishing one explicitly. */
+  versionNumber?: number,
 ): Record<string, unknown> {
-  return { ...toRow(obj), collection_names: collectionNames };
+  const row: Record<string, unknown> = {
+    ...toRow(obj),
+    collection_names: collectionNames,
+    ...(versionNumber != null ? { version_number: versionNumber } : {}),
+  };
+  // Carry the authoring draft so reopening synced content resumes where it
+  // left off instead of showing only the rendered blocks. pipeline_draft is
+  // the one free-form jsonb column on the row.
+  const authoring = (obj as any).tutorialV2Draft || (obj as any).structuredV2Draft;
+  if (authoring) {
+    row.pipeline_draft = {
+      ...(obj.pipelineDraft as any || {}),
+      ...((obj as any).tutorialV2Draft ? { tutorialV2Draft: (obj as any).tutorialV2Draft } : {}),
+      ...((obj as any).structuredV2Draft ? { structuredV2Draft: (obj as any).structuredV2Draft } : {}),
+    };
+  }
+  return row;
 }
 
 function fromRow(row: any): LearningObject {

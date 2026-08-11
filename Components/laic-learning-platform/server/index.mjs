@@ -355,6 +355,124 @@ function json3ToSegments(raw, chunkSec = 8) {
  * Serverless-friendly transcript fetch — YouTube InnerTube player API, no
  * yt-dlp needed. Used on Vercel and as a fallback when yt_dlp is missing.
  */
+/**
+ * Last resort: read the watch page and lift the caption tracks out of it.
+ *
+ * The youtubei player API refuses some videos outright from datacenter IPs —
+ * the same video answers OK from a home connection — and the refusal is per
+ * video, so retrying does not help. The watch page is a different endpoint
+ * and is sometimes still served, which is enough: the signed caption URLs it
+ * carries work once we have them.
+ */
+async function fetchYoutubeCaptionsFromWatchPage(id) {
+  const ua = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+  const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(id)}&hl=en`, {
+    headers: {
+      'User-Agent': ua,
+      'Accept-Language': 'en-US,en;q=0.9',
+      // Skips the EU consent interstitial, which otherwise replaces the page.
+      Cookie: 'CONSENT=YES+cb; SOCS=CAI',
+    },
+  });
+  if (!res.ok) throw new Error(`watch page ${res.status}`);
+  const html = await res.text();
+
+  const m = html.match(/ytInitialPlayerResponse\s*=\s*(\{.+?\})\s*;\s*(?:var\s|<\/script>)/s);
+  if (!m) throw new Error('watch page carried no player response');
+  let player;
+  try {
+    player = JSON.parse(m[1]);
+  } catch {
+    throw new Error('watch page player response did not parse');
+  }
+  const tracks = player?.captions?.playerCaptionsTracklistRenderer?.captionTracks || [];
+  if (!tracks.length) throw new Error('watch page listed no caption tracks');
+
+  const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
+  const track = tracks.find((t) => String(t.languageCode || '').startsWith('en')) || tracks[0];
+  const sep = String(track.baseUrl).includes('?') ? '&' : '?';
+  const subRes = await fetch(`${track.baseUrl}${sep}fmt=json3`, { headers: { 'User-Agent': ua } });
+  if (!subRes.ok) throw new Error(`captions ${subRes.status}`);
+  const raw = await subRes.text();
+  if (!raw || raw.trimStart().startsWith('<')) throw new Error('captions came back in an unexpected format');
+  const transcript = json3ToText(raw);
+  if (!transcript) throw new Error('the transcript came back empty');
+  return { title, videoId: id, sentences: toSentences(transcript), segments: json3ToSegments(raw) };
+}
+
+/**
+ * Turn a transcript copied out of YouTube into the same shape the fetch
+ * returns, so everything downstream (markup, generation, video-script
+ * checkpoints) behaves identically.
+ *
+ * YouTube's transcript panel copies as alternating timestamp / text lines, or
+ * as "0:42 some words" on one line depending on where it is copied from. Both
+ * are handled, and a plain paste with no timestamps still works — it just has
+ * no segments to place checkpoints against.
+ */
+function parsePastedYoutubeTranscript(text, url, titleHint) {
+  const raw = String(text || '').replace(/\r/g, '').trim();
+  if (raw.length < 20) {
+    throw new LlmError(400, 'no_text', 'Paste the transcript text first.');
+  }
+
+  const toSeconds = (stamp) => {
+    const parts = String(stamp).split(':').map((n) => Number(n));
+    if (parts.some((n) => !Number.isFinite(n))) return null;
+    return parts.reduce((acc, n) => acc * 60 + n, 0);
+  };
+
+  const STAMP = /^(\d{1,2}:\d{2}(?::\d{2})?)\s*(.*)$/;
+  const segments = [];
+  let pendingStart = null;
+  let carry = [];
+
+  const flush = () => {
+    const body = carry.join(' ').replace(/\s+/g, ' ').trim();
+    if (body && pendingStart != null) {
+      segments.push({ id: `yt-${segments.length}`, start: pendingStart, text: body });
+    }
+    carry = [];
+  };
+
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    const m = trimmed.match(STAMP);
+    if (m) {
+      flush();
+      pendingStart = toSeconds(m[1]);
+      if (m[2].trim()) carry.push(m[2].trim());
+      continue;
+    }
+    carry.push(trimmed);
+  }
+  flush();
+
+  // Give every segment an end from the next one's start, matching the fetched
+  // shape so checkpoint placement has a window to work with.
+  for (let i = 0; i < segments.length; i += 1) {
+    const next = segments[i + 1];
+    if (next) segments[i].end = next.start;
+  }
+
+  const plain = segments.length
+    ? segments.map((s) => s.text).join(' ')
+    : raw.replace(/^\d{1,2}:\d{2}(?::\d{2})?\s*/gm, '').replace(/\s+/g, ' ');
+  const sentences = toSentences(plain);
+  if (!sentences.length) {
+    throw new LlmError(422, 'no_sentences', 'Could not read any sentences out of that transcript.');
+  }
+
+  const videoId = url ? parseVideoId(url) : null;
+  return {
+    title: String(titleHint || '').trim() || (videoId ? `YouTube video ${videoId}` : 'Pasted transcript'),
+    videoId: videoId || undefined,
+    sentences,
+    segments,
+  };
+}
+
 async function fetchYoutubeTranscriptInnertube(id) {
   // The IOS player client returns caption URLs that work without a
   // proof-of-origin token, and honors fmt=json3. (The plain web timedtext
@@ -371,19 +489,61 @@ async function fetchYoutubeTranscriptInnertube(id) {
       client: { clientName: 'ANDROID', clientVersion: '20.10.38', androidSdkVersion: 30, hl: 'en' },
       ua: 'com.google.android.youtube/20.10.38 (Linux; U; Android 11) gzip',
     },
+    // Embedded players are the standard way past an age gate: a video that
+    // answers LOGIN_REQUIRED to the app clients often plays as an embed.
+    {
+      client: {
+        clientName: 'TVHTML5_SIMPLY_EMBEDDED_PLAYER', clientVersion: '2.0', hl: 'en',
+        clientScreen: 'EMBED',
+      },
+      ua: 'Mozilla/5.0 (PlayStation; PlayStation 4/12.00) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15',
+      embedded: true,
+    },
+    {
+      client: {
+        clientName: 'WEB_EMBEDDED_PLAYER', clientVersion: '1.20250101.00.00', hl: 'en',
+        clientScreen: 'EMBED',
+      },
+      ua: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Safari/537.36',
+      embedded: true,
+    },
   ];
+
+  /** Why a video refused us, in words an author can act on. */
+  const PLAYABILITY_HELP = {
+    LOGIN_REQUIRED: 'that video is age-restricted, private, or members-only, so YouTube will not release its transcript to an app',
+    UNPLAYABLE: 'YouTube will not play that video here (it may be private, removed, or blocked in this region)',
+    LIVE_STREAM_OFFLINE: 'that live stream is offline, so it has no transcript yet',
+    ERROR: 'YouTube could not load that video (check the link is still valid)',
+  };
   let lastErr = null;
-  for (const { client, ua } of CLIENTS) {
+  let lastStatus = null;
+  for (const { client, ua, embedded } of CLIENTS) {
     try {
       const res = await fetch('https://www.youtube.com/youtubei/v1/player?key=AIzaSyAO_FJ2SlqU8Q4STEHLGCilw_Y9_11qcW8', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'User-Agent': ua },
-        body: JSON.stringify({ videoId: id, context: { client } }),
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': ua,
+          // Embed requests are only honored when they look like they came from
+          // a page embedding the video.
+          ...(embedded ? { Referer: `https://www.youtube.com/embed/${id}`, Origin: 'https://www.youtube.com' } : {}),
+        },
+        body: JSON.stringify({
+          videoId: id,
+          context: {
+            client,
+            ...(embedded
+              ? { thirdParty: { embedUrl: `https://www.youtube.com/watch?v=${id}` } }
+              : {}),
+          },
+        }),
       });
       if (!res.ok) { lastErr = new Error(`player API ${res.status}`); continue; }
       const player = await res.json();
       if (player?.playabilityStatus?.status && player.playabilityStatus.status !== 'OK') {
-        lastErr = new Error(`video not playable (${player.playabilityStatus.status})`);
+        lastStatus = String(player.playabilityStatus.status);
+        lastErr = new Error(`video not playable (${lastStatus})`);
         continue;
       }
       const title = String(player?.videoDetails?.title || `YouTube video ${id}`);
@@ -405,7 +565,24 @@ async function fetchYoutubeTranscriptInnertube(id) {
       lastErr = e;
     }
   }
+  // Every player client refused. Try the watch page before giving up.
+  try {
+    return await fetchYoutubeCaptionsFromWatchPage(id);
+  } catch (e) {
+    console.warn('[youtube] watch-page fallback failed:', e?.message || e);
+  }
+
   if (lastErr instanceof LlmError) throw lastErr;
+  // A raw status code tells an author nothing they can act on. Say what the
+  // block means and what to do instead — pasting the transcript always works.
+  if (lastStatus) {
+    const why = PLAYABILITY_HELP[lastStatus] || `YouTube refused the video (${lastStatus})`;
+    throw new LlmError(
+      422,
+      'yt_blocked',
+      `Couldn’t get the transcript — ${why}. Open the video on YouTube, copy the transcript from the “…” menu, and add it with Paste text instead.`,
+    );
+  }
   throw new LlmError(502, 'yt_fetch', `Could not fetch the transcript from YouTube${lastErr ? ` (${lastErr.message})` : ''}.`);
 }
 
@@ -867,6 +1044,15 @@ async function fetchWebsiteImageAsDataUri(rawUrl) {
 const NEXUS_SUPABASE_URL = process.env.NEXUS_SUPABASE_URL || '';
 const NEXUS_SUPABASE_SERVICE_ROLE_KEY = process.env.NEXUS_SUPABASE_SERVICE_ROLE_KEY || '';
 const LEARNING_ORG_ID = process.env.LEARNING_ORG_ID || '';
+/**
+ * Program the published content belongs to.
+ *
+ * Reader apps ask Nexus for `/learning/objects?program_id=…`, and that query
+ * filters on the column — a row published without one is invisible to them no
+ * matter how correct the rest of it is. Stamping it here is what makes a
+ * published version actually reachable.
+ */
+const LEARNING_PROGRAM_ID = process.env.LEARNING_PROGRAM_ID || '';
 
 async function publishLearningObjectRow(row, share = false) {
   if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
@@ -878,7 +1064,7 @@ async function publishLearningObjectRow(row, share = false) {
   const out = {
     id,
     organization_id: LEARNING_ORG_ID,
-    program_id: row.program_id ?? null,
+    program_id: row.program_id ?? (LEARNING_PROGRAM_ID || null),
     type,
     title: String(row.title || ''),
     owner_id: row.owner_id != null ? String(row.owner_id) : null,
@@ -896,6 +1082,12 @@ async function publishLearningObjectRow(row, share = false) {
     pipeline_draft: row.pipeline_draft ?? null,
     updated_at: new Date().toISOString(),
   };
+  // Which version this content came from, when an author published one
+  // explicitly. Readers show it; null means "published before we tracked it".
+  if (row.version_number != null && Number.isFinite(Number(row.version_number))) {
+    out.version_number = Number(row.version_number);
+    out.published_at = new Date().toISOString();
+  }
   // Sharing is opt-in per object (see migration 0002_public_share.sql). Only
   // ever set — never cleared here, so re-publishing cannot silently revoke a
   // link someone already handed out.
@@ -915,6 +1107,58 @@ async function publishLearningObjectRow(row, share = false) {
     throw new LlmError(502, 'supabase_error', `Shared library upsert failed (${res.status}): ${detail.slice(0, 300)}`);
   }
   return { ok: true, id };
+}
+
+/** Every object this org/program owns — the library's durable home. */
+async function listLearningObjectsForLibrary() {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const params = new URLSearchParams({
+    select: 'id,type,title,owner_id,owner_name,status,scope,reuse_count,description,'
+      + 'estimated_time,blocks,tags,source_ids,collection_ids,collection_names,'
+      + 'pipeline_draft,version_number,published_at,created_at,updated_at',
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+    order: 'updated_at.desc',
+  });
+  if (LEARNING_PROGRAM_ID) params.set('program_id', `eq.${LEARNING_PROGRAM_ID}`);
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library read failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return await res.json();
+}
+
+/** Remove one object from the shared library. Scoped to this org. */
+async function deleteLearningObjectRow(id) {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const clean = String(id || '').trim();
+  if (!clean) throw new LlmError(400, 'bad_object', 'Object id is required.');
+  const params = new URLSearchParams({
+    id: `eq.${clean}`,
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+  });
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: 'return=minimal',
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library delete failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return { ok: true };
 }
 
 async function fetchWebsitePage(rawUrl) {
@@ -3861,6 +4105,23 @@ export async function handler(req, res) {
     }
   }
 
+  /* ---- Tutorial: a transcript pasted from YouTube ---- */
+  // YouTube refuses captions to datacenter IPs for some videos — the same
+  // video answers fine from a home connection — and no server-side client
+  // reliably gets past that. The author can always see the transcript though,
+  // so this takes what they copy and rebuilds what the fetch would have
+  // produced, timestamps included.
+  if (method === 'POST' && path === '/api/tutorials/paste-youtube-transcript') {
+    const body = await readJson(req);
+    try {
+      const out = parsePastedYoutubeTranscript(body.text, body.url, body.title);
+      return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
   /* ---- Tutorial: website page → sentences ---- */
   if (method === 'POST' && path === '/api/tutorials/ingest-web') {
     const body = await readJson(req);
@@ -3868,6 +4129,36 @@ export async function handler(req, res) {
     try {
       const out = await fetchWebsitePage(body.url);
       return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- The author's library, server-side ---- */
+  // Everything this org/program has, drafts included, so a browser can rebuild
+  // the library after a refresh (or on another machine) without the baked
+  // snapshot. `published_at` is what separates "live for reader apps" from
+  // "still being written"; readers filter on it, this does not.
+  if (method === 'GET' && path === '/api/learning/objects') {
+    try {
+      const rows = await listLearningObjectsForLibrary();
+      return send(res, 200, rows);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Delete a learning object from the shared library, for good ---- */
+  // Without this a local delete is undone by the next hydrate: the row is still
+  // in the shared store, so the library rebuilds it. Deleting has to reach the
+  // durable copy or it isn't a delete.
+  const delObj = path.match(/^\/api\/learning\/objects\/([^/]+)$/);
+  if (method === 'DELETE' && delObj) {
+    try {
+      await deleteLearningObjectRow(decodeURIComponent(delObj[1]));
+      return send(res, 200, { ok: true });
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
       return send(res, status, { code: e.code || 'error', message: e.message });

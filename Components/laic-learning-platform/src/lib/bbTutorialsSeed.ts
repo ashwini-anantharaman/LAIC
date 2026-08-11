@@ -65,14 +65,11 @@ export function mergeBbTutorialsIntoLibrary(
       next.push(seeded);
       continue;
     }
-    let ids = remapCollectionIds(objectCollectionIds(o));
-    if (ids.includes(BB_TUTORIALS_COLLECTION_ID)) {
-      changed = true;
-      ids = ids.filter((id) => id !== BB_TUTORIALS_COLLECTION_ID);
-      if (!ids.length) continue; // bb-tutorials-only stray — permanently removed
-      next.push({ ...o, collectionIds: ids, collectionId: undefined });
-      continue;
-    }
+    // Evicting non-seed content from this folder was a one-time cleanup. It
+    // now fights type-based filing (a tutorial belongs here) and, worse, would
+    // delete an author's own work. Content leaves a folder when the author
+    // moves or deletes it.
+    const ids = remapCollectionIds(objectCollectionIds(o));
     const same =
       o.collectionIds?.length === ids.length
       && ids.every((id, i) => o.collectionIds?.[i] === id)

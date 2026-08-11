@@ -160,6 +160,48 @@ export async function setProfileAvatar(
 }
 
 /**
+ * Release a profile's username once the person holds no memberships anywhere.
+ *
+ * Removing a member deletes the MEMBERSHIP; the profile row stays, because one
+ * login can belong to several orgs and because audit history points at it. But the
+ * username lives on the profile and is unique platform-wide, so a removed person
+ * kept their username reserved forever — and once the membership was gone the
+ * console could not reach them to clear it (that endpoint is addressed by
+ * membership id). The name was simply lost, and re-adding the person with it failed
+ * with "already taken".
+ *
+ * So: only when NOTHING is left. A profile that still has a membership in any org
+ * keeps its username, since the person is still somebody here.
+ *
+ * Returns the freed username, or null if there was nothing to free — so a caller
+ * can record it in the audit trail rather than the release being invisible.
+ */
+export async function releaseUsernameIfOrphaned(profileId: string): Promise<string | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ id: profiles.id, username: profiles.username })
+      .from(profiles)
+      .where(eq(profiles.id, profileId))
+      .limit(1);
+    const username = rows[0]?.username ?? null;
+    if (!username) return null;
+
+    const remaining = await tx
+      .select({ id: orgMemberships.id })
+      .from(orgMemberships)
+      .where(eq(orgMemberships.profileId, profileId))
+      .limit(1);
+    if (remaining.length) return null; // still a member somewhere
+
+    await tx
+      .update(profiles)
+      .set({ username: null, updatedAt: new Date() })
+      .where(eq(profiles.id, profileId));
+    return username;
+  });
+}
+
+/**
  * Set a person's own display name across EVERY profile they hold.
  *
  * A profile row is per (person, organization), so someone in more than one org has

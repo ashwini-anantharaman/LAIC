@@ -3201,6 +3201,15 @@ platformRouter.delete("/members/:member_id", async (c) => {
     await _requireOrgArea(user, row.org_id, "team", "edit");
   }
   await db.deleteMembership(memberId);
+  // A username is unique platform-wide and lives on the PROFILE, which outlives the
+  // membership. Without this it stayed reserved by someone no longer here, and
+  // nothing could reach it afterwards to clear it — the credentials endpoint is
+  // addressed by membership id, and that id has just gone. Only released when the
+  // person holds no membership anywhere; best-effort, since failing to free a name
+  // must not fail the removal.
+  const freedUsername = await db
+    .releaseUsernameIfOrphaned(row.profile_id as string)
+    .catch(() => null);
   await db.recordAuditEvent("member.removed", {
     orgId: row.org_id,
     actorUserId: user.id,
@@ -3208,7 +3217,9 @@ platformRouter.delete("/members/:member_id", async (c) => {
     scopeId: row.program_id ?? row.org_id,
     targetType: "membership",
     targetId: memberId,
-    metadata: { role: row.role },
+    // The freed name is recorded: releasing an identifier someone could sign in
+    // with should be visible in the trail, not a silent side effect.
+    metadata: { role: row.role, ...(freedUsername ? { freed_username: freedUsername } : {}) },
   });
   return c.json({ ok: true });
 });

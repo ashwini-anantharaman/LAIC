@@ -1122,6 +1122,10 @@ export interface Version {
   locked?: boolean;
   /** How many times an author submitted onto this version ("edited 2x"). */
   editCount?: number;
+  /** Set on the ONE version whose content is live in the shared library. */
+  publishedAt?: string;
+  /** Content was dropped to fit browser storage; the row is kept for the record. */
+  snapshotTrimmed?: boolean;
   /** Content at the time this version was saved. */
   snapshot?: ObjectVersionSnapshot;
 }

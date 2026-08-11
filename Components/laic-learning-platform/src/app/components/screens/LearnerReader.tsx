@@ -1009,7 +1009,7 @@ function BridgePlay({ content }: { content: BridgePlayContent }) {
       <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220', marginBottom: 4 }}>{content.title}</p>
       <p style={{ fontSize: 13.5, color: '#6B7280', marginBottom: 16, lineHeight: 1.5 }}>{content.description}</p>
       {/* Compass layout */}
-      <div className="grid grid-cols-3 gap-2 mb-4" style={{ maxWidth: 260, margin: '0 auto 16px' }}>
+      <div className="grid grid-cols-3 gap-2 mb-4" style={{ maxWidth: 'min(260px, 100%)', margin: '0 auto 16px' }}>
         <div />
         <div className="flex flex-col items-center gap-1">
           <span style={{ fontSize: 10, color: '#9AA3AF', fontWeight: 600 }}>N</span>
@@ -1032,7 +1032,7 @@ function BridgePlay({ content }: { content: BridgePlayContent }) {
         <div />
         <div className="flex flex-col items-center gap-1">
           <p style={{ fontSize: 11.5, color: '#9AA3AF', marginBottom: 4 }}>Your hand (S)</p>
-          <div className="flex gap-1.5">
+          <div className="flex flex-wrap justify-center gap-1.5">
             {content.south.map(card => (
               <button
                 key={card}
@@ -1475,7 +1475,7 @@ function AssessedBlocks({
                 <p style={{ fontSize: 11, color: '#9AA3AF', marginTop: 2 }} className="truncate">
                   ~{countBlocksWords(blocks)} words
                 </p>
-                <div className="flex justify-center gap-1.5 mt-2.5">
+                <div className="flex flex-wrap justify-center gap-1.5 mt-2.5">
                   {pages.map((_, i) => (
                     <button
                       key={i}
@@ -1688,7 +1688,7 @@ export function LearnerReader({
     >
       {/* Reader header */}
       <div
-        className="sticky top-0 z-10 px-5 py-3 flex items-center gap-3"
+        className="sticky top-0 z-10 px-3 sm:px-5 py-3 flex flex-wrap items-center gap-y-2 gap-x-3"
         style={{ background: 'rgba(242,245,248,0.85)', backdropFilter: 'blur(16px)', borderBottom: '1px solid rgba(255,255,255,0.5)' }}
       >
         {!embedMode && (
@@ -1737,7 +1737,7 @@ export function LearnerReader({
       </div>
 
       {/* Content stays visible; glossary opens as a right sidebar */}
-      <div className={`px-5 py-6 mx-auto space-y-6 ${obj.type === 'video-script' ? 'max-w-6xl' : obj.type === 'drill' ? 'max-w-2xl' : 'max-w-xl'}`}>
+      <div className={`px-3 sm:px-5 py-5 sm:py-6 mx-auto space-y-6 ${obj.type === 'video-script' ? 'max-w-6xl' : obj.type === 'drill' ? 'max-w-2xl' : 'max-w-xl'}`}>
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }}>
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />

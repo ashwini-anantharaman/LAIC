@@ -1,16 +1,19 @@
-// Learn — two horizontal decks of playing cards (Figma 476:663).
+// Learn — horizontal decks of playing cards, one deck per KIND of content
+// (Figma 476:663 for the card and deck treatment).
 //
-// "Concept Cards" is REAL: the same learning objects this screen always fetched,
-// now dealt as cards instead of listed as rows, and still opening the platform's
-// reader on tap. Loading / error / empty states are preserved.
+// Everything here is real: the published learning objects of the club being
+// viewed, dealt as cards and opening the platform's reader on tap. The shelves are
+// Concepts, Flashcards, Tutorials, Quizzes in that order, and then a shelf for any
+// other type that actually has content — nothing published is unreachable, which
+// is the rule this screen kept breaking (a status filter and a type filter each
+// hid most of the library at different times).
 //
-// "Browse Lessons" is a design-only shelf — the Nexus API has no lessons,
-// chapters or coach-authored courses — so SAMPLE_LESSONS below is placeholder
-// content. Nothing on screen says so (by request), so keep that in mind before
-// wiring anything to it.
+// A "Browse Lessons" shelf used to sit at the bottom with three hardcoded
+// titles. It is gone: the API has no lessons or courses, and nothing on screen
+// admitted the content was invented.
 
 import { router, useFocusEffect } from "expo-router";
-import { ReactNode, useCallback, useEffect, useState } from "react";
+import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "../../../components/brand-chrome";
@@ -27,15 +30,27 @@ import {
 import { useAuth } from "../../../lib/auth-context";
 import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
-import { getLearningObjects } from "../../../lib/learning";
+import { getLearningObjects, primeLearningCache } from "../../../lib/learning";
+import { subscribeToLiveLearning } from "../../../lib/learning-live";
 import { LearningObject, NexusError } from "../../../lib/nexus";
 
-/** Placeholder shelf — clearly not real data. See the note above. */
-const SAMPLE_LESSONS = [
-  { title: "Bridge Fundamentals", author: "Coach Miland", chapters: 10 },
-  { title: "Bridge Intermediate", author: "Coach Miland", chapters: 12 },
-  { title: "Bridge Advanced", author: "Coach Miland", chapters: 10 },
-] as const;
+/**
+ * The shelves, top to bottom, and which Studio type ids belong on each.
+ *
+ * Order is the owner's. Tutorials collect two ids because the Studio writes
+ * `tutorial-v2` for anything authored in the V2 pipeline and `tutorial` for the
+ * older shape; to a learner they are the same kind of thing.
+ *
+ * A type NOT listed here still appears — see leftoverSections below. Content
+ * silently vanishing behind a filter is the bug this tab just had twice, so the
+ * rule is that every published object lands on some shelf.
+ */
+const SECTIONS: { heading: string; types: string[] }[] = [
+  { heading: "Concepts", types: ["concept-card"] },
+  { heading: "Flashcards", types: ["flashcard-set"] },
+  { heading: "Tutorials", types: ["tutorial-v2", "tutorial"] },
+  { heading: "Quizzes", types: ["quiz"] },
+];
 
 /** The Studio's type ids, as a learner would read them. */
 const TYPE_LABELS: Record<string, string> = {
@@ -118,6 +133,24 @@ export default function LearnScreen() {
   }, [load]);
 
   /**
+   * Live updates: an author publishes elsewhere and this list changes under us.
+   *
+   * The subscription hands back the whole fresh list (see subscribeToLiveLearning),
+   * which is primed into the shared cache so the reader screen and a later focus
+   * both see the same rows rather than the tab holding a private newer copy.
+   *
+   * Does nothing when the direct path is unavailable — the foreground and focus
+   * refetches below are then the only liveness, which is the behaviour that shipped
+   * before this and remains the fallback.
+   */
+  useEffect(() => {
+    if (!token) return;
+    return subscribeToLiveLearning(token, (objects) => {
+      setCards(primeLearningCache(token, clubId ?? undefined, objects));
+    });
+  }, [token, clubId]);
+
+  /**
    * Refetch when the app comes back to the foreground.
    *
    * Content is authored elsewhere while this app sits in the background, so the
@@ -142,12 +175,30 @@ export default function LearnScreen() {
     }, [token, clubId, load]),
   );
 
+  /**
+   * The named shelves in order, then a shelf for every OTHER type that actually
+   * has content — so a type nobody thought to list still reaches a learner rather
+   * than disappearing. Empty shelves are dropped here rather than in the JSX.
+   */
+  const shelves = useMemo(() => {
+    const all = cards ?? [];
+    const named = SECTIONS.map((sec) => ({
+      heading: sec.heading,
+      items: all.filter((o) => sec.types.includes(o.type)),
+    }));
+    const claimed = new Set(SECTIONS.flatMap((sec) => sec.types));
+    const leftoverTypes = [...new Set(all.map((o) => o.type).filter((t) => !claimed.has(t)))].sort();
+    const leftovers = leftoverTypes.map((type) => ({
+      heading: typeLabel(type),
+      items: all.filter((o) => o.type === type),
+    }));
+    return [...named, ...leftovers].filter((shelf) => shelf.items.length > 0);
+  }, [cards]);
+
   return (
     <BrandChrome>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Learn</Text>
-
-        <SectionHeading>Concept Cards</SectionHeading>
 
         {!cards && !error && (
           <View style={styles.state}>
@@ -163,53 +214,54 @@ export default function LearnScreen() {
         )}
 
         {cards && !error && cards.length === 0 && (
+          // Empty is now a legitimate, explainable state rather than a symptom:
+          // only a version someone pressed publish on appears here, so a library
+          // full of saved-but-unpublished work shows nothing. Say which act is
+          // missing, or this reads as a fault.
           <Text style={styles.stateText}>
-            No concept cards yet. Content published in the learning platform will
-            appear here.
+            Nothing published yet. In the Content Studio, publish a version of a
+            piece of content and it will appear here.
           </Text>
         )}
 
-        {cards && !error && cards.length > 0 && (
-          <Deck>
-            {cards.map((item, i) => (
-              <PlayingCard
-                key={item.id}
-                index={i}
-                title={item.title}
-                body={item.description ?? undefined}
-                // What a learner chooses on: what kind of thing it is, and how
-                // long it takes. Both are optional in the data, so the footer is
-                // whatever is actually known.
-                footer={
-                  <Text style={styles.cardFooter}>
-                    {[typeLabel(item.type), item.estimated_time].filter(Boolean).join(" · ")}
-                  </Text>
-                }
-                onPress={() => router.push(`/learn-object/${item.id}`)}
-              />
-            ))}
-          </Deck>
-        )}
-
-        <SectionHeading>Browse Lessons</SectionHeading>
-        <Deck>
-          {SAMPLE_LESSONS.map((lesson, i) => (
-            <PlayingCard
-              key={lesson.title}
-              index={i}
-              title={lesson.title}
-              body={`Created by\n${lesson.author}`}
-              footer={<Text style={styles.cardFooter}>{lesson.chapters} Chapters</Text>}
-            />
+        {/* One shelf per kind. An empty shelf renders nothing at all — a heading
+            over no cards reads as a fault rather than as an absence. */}
+        {cards &&
+          !error &&
+          shelves.map((shelf) => (
+            <View key={shelf.heading}>
+              <SectionHeading>{shelf.heading}</SectionHeading>
+              <Deck>
+                {shelf.items.map((item, i) => (
+                  <PlayingCard
+                    key={item.id}
+                    index={i}
+                    title={item.title}
+                    body={item.description ?? undefined}
+                    // The shelf already says what kind of thing this is, so the
+                    // footer carries the time instead — and falls back to the type
+                    // only when no time is recorded, so it is never blank.
+                    footer={
+                      <Text style={styles.cardFooter}>
+                        {item.estimated_time || typeLabel(item.type)}
+                      </Text>
+                    }
+                    onPress={() => router.push(`/learn-object/${item.id}`)}
+                  />
+                ))}
+              </Deck>
+            </View>
           ))}
-        </Deck>
+
       </ScrollView>
     </BrandChrome>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { paddingBottom: TAB_BAR_CLEARANCE },
+  // The bar's clearance plus a little air: with several shelves the last deck ends
+  // near the bottom, and the sheets set the same precedent (CLEARANCE + n).
+  page: { paddingBottom: TAB_BAR_CLEARANCE + 24 },
   title: {
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,

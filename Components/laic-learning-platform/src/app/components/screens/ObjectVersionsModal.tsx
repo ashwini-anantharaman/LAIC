@@ -1,12 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, GitBranch, Lock, LockOpen, Trash2, X } from 'lucide-react';
+import { Eye, GitBranch, Loader2, Lock, LockOpen, RotateCcw, Trash2, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 import { useConfirm } from '../ConfirmDialog';
-import { syncWorkingVersion } from '../../../lib/objectVersionsStore';
-import { USERS } from '../../../lib/data';
 
 export function ObjectVersionsModal({
   object,
@@ -20,6 +18,9 @@ export function ObjectVersionsModal({
     objectVersionsTick,
     listObjectVersions,
     saveObjectAsNewVersion,
+    restoreObjectVersion,
+    publishObjectVersion,
+    ensureObjectInitialVersion,
     lockObjectVersion,
     deleteObjectVersion,
     openReaderVersion,
@@ -28,21 +29,26 @@ export function ObjectVersionsModal({
   const [notes, setNotes] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
+  // Opening this modal used to commit a version whenever the working copy had
+  // drifted from the tip — looking at the history changed it. It now only
+  // guarantees v1 exists: objects created before versions were tracked (or
+  // never re-saved since) would otherwise show an empty history with nothing
+  // to publish. This can never add a second version.
   useEffect(() => {
     if (!object || !activeUserId) return;
-    const user = (USERS || []).find((u) => u.id === activeUserId);
-    try {
-      syncWorkingVersion(activeUserId, object, object.ownerName || user?.name || 'You');
-    } catch (err: any) {
-      console.warn('[versions] sync on open failed:', err?.message || err);
-    }
-  }, [object, activeUserId]);
+    ensureObjectInitialVersion(object.id);
+  }, [object?.id, activeUserId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const versions = useMemo(
     () => (typeof listObjectVersions === 'function' ? (listObjectVersions(object.id) || []) : []),
     [object.id, objectVersionsTick, listObjectVersions],
   );
+
+  /** The newest version — its content is the working copy until a later one exists. */
+  const isTipVersion = (v: Version) =>
+    versions.every((x) => x.versionNumber <= v.versionNumber);
 
   const flash = (msg: string) => {
     setToast(msg);
@@ -58,6 +64,61 @@ export function ObjectVersionsModal({
     }
     setNotes('');
     flash(`Saved v${v.versionNumber}`);
+  };
+
+  const onRestore = async (v: Version) => {
+    setError(null);
+    const above = versions.filter((x) => x.versionNumber > v.versionNumber);
+    const discarded = above.length
+      ? ` ${above.map((x) => `v${x.versionNumber}`).reverse().join(', ')} `
+        + `${above.length === 1 ? 'is' : 'are'} deleted, so v${v.versionNumber} becomes the newest version.`
+      : '';
+    const ok = await confirm({
+      title: `Restore to v${v.versionNumber}?`,
+      description:
+        `“${object.title}” goes back to the content saved in v${v.versionNumber}`
+        + `${v.createdAt ? ` on ${v.createdAt}` : ''}.${discarded}`
+        + ' Your current content is replaced and nothing new is recorded —'
+        + ' submit afterwards if you want the restored state kept as a version.',
+      confirmLabel: above.length
+        ? `Restore and delete ${above.length} version${above.length === 1 ? '' : 's'}`
+        : `Restore to v${v.versionNumber}`,
+      destructive: true,
+    });
+    if (!ok) return;
+    const res = restoreObjectVersion(object.id, v.id);
+    if (!res.ok) {
+      setError(res.error || 'Could not restore that version.');
+      return;
+    }
+    flash(
+      res.removed
+        ? `Restored to v${v.versionNumber} · removed ${res.removed} newer version${res.removed === 1 ? '' : 's'}`
+        : `Restored to v${v.versionNumber}`,
+    );
+  };
+
+  const onPublish = async (v: Version) => {
+    setError(null);
+    const live = versions.find((x) => x.publishedAt && x.id !== v.id);
+    const ok = await confirm({
+      title: `Publish v${v.versionNumber}?`,
+      description:
+        `v${v.versionNumber} of “${object.title}” goes to the shared library, where the`
+        + ' apps that read it will show this version.'
+        + (live ? ` v${live.versionNumber} is live now and will be replaced.` : '')
+        + ' Later edits stay private until you publish again.',
+      confirmLabel: `Publish v${v.versionNumber}`,
+    });
+    if (!ok) return;
+    setPublishingId(v.id);
+    const res = await publishObjectVersion(object.id, v.id);
+    setPublishingId(null);
+    if (!res.ok) {
+      setError(res.error || 'Could not publish that version.');
+      return;
+    }
+    flash(`Published v${v.versionNumber} to the shared library`);
   };
 
   const onToggleLock = (v: Version) => {
@@ -125,7 +186,7 @@ export function ObjectVersionsModal({
               <span style={{ color: '#9AA3AF' }}> · {object.type}</span>
             </p>
             <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 4 }}>
-              Like commits: first save is v1; each later edit that changes content adds v2, v3, …
+              v1 is the original. Editing never adds a version on its own — use Submit as… or Save version.
             </p>
           </div>
           <button type="button" onClick={onClose} className="p-1.5 rounded-lg hover:bg-black/5" aria-label="Close">
@@ -179,6 +240,15 @@ export function ObjectVersionsModal({
                       <Lock size={9} /> LOCKED
                     </span>
                   )}
+                  {!!v.publishedAt && (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      style={{ background: 'rgba(4,120,87,0.12)', color: '#047857' }}
+                      title="Partner apps are showing this version"
+                    >
+                      <Upload size={9} /> PUBLISHED
+                    </span>
+                  )}
                   {!!v.editCount && (
                     <span
                       className="px-1.5 py-0.5 rounded text-[10px] font-bold"
@@ -196,8 +266,45 @@ export function ObjectVersionsModal({
                 {v.notes ? (
                   <p style={{ fontSize: 12.5, color: '#374151', marginTop: 4 }}>{v.notes}</p>
                 ) : null}
+                {v.snapshotTrimmed && (
+                  <p style={{ fontSize: 11.5, color: '#B45309', marginTop: 4 }}>
+                    Content dropped to free browser storage — this version is kept for the record
+                    but can’t be restored or published.
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void onPublish(v)}
+                  disabled={(!v.snapshot && !isTipVersion(v)) || publishingId !== null || !!v.publishedAt}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-white disabled:opacity-40"
+                  style={{ fontSize: 11.5, fontWeight: 650, background: v.publishedAt ? '#047857' : '#0B0F1A' }}
+                  title={
+                    v.publishedAt
+                      ? `v${v.versionNumber} is the version partner apps are showing`
+                      : !v.snapshot
+                        ? 'This version has no saved content to publish'
+                        : `Publish v${v.versionNumber} to the shared library`
+                  }
+                >
+                  {publishingId === v.id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Upload size={12} />}
+                  {v.publishedAt ? 'Published' : 'Publish'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void onRestore(v)}
+                  disabled={!v.snapshot}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg border hover:bg-gray-50 disabled:opacity-40 disabled:hover:bg-transparent"
+                  style={{ fontSize: 11.5, fontWeight: 650, color: '#0B1220', borderColor: 'rgba(0,0,0,0.12)' }}
+                  title={v.snapshot
+                    ? `Restore the content to v${v.versionNumber}`
+                    : 'This version has no saved content to restore'}
+                >
+                  <RotateCcw size={12} /> Restore to v{v.versionNumber}
+                </button>
                 <button
                   type="button"
                   onClick={() => { onClose(); openReaderVersion(object.id, v.id); }}

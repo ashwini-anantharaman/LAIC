@@ -112,14 +112,9 @@ export function mergeLibrarySnapshot(
       next.push(seeded);
       continue;
     }
-    const ids = objectCollectionIds(o);
-    if (ids.some((id) => lockedFolderIds.has(id))) {
-      changed = true;
-      const rest = ids.filter((id) => !lockedFolderIds.has(id));
-      if (!rest.length) continue; // snapshot-folder-only stray — permanently removed
-      next.push({ ...o, collectionIds: rest, collectionId: undefined });
-      continue;
-    }
+    // Snapshot folders were locked to their seeded contents as a one-time
+    // cleanup. That now deletes an author's own flashcards and quizzes the
+    // moment they are filed by type, so the folders are ordinary again.
     next.push(o);
   }
 

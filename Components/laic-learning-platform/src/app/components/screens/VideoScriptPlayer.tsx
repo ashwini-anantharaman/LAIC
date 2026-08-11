@@ -528,7 +528,7 @@ export function VideoScriptPlayer({
               <div style={{ position: 'absolute', inset: 0, zIndex: 3, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <div className="px-4 py-3 rounded-2xl text-center" style={{ background: 'rgba(255,255,255,0.95)', maxWidth: 280 }}>
                   <HelpCircle size={22} style={{ color: '#059669', margin: '0 auto 6px' }} />
-                  <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>Checkpoint — answer in the panel →</p>
+                  <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>Checkpoint — answer in the panel</p>
                 </div>
               </div>
             )}
@@ -587,7 +587,7 @@ export function VideoScriptPlayer({
         </div>
 
         {/* Sidebar */}
-        <div className="rounded-[20px] border flex flex-col min-h-[360px] overflow-hidden"
+        <div className="rounded-[20px] border flex flex-col min-h-0 lg:min-h-[360px] overflow-hidden"
           style={{ background: 'rgba(255,255,255,0.92)', borderColor: 'rgba(0,0,0,0.08)', boxShadow: '0 4px 20px -10px rgba(30,50,80,0.15)' }}>
           <div className="flex border-b" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
             {tabs.map((t) => (
