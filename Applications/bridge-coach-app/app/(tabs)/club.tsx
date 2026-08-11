@@ -362,7 +362,7 @@ export default function ClubScreen() {
           <View style={{ flex: 1 }}>
             <View style={[styles.titleRow, { marginLeft: HEAD.left * s }]}>
               <Text style={[styles.title, { color: headText }]} numberOfLines={1}>
-                {club?.name ?? "My Club"}
+                {club?.name ?? "Club"}
               </Text>
               {/* Only meaningful with somewhere to switch TO. Two clubs toggle
                   straight over; three or more open the list. */}
