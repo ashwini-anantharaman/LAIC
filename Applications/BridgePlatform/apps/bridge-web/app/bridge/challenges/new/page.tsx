@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { CreateChallenge } from "./CreateChallenge";
 import { listChallengePeople, selfPerson } from "../people";
-import { requireFeature } from "@/lib/access";
+import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 /**
@@ -13,7 +13,7 @@ export default async function NewChallengePage() {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.challenges");
-  await requireFeature(context, "challenge.create");
+  await requireCreateChallenge(context);
 
   const people = await listChallengePeople(context);
   // Chosen here, not in the browser: the first paint and the hydrated tree

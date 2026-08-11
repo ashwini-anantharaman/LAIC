@@ -3,7 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { respondInviteAction } from "./actions";
 import { SCORING_OPTIONS, STANDINGS_OPTIONS } from "./draft";
-import { canUse, requireFeature } from "@/lib/access";
+import { canCreateChallenge, requireFeature } from "@/lib/access";
 import {
   challengeViewerAccess,
   listChallengesForUser,
@@ -35,7 +35,7 @@ export default async function ChallengesPage({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   await requireFeature(context, "page.challenges");
-  const canCreate = await canUse(context, "challenge.create");
+  const canCreate = await canCreateChallenge(context);
   const { created, error } = await searchParams;
 
   const userId = context.nexusUserId;

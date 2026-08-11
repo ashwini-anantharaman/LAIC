@@ -73,6 +73,44 @@ export async function requireFeature(context: NexusBridgeContext, key: string): 
   if (!(await canUse(context, key))) notFound();
 }
 
+/**
+ * A CLUB member's app capabilities, from the Nexus bridge context.
+ *
+ * Empty for anyone who did not reach the bridge through a partner club.
+ */
+function clubAppCapabilities(context: NexusBridgeContext): string[] | null {
+  const ext = context as NexusBridgeContext & {
+    nexus_club_program_id?: string | null;
+    nexus_app_capabilities?: string[];
+  };
+  if (!ext.nexus_club_program_id) return null;
+  return Array.isArray(ext.nexus_app_capabilities) ? ext.nexus_app_capabilities : [];
+}
+
+/**
+ * May this caller create a challenge?
+ *
+ * Two gates, not one. bridge-access lets every club member reach
+ * challenge.create at the platform level ON PURPOSE and leaves the real decision
+ * to the club — "the platform allows it, the club role gates it". That second
+ * gate lives in the APP's catalogue (`app.challenge.create`), which this app
+ * could not see, so in practice every club member got a + regardless of the role
+ * their club gave them.
+ *
+ * A non-club caller is unaffected: the platform check alone, exactly as before.
+ */
+export async function canCreateChallenge(context: NexusBridgeContext): Promise<boolean> {
+  if (!(await canUse(context, "challenge.create"))) return false;
+  const appCaps = clubAppCapabilities(context);
+  if (appCaps === null) return true; // not a club caller
+  return appCaps.includes("app.challenge.create");
+}
+
+/** The 404 form of canCreateChallenge, for pages and server actions. */
+export async function requireCreateChallenge(context: NexusBridgeContext): Promise<void> {
+  if (!(await canCreateChallenge(context))) notFound();
+}
+
 /** Who may edit the catalogue itself: org- or program-level managers. */
 export function canEditCatalogue(context: NexusBridgeContext): boolean {
   return (

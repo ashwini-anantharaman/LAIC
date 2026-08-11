@@ -18,7 +18,11 @@ import { STUB_USERS, stubDisplayName } from "@bridge/nexus-client";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { cache } from "react";
 import { getMyLearners, getProgramCoaches, nexusMode } from "@/lib/nexus";
-import { listNexusProgramMembers, nexusProgramId } from "@/lib/nexusPeople";
+import {
+  listNexusProgramMembers,
+  nexusClubProgramId,
+  nexusProgramId,
+} from "@/lib/nexusPeople";
 
 export interface ChallengePerson {
   /** The id space challenge invites (and every bridge artifact) key on. */
@@ -45,8 +49,21 @@ export const listChallengePeople = cache(
           handle: `@${user.devUserId}`,
         });
     } else {
-      // The program's own roster first — everyone in the club, by Nexus account.
-      const programId = nexusProgramId(context);
+      // A CLUB caller's directory is their club, and ONLY their club.
+      //
+      // The club id has to come from nexus_club_program_id: for a partner-club
+      // caller nexus_program_id is the CONNECTED PARENT, so asking with it
+      // returned the parent program's people — the wrong names entirely, and the
+      // bug this branch exists to fix.
+      //
+      // The parent-roster fallback below is skipped for a club, deliberately.
+      // getMyLearners/getProgramCoaches answer about the parent too, so leaving
+      // them in put those same outsiders straight back into the list. A club's
+      // invite list being exactly its own members is also the rule the demo
+      // needs, and it means a NEW member shows up here as soon as they are in the
+      // club, with no extra step.
+      const clubId = nexusClubProgramId(context);
+      const programId = clubId ?? nexusProgramId(context);
       if (programId) {
         const members = await listNexusProgramMembers(programId).catch(() => []);
         for (const m of members)
@@ -57,19 +74,22 @@ export const listChallengePeople = cache(
               handle: m.email ?? undefined,
             });
       }
-      const [learners, coaches] = await Promise.all([
-        getMyLearners().catch(() => []),
-        getProgramCoaches().catch(() => []),
-      ]);
-      for (const coach of coaches)
-        add({ userId: coach.coach_id, name: coach.name ?? coach.coach_id });
-      for (const learner of learners)
-        if (learner.user_id)
-          add({
-            userId: learner.user_id,
-            name: learner.name ?? learner.email ?? learner.user_id,
-            handle: learner.email ?? undefined,
-          });
+      if (!clubId) {
+        // Not a club: the pre-existing directory, unchanged.
+        const [learners, coaches] = await Promise.all([
+          getMyLearners().catch(() => []),
+          getProgramCoaches().catch(() => []),
+        ]);
+        for (const coach of coaches)
+          add({ userId: coach.coach_id, name: coach.name ?? coach.coach_id });
+        for (const learner of learners)
+          if (learner.user_id)
+            add({
+              userId: learner.user_id,
+              name: learner.name ?? learner.email ?? learner.user_id,
+              handle: learner.email ?? undefined,
+            });
+      }
     }
 
     return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));

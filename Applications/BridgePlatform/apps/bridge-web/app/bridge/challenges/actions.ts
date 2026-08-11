@@ -22,7 +22,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireFeature } from "@/lib/access";
+import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { challengeStore } from "@/lib/challenges";
@@ -68,7 +68,7 @@ function packOf(board: { seed: number; pack?: Record<Seat, string> }): Record<Se
 export async function createChallengeAction(draft: ChallengeDraft): Promise<void> {
   const context = await requireContext();
   await requireFeature(context, "page.challenges");
-  await requireFeature(context, "challenge.create");
+  await requireCreateChallenge(context);
 
   const errors = validateDraft(draft);
   if (errors.length) throw new Error(errors[0]!);

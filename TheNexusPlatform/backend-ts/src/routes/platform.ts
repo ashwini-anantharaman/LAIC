@@ -962,6 +962,57 @@ platformRouter.get("/bridge/context", async (c) => {
   } catch (e) {
     console.error("bridge/context capability computation failed (using empty set):", e);
   }
+  /**
+   * For a PARTNER-CLUB caller, the capabilities their club role grants in the
+   * APP's own catalogue (`club-app`).
+   *
+   * bridge-access deliberately lets every club member reach challenge.create at
+   * the platform level and leaves the real decision to the club: "the platform
+   * allows it, the club role gates it" (see its challenge.create entry). But the
+   * create surfaces live in the bridge web, which had no way to see the app's
+   * catalogue — so the club's gate was never actually applied and every club
+   * member got a +. Emitting them here is what lets the web honour it.
+   *
+   * Resolved exactly as /club-app/context does, and defensively: a corrupted role
+   * or catalogue must never break context resolution, so any failure leaves the
+   * set empty and the coarse bridge role still governs.
+   */
+  let appCapabilities: string[] = [];
+  if (access.partnerClub && access.partnerProgramId) {
+    try {
+      const clubProgram = await db.getProgram(access.partnerProgramId);
+      const clubOrgId = (clubProgram?.org_id as string | undefined) ?? null;
+      const structuralTier =
+        !!clubOrgId &&
+        user.memberships.some(
+          (m) =>
+            m.org_id === clubOrgId &&
+            ["owner", "administrator"].includes(m.role) &&
+            (!m.program_id || m.program_id === access.partnerProgramId),
+        );
+      let clubRoleName: string | null = null;
+      let granted: string[] = [];
+      if (!structuralTier && user.email) {
+        const role = await graph
+          .getProgramRoleForEmail(access.partnerProgramId, user.email)
+          .catch(() => null);
+        if (role) {
+          clubRoleName = (role.role_name as string | null) ?? null;
+          const perms = (role.perms as Record<string, unknown>) ?? {};
+          granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+        }
+      }
+      const resolved = await appRoles.appAccessFor(access.partnerProgramId, {
+        structuralTier,
+        roleName: clubRoleName,
+        programRoleCapabilities: granted,
+      });
+      appCapabilities = resolved.capabilities;
+    } catch (e) {
+      console.error("bridge/context app-capability resolution failed (using empty set):", e);
+    }
+  }
+
   // The display name of the role the person actually holds — a custom
   // capability-bound role's own name wins over the level→prebuilt fallback, so
   // the app shows e.g. "Bridge Knowledge + Partnerships", not "Coach".
@@ -1007,6 +1058,15 @@ platformRouter.get("/bridge/context", async (c) => {
     displayName: await _platformDisplayName(access.profileId, user),
     // Extensions beyond the contract (additive — Bridge's shape check ignores them).
     nexus_program_id: access.programId,
+    /**
+     * The CLUB's own program id, when this caller reached the bridge through a
+     * partner club. `nexus_program_id` above is the CONNECTED PARENT for such a
+     * caller — right for data scope, wrong for "who is in my club". Anything
+     * asking about the club's people must use this.
+     */
+    nexus_club_program_id: access.partnerProgramId ?? null,
+    /** The club role's APP capabilities — empty/absent for a non-club caller. */
+    nexus_app_capabilities: appCapabilities,
     program_name: access.programName,
     role_name: roleName,
   });

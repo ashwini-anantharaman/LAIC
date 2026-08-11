@@ -25,6 +25,20 @@ export function nexusProgramId(context: NexusBridgeContext): string | null {
   return ext.nexus_program_id ?? null;
 }
 
+/**
+ * The CLUB's own program id, for a caller who reached the bridge through a
+ * partner club — null for everyone else.
+ *
+ * nexusProgramId above is the CONNECTED PARENT for such a caller, because that
+ * is where their data lives. It is the wrong id to ask "who is in my club": it
+ * answers with the parent program's people. Anything about the club's own roster
+ * must prefer this.
+ */
+export function nexusClubProgramId(context: NexusBridgeContext): string | null {
+  const ext = context as NexusBridgeContext & { nexus_club_program_id?: string | null };
+  return ext.nexus_club_program_id ?? null;
+}
+
 export async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const baseUrl = process.env.NEXUS_API_BASE_URL;
   if (!baseUrl) throw new Error("People & Roles requires NEXUS_API_BASE_URL (http mode)");
