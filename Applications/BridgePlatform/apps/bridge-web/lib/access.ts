@@ -103,6 +103,20 @@ export async function canCreateChallenge(context: NexusBridgeContext): Promise<b
   if (!(await canUse(context, "challenge.create"))) return false;
   const appCaps = clubAppCapabilities(context);
   if (appCaps === null) return true; // not a club caller
+
+  // THREE cases, the same order the app's own `can()` uses — the third is the one
+  // that matters. A club role that carries no club-app capabilities at all is not
+  // saying "denied", it is saying NOTHING: the club has not authored app
+  // permissions for it. Treating silence as denial took the + away from mentors
+  // who had always had it.
+  //
+  // So with no fine grants, fall back to the rule that shipped before app roles
+  // existed: a club's MENTOR may create, a plain member may not. /bridge/context
+  // emits bridge_coach for a club instructor and bridge_club_member otherwise, so
+  // that distinction is already in the roles we hold.
+  if (appCaps.length === 0) return context.roles.includes("bridge_coach");
+
+  // A role that DOES carry app capabilities is honoured exactly.
   return appCaps.includes("app.challenge.create");
 }
 
