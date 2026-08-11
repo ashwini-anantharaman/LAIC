@@ -1105,6 +1105,12 @@ export async function setProfileAvatar(profileId: string, avatar: string | null)
   return pg.setProfileAvatar(profileId, avatar);
 }
 
+/** Free an orphaned profile's username — see releaseUsernameIfOrphaned. */
+export async function releaseUsernameIfOrphaned(profileId: string): Promise<string | null> {
+  if (!usePg()) return null;
+  return pg.releaseUsernameIfOrphaned(profileId);
+}
+
 /** Rename the caller across every profile they hold — see setOwnDisplayName. */
 export async function setOwnDisplayName(
   authUserId: string,
