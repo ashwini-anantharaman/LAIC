@@ -932,6 +932,58 @@ async function publishLearningObjectRow(row, share = false) {
   return { ok: true, id };
 }
 
+/** Every object this org/program owns — the library's durable home. */
+async function listLearningObjectsForLibrary() {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const params = new URLSearchParams({
+    select: 'id,type,title,owner_id,owner_name,status,scope,reuse_count,description,'
+      + 'estimated_time,blocks,tags,source_ids,collection_ids,collection_names,'
+      + 'pipeline_draft,version_number,published_at,created_at,updated_at',
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+    order: 'updated_at.desc',
+  });
+  if (LEARNING_PROGRAM_ID) params.set('program_id', `eq.${LEARNING_PROGRAM_ID}`);
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library read failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return await res.json();
+}
+
+/** Remove one object from the shared library. Scoped to this org. */
+async function deleteLearningObjectRow(id) {
+  if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
+    throw new LlmError(503, 'not_configured', 'Shared-library access is not configured on the server.');
+  }
+  const clean = String(id || '').trim();
+  if (!clean) throw new LlmError(400, 'bad_object', 'Object id is required.');
+  const params = new URLSearchParams({
+    id: `eq.${clean}`,
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+  });
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    method: 'DELETE',
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+      Prefer: 'return=minimal',
+    },
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new LlmError(502, 'supabase_error', `Shared library delete failed (${res.status}): ${detail.slice(0, 300)}`);
+  }
+  return { ok: true };
+}
+
 async function fetchWebsitePage(rawUrl) {
   let url = assertPublicHttpUrl(rawUrl);
   let html = '';
@@ -3883,6 +3935,36 @@ export async function handler(req, res) {
     try {
       const out = await fetchWebsitePage(body.url);
       return send(res, 200, out);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- The author's library, server-side ---- */
+  // Everything this org/program has, drafts included, so a browser can rebuild
+  // the library after a refresh (or on another machine) without the baked
+  // snapshot. `published_at` is what separates "live for reader apps" from
+  // "still being written"; readers filter on it, this does not.
+  if (method === 'GET' && path === '/api/learning/objects') {
+    try {
+      const rows = await listLearningObjectsForLibrary();
+      return send(res, 200, rows);
+    } catch (e) {
+      const status = e instanceof LlmError ? e.status : 500;
+      return send(res, status, { code: e.code || 'error', message: e.message });
+    }
+  }
+
+  /* ---- Delete a learning object from the shared library, for good ---- */
+  // Without this a local delete is undone by the next hydrate: the row is still
+  // in the shared store, so the library rebuilds it. Deleting has to reach the
+  // durable copy or it isn't a delete.
+  const delObj = path.match(/^\/api\/learning\/objects\/([^/]+)$/);
+  if (method === 'DELETE' && delObj) {
+    try {
+      await deleteLearningObjectRow(decodeURIComponent(delObj[1]));
+      return send(res, 200, { ok: true });
     } catch (e) {
       const status = e instanceof LlmError ? e.status : 500;
       return send(res, status, { code: e.code || 'error', message: e.message });

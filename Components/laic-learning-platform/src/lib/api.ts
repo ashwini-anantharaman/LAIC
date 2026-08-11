@@ -453,6 +453,19 @@ export function publishLearningObject(
   });
 }
 
+/** DELETE /api/learning/objects/:id — remove content from the shared store for good. */
+export function deleteSharedObject(id: string, signal?: AbortSignal): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/api/learning/objects/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+    signal,
+  });
+}
+
+/** GET /api/learning/objects — the author's whole library from the shared store. */
+export function fetchSharedLibrary(signal?: AbortSignal): Promise<any[]> {
+  return apiFetch<any[]>('/api/learning/objects', { signal });
+}
+
 /** POST /api/tutorials/fetch-image — server fetches a public image and inlines it as a data: URI. */
 export function fetchWebImage(
   url: string,
