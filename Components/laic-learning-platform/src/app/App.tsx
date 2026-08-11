@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { fetchSharedLibrary, publishLearningObject } from '../lib/api';
+import { deleteSharedObject, fetchSharedLibrary, publishLearningObject } from '../lib/api';
 
 /**
  * Back the library up to the shared store, coalesced per object.
@@ -81,6 +81,7 @@ import {
 } from '../lib/objectCollectionsStore';
 import { mergeBbTutorialsIntoLibrary } from '../lib/bbTutorialsSeed';
 import { ensureSnapshotCollections, mergeLibrarySnapshot } from '../lib/librarySnapshotSeed';
+import { fileObjectsByType, folderIdForType } from '../lib/libraryFiling';
 import {
   syncWorkingVersion,
   saveAsNewVersion as storeSaveAsNewVersion,
@@ -345,10 +346,10 @@ function StudioApp() {
     refreshObjectCollections(userId);
 
     const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);
-    const local = mergeLibrarySnapshot(
+    const local = fileObjectsByType(userId, mergeLibrarySnapshot(
       userId,
       mergeBbTutorialsIntoLibrary(userId, withCollectionIds(userId, localRaw)),
-    );
+    ));
     if (gen !== hydrateGenRef.current) return;
     setCreatedObjects(local);
     if (local !== localRaw) {
@@ -366,7 +367,7 @@ function StudioApp() {
       if (Array.isArray(shared) && shared.length) {
         const claimed = shared.map((r) => ({ ...sharedRowToObject(r), ownerId: userId }));
         setCreatedObjects((prev) => {
-          const merged = withCollectionIds(userId, mergeObjects(prev, claimed));
+          const merged = fileObjectsByType(userId, withCollectionIds(userId, mergeObjects(prev, claimed)));
           saveUserObjects(userId, merged);
           return merged;
         });
@@ -622,10 +623,16 @@ function StudioApp() {
       const fromPartial = objectCollectionIds(partial);
       const fromExisting = existing ? objectCollectionIds(existing) : [];
       const fromCreate = createCollectionIdsRef.current.filter((cid) => cols.some((c) => c.id === cid));
-      const collectionIds =
-        fromPartial.length
+      // The type decides the folder: a flashcard set belongs with flashcards
+      // even if the author happened to have a tutorials folder selected when
+      // they hit Create. Falls back to the picked folder for types with no
+      // home of their own.
+      const byType = folderIdForType(ownerId, partial.type);
+      const collectionIds = byType
+        ? [byType]
+        : (fromPartial.length
           ? fromPartial
-          : (fromExisting.length ? fromExisting : (fromCreate.length ? fromCreate : (fallback ? [fallback] : [])));
+          : (fromExisting.length ? fromExisting : (fromCreate.length ? fromCreate : (fallback ? [fallback] : []))));
       const obj: LearningObject = {
         id,
         type: partial.type,
@@ -903,6 +910,16 @@ function StudioApp() {
     } catch (err: any) {
       console.warn('[versions] delete-for-object failed:', err?.message || err);
     }
+    // A queued backup would otherwise re-create the row moments after this.
+    const queued = sharedSyncTimers.get(objectId);
+    if (queued) {
+      clearTimeout(queued);
+      sharedSyncTimers.delete(objectId);
+    }
+    // Delete the durable copy too — otherwise the next hydrate rebuilds it.
+    deleteSharedObject(objectId).catch((err) => {
+      console.warn('[library] could not delete from the shared store:', err?.message || err);
+    });
     setEditingObjectId((cur) => (cur === objectId ? null : cur));
     setReaderObjectId((cur) => {
       if (cur === objectId) {
