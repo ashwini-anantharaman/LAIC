@@ -21,15 +21,18 @@ function isVisibleToLearners(o: LearningObject): boolean {
 // Keyed by TOKEN: a fetch from a previous session resolving after sign-out
 // must never leak another user's list into the next session.
 
+// Keyed by token AND program: a club's library is not the app-wide program's, so
+// one slot would serve the previous club's list after a switch.
 let cached: { token: string; objects: LearningObject[] } | null = null;
 
 export async function getLearningObjects(
   token: string,
-  opts: { refresh?: boolean } = {},
+  opts: { refresh?: boolean; programId?: string } = {},
 ): Promise<LearningObject[]> {
-  if (!cached || cached.token !== token || opts.refresh) {
-    const objects = await fetchLearningObjects(token);
-    cached = { token, objects: objects.filter(isVisibleToLearners) };
+  const key = `${token}::${opts.programId ?? ""}`;
+  if (!cached || cached.token !== key || opts.refresh) {
+    const objects = await fetchLearningObjects(token, opts.programId);
+    cached = { token: key, objects: objects.filter(isVisibleToLearners) };
   }
   return cached.objects;
 }

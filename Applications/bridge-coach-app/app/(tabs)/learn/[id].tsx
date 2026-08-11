@@ -8,6 +8,7 @@ import { EMBED_SKIN_CSS } from "../../../constants/embed-skin";
 import { Colors, Fonts, Spacing } from "../../../constants/theme";
 import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
 import { useAuth } from "../../../lib/auth-context";
+import { useSelectedClubId } from "../../../lib/club-context";
 import { takeLaunch } from "../../../lib/launch-cache";
 import { getCachedObject } from "../../../lib/learning";
 
@@ -20,6 +21,9 @@ import { getCachedObject } from "../../../lib/learning";
 export default function LearnContentScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { token } = useAuth();
+  // Launch and read as the CLUB — the app-wide program gives a club's people no
+  // standing, which is what made this 403 for them.
+  const clubId = useSelectedClubId();
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,14 +34,14 @@ export default function LearnContentScreen() {
     setError(null);
     setUrl(null);
     try {
-      const launch = await takeLaunch(token, "learning");
+      const launch = await takeLaunch(token, "learning", clubId ?? undefined);
       // Dev override: launch_url points at the team's default port, which is
       // contested locally — use our known-good instance. When the platform is
       // deployed, switch back to preferring launch.launch_url.
       const base = LEARNING_PLATFORM_URL || launch.launch_url;
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
-        program_id: PROGRAM_ID,
+        program_id: clubId ?? PROGRAM_ID,
         object: id,
         embed: "1", // content only — the app owns the surrounding navigation
       });
@@ -45,7 +49,7 @@ export default function LearnContentScreen() {
     } catch {
       setError("Couldn't open this content. Check that the learning platform is running.");
     }
-  }, [token, id]);
+  }, [token, id, clubId]);
 
   useEffect(() => {
     load();

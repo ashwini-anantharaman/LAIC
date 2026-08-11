@@ -25,6 +25,7 @@ import {
   Type,
 } from "../../../constants/theme";
 import { useAuth } from "../../../lib/auth-context";
+import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
 import { getLearningObjects } from "../../../lib/learning";
 import { LearningObject, NexusError } from "../../../lib/nexus";
@@ -79,6 +80,10 @@ function Deck({ children }: { children: ReactNode }) {
 
 export default function LearnScreen() {
   const { token } = useAuth();
+  // The library belongs to the club being viewed. Asking about the app-wide
+  // program answers "no access" for a club's people, who are not in it — which is
+  // exactly the 403 this screen used to show.
+  const clubId = useSelectedClubId();
   const [cards, setCards] = useState<LearningObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,16 +96,21 @@ export default function LearnScreen() {
         // tutorials, quizzes, flashcard sets and concept cards, and filtering to
         // one of them left most of the library invisible. The server already
         // orders by updated_at desc, so the newest content deals first.
-        setCards(await getLearningObjects(token, { refresh }));
+        setCards(await getLearningObjects(token, { refresh, ...(clubId ? { programId: clubId } : {}) }));
       } catch (e) {
+        // Show the SERVER'S own 403 reason. It distinguishes "this feature is not
+        // enabled for the program" (a Features toggle on the club) from "your role
+        // does not grant access" (a role grant) — two different fixes that the old
+        // single message flattened into one, sending anyone who hit it looking in
+        // the wrong place.
         setError(
           e instanceof NexusError && e.status === 403
-            ? "Your account doesn't have access to learning content in this program."
+            ? `${e.message} (learning access for this club)`
             : "Couldn't load content. Check that the Nexus backend is running.",
         );
       }
     },
-    [token],
+    [token, clubId],
   );
 
   useEffect(() => {
@@ -125,11 +135,11 @@ export default function LearnScreen() {
   // without a mint round-trip.
   useFocusEffect(
     useCallback(() => {
-      if (token) prefetchLaunch(token, "learning");
+      if (token) prefetchLaunch(token, "learning", clubId ?? undefined);
       // Returning to the tab re-reads as well: content added since the last look
       // should be here without a restart.
       void load(true);
-    }, [token, load]),
+    }, [token, clubId, load]),
   );
 
   return (
