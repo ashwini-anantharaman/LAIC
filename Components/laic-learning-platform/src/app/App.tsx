@@ -37,6 +37,7 @@ import {
   getVersion,
   objectFromVersion,
   truncateVersionsAfter as storeTruncateVersionsAfter,
+  markVersionPublished,
   setVersionLocked as storeSetVersionLocked,
   deleteVersion as storeDeleteVersion,
   deleteVersionsForObject as storeDeleteVersionsForObject,
@@ -121,6 +122,11 @@ export interface AppState {
     objectId: string,
     versionId: string,
   ) => { ok: boolean; version?: Version; removed?: number; error?: string };
+  /** Push one version's content to the shared library partner apps read. */
+  publishObjectVersion: (
+    objectId: string,
+    versionId: string,
+  ) => Promise<{ ok: boolean; version?: Version; error?: string }>;
   lockObjectVersion: (versionId: string, locked: boolean) => Version | null;
   deleteObjectVersion: (versionId: string) => { ok: boolean; error?: string };
   openReaderVersion: (objectId: string, versionId: string) => void;
@@ -599,13 +605,10 @@ function StudioApp() {
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
-      } else if (obj.status === 'in-review' || obj.status === 'approved') {
-        // Standalone site (no Nexus session): publish submitted content to the
-        // shared Nexus Supabase through the CS API so partner apps see it.
-        const names = cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name);
-        publishLearningObject(objectToPublishRow(obj, names)).catch((err) =>
-          console.warn('[publish] could not publish to shared library:', err?.message || err));
       }
+      // Nothing is pushed to the shared library here. Publishing is a per-version
+      // act (Versions → Publish): an implicit publish on every submit would let
+      // later work silently replace the version an author chose to ship.
       return nextList;
     });
     // Ensure subsequent effect-based saves are allowed (e.g. first object after empty hydrate).
@@ -678,6 +681,42 @@ function StudioApp() {
     } as any, { version: 'skip' });
     return { ok: true, version, removed: trimmed.removed };
   }, [addObject]);
+
+  /**
+   * Push ONE version's content to the shared library, where partner apps read.
+   *
+   * The snapshot is what ships — not the working copy — so an author can keep
+   * editing after publishing without that work leaking out. The shared table
+   * holds one row per object, so publishing a version is also what unpublishes
+   * the previous one: readers see exactly the version chosen here.
+   */
+  const publishObjectVersion = useCallback(async (objectId: string, versionId: string) => {
+    const ownerId = activeUserIdRef.current;
+    const base = createdObjectsRef.current.find((o) => o.id === objectId)
+      || OBJECTS.find((o) => o.id === objectId);
+    if (!base) return { ok: false, error: 'Content not found.' };
+    const version = getVersion(ownerId, versionId);
+    if (!version) return { ok: false, error: 'That version no longer exists.' };
+    if (!version.snapshot) {
+      return { ok: false, error: `v${version.versionNumber} has no saved content to publish.` };
+    }
+
+    const cols = getObjectCollections(ownerId);
+    const ids = objectCollectionIds(base);
+    const names = cols.filter((c) => ids.includes(c.id)).map((c) => c.name);
+    const shipped = { ...objectFromVersion(base, version), collectionIds: ids };
+
+    try {
+      await publishLearningObject(
+        objectToPublishRow(shipped, names, version.versionNumber),
+      );
+    } catch (err: any) {
+      return { ok: false, error: err?.message || 'Could not reach the shared library.' };
+    }
+    // Only after the upload lands — see markVersionPublished.
+    markVersionPublished(ownerId, objectId, versionId);
+    return { ok: true, version };
+  }, []);
 
   const lockObjectVersion = useCallback((versionId: string, locked: boolean) => {
     return storeSetVersionLocked(activeUserIdRef.current, versionId, locked);
@@ -844,7 +883,7 @@ function StudioApp() {
     nexusProgramName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
-    saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion,
+    saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
     lockObjectVersion, deleteObjectVersion, openReaderVersion,
     objectCollections, activeObjectCollectionId,
     setActiveObjectCollectionId, createCollectionIds, setCreateCollectionIds,

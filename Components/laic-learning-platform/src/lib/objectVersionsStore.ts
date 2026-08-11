@@ -425,6 +425,36 @@ export function truncateVersionsAfter(
   return { ok: true, removed: above.length };
 }
 
+/**
+ * Record which version is live in the shared library.
+ *
+ * Exactly one per object: the shared table holds a single row per object, so
+ * two versions marked published would be a claim the data cannot support. The
+ * flag is cleared from every sibling as it is set here.
+ *
+ * Call this only after the upload succeeds — a version marked published that
+ * never reached the library is worse than one that is silently up to date.
+ */
+export function markVersionPublished(
+  userId: string,
+  objectId: string,
+  versionId: string,
+): Version | null {
+  const all = readAll(userId);
+  const hit = all.find((v) => v.id === versionId);
+  if (!hit) return null;
+  const stamp = new Date().toISOString();
+  writeAll(
+    userId,
+    all.map((v) => {
+      if (v.objectId !== objectId) return v;
+      if (v.id === versionId) return { ...v, publishedAt: stamp };
+      return v.publishedAt ? { ...v, publishedAt: undefined } : v;
+    }),
+  );
+  return { ...hit, publishedAt: stamp };
+}
+
 export function deleteVersion(userId: string, versionId: string): { ok: boolean; error?: string } {
   const all = readAll(userId);
   const hit = all.find((v) => v.id === versionId);

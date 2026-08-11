@@ -896,6 +896,12 @@ async function publishLearningObjectRow(row, share = false) {
     pipeline_draft: row.pipeline_draft ?? null,
     updated_at: new Date().toISOString(),
   };
+  // Which version this content came from, when an author published one
+  // explicitly. Readers show it; null means "published before we tracked it".
+  if (row.version_number != null && Number.isFinite(Number(row.version_number))) {
+    out.version_number = Number(row.version_number);
+    out.published_at = new Date().toISOString();
+  }
   // Sharing is opt-in per object (see migration 0002_public_share.sql). Only
   // ever set — never cleared here, so re-publishing cannot silently revoke a
   // link someone already handed out.

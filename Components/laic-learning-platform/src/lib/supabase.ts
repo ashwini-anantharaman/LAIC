@@ -63,8 +63,14 @@ function toRow(obj: LearningObject) {
 export function objectToPublishRow(
   obj: LearningObject,
   collectionNames: string[],
+  /** Version this content came from, when publishing one explicitly. */
+  versionNumber?: number,
 ): Record<string, unknown> {
-  return { ...toRow(obj), collection_names: collectionNames };
+  return {
+    ...toRow(obj),
+    collection_names: collectionNames,
+    ...(versionNumber != null ? { version_number: versionNumber } : {}),
+  };
 }
 
 function fromRow(row: any): LearningObject {

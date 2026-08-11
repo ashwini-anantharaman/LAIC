@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Eye, GitBranch, Lock, LockOpen, RotateCcw, Trash2, X } from 'lucide-react';
+import { Eye, GitBranch, Loader2, Lock, LockOpen, RotateCcw, Trash2, Upload, X } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
@@ -19,6 +19,7 @@ export function ObjectVersionsModal({
     listObjectVersions,
     saveObjectAsNewVersion,
     restoreObjectVersion,
+    publishObjectVersion,
     lockObjectVersion,
     deleteObjectVersion,
     openReaderVersion,
@@ -27,6 +28,7 @@ export function ObjectVersionsModal({
   const [notes, setNotes] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
 
   // Opening this modal used to commit a version whenever the working copy had
   // drifted from the tip — so looking at the history changed it. Versions are
@@ -84,6 +86,29 @@ export function ObjectVersionsModal({
         ? `Restored to v${v.versionNumber} · removed ${res.removed} newer version${res.removed === 1 ? '' : 's'}`
         : `Restored to v${v.versionNumber}`,
     );
+  };
+
+  const onPublish = async (v: Version) => {
+    setError(null);
+    const live = versions.find((x) => x.publishedAt && x.id !== v.id);
+    const ok = await confirm({
+      title: `Publish v${v.versionNumber}?`,
+      description:
+        `v${v.versionNumber} of “${object.title}” goes to the shared library, where the`
+        + ' apps that read it will show this version.'
+        + (live ? ` v${live.versionNumber} is live now and will be replaced.` : '')
+        + ' Later edits stay private until you publish again.',
+      confirmLabel: `Publish v${v.versionNumber}`,
+    });
+    if (!ok) return;
+    setPublishingId(v.id);
+    const res = await publishObjectVersion(object.id, v.id);
+    setPublishingId(null);
+    if (!res.ok) {
+      setError(res.error || 'Could not publish that version.');
+      return;
+    }
+    flash(`Published v${v.versionNumber} to the shared library`);
   };
 
   const onToggleLock = (v: Version) => {
@@ -205,6 +230,15 @@ export function ObjectVersionsModal({
                       <Lock size={9} /> LOCKED
                     </span>
                   )}
+                  {!!v.publishedAt && (
+                    <span
+                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                      style={{ background: 'rgba(4,120,87,0.12)', color: '#047857' }}
+                      title="Partner apps are showing this version"
+                    >
+                      <Upload size={9} /> PUBLISHED
+                    </span>
+                  )}
                   {!!v.editCount && (
                     <span
                       className="px-1.5 py-0.5 rounded text-[10px] font-bold"
@@ -224,6 +258,25 @@ export function ObjectVersionsModal({
                 ) : null}
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void onPublish(v)}
+                  disabled={!v.snapshot || publishingId !== null || !!v.publishedAt}
+                  className="inline-flex items-center gap-1 px-2.5 h-8 rounded-lg text-white disabled:opacity-40"
+                  style={{ fontSize: 11.5, fontWeight: 650, background: v.publishedAt ? '#047857' : '#0B0F1A' }}
+                  title={
+                    v.publishedAt
+                      ? `v${v.versionNumber} is the version partner apps are showing`
+                      : !v.snapshot
+                        ? 'This version has no saved content to publish'
+                        : `Publish v${v.versionNumber} to the shared library`
+                  }
+                >
+                  {publishingId === v.id
+                    ? <Loader2 size={12} className="animate-spin" />
+                    : <Upload size={12} />}
+                  {v.publishedAt ? 'Published' : 'Publish'}
+                </button>
                 <button
                   type="button"
                   onClick={() => void onRestore(v)}
