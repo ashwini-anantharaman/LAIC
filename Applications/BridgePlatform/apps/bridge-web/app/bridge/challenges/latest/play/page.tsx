@@ -48,7 +48,10 @@ export default async function LatestChallengePlayPage() {
 
   // Nothing to drop into: the list is the honest destination, since it is where
   // a pending invite is accepted and where "no challenges yet" is explained.
-  if (!playable.length) redirect(LIST);
+  // Bound to a const so the narrowing survives — a `.length` check does not
+  // narrow an index access under noUncheckedIndexedAccess.
+  const newest = playable[0];
+  if (!newest) redirect(LIST);
 
-  redirect(`/bridge/challenges/${playable[0].challengeId}/play`);
+  redirect(`/bridge/challenges/${newest.challengeId}/play`);
 }
