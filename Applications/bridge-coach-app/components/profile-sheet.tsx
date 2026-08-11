@@ -8,7 +8,7 @@
 
 import { Image } from "expo-image";
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SvgXml } from "react-native-svg";
 
 import { BrandIcons } from "../constants/brand-assets";
@@ -17,11 +17,14 @@ import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/them
 import { tintSvg } from "./svg-tint";
 import {
   RoleContext,
+  getAppContext,
   getRoleContext,
   isCoach,
   primaryMembership,
 } from "../lib/bridge-role";
 import { useAuth } from "../lib/auth-context";
+import { useSelectedClubId } from "../lib/club-context";
+import { confirmDestructive, notify } from "../lib/dialogs";
 import {
   loadMyAvatar,
   pickAndUploadAvatar,
@@ -78,22 +81,49 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
   const { user, token, signOut } = useAuth();
   const [first, last] = splitName(user?.display_name);
   const [context, setContext] = useState<RoleContext | null>(null);
+  const clubId = useSelectedClubId();
 
   // Role / program / organisation — moved here from the Menu's "Account
-  // details" route, which this sheet now fully replaces.
+  // details" route, which this sheet now fully replaces. Asked about the
+  // SELECTED CLUB like every club surface, so coach-ness is this club's.
   useEffect(() => {
     let cancelled = false;
     if (!token) return;
-    getRoleContext(token).then((ctx) => {
+    getRoleContext(token, clubId ?? undefined).then((ctx) => {
       if (!cancelled) setContext(ctx);
     });
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, clubId]);
+
+  // The name of the role the console actually assigned in this club
+  // ("Members", "Mentors") — what the Role field shows. The raw membership
+  // role is NOT shown: Nexus writes "instructor" as the base membership for
+  // everyone it enrolls, so it told every member they were staff.
+  const [clubRole, setClubRole] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!token || !clubId) {
+      setClubRole(null);
+      return;
+    }
+    getAppContext(token, clubId).then((app) => {
+      if (!cancelled) setClubRole(app?.role_name ?? null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, clubId]);
 
   const membership = context ? primaryMembership(context) : null;
   const amCoach = context ? isCoach(context) : false;
+  // Owner/administrator ARE their membership role; everyone else reads as
+  // what their standing resolves to, never the enrollment plumbing.
+  const structuralRole =
+    membership && ["owner", "administrator"].includes(membership.role.toLowerCase())
+      ? membership.role.charAt(0).toUpperCase() + membership.role.slice(1).toLowerCase()
+      : null;
 
   // The picture the camera badge sets, and that every other surface reads.
   const [myAvatar, setMyAvatarUri] = useState<string | null>(null);
@@ -119,7 +149,7 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
       // neither deserves an alert.
       await pickAndUploadAvatar(token);
     } catch {
-      Alert.alert("Couldn't save that picture", "Please try again.");
+      notify("Couldn't save that picture", "Please try again.");
     } finally {
       setBusy(false);
     }
@@ -127,19 +157,19 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
 
   function removePicture() {
     if (!token || busy) return;
-    Alert.alert("Remove your picture?", "Your avatar goes back to the default.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: () => {
-          setBusy(true);
-          removeMyAvatar(token)
-            .catch(() => Alert.alert("Couldn't remove that picture", "Please try again."))
-            .finally(() => setBusy(false));
-        },
+    // confirmDestructive, not Alert directly: on web a buttoned Alert renders
+    // nothing, which made this row a silent no-op in the browser.
+    confirmDestructive(
+      "Remove your picture?",
+      "Your avatar goes back to the default.",
+      "Remove",
+      () => {
+        setBusy(true);
+        removeMyAvatar(token)
+          .catch(() => notify("Couldn't remove that picture", "Please try again."))
+          .finally(() => setBusy(false));
       },
-    ]);
+    );
   }
 
   return (
@@ -181,7 +211,7 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
 
       <Field
         label="Role"
-        value={membership?.role ?? (amCoach ? "Coach" : "Learner")}
+        value={clubRole ?? structuralRole ?? (amCoach ? "Coach" : "Member")}
         editable={false}
       />
       <Field

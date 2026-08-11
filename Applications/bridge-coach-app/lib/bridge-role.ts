@@ -7,14 +7,20 @@
 //     links the app to the console: whoever an admin adds to a program in Nexus
 //     lands in the right view here automatically, with no list to maintain. An
 //     "owner" or "administrator" (a super admin is the org owner) gets the coach
-//     view; "member" and "student" get the learner view. A membership elsewhere
+//     view; every other membership role gets the learner view — including
+//     "instructor", which Nexus writes as the low-privilege BASE membership for
+//     everyone it enrolls, so it identifies nobody. A membership elsewhere
 //     is irrelevant — being an admin of another program must not grant coach
 //     access to this club.
 //
-//  2. The Bridge platform grant (/bridge/context), which is program-scoped to
-//     the Bridge Program. People in a PARTNER program such as Club 1 have no
-//     Bridge grant at all — that endpoint 403s for them — so it can only ever
-//     add coach access, never remove it.
+//  2. The Bridge platform grant (/bridge/context), asked about the SELECTED
+//     CLUB. For a club's people the server derives the answer from their club
+//     role: a role granting the coaching menu (app.coaching.view — the club's
+//     "Mentors"-shaped roles) emits bridge_coach, everyone else emits
+//     bridge_club_member. Only the ROLES array is trusted here — accessLevel
+//     once said "coach" for every club member while roles said
+//     bridge_club_member, and believing it put the whole of B2F3 into the
+//     coach view. The grant can only ever add coach access, never remove it.
 //
 // Anyone we cannot classify is a learner: the learner view is the safe default,
 // since it exposes no coach-only surfaces.
@@ -31,8 +37,21 @@ import {
 
 export type { BridgeContext } from "./nexus";
 
-/** Membership roles that administer a program, and so get the coach view. */
-const ADMIN_ROLES = new Set(["owner", "administrator", "instructor", "teacher", "coach"]);
+/**
+ * Membership roles that administer a program, and so get the coach view.
+ *
+ * "instructor" (and its legacy alias "teacher") is deliberately NOT here.
+ * Nexus writes membership role "instructor" as the LOW-PRIVILEGE BASE for
+ * everyone enrolled through any path — the club invite, both gate joins — and
+ * the schema's membershipRole enum has no "member" at all, so instructor is
+ * what every club member holds ("the real permissions come from the role",
+ * per the gate-join path). Treating it as coach-ish put the whole of B2F3,
+ * assigned Members and all, into the coach view before the bridge grant was
+ * even consulted. Real coach-ness arrives via signal 2: the bridge grant's
+ * roles array (bridge_coach — from a club role granting the coaching menu, or
+ * a platform-role assignment in the main program).
+ */
+const ADMIN_ROLES = new Set(["owner", "administrator"]);
 
 /**
  * Profile-level roles that administer, used ONLY when someone holds no
@@ -221,18 +240,25 @@ export function isCoach(context: RoleContext | BridgeContext | null): boolean {
   }
   // The Bridge grant last, and it only ever ADDS coach access (the header's
   // promise) — a hired coach is usually enrolled as a plain "member", with
-  // their coach-ness carried by the bridge_coach platform role. The Club 1
-  // fix above is not weakened: partner-program members have no Bridge grant
-  // at all (/bridge/context 403s for them), so nothing here promotes them.
+  // their coach-ness carried by the bridge_coach platform role. A club's
+  // people DO hold a Bridge grant now (the app asks about the club), and it
+  // carries their standing: bridge_coach for a role that grants the coaching
+  // menu, bridge_club_member for everyone else.
   return _bridgeGrantsCoach(context.bridge);
 }
 
+/**
+ * ROLES ONLY, deliberately — the same gate as the bridge web's isBridgeCoach.
+ * accessLevel is NOT consulted: it is a coarse level readout, and for a club
+ * it once said "coach" beside roles:["bridge_club_member"] (the flat partner
+ * grant mapped through the level table), which put every club member — the
+ * whole of B2F3 — into the coach view. The roles array is the field the
+ * server actually decides per person; trust nothing softer.
+ */
 function _bridgeGrantsCoach(bridge: BridgeContext | null): boolean {
   if (!bridge) return false;
   return (
     bridge.is_admin ||
-    bridge.accessLevel === "coach" ||
-    bridge.accessLevel === "admin" ||
     bridge.roles.includes("bridge_coach") ||
     bridge.roles.includes("bridge_program_admin")
   );

@@ -992,6 +992,7 @@ platformRouter.get("/bridge/context", async (c) => {
         );
       let clubRoleName: string | null = null;
       let granted: string[] = [];
+      let clubAreaLevel: string | null = null;
       if (!structuralTier && user.email) {
         const role = await graph
           .getProgramRoleForEmail(access.partnerProgramId, user.email)
@@ -1000,10 +1001,14 @@ platformRouter.get("/bridge/context", async (c) => {
           clubRoleName = (role.role_name as string | null) ?? null;
           const perms = (role.perms as Record<string, unknown>) ?? {};
           granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+          // The role's grant level on the app's own area — "administrator"
+          // means the whole catalogue and stores no per-capability ids.
+          clubAreaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
         }
       }
       const resolved = await appRoles.appAccessFor(access.partnerProgramId, {
         structuralTier,
+        areaLevel: clubAreaLevel,
         roleName: clubRoleName,
         programRoleCapabilities: granted,
       });
@@ -1012,6 +1017,32 @@ platformRouter.get("/bridge/context", async (c) => {
       console.error("bridge/context app-capability resolution failed (using empty set):", e);
     }
   }
+
+  // Is this club caller a COACH? The club's own role decides (owner direction
+  // 2026-08-11: "the role that was given Coaching access should be accessed in
+  // as coaches"): a role that grants the coaching menu IS the club's coaching
+  // tier, whatever the club named it ("Mentors", "Strange Mentor"). The
+  // catalogue toggle is therefore the whole assignment story — flip COACHING
+  // on a role and its holders get the coach view, no second enrollment step.
+  //
+  // The membership role is deliberately NOT consulted. Every enroll path
+  // writes the base membership as "instructor" — the club invite
+  // (offerings.ts _enrollActiveMember call: membershipRole "instructor",
+  // unconditional), both gate joins, and the schema has no "member" role at
+  // all (schemas.ts membershipRole: owner|administrator|instructor). So
+  // "instructor" is what EVERY club member holds and says nothing about
+  // coaching; the earlier `role === "instructor"` check (2026-08-10, "the
+  // club's instructor is its coach") promoted the entire club — B2F3's
+  // Members included — and is why assigning the member role changed nothing.
+  //
+  // This also supersedes 2026-08-10's "a club's admin gets bridge_club_member":
+  // the structural tier resolves every capability, coaching included, so a
+  // club's owner/manager lands on the coach view too — bridge_club_admin
+  // still isn't emitted, the platform's admin areas stay out of clubs.
+  // On a failed capability resolve (empty set, logged above) a mentor demotes
+  // to the member surface for that request — the safe side, and it heals on
+  // the next resolve.
+  const clubCoach = access.partnerClub && appCapabilities.includes("app.coaching.view");
 
   // The display name of the role the person actually holds — a custom
   // capability-bound role's own name wins over the level→prebuilt fallback, so
@@ -1032,27 +1063,26 @@ platformRouter.get("/bridge/context", async (c) => {
     // a custom (capability-bound) role or graded grant falls back to the
     // level→role map so the emitted `roles` stays a valid BridgeRole set.
     //
-    // A club's people (owner direction 2026-08-10): members get
-    // bridge_club_member — the ordinary member surface, with their coach pool
-    // restricted to the club. The club's INSTRUCTOR is its coach and emits
-    // bridge_coach, or the hire loop dead-ends: their reviews queue, learner
-    // pages and assignment flows all sit behind the platform's coach gates,
-    // and every one of those surfaces is already scoped to their own hires by
-    // data. A club's admin still gets bridge_club_member here on purpose —
-    // bridge_club_admin sits in the platform's ADMIN set (admin & expert
-    // review areas), which does not belong to a club.
+    // A club's people: coaches (clubCoach above — a role granting the coaching
+    // menu) emit bridge_coach, or the hire loop dead-ends: their reviews
+    // queue, learner pages and assignment flows all sit behind the platform's
+    // coach gates, and every one of those surfaces is already scoped to their
+    // own hires by data. Everyone else gets bridge_club_member — the ordinary
+    // member surface, with their coach pool restricted to the club.
+    //
+    // accessLevel must AGREE with the club role. The partner grant's level is
+    // a flat "edit" for every club member (it measures entry, not standing),
+    // and mapping it through BRIDGE_ROLE_MAP said accessLevel:"coach" beside
+    // roles:["bridge_club_member"] — a self-contradictory context, and the
+    // club app believed the coach half: every B2F3 member landed on the coach
+    // view. For a club the level map has nothing to say; the role decides.
     roles: isPrebuilt
       ? [access.platformRole]
       : access.partnerClub
-        ? [
-            user.memberships.find((m) => m.program_id === access.partnerProgramId)?.role ===
-            "instructor"
-              ? "bridge_coach"
-              : "bridge_club_member",
-          ]
+        ? [clubCoach ? "bridge_coach" : "bridge_club_member"]
         : mapped.roles,
     permissions: [`bridge:${access.level}`],
-    accessLevel: mapped.accessLevel,
+    accessLevel: access.partnerClub ? (clubCoach ? "coach" : "learner") : mapped.accessLevel,
     capabilities, // effective bridge-catalogue capability ids (tab gating + display)
     is_admin: isAdmin,
     displayName: await _platformDisplayName(access.profileId, user),
@@ -1108,8 +1138,9 @@ platformRouter.get("/bridge/learners", async (c) => {
 /** The program's coaches — visible to every bridge-program member/learner. */
 /**
  * The hirable coach pool for THIS caller. Entered through a club, the pool is
- * the club's own instructors and nobody else (owner direction 2026-08-10) —
- * a club member never browses the parent program's coach list.
+ * the club's own coaching tier and nobody else — the people whose club role
+ * grants the coaching menu (the same capability rule as clubCoach above), not
+ * the parent program's coach list, and never the whole club.
  */
 async function _hirableCoaches(access: ResolvedPlatformAccess): Promise<Row[]> {
   return access.partnerClub && access.partnerProgramId
@@ -1711,12 +1742,16 @@ platformRouter.get("/club-app/context", async (c) => {
   // The ONE role they hold in this club, and what it grants.
   let roleName: string | null = null;
   let granted: string[] = [];
+  let areaLevel: string | null = null;
   if (!structuralTier && user.email) {
     const role = await graph.getProgramRoleForEmail(programId, user.email).catch(() => null);
     if (role) {
       roleName = (role.role_name as string | null) ?? null;
       const perms = (role.perms as Record<string, unknown>) ?? {};
       granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+      // The role's grant level on the app's own area — "administrator" means
+      // the whole catalogue and stores no per-capability ids.
+      areaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
     }
   }
 
@@ -1724,6 +1759,7 @@ platformRouter.get("/club-app/context", async (c) => {
   try {
     result = await appRoles.appAccessFor(programId, {
       structuralTier,
+      areaLevel,
       roleName,
       programRoleCapabilities: granted,
     });

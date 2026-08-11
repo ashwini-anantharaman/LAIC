@@ -125,6 +125,8 @@ export async function appAccessFor(
   programId: string,
   input: {
     structuralTier?: boolean;
+    /** The role's grant LEVEL on the app's own area (perms.clubapp). */
+    areaLevel?: string | null;
     /** The program role's name, as the console shows it. */
     roleName?: string | null;
     /** The program role's own capability ids (perms.capabilities). */
@@ -136,6 +138,17 @@ export async function appAccessFor(
   const doc = await getCatalogue("club-app");
   if (input.structuralTier) {
     return { roleName: "Administrator", capabilities: grantableCapabilities(doc) };
+  }
+
+  // A role granting the app's AREA at "administrator" holds the whole
+  // catalogue by definition. The console's role builder stores such a grant
+  // as { clubapp: "administrator", capabilities: [] } — no per-capability
+  // ids — and an empty list read as "nothing": B2F3's Mentor role showed
+  // every toggle on in the builder yet resolved to zero capabilities, so its
+  // holders failed every gate (and the coach test with them). Same expansion
+  // as the structural tier, but the role keeps its own name.
+  if (input.areaLevel === "administrator") {
+    return { roleName: input.roleName ?? null, capabilities: grantableCapabilities(doc) };
   }
 
   // The program role's grants, kept only where they name THIS catalogue — a

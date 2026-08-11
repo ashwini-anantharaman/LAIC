@@ -2075,12 +2075,24 @@ export async function listProgramCoaches(orgId: string, programId: string): Prom
 }
 
 /**
- * The coaches a CLUB's member may hire: the club's own instructors, nobody
- * else (owner direction 2026-08-10). A club is a partner program whose people
- * are org_memberships rows scoped to it; its "coach" is the membership role
- * `instructor` — the role the club's own console assigns. The roster group and
- * learner count are read from the PARENT program, because that is the instance
- * where sessions, submissions and rosters actually live.
+ * The coaches a CLUB's member may hire: the club's own coaching tier, nobody
+ * else. A club is a partner program whose people are org_memberships rows
+ * scoped to it; who among them COACHES is the club role's call (owner
+ * direction 2026-08-11: "the role that was given Coaching access should be
+ * accessed in as coaches") — the same capability rule as /bridge/context's
+ * clubCoach, expressed in SQL:
+ *
+ *   · their assigned club role grants the coaching menu (app.coaching.view
+ *     in perms.capabilities), or grants the whole app area
+ *     (perms.clubapp = 'administrator', which stores no per-capability ids), or
+ *   · they hold the club structurally (membership owner/administrator).
+ *
+ * NOT the membership role `instructor` — Nexus writes that as the base
+ * membership for everyone it enrolls, so filtering on it listed the entire
+ * club as hireable coaches.
+ *
+ * The roster group and learner count are read from the PARENT program,
+ * because that is the instance where sessions, submissions and rosters live.
  */
 export async function listClubCoaches(
   orgId: string,
@@ -2097,13 +2109,20 @@ export async function listClubCoaches(
                as learner_count
       from org_memberships m
       join profiles p on p.id = m.profile_id
+      left join program_role_assignments a
+        on a.program_id = ${clubProgramId} and lower(a.email) = lower(p.email)
+      left join program_roles r on r.id = a.role_id
       left join groups g
         on g.organization_id = ${orgId} and g.program_id = ${parentProgramId}
        and g.metadata_json->>'kind' = 'coach_roster'
        and g.metadata_json->>'coach_profile_id' = p.id::text
       where m.org_id = ${orgId} and m.program_id = ${clubProgramId}
-        and m.role = 'instructor'
         and (m.status is null or m.status = 'active')
+        and (
+          m.role in ('owner', 'administrator')
+          or r.perms->>'clubapp' = 'administrator'
+          or r.perms->'capabilities' @> '["app.coaching.view"]'::jsonb
+        )
       order by name`);
     return rows as unknown as Row[];
   });
