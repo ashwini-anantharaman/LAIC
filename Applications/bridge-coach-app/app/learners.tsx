@@ -13,19 +13,17 @@ import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { useSelectedClubId } from "../lib/club-context";
 import {
-  fetchClubLearners,
   fetchProgramLearners,
   NexusError,
   ProgramLearner,
 } from "../lib/nexus";
 
-/** Coach view: the program's learner roster (Phase 1 — reviews and
- *  assignments will hang off each learner in Phase 2). */
+/** Coach view: the coach's HIRED roster (owner direction 2026-08-11, second
+ *  pass: subscription happens through Hire a Coach, in clubs exactly as in
+ *  the main program — never implicitly by club membership). Asked about the
+ *  selected club so a club coach sees their own club's hires. */
 export default function LearnersScreen() {
   const { token } = useAuth();
-  // The roster belongs to the club being viewed. The bridge roster cannot answer
-  // for a club at all — its access resolution redirects to the connected program
-  // — so in a club we read the club's own roster instead.
   const clubId = useSelectedClubId();
   const [learners, setLearners] = useState<ProgramLearner[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -34,9 +32,7 @@ export default function LearnersScreen() {
     if (!token) return;
     setError(null);
     try {
-      setLearners(
-        clubId ? await fetchClubLearners(token, clubId) : await fetchProgramLearners(token),
-      );
+      setLearners(await fetchProgramLearners(token, clubId ?? undefined));
     } catch (e) {
       setError(
         e instanceof NexusError && e.status === 403

@@ -587,45 +587,9 @@ export type ProgramLearner = {
   joined_at: string | null;
 };
 
-/**
- * A CLUB'S learners, from the club's own roster.
- *
- * Not the same question as fetchProgramLearners. For a club's people,
- * resolvePlatformAccess redirects the data scope to the CONNECTED program (see
- * its partner branch), so the bridge roster answers about the parent program —
- * where a club mentor is nobody's coach, and the club's own learners do not
- * appear at all. /club-app/members resolves against the club itself, so this is
- * the roster a club actually has.
- *
- * WHO COUNTS AS A LEARNER: whoever the club's role assignments say — the
- * server's `is_coach` (a role granting the coaching menu, or structural
- * owner/admin) splits the roster, and everyone else is a learner. The old
- * membership-role filter is kept ONLY as the fallback for a server that
- * doesn't emit the flag yet, and it was quietly wrong both ways: every
- * enrollee's membership is "instructor" (so the club's real Members were
- * dropped), while people whose ROLES coach slipped through on a different
- * membership value.
- */
-const _NOT_A_LEARNER = new Set(["owner", "administrator", "instructor"]);
-
-export async function fetchClubLearners(
-  token: string,
-  programId: string,
-): Promise<ProgramLearner[]> {
-  const members = await fetchAppMembers(token, programId);
-  return members
-    .filter((m) =>
-      m.is_coach !== undefined ? !m.is_coach : !_NOT_A_LEARNER.has(m.membership_role),
-    )
-    .map((m) => ({
-      user_id: m.profile_id ?? null,
-      email: m.email,
-      name: m.display_name,
-      joined_at: null,
-    }));
-}
-
-/** The coach's learner roster (their hires); admins see the whole program. */
+/** The coach's learner roster (their hires — in clubs exactly as in the main
+ *  program; owner direction 2026-08-11, second pass); admins see the whole
+ *  program. Pass the club id to ask about a club. */
 export function fetchProgramLearners(
   token: string,
   programId: string = PROGRAM_ID,
