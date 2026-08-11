@@ -55,6 +55,18 @@ function toRow(obj: LearningObject) {
   };
 }
 
+/**
+ * Row for the standalone publish path (no Nexus session): same shape the
+ * Nexus backend stores, plus resolved folder names so consumer apps can show
+ * folders without knowing this app's collection ids.
+ */
+export function objectToPublishRow(
+  obj: LearningObject,
+  collectionNames: string[],
+): Record<string, unknown> {
+  return { ...toRow(obj), collection_names: collectionNames };
+}
+
 function fromRow(row: any): LearningObject {
   return {
     id: row.id,

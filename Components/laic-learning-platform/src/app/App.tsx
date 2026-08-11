@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
-import { supabaseEnabled, listObjects, fetchObject, saveObject } from '../lib/supabase';
+import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
+import { publishLearningObject } from '../lib/api';
 import {
   loadUserObjects,
   saveUserObjects,
@@ -546,6 +547,12 @@ function StudioApp() {
       }
       if (supabaseEnabled()) {
         saveObject(obj).catch(err => console.warn('[nexus] could not save object:', err?.message || err));
+      } else if (obj.status === 'in-review' || obj.status === 'approved') {
+        // Standalone site (no Nexus session): publish submitted content to the
+        // shared Nexus Supabase through the CS API so partner apps see it.
+        const names = cols.filter((c) => collectionIds.includes(c.id)).map((c) => c.name);
+        publishLearningObject(objectToPublishRow(obj, names)).catch((err) =>
+          console.warn('[publish] could not publish to shared library:', err?.message || err));
       }
       return nextList;
     });
