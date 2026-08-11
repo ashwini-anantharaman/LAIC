@@ -392,7 +392,12 @@ export default function ClubScreen() {
                 { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s, color: headText },
               ]}
             >
-              {club && club.org !== club.name ? `Under ${club.org}` : " "}
+              {/* The organisation's name on its own. It read "Under Life in AI Center"
+                  before — the preposition added nothing a reader needed, and the line
+                  is a label rather than a sentence. Still suppressed when the club and
+                  the org share a name, where it would just repeat the title, and the
+                  space keeps the header's height fixed either way. */}
+              {club && club.org !== club.name ? club.org : " "}
             </Text>
           </View>
 
