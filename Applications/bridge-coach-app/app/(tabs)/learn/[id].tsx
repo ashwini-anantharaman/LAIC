@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ContentWebView } from "../../../components/content-webview";
 import { PrimaryButton, Screen, ScreenHeader } from "../../../components/ui";
+import { EMBED_SKIN_CSS } from "../../../constants/embed-skin";
 import { Colors, Fonts, Spacing } from "../../../constants/theme";
 import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../../../lib/config";
 import { useAuth } from "../../../lib/auth-context";
@@ -76,7 +77,15 @@ export default function LearnContentScreen() {
         </View>
       )}
 
-      {url && <ContentWebView url={url} onHostMessage={handleHostMessage} />}
+      {url && (
+        <ContentWebView
+          url={url}
+          onHostMessage={handleHostMessage}
+          // Same skin as the tutorial embed: the app's two faces and its cream
+          // ground, so a reader does not read as a browser inside a screen.
+          injectedCSS={EMBED_SKIN_CSS}
+        />
+      )}
     </Screen>
   );
 }

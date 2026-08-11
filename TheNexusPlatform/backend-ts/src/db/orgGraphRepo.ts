@@ -2656,6 +2656,28 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
 export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
+  // collection_ids/collection_names arrive with 0003_object_collections.sql. A
+  // deploy that lands before that migration must still serve the list, so the
+  // richer query falls back to the original one on undefined_column rather than
+  // 500ing the Learn tab.
+  try {
+    return await _listLearningObjectsMeta(orgId, programId, true);
+  } catch (e) {
+    if (!_isUndefinedColumn(e)) throw e;
+    console.warn("[nexus] learning_objects.collection_* missing — run migrations for folder labels");
+    return _listLearningObjectsMeta(orgId, programId, false);
+  }
+}
+
+async function _listLearningObjectsMeta(
+  orgId: string,
+  programId: string | null | undefined,
+  withCollections: boolean,
+): Promise<Row[]> {
+  const cols = withCollections
+    ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
+            coalesce(collection_names, '[]'::jsonb) as collection_names`
+    : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(
       programId
@@ -2663,6 +2685,7 @@ export async function listLearningObjectsMeta(orgId: string, programId?: string 
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
+             ${cols}
       from learning_objects
       where organization_id = ${orgId} and program_id = ${programId}
       order by updated_at desc nulls last`
@@ -2670,6 +2693,7 @@ export async function listLearningObjectsMeta(orgId: string, programId?: string 
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
+             ${cols}
       from learning_objects
       where organization_id = ${orgId}
       order by updated_at desc nulls last`,

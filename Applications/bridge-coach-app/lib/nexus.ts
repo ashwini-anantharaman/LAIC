@@ -160,6 +160,12 @@ export type LearningObject = {
   tags: string[] | null;
   blocks: LearningBlock[] | null;
   updated_at: string | null;
+  /** The author's folders (0003). Ids are stable across renames; names are what a
+   *  reader can display without holding the Studio's collection table. Both are
+   *  empty arrays when the object is filed nowhere — or when the server predates
+   *  the migration, so a consumer can treat them as arrays unconditionally. */
+  collection_ids?: string[];
+  collection_names?: string[];
 };
 
 // ── Endpoints ────────────────────────────────────────────────────────────────

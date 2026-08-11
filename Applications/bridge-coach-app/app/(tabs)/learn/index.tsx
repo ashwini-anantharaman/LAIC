@@ -11,7 +11,7 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { ReactNode, useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "../../../components/brand-chrome";
 import { CARD, PlayingCard } from "../../../components/playing-card";
@@ -35,6 +35,26 @@ const SAMPLE_LESSONS = [
   { title: "Bridge Intermediate", author: "Coach Miland", chapters: 12 },
   { title: "Bridge Advanced", author: "Coach Miland", chapters: 10 },
 ] as const;
+
+/** The Studio's type ids, as a learner would read them. */
+const TYPE_LABELS: Record<string, string> = {
+  "tutorial-v2": "Tutorial",
+  tutorial: "Tutorial",
+  quiz: "Quiz",
+  "flashcard-set": "Flashcards",
+  "concept-card": "Concept",
+  summary: "Summary",
+  reflection: "Reflection",
+  scenario: "Scenario",
+  assignment: "Assignment",
+  drill: "Drill",
+  lesson: "Lesson",
+};
+
+/** Unknown types show their own id rather than being hidden or mislabelled. */
+function typeLabel(type: string): string {
+  return TYPE_LABELS[type] ?? type;
+}
 
 function SectionHeading({ children }: { children: string }) {
   return <Text style={styles.sectionHeading}>{children}</Text>;
@@ -67,9 +87,11 @@ export default function LearnScreen() {
       if (!token) return;
       setError(null);
       try {
-        const objects = await getLearningObjects(token, { refresh });
-        // Boss demo scope: concept cards only. Widen to more types later.
-        setCards(objects.filter((o) => o.type === "concept-card"));
+        // EVERY authored type, not just concept cards: the Studio publishes
+        // tutorials, quizzes, flashcard sets and concept cards, and filtering to
+        // one of them left most of the library invisible. The server already
+        // orders by updated_at desc, so the newest content deals first.
+        setCards(await getLearningObjects(token, { refresh }));
       } catch (e) {
         setError(
           e instanceof NexusError && e.status === 403
@@ -85,12 +107,29 @@ export default function LearnScreen() {
     load();
   }, [load]);
 
+  /**
+   * Refetch when the app comes back to the foreground.
+   *
+   * Content is authored elsewhere while this app sits in the background, so the
+   * list it holds is stale by the time someone returns to it. Coming back is
+   * exactly the moment to re-read — and it costs one request, unlike polling.
+   */
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void load(true);
+    });
+    return () => sub.remove();
+  }, [load]);
+
   // Keep an unused launch token warm so tapping a card opens the platform
   // without a mint round-trip.
   useFocusEffect(
     useCallback(() => {
       if (token) prefetchLaunch(token, "learning");
-    }, [token]),
+      // Returning to the tab re-reads as well: content added since the last look
+      // should be here without a restart.
+      void load(true);
+    }, [token, load]),
   );
 
   return (
@@ -128,6 +167,14 @@ export default function LearnScreen() {
                 index={i}
                 title={item.title}
                 body={item.description ?? undefined}
+                // What a learner chooses on: what kind of thing it is, and how
+                // long it takes. Both are optional in the data, so the footer is
+                // whatever is actually known.
+                footer={
+                  <Text style={styles.cardFooter}>
+                    {[typeLabel(item.type), item.estimated_time].filter(Boolean).join(" · ")}
+                  </Text>
+                }
                 onPress={() => router.push(`/learn/${item.id}`)}
               />
             ))}

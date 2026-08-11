@@ -1,5 +1,22 @@
 import { fetchLearningObjects, LearningObject } from "./nexus";
 
+/**
+ * Which authoring states reach a learner.
+ *
+ * Was `published` only, on the reasoning that anything else is authoring state.
+ * The Content Studio in practice never leaves that state — content sits at
+ * in-review or approved — so the Learn tab was empty while the library was full.
+ * Owner direction: show both of those.
+ *
+ * `draft` stays out: it is genuinely unfinished, not merely unpublished. `published`
+ * is kept so nothing that already qualified disappears.
+ */
+const LEARNER_VISIBLE = new Set(["in-review", "approved", "published"]);
+
+function isVisibleToLearners(o: LearningObject): boolean {
+  return LEARNER_VISIBLE.has((o.status ?? "").trim().toLowerCase());
+}
+
 // Session-scoped cache so the detail screen can reuse the list fetch.
 // Keyed by TOKEN: a fetch from a previous session resolving after sign-out
 // must never leak another user's list into the next session.
@@ -12,9 +29,7 @@ export async function getLearningObjects(
 ): Promise<LearningObject[]> {
   if (!cached || cached.token !== token || opts.refresh) {
     const objects = await fetchLearningObjects(token);
-    // Learners only ever see PUBLISHED content — drafts and in-review
-    // objects are authoring state, not curriculum.
-    cached = { token, objects: objects.filter((o) => o.status === "published") };
+    cached = { token, objects: objects.filter(isVisibleToLearners) };
   }
   return cached.objects;
 }
