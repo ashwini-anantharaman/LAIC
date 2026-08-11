@@ -90,6 +90,7 @@ export function ObjectCreatorStructuredV2() {
     pendingTemplateId, setPendingTemplateId, pendingAuthoringPath, setPendingAuthoringPath,
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
+    listObjectVersions, overwriteObjectVersion, objectVersionsTick,
   } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -268,6 +269,12 @@ export function ObjectCreatorStructuredV2() {
   const hasAnySource = !!(pdfSources.length || textSources.length || ytSources.length || webSources.length || librarySource);
 
   /* ── persistence ──────────────────────────────────────────── */
+  /** Versions the author may overwrite instead of adding another. */
+  const submitVersions = useMemo(
+    () => listObjectVersions(draft.id).filter((v) => !!v.snapshot),
+    [listObjectVersions, draft.id, objectVersionsTick],
+  );
+
   const persist = useCallback((next: StructuredV2Draft) => {
     const blocks = unitsToBlocks(next);
     const existing = createdObjects.find((o) => o.id === next.id);
@@ -821,14 +828,21 @@ export function ObjectCreatorStructuredV2() {
           onChangeDraft={(next) => commit(next)}
           onBack={() => commit(touchXDraft(draft, { activeUnitId: null }), 'navigator')}
           onSave={() => void saveDraft()}
-          onSubmit={() => {
+          onSubmit={(target) => {
             const next = touchXDraft(draft, { status: 'submitted', phase: 'review' });
             persist(next);
             setDraft(next);
+            // After the save, so the overwrite lands on the chosen version
+            // rather than trailing the working version persist() just synced.
+            if (target?.versionId) {
+              const res = overwriteObjectVersion(next.id, target.versionId);
+              if (!res.ok && res.error) window.alert(res.error);
+            }
             clearEditingObject?.();
             navigate('cd-library');
           }}
           canSubmit={allUnitsReady(draft.units)}
+          submitVersions={submitVersions}
           rail={rail}
         />
         {globalHoot}
