@@ -27,21 +27,30 @@ import { fetchLearningObjects, LearningObject } from "./nexus";
 const LEARNER_HIDDEN = new Set(["draft", "archived", "deleted"]);
 
 function isVisibleToLearners(o: LearningObject): boolean {
-  // A publish stamp is a definite yes.
+  // PUBLISHED means an author pressed publish on a specific version. That act is
+  // what stamps the row: the Studio's publish path sets version_number and
+  // published_at together (server/index.mjs, publishLearningObjectRow), and only
+  // when a version is named. So the stamp is the app's definition of published, and
+  // nothing else qualifies.
+  //
+  // This is a REVERSAL of the previous commit, and the reason is that the fact
+  // changed underneath it: an hour ago no writer existed, so requiring the stamp hid
+  // everything. The per-version publish button now writes it.
+  //
+  // The consequence is deliberate: content that only ever went through the older
+  // save path has no stamp and will not appear until someone publishes a version of
+  // it. That is the point — "it was saved" is not "it was published".
   if (o.published_at) return true;
-  // …and its ABSENCE means nothing, because nothing writes it on this path.
-  //
-  // I had this backwards and it hid the whole library: 0004 adds the column, so it
-  // exists, and I read "exists but null" as "deliberately unpublished". But
-  // upsertLearningObject — every write behind PUT /learning/objects, which is what
-  // the Studio's save calls — does not set published_at or version_number at all.
-  // So the stamp is null on every row that path has ever written, and requiring it
-  // hid content that had been visible for weeks, including work published minutes
-  // earlier.
-  //
-  // Until the publish path stamps the row, authoring status is the only signal
-  // there is — read as a denylist, so a status this app has never seen still shows.
-  return !LEARNER_HIDDEN.has((o.status ?? "").trim().toLowerCase());
+
+  // One exception, and it is about honesty rather than permissiveness: a row whose
+  // status literally says published, from before stamping existed. Excluding it
+  // would hide something an author did deliberately publish, just with an older
+  // tool. Anything merely in-review or approved is NOT published and no longer
+  // shows.
+  const status = (o.status ?? "").trim().toLowerCase();
+  if (status === "published" && !LEARNER_HIDDEN.has(status)) return true;
+
+  return false;
 }
 
 // Session-scoped cache so the detail screen can reuse the list fetch.

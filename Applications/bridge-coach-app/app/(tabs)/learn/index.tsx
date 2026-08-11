@@ -214,9 +214,13 @@ export default function LearnScreen() {
         )}
 
         {cards && !error && cards.length === 0 && (
+          // Empty is now a legitimate, explainable state rather than a symptom:
+          // only a version someone pressed publish on appears here, so a library
+          // full of saved-but-unpublished work shows nothing. Say which act is
+          // missing, or this reads as a fault.
           <Text style={styles.stateText}>
-            Nothing published yet. Content published in the learning platform will
-            appear here.
+            Nothing published yet. In the Content Studio, publish a version of a
+            piece of content and it will appear here.
           </Text>
         )}
 
