@@ -100,6 +100,47 @@ export async function listObjects(): Promise<LearningObject[]> {
   return (Array.isArray(data) ? data : []).map(fromRow);
 }
 
+/**
+ * Fetch ONE object through the PUBLIC share endpoint — no session required.
+ *
+ * This is what makes an /o/<id> link portable. fetchObject below returns null
+ * without a token, and the viewer then fell back to localStorage, so a link only
+ * ever resolved in the browser that authored the object. Anyone else — another
+ * machine, an incognito window, the app's webview — saw "Content not found".
+ *
+ * Returns null when the object is not published (the server reports that exactly
+ * like a missing id, by design), so callers must treat null as "no public copy"
+ * rather than "does not exist".
+ */
+export async function fetchPublicObject(id: string): Promise<LearningObject | null> {
+  try {
+    const res = await nexusFetch(`/api/public/learning/objects/${encodeURIComponent(id)}`);
+    if (!res.ok) return null;
+    return fromRow(await res.json());
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Publish (or unpublish) an object so its /o/<id> link works for anyone holding
+ * it. Authoring access required; the server enforces that.
+ *
+ * Sharing is per object and opt-in: without it, an anonymous reader could reach
+ * anything by guessing an id.
+ */
+export async function setObjectShared(id: string, shared = true): Promise<boolean> {
+  try {
+    const res = await nexusFetch(
+      `/api/platform/learning/objects/${encodeURIComponent(id)}/share`,
+      { method: 'PUT', body: JSON.stringify({ shared, program_id: getProgramId() }) },
+    );
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /** Fetch ONE learning object (full content) — used by the embedded viewer so
  *  it never downloads the whole org library to render a single object. */
 export async function fetchObject(id: string): Promise<LearningObject | null> {

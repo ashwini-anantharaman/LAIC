@@ -11,6 +11,7 @@ import { gameRouter } from "./routes/game";
 import { hookRouter } from "./routes/hook";
 import { offeringsRouter } from "./routes/offerings";
 import { platformRouter } from "./routes/platform";
+import { publicRouter } from "./routes/publicContent";
 
 /** Best-effort: resolve the bearer token to a user id for the request context. */
 async function _resolveUserId(c: Context): Promise<string | null> {
@@ -101,6 +102,9 @@ export function createApp(): Hono {
   }
 
   // More specific prefixes first; offerings mounts at the bare /api prefix.
+  // Mounted BEFORE the bare /api router, and deliberately unauthenticated —
+  // see routes/publicContent.ts for what keeps that safe.
+  app.route("/api/public", publicRouter);
   app.route("/api/platform", platformRouter);
   app.route("/api/hook", hookRouter);
   app.route("/api/game", gameRouter);

@@ -1960,6 +1960,42 @@ platformRouter.put("/learning/objects", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Public share links for Content Studio objects ───────────────────────────
+//
+// A /o/<id> link used to resolve only in the browser that authored the object
+// (the viewer fell back to localStorage), so the link was permanent but the data
+// was not portable. These two routes make it portable: the author publishes, and
+// anyone holding the link can then read it with no session at all.
+
+/** Publish or unpublish. Org-scoped: only someone who can see the object may
+ *  share it, and content-author access is required to change its visibility. */
+platformRouter.put("/learning/objects/:object_id/share", async (c) => {
+  const user = await getCurrentUser(c);
+  const body = (await c.req.json().catch(() => ({}))) as { shared?: boolean; program_id?: string };
+  const access = await resolvePlatformAccess(user, "learning", body.program_id ?? c.req.query("program_id") ?? null);
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const shared = body.shared !== false; // default: publish
+  let ok: boolean;
+  try {
+    ok = await graph.setLearningObjectShared(access.orgId, c.req.param("object_id"), shared);
+  } catch (e) {
+    // The column arrives with migration 0002_public_share.sql. Until it is
+    // applied, say so plainly — an author must never be told a link is public
+    // when it is not.
+    if (e instanceof Error && e.message.startsWith("share-unavailable")) {
+      throw new HttpError(503, "Share links are not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true, shared });
+});
+
 // ── Learning Platform custom roles (the learning app's own People tab) ──────
 const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
 // A learning role now binds fine-grained capability ids from the learning
