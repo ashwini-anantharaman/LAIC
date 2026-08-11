@@ -48,7 +48,7 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
@@ -65,7 +65,11 @@ export default async function PlayTablePage({
     fanRadius: appearance.fanRadius,
   };
   const { sessionId } = await params;
-  const { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
+  // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
+  // without them. A LOOK, not a permission: every control they carry is still
+  // reachable from the ☰ menu, so this hides chrome, it never removes ability.
+  const showToolbars = bars !== "off";
 
   let view;
   try {
@@ -440,13 +444,33 @@ export default async function PlayTablePage({
       settings={canSettingsMenu ? settings : undefined}
       viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
       appearance={resolvedAppearance}
+      showToolbars={showToolbars}
       showCoach={showCoach}
       coach={coachData}
     />
   );
 
+  // With no toolbars there is no controlsExtra, and AutoAdvance lives inside it
+  // — so the engine that steps the robot seats would never mount and the board
+  // would sit there looking frozen. Mount it headless instead: same driver, no
+  // transport buttons. Exactly one instance either way; never both.
+  const headlessDriver = showToolbars ? null : (
+    <AutoAdvance
+      key={paused ?? "run"}
+      sessionId={sessionId}
+      active={!actingIsHuman && !boardOver}
+      seq={record.events.length}
+      complete={boardOver}
+      beatMs={beatMs}
+      initialPaused={Boolean(paused)}
+      variant="headless"
+      strictBen={Boolean(record.challenge)}
+    />
+  );
+
   return (
     <div className="mx-auto w-full">
+      {headlessDriver}
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}

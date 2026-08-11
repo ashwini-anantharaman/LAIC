@@ -285,6 +285,14 @@ export interface PlayTableProps {
 
   // ── phone-tier coach panel (Mobile Table.dc.html / CoachPanel.dc.html) ──────
   /** Reserve a coach panel below the table region on the phone tier. Default on. */
+  /**
+   * Hide the top/bottom edge toolbars. A LOOK, not a lockdown — every control
+   * they carry is still reachable elsewhere (the ☰ menu, the host's own chrome),
+   * so this is for embedding the felt somewhere that supplies its own frame, and
+   * for judging the table's proportions without them. The band budget stops
+   * reserving their height too, so the felt actually grows into the space.
+   */
+  showToolbars?: boolean;
   showCoach?: boolean;
   /** The coach panel's share of the phone screen, 0–55%. Default 30. */
   coachShare?: number;
@@ -324,6 +332,7 @@ export function PlayTable({
   settings,
   viewHref,
   appearance,
+  showToolbars = true,
   showCoach = true,
   coachShare = 30,
   coachTitle = "Coach",
@@ -442,7 +451,7 @@ export function PlayTable({
     const bar = barFor(k);
     const avail = availPx / (k || 1);
     const base =
-      bar * 2 + GAPS + slackFor(k) +
+      (showToolbars ? bar * 2 : 0) + GAPS + slackFor(k) +
       (dummyIsStrip ? DUMMY_LINE : 0) +
       (dummyIsRow ? HAND_H.row : 0) +
       (!usePad && inAuction ? trayFor(k) : 0) +
@@ -1033,7 +1042,7 @@ export function PlayTable({
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
-      <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />}
       {/* ONE felt wrapper behind dummy line/row, centre, pad and hand. The FLAT
           skin variant, per Mobile Table.dc.html. */}
       <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
@@ -1091,7 +1100,7 @@ export function PlayTable({
           </div>
         </div>
       </div>
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />}
     </div>
   );
 
@@ -1121,7 +1130,7 @@ export function PlayTable({
 
   const stackedStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: tok.stageBg }}>
-      <EdgeToolbar side="top" items={infoItems} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="top" items={infoItems} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />}
       <div style={{ flex: 1, minHeight: 0, position: "relative", display: "flex", flexDirection: "column", overflow: "hidden", background: tok.felt }}>
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "12px 8px 0" }}>{stackedMain("N")}</div>
         <div style={{ flex: 1, minHeight: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, padding: 8 }}>
@@ -1136,14 +1145,14 @@ export function PlayTable({
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "0 8px 14px" }}>{stackedTouch("S")}</div>
       </div>
       {inAuction ? (columnsPad ? narrowBidColumns : bidBoxNarrow) : null}
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="bottom" items={actionItems(controlsExtraNarrow ?? controlsExtra)} scale={scale} minTouch={44} bg={tok.barBg} accent={tok.accent} />}
     </div>
   );
 
   // ---- wide stage: top info bar, felt, bottom actions bar (no side rail) ----
   const wideStage = (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", background: "#0b1512" }}>
-      <EdgeToolbar side="top" items={infoItems} scale={scale} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="top" items={infoItems} scale={scale} bg={tok.barBg} accent={tok.accent} />}
       <div style={{ flex: 1, minHeight: 0, position: "relative", overflow: "hidden", background: tok.felt }}>
         <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", justifyContent: "space-between", gap: 8, padding: "14px 16px" }}>
           <div style={{ display: "flex", justifyContent: "center" }}>{seatRow("N")}</div>
@@ -1176,7 +1185,7 @@ export function PlayTable({
           </div>
         </div>
       </div>
-      <EdgeToolbar side="bottom" items={actionItems(controlsExtra)} scale={scale} bg={tok.barBg} accent={tok.accent} />
+      {showToolbars && <EdgeToolbar side="bottom" items={actionItems(controlsExtra)} scale={scale} bg={tok.barBg} accent={tok.accent} />}
     </div>
   );
 

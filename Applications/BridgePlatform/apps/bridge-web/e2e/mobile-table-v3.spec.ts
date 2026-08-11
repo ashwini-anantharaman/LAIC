@@ -316,4 +316,33 @@ test.describe("mobile table v3 — phone tier", () => {
       /^(North|East|South|West)/,
     );
   });
+
+  // ?bars=off hides the edge toolbars so the felt can be judged, or embedded in
+  // a host that draws its own chrome. The trap it walked into once: AutoAdvance
+  // — the engine that steps the ROBOT seats — is mounted inside the toolbar's
+  // controls, so hiding the toolbar unmounted the engine and the board sat there
+  // looking frozen with BEN never asked to move. The page now mounts a headless
+  // driver in that case. This asserts the BEHAVIOUR (calls land on the auction
+  // grid), not that some component exists.
+  test("with the toolbars hidden the robot seats still act", async ({ page }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    const sid = await openTableSession(page);
+
+    const calls = () =>
+      page.getByTestId("auction-rows").evaluate(
+        (el) =>
+          [...el.querySelectorAll("span")].filter((n) => (n.textContent || "").trim()).length,
+      );
+
+    await page.goto(`/bridge/table2/${sid}?bars=off`);
+    await expect(page.getByTestId("bid-tray")).toBeVisible();
+    expect(await page.getByTestId("edge-toolbar").count(), "no toolbars rendered").toBe(0);
+
+    const before = await calls();
+    await expect
+      .poll(calls, { timeout: 15_000, message: "robots advance with no toolbar on screen" })
+      .toBeGreaterThan(before);
+  });
 });
