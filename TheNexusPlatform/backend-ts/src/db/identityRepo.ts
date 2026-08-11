@@ -202,6 +202,34 @@ export async function releaseUsernameIfOrphaned(profileId: string): Promise<stri
 }
 
 /**
+ * The same release, addressed by EMAIL.
+ *
+ * An invited person can already hold a profile — that is how an admin sets their
+ * username and starting password before they ever sign in — but an invitation is
+ * not a membership. Revoking it therefore left a profile with a username, no
+ * membership, and no membership id for anything to address it by. This is the door
+ * for that case.
+ *
+ * Every profile on that email is considered, and each is released only if IT has no
+ * memberships, so a person who is invited to one org while active in another keeps
+ * their name.
+ */
+export async function releaseUsernameIfOrphanedByEmail(email: string): Promise<string | null> {
+  const ids = await asPrivileged(async (tx) => {
+    const rows = await tx
+      .select({ id: profiles.id })
+      .from(profiles)
+      .where(sql`lower(${profiles.email}) = lower(${email}) and ${profiles.username} is not null`);
+    return rows.map((r) => r.id);
+  });
+  for (const id of ids) {
+    const freed = await releaseUsernameIfOrphaned(id);
+    if (freed) return freed;
+  }
+  return null;
+}
+
+/**
  * Set a person's own display name across EVERY profile they hold.
  *
  * A profile row is per (person, organization), so someone in more than one org has

@@ -1111,6 +1111,12 @@ export async function releaseUsernameIfOrphaned(profileId: string): Promise<stri
   return pg.releaseUsernameIfOrphaned(profileId);
 }
 
+/** Free an orphaned username by email — see releaseUsernameIfOrphanedByEmail. */
+export async function releaseUsernameIfOrphanedByEmail(email: string): Promise<string | null> {
+  if (!usePg()) return null;
+  return pg.releaseUsernameIfOrphanedByEmail(email);
+}
+
 /** Rename the caller across every profile they hold — see setOwnDisplayName. */
 export async function setOwnDisplayName(
   authUserId: string,
