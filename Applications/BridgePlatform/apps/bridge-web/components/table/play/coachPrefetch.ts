@@ -45,6 +45,21 @@ export interface HintsAnswer {
   reason?: string;
 }
 
+/** What /api/bridge/ben-tell answers with — BEN's choice and what it weighed. */
+export interface BenTell {
+  kind: "call" | "card";
+  action: string;
+  because?: string;
+  score?: number;
+  alternatives: { action: string; score?: number; because?: string }[];
+}
+
+/** BEN's answer, or why there is none. */
+export interface BenAnswer {
+  tell: BenTell | null;
+  reason?: string;
+}
+
 // Promises, not results: a screen that opens mid-flight joins the wait
 // instead of starting its own. Bounded so an all-night session can't grow it
 // without limit — oldest first, and 40 epochs is several boards of history.
@@ -108,6 +123,26 @@ export function fetchPlayAdvice(sessionId: string, epoch: string): Promise<PlayA
 }
 
 /**
+ * BEN's answer for the current decision — bid or card. The slowest thing the
+ * coach asks for by a wide margin (a card answer runs full simulations,
+ * 20-45s measured), which is exactly why it prefetches (owner direction
+ * 2026-08-11: "run the BEN before anyone even taps"): started when the
+ * decision lands, it is usually done by the time the TELL screen opens.
+ */
+export function fetchBenTell(sessionId: string, epoch: string): Promise<BenAnswer> {
+  const key = `ben:${sessionId}:${epoch}`;
+  return once(key, async () => {
+    const res = await fetch(`/api/bridge/ben-tell?sessionId=${encodeURIComponent(sessionId)}`);
+    const body = (await res.json()) as { tell?: BenTell | null; reason?: string };
+    if (!body.tell) {
+      cache.delete(key); // a miss stays retryable
+      return { tell: null, ...(body.reason ? { reason: body.reason } : {}) };
+    }
+    return { tell: body.tell };
+  });
+}
+
+/**
  * Fire the fetches the moment the decision is the learner's — called by the
  * coach's always-mounted hosts (the dock, the sheet), NOT by the screens that
  * display the answers. Results land in the shared cache above; errors are
@@ -124,6 +159,7 @@ export function useCoachPrefetch(
   useEffect(() => {
     if (!sessionId || !active || phase === "other") return;
     void fetchHints(sessionId, epoch).catch(() => {});
+    void fetchBenTell(sessionId, epoch).catch(() => {});
     // The card advice exists only during the play; the auction's answer lives
     // at the top of the hint ladder instead.
     if (phase === "play") void fetchPlayAdvice(sessionId, epoch).catch(() => {});

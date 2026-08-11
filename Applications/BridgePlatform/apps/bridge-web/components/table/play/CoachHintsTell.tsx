@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { WhatShouldIPlay } from "./CoachEventAsk";
-import { fetchHints } from "./coachPrefetch";
+import { fetchBenTell, fetchHints, type BenTell } from "./coachPrefetch";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -314,16 +314,7 @@ export function CoachHints({
    TELL — the answers, side by side, each labelled with who is talking
    ════════════════════════════════════════════════════════════════════════════ */
 
-interface BenTell {
-  kind: "call" | "card";
-  action: string;
-  because?: string;
-  score?: number;
-  alternatives: { action: string; score?: number; because?: string }[];
-}
-
 type TellState =
-  | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "done"; tell: BenTell }
   | { kind: "empty"; reason: string };
@@ -341,19 +332,29 @@ export function CoachTell({
   /** It is the learner's decision right now. */
   active: boolean;
 }>) {
-  const [ben, setBen] = useState<TellState>({ kind: "idle" });
+  const [ben, setBen] = useState<TellState>({ kind: "loading" });
 
-  async function askBen() {
-    if (ben.kind === "loading") return;
-    setBen({ kind: "loading" });
-    try {
-      const res = await fetch(`/api/bridge/ben-tell?sessionId=${encodeURIComponent(sessionId)}`);
-      const body = (await res.json()) as { tell?: BenTell | null; reason?: string };
-      setBen(body.tell ? { kind: "done", tell: body.tell } : { kind: "empty", reason: body.reason ?? "no answer" });
-    } catch {
-      setBen({ kind: "empty", reason: "unreachable" });
-    }
-  }
+  // No button any more (owner direction 2026-08-11: "run the BEN before
+  // anyone even taps"): BEN starts thinking when the decision lands (the
+  // prefetch), and this screen just reads the shared promise — usually
+  // resolved for a bid (~2s), often still simulating for a card. Keyed by
+  // the host on the decision epoch, so a new card asks BEN afresh.
+  useEffect(() => {
+    if (!active) return;
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetchBenTell(sessionId, epoch);
+        if (!alive) return;
+        setBen(r.tell ? { kind: "done", tell: r.tell } : { kind: "empty", reason: r.reason ?? "no answer" });
+      } catch {
+        if (alive) setBen({ kind: "empty", reason: "unreachable" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, epoch, active]);
 
   const benVerb = phase === "auction" ? "bid" : "play";
 
@@ -399,37 +400,22 @@ export function CoachTell({
           </p>
         ) : (
           <>
-            <button
-              type="button"
-              onClick={() => void askBen()}
-              disabled={ben.kind === "loading"}
-              style={{
-                alignSelf: "flex-start", minHeight: 32, padding: "6px 14px",
-                background: BEN_BLUE, borderWidth: 1, borderStyle: "solid", borderColor: BEN_BLUE,
-                borderRadius: 16, color: "#fff", fontSize: 12, fontWeight: 700,
-                fontFamily: "inherit", cursor: ben.kind === "loading" ? "default" : "pointer",
-                opacity: ben.kind === "loading" ? 0.6 : 1,
-              }}
-            >
-              What would BEN {benVerb}?
-            </button>
-
             {ben.kind === "loading" && (
-              <p style={{ margin: "8px 0 0", fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+              <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
                 {phase === "play"
-                  ? "Asking BEN — it simulates the play, so this can take up to a minute…"
-                  : "Asking BEN — a few seconds…"}
+                  ? "BEN is simulating the play — this can take up to a minute…"
+                  : "BEN is thinking — a few seconds…"}
               </p>
             )}
             {ben.kind === "empty" && (
-              <p style={{ margin: "8px 0 0", fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+              <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
                 {ben.reason === "not your turn"
-                  ? "Not your turn — ask again when the next decision is yours."
+                  ? "Not your turn — BEN answers when the next decision is yours."
                   : "BEN has no answer for this one right now."}
               </p>
             )}
             {ben.kind === "done" && (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 10 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
                     BEN would {benVerb}
