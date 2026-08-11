@@ -158,11 +158,12 @@ export function TrickArea({
     const box = clusterBox(card);
     const pos4 = clusterPos(card);
     /**
-     * "10" is the only two-glyph rank, and at weight 800 Arial digits run about
-     * 0.56em each — call it 1.12em for the pair. It is drawn at the SAME size as
-     * every other rank (the phone's card is sized for it), and this cap only
-     * bites for a caller that hands the compass a card too narrow to hold one,
-     * where a clipped "10" would be worse than a small one.
+     * "10" is the only two-glyph rank, and at weight 700 Arial digits run just
+     * under 0.56em each — call it 1.12em for the pair (a hair generous). It is
+     * drawn at the SAME size as every other rank (the phone's card is sized for
+     * it), and this cap only bites for a caller that hands the compass a card
+     * too narrow to hold one, where a clipped "10" would be worse than a small
+     * one.
      */
     const twoGlyphCap = Math.floor((card.w - 11) / 1.12);
     return (
@@ -190,9 +191,11 @@ export function TrickArea({
                         both pinned to the card's TOP-LEFT — the strip the paint
                         order guarantees no neighbour covers, so every card on
                         the compass still says what it is. */}
+                    {/* Same weights as the hand's cards (SeatHand's authored
+                        700/400): the compass shows the same deck you hold. */}
                     <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
-                      <span style={{ fontSize: rank.length > 1 ? Math.min(index.rank, twoGlyphCap) : index.rank, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
-                      <span style={{ fontSize: index.glyph, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
+                      <span style={{ fontSize: rank.length > 1 ? Math.min(index.rank, twoGlyphCap) : index.rank, fontWeight: 700, letterSpacing: "-.02em" }}>{rank}</span>
+                      <span style={{ fontSize: index.glyph, fontWeight: 400 }}>{GLYPH[play.card.suit]}</span>
                     </span>
                   </span>
                 ) : (

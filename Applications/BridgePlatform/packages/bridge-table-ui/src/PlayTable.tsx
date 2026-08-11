@@ -71,8 +71,10 @@ const MOBILE_W = 720;
  *    at 75, and 96 ends the card shortly after the pip, in a still card-shaped
  *    1:1.71 box.
  */
+// No `weight` override: the authored look (rank 700, pip 400) — the 800 the
+// compact tray tried read as smeared ink at this size (owner, 2026-08-11).
 const M_CARD: SeatHandMetrics & { backW: number } = {
-  w: 56, h: 96, rank: 38, glyph: 36, inset: 5, overlap: 8, weight: 800, backW: 52,
+  w: 56, h: 96, rank: 38, glyph: 36, inset: 5, overlap: 8, backW: 52,
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
@@ -634,8 +636,16 @@ export function PlayTable({
   const stageW = phone ? MOBILE_W : Math.max(BASE.w, box.w / genericScale);
   const stageH = phone ? phoneFit.content : Math.max(BASE.h, box.h / genericScale);
   // Rounding across four bands lands a few px either way; the stage bleeds its
-  // scaled-away height back so the region packs to exactly its share.
-  const stageBleed = phone ? -Math.round(phoneFit.content * (1 - phoneFit.scale)) : 0;
+  // scaled-away height back so the region packs to exactly its share. The slack
+  // reserve bleeds with it: it is budget arithmetic, not paint — the bands are
+  // integer-authored and scale as ONE transform, so nothing ever draws in it,
+  // and leaving it in the footprint held the coach panel a dead white band
+  // below the plate (owner, 2026-08-11: the coach takes that space).
+  const stageBleed = phone
+    ? -Math.round(
+        phoneFit.content * (1 - phoneFit.scale) + slackFor(phoneFit.scale) * phoneFit.scale,
+      )
+    : 0;
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
   // the suit panel brightens for the acting seat and the dummy.
@@ -1190,11 +1200,11 @@ export function PlayTable({
           the scale — dividing twice produced a control wider than its bar. */}
       {showToolbars && !hideTopBar && <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />}
       {/* ONE felt wrapper behind dummy line/row, centre, pad and hand. The FLAT
-          skin variant, per Mobile Table.dc.html. flex:1, so the stage's slack
-          reserve (slackFor) renders as FELT under the hand rather than a bare
-          white strip above the coach panel (owner request 2026-08-08) — the
-          table reads as one continuous surface down to the coach's border. */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", background: tok.feltFlat }}>
+          skin variant, per Mobile Table.dc.html. flex:none — the felt ENDS at
+          the hand's plate, and the stage's slack reserve (slackFor) renders in
+          the stage's own white below it (owner, 2026-08-11: no green band under
+          the cards; supersedes the 2026-08-08 continuous-felt request). */}
+      <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
         {dummyStripEl}
         {dummyRowEl}
         {/* The centre is the ONE flexible band, sized to the leftover (feltH).
