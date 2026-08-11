@@ -171,8 +171,9 @@ test.describe("mobile table v3 — phone tier", () => {
   // Table centre + dummy line, exercised on a REAL play state:
   //   (1) the trick scales as ONE box, so every rendered card is the same size
   //       (the old per-card scaling let the four cards desync);
-  //   (1c) it is a tight OVERLAPPING cluster in the middle of the felt, not four
-  //       cards spread to the corners of a box twice their size;
+  //   (1c) the four seats sit on a tight interlocking COMPASS in the middle of
+  //       the felt — a plus two cards wide, not a pile and not four cards
+  //       spread to the corners of a box twice their size;
   //   (2) the one-line dummy strip labels the SEAT, not the player.
   // Reaching play deterministically: seat four robots (a "watch" board — a human
   // seat would stall stepping at its turn) and step via the session API until a
@@ -271,7 +272,9 @@ test.describe("mobile table v3 — phone tier", () => {
         const stage = r('div[style*="matrix"], div[style*="scale("]');
         const cards = [...document.querySelectorAll('[data-testid="trick-card"]')].map((el) => {
           const b = el.getBoundingClientRect();
-          return { x: b.x, y: b.y, w: b.width, h: b.height };
+          // data-seat names the compass point the card was played from, so the
+          // geometry below can be asserted per SEAT rather than by guesswork.
+          return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height };
         });
         // A card in a HAND, to size the trick against. The dummy row and your
         // own hand draw the same M_CARD, so any one of them is the metric.
@@ -345,20 +348,85 @@ test.describe("mobile table v3 — phone tier", () => {
       "the stage keeps its full width while cards are played",
     ).toBeGreaterThanOrEqual(tallShot.region.w - 1.5);
 
-    // (1c) The cluster is TIGHT and OVERLAPPING. Laid side by side the same
-    // cards would need `n × width`; the union of their boxes is far less than
-    // that, which is what "overlapping" means in pixels — and the whole pile is
-    // a fraction of the stage rather than a compass twice the cards' size.
+    // (1c) The trick is a tight interlocking COMPASS (owner, 2026-08-11) — N
+    // top-centre, W and E flanking, S bottom-centre, each pair meeting on a
+    // QUARTER-card overlap. Not the overlapping pile it replaced, and not four
+    // cards spread to the corners of a box twice their size. The footprint is
+    // exactly two cards wide by two and a half tall, whatever is on the felt.
     const pileW =
       Math.max(...tallShot.cards.map((c) => c.x + c.w)) -
       Math.min(...tallShot.cards.map((c) => c.x));
-    expect(pileW, "the cards overlap rather than sitting side by side").toBeLessThan(
-      tallShot.cards.length * c0.w * 0.85,
-    );
+    const pileH =
+      Math.max(...tallShot.cards.map((c) => c.y + c.h)) -
+      Math.min(...tallShot.cards.map((c) => c.y));
+    expect(pileW, "the compass is two cards wide").toBeLessThanOrEqual(2 * c0.w + 1);
+    expect(pileH, "and two and a half cards tall").toBeLessThanOrEqual(2.5 * c0.h + 1);
     expect(
       pileW / tallShot.stage.w,
-      "the trick is a cluster, not a compass",
-    ).toBeLessThanOrEqual(0.6);
+      "the trick is the size of the trick, not of the felt",
+    ).toBeLessThanOrEqual(0.3);
+
+    // A trick is played in ROTATION, so whatever is down is a run of adjacent
+    // compass points — every card touches another. And it touches it at a
+    // CORNER (half a card by a quarter of one), never face-on: an overlap that
+    // swallowed a third of a card would be the pile again.
+    const overlap = (
+      a: { x: number; y: number; w: number; h: number },
+      b: { x: number; y: number; w: number; h: number },
+    ) => ({
+      x: Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x),
+      y: Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y),
+    });
+    tallShot.cards.forEach((a, i) => {
+      const meets = tallShot.cards.filter((b, j) => {
+        if (i === j) return false;
+        const o = overlap(a, b);
+        return o.x > 1 && o.y > 1;
+      });
+      expect(meets.length, `${a.seat} interlocks with a neighbour`).toBeGreaterThan(0);
+      for (const b of meets) {
+        const o = overlap(a, b);
+        expect(
+          (o.x * o.y) / (c0.w * c0.h),
+          `${a.seat}/${b.seat} meet at a corner, not stacked`,
+        ).toBeLessThanOrEqual(0.35);
+      }
+    });
+
+    // The compass points themselves, for whichever pairs are down: the flanks
+    // sit half a card outside the N/S column and three quarters of a card below
+    // N — which is exactly what puts them on the vertical pair's midline.
+    const bySeat = Object.fromEntries(tallShot.cards.map((c) => [c.seat, c]));
+    for (const flank of ["W", "E"] as const) {
+      const f = bySeat[flank];
+      if (!f) continue;
+      if (bySeat.N) {
+        expect(
+          Math.abs(Math.abs(f.x - bySeat.N.x) - c0.w / 2),
+          `${flank} flanks the column by half a card`,
+        ).toBeLessThanOrEqual(1.5);
+        expect(
+          Math.abs(f.y - bySeat.N.y - c0.h * 0.75),
+          `${flank} overlaps N by a quarter of a card`,
+        ).toBeLessThanOrEqual(1.5);
+      }
+      if (bySeat.S) {
+        expect(
+          Math.abs(bySeat.S.y - f.y - c0.h * 0.75),
+          `${flank} overlaps S by a quarter of a card`,
+        ).toBeLessThanOrEqual(1.5);
+      }
+    }
+    if (bySeat.W && bySeat.E)
+      expect(
+        Math.abs(bySeat.E.x - bySeat.W.x - c0.w),
+        "W and E are one card apart — the compass is two wide",
+      ).toBeLessThanOrEqual(1.5);
+    if (bySeat.N && bySeat.S)
+      expect(
+        Math.abs(bySeat.N.x - bySeat.S.x),
+        "N and S share the centre column",
+      ).toBeLessThanOrEqual(1);
 
     // (1b) The trick FITS its band. Prominence was a fixed 1.6 — a 419px ask
     // against a centre band that can sit at its floor — and `align-items:center`

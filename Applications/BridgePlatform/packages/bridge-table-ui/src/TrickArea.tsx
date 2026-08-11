@@ -1,10 +1,10 @@
 "use client";
 
-// TrickArea — the current trick in the centre: real card faces on a cross
-// (wide, scalable), a tight overlapping CLUSTER (phone), or compact pills
-// (stacked-narrow). Lifted verbatim from PlayTable's trickCross() / trickPills
-// closures. The host supplies the plays and whose turn it is; this leaf draws
-// the four positions.
+// TrickArea — the current trick in the centre: real card faces on a wide 262px
+// cross, a tight interlocking COMPASS (phone, the `cluster` variant), or compact
+// pills (stacked-narrow). Lifted verbatim from PlayTable's trickCross() /
+// trickPills closures. The host supplies the plays and whose turn it is; this
+// leaf draws the four positions.
 
 import type { Card, Seat } from "@bridge/events";
 import type { CSSProperties } from "react";
@@ -19,59 +19,72 @@ export interface TrickPlay {
 export interface TrickAreaProps {
   plays: readonly TrickPlay[];
   turn: Seat;
-  /** Box scale (1, or up to CLUSTER_MAX_K on phones). Ignored by the pill variant. */
+  /** Box scale (1, or clamped down to fit a squeezed band). Ignored by pills. */
   scale?: number;
+  /** `cross` = the wide 262px compass, `cluster` = the phone's tight one. */
   variant?: "cross" | "cluster" | "pill";
   /**
    * CLUSTER only: the card box the trick is drawn at, and the index type that
    * goes on it. The phone hands over the metrics of the cards in the HAND, so
    * the card you played and the cards you hold are the same object at the same
    * size — a trick card larger than a hand card reads as a different deck.
-   * Omitted, the cluster keeps its authored 56x80 face.
+   * Omitted, the compass keeps its authored 56x80 face.
    */
   card?: { w: number; h: number };
   index?: { rank: number; glyph: number };
 }
 
 /**
- * The CLUSTER geometry (phone tier). Same 56x80 card as the cross — the card is
- * the one metric both layouts share, which is what keeps a phone trick card and
- * a wide one recognisably the same object — but the four seats sit on a tight
- * diamond that OVERLAPS instead of a 262px compass that spreads to the corners.
- * dx/dy are the seat offsets; the box is exactly their union, so the whole
- * cluster is `CLUSTER.w x CLUSTER.h` and scales as ONE unit like the cross.
+ * The `cluster` variant's geometry (phone tier) — a tight interlocking COMPASS,
+ * not a pile (owner, 2026-08-11). Same card as the cross — the card is the one
+ * metric both layouts share, which is what keeps a phone trick card and a wide
+ * one recognisably the same object — but the four seats sit on a PLUS the size
+ * of the trick rather than a 262px compass that spreads to the corners:
+ *
+ *      N top-centre        · the N/S pair holds the vertical centre line
+ *   W          E           · the W/E flanks straddle that pair's midline
+ *      S bottom-centre     · each pair meets on a QUARTER-card overlap
+ *
+ * The box is exactly the union of the four positions — two cards wide by two
+ * and a half tall — so the whole compass scales as ONE unit like the cross.
  */
 const CARD = { w: 56, h: 80 };
-const CLUSTER_DX = 34;
-const CLUSTER_DY = 19;
-/** The offsets are the authored card's PROPORTIONS, so a cluster drawn at some
-    other card size (the phone hands it the hand's card) keeps the same pile. */
-const dxFor = (w: number) => Math.round((w * CLUSTER_DX) / CARD.w);
-const dyFor = (h: number) => Math.round((h * CLUSTER_DY) / CARD.h);
-/** The cluster's box for a card box: exactly the union of the four positions. */
+/**
+ * Where the pairs meet, as a share of a card's height. A quarter is the tight
+ * interlock the owner asked for; it is also, at the phone's card box, very
+ * nearly the dead strip BELOW a card's rank+pip index, which is what lets the
+ * paint order below bury nothing that says what a card is.
+ */
+const COMPASS_OVERLAP = 0.25;
+/** Top of the W/E flanks: one card down, less the overlap they share with N. */
+const flankTop = (h: number) => Math.round(h * (1 - COMPASS_OVERLAP));
+/** The compass's box for a card box: exactly the union of the four positions. */
 export function clusterBox(card: { w: number; h: number } = CARD) {
-  return { w: dxFor(card.w) * 2 + card.w, h: dyFor(card.h) * 2 + card.h };
+  return { w: card.w * 2, h: flankTop(card.h) * 2 + card.h };
 }
 export const CLUSTER = clusterBox(CARD);
-/** Seat -> top-left inside the cluster box. N sits high, S low, W/E flank. */
+/** Seat -> top-left inside the compass box. N high and centred, S low and
+    centred, W/E flanking on the line halfway between them. */
 const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number; top: number }> => {
-  const dx = dxFor(card.w);
-  const dy = dyFor(card.h);
+  const half = Math.round(card.w / 2);
+  const fy = flankTop(card.h);
   return {
-    N: { left: dx, top: 0 },
-    W: { left: 0, top: dy },
-    E: { left: dx * 2, top: dy },
-    S: { left: dx, top: dy * 2 },
+    N: { left: half, top: 0 },
+    W: { left: 0, top: fy },
+    E: { left: card.w, top: fy },
+    S: { left: half, top: fy * 2 },
   };
 };
 /**
- * Paint order is SPATIAL, not play order: left-to-right, top-to-bottom, so
- * every card keeps its leftmost CLUSTER_DX px — the strip its index sits in —
- * uncovered. Layering by play order instead let a later card land to the LEFT
- * of an earlier one and bury the earlier one's rank, and it re-layered the pile
- * on every play. Fixed order means the fan never reshuffles under the eye.
+ * Paint order is SPATIAL, not play order: strictly TOP TO BOTTOM (N, then the
+ * W/E flanks, then S). A card therefore only ever covers the strip below the
+ * card above it, and that strip is the quarter-card the compass overlaps by —
+ * which at the phone's card box is the blank space under the rank+pip index, so
+ * no card ever buries what another card SAYS. Layering by play order instead
+ * let a later card bury an earlier one's rank, and it re-layered the pile on
+ * every play; a fixed order means the compass never reshuffles under the eye.
  */
-const CLUSTER_ORDER: Seat[] = ["W", "N", "S", "E"];
+const CLUSTER_ORDER: Seat[] = ["N", "W", "E", "S"];
 
 export function TrickArea({
   plays,
@@ -107,10 +120,18 @@ export function TrickArea({
     // Phone tier. Same ONE-BOX SCALE contract as the cross: the card metrics
     // and the seat offsets are fixed integers and the WHOLE box is transformed,
     // so the four cards can never desync in size. What changes is the geometry
-    // — the trick reads as one object in the middle of the felt rather than
-    // four cards pinned to the corners of a compass twice its size.
+    // — the trick reads as one tight compass in the middle of the felt rather
+    // than four cards pinned to the corners of a box twice their size.
     const box = clusterBox(card);
     const pos4 = clusterPos(card);
+    /**
+     * "10" is the only two-glyph rank, and at weight 800 Arial digits run about
+     * 0.56em each — call it 1.12em for the pair. It is drawn at the SAME size as
+     * every other rank (the phone's card is sized for it), and this cap only
+     * bites for a caller that hands the compass a card too narrow to hold one,
+     * where a clipped "10" would be worse than a small one.
+     */
+    const twoGlyphCap = Math.floor((card.w - 11) / 1.12);
     return (
       <div style={{ width: box.w * scale, height: box.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TableMotion />
@@ -128,16 +149,16 @@ export function TrickArea({
                   <span
                     key={`${play.card.suit}${play.card.rank}`}
                     data-testid="trick-card"
+                    data-seat={seat}
                     className={DEAL}
                     style={{ position: "relative", display: "block", width: card.w, height: card.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)", boxSizing: "border-box" }}
                   >
                     {/* Bold face: a heavy rank with the pip directly beneath it,
-                        both pinned to the card's TOP-LEFT — that strip is the
-                        one the neighbouring card never covers, so every card in
-                        the pile still says what it is. "10" is the only
-                        two-glyph rank and takes the narrower size. */}
+                        both pinned to the card's TOP-LEFT — the strip the paint
+                        order guarantees no neighbour covers, so every card on
+                        the compass still says what it is. */}
                     <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
-                      <span style={{ fontSize: rank.length > 1 ? Math.round(index.rank * 0.68) : index.rank, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
+                      <span style={{ fontSize: rank.length > 1 ? Math.min(index.rank, twoGlyphCap) : index.rank, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
                       <span style={{ fontSize: index.glyph, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
                     </span>
                   </span>

@@ -55,17 +55,29 @@ import {
 /** Wide stage; the mobile stack is 720 wide with a COMPUTED height. */
 const BASE_WIDE = { w: 1040, h: 678 };
 const MOBILE_W = 720;
-/** Mobile hand-card metrics (Mobile Table.dc.html). Narrow, heavily overlapped
-    and BOLD: thirteen cards at a 48px pitch read as one held hand rather than a
-    strip spanning the whole stage, and the index is heavy enough to be read
-    through the stage scale. `overlap` only ever applies to the row layout. */
+/**
+ * Mobile hand-card metrics (Mobile Table.dc.html). Narrow, heavily overlapped
+ * and BOLD: thirteen cards at a 48px pitch read as one held hand rather than a
+ * strip spanning the whole stage, and the index is heavy enough to be read
+ * through the stage scale. `overlap` only ever applies to the row layout.
+ *
+ * The two numbers the owner corrected on 2026-08-11:
+ *  · `rank` was 44, sized for the twelve ONE-glyph ranks; "10" came out 49px
+ *    wide against 54px of card between the borders and its second digit sat
+ *    hard on the edge (the widest face on the felt is a red 10). At 38 a "10"
+ *    is 42px and every rank has room to breathe.
+ *  · `h` was 128 against a face — rank over pip — that ended 85px down, so a
+ *    third of every card was blank space. At the smaller index the face ends
+ *    at 75, and 96 ends the card shortly after the pip, in a still card-shaped
+ *    1:1.71 box.
+ */
 const M_CARD: SeatHandMetrics & { backW: number } = {
-  w: 56, h: 128, rank: 44, glyph: 40, inset: 5, overlap: 8, weight: 800, backW: 52,
+  w: 56, h: 96, rank: 38, glyph: 36, inset: 5, overlap: 8, weight: 800, backW: 52,
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
 /** The trick's cards ARE the hand's cards (owner, 2026-08-11): a centre card
-    bigger than the cards you hold reads as a different deck. The cluster takes
+    bigger than the cards you hold reads as a different deck. The compass takes
     the hand's card box and index type, so the two match exactly. */
 const M_TRICK_CARD = { w: M_CARD.w, h: M_CARD.h };
 const M_TRICK_INDEX = { rank: M_CARD.rank, glyph: M_CARD.glyph };
@@ -86,7 +98,13 @@ const M_PLATE_MIN = 260;
 const BAR_BASE = 52;
 const TOUCH = 44;
 const DUMMY_LINE = 54;
-const HAND_H = { row: 172, fan: 238 };
+/** The hand band: the lift headroom the row is given (paddingTop), the card
+    itself, the 3px gap and the seat plate — plus a few px of rounding reserve.
+    Derived from M_CARD.h so shortening the card SHORTENS THE TABLE instead of
+    leaving white space where the card used to end. */
+const HAND_LIFT_PAD = 10;
+const HAND_PLATE = 22;
+const HAND_H = { row: HAND_LIFT_PAD + M_CARD.h + 3 + HAND_PLATE + 9, fan: 238 };
 /**
  * The tray is TWO touch-floored rows plus its padding (BBO's phone bid box:
  * `Pass 1 2 3 4 5 6 7` over `♣ ♦ ♥ ♠ NT` + the doubles), so like the bars its
@@ -125,7 +143,7 @@ const AUCTION_BOX_H = AUCTION_HEAD + auctionRowsBoxH(AUCTION_ROWS, AUCTION_CELL)
  * The centre is the flexible band: it absorbs the leftover so the table fills
  * exactly its share. Its FLOOR is what the band's content needs before it has
  * to start scrolling or scaling itself — the auction grid down to two rows, the
- * trick cluster down to 0.7, the result card whole. It is deliberately far
+ * trick compass down to 0.7, the result card whole. It is deliberately far
  * below what the reference phone gives the band: the floor is the point where
  * vertical pressure stops being absorbed HERE and starts narrowing the whole
  * 720-wide stage, and the owner would rather the auction scroll than the table
@@ -533,9 +551,9 @@ export function PlayTable({
   const phonePadShown = phoneFit.usePad;
   const phonePadCell = phoneFit.usePad ? phoneFit.cell : 38;
   const feltH = phoneFit.centre;
-  /** The CLUSTER, CLAMPED to the band it is actually given. Prominence is a
+  /** The COMPASS, CLAMPED to the band it is actually given. Prominence is a
    *  scale on the WHOLE box, so clamping keeps the four cards identical — it
-   *  just makes the trick fit. The ceiling is now 1: the cluster is already
+   *  just makes the trick fit. The ceiling is now 1: the compass is already
    *  drawn at the HAND's card size, and magnifying it past that is exactly the
    *  "cards in the middle are bigger than the cards in my hand" the owner
    *  rejected. Below 1 the trick shrinks with the band rather than being cut. */
@@ -729,7 +747,8 @@ export function PlayTable({
   const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
   /** The trick as real card faces; `k` scales the whole box. Wide keeps the
-      262px compass; the phone gets the tight overlapping cluster. */
+      262px compass that spreads to the corners; the phone gets a tight
+      interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
   const trickCluster = (k: number) => (
     <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} card={M_TRICK_CARD} index={M_TRICK_INDEX} />
