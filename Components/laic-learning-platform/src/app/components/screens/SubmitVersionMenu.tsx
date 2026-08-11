@@ -3,14 +3,19 @@
  *
  * Submitting used to always mint a version, so an author who fixed a typo and
  * resubmitted three times ended up at v5 with four dead versions behind them.
- * This splits the act in two: the main button commits a NEW version, and the
- * caret opens the existing versions so the author can overwrite one instead.
+ * "Submit as…" asks first: add a new version, or replace one that exists.
  *
- * Locked versions are listed but not selectable — a lock is a promise that
- * what someone reviewed cannot change underneath them.
+ * The chooser is a dialog portalled to document.body, not an inline dropdown.
+ * The review toolbar clips its overflow (which hid an anchored menu entirely)
+ * and sits inside a transformed ancestor (which makes position:fixed resolve
+ * against that ancestor rather than the viewport). The portal escapes both.
+ *
+ * Locked versions are listed but not selectable — a lock is a promise that what
+ * someone reviewed cannot change underneath them.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Lock, Send } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Lock, Send, X } from 'lucide-react';
 import type { Version } from '../../../lib/types';
 
 export interface SubmitTarget {
@@ -33,20 +38,12 @@ export function SubmitVersionMenu({
   disabledTitle?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
-    };
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('mousedown', onDown);
-      document.removeEventListener('keydown', onKey);
-    };
+    return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
   // Oldest first so v1 sits at the top — authors think in ascending versions.
@@ -63,99 +60,112 @@ export function SubmitVersionMenu({
   };
 
   return (
-    <div ref={wrapRef} className="relative inline-flex">
+    <>
       <button
         type="button"
         disabled={!canSubmit}
-        onClick={() => submit({})}
-        title={canSubmit ? `Submit as a new version (v${nextNumber})` : disabledTitle}
-        className="inline-flex items-center gap-1.5 pl-3.5 pr-3 py-1.5 rounded-l-full text-white disabled:opacity-40"
+        onClick={() => setOpen(true)}
+        title={canSubmit ? `Submit as a new version (v${nextNumber}) or replace an existing one` : disabledTitle}
+        className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-white disabled:opacity-40"
         style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
       >
-        <Send size={13} /> {label} as new version
-      </button>
-      <button
-        type="button"
-        disabled={!canSubmit}
-        onClick={() => setOpen((o) => !o)}
-        title={canSubmit ? 'Submit as an existing version…' : disabledTitle}
-        aria-haspopup="menu"
-        aria-expanded={open}
-        className="inline-flex items-center px-2 py-1.5 rounded-r-full text-white disabled:opacity-40"
-        style={{
-          fontSize: 12.5,
-          background: '#0B0F1A',
-          borderLeft: '1px solid rgba(255,255,255,0.22)',
-        }}
-      >
-        <ChevronDown size={13} />
+        <Send size={13} /> {label} as…
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
-          role="menu"
-          className="absolute right-0 bottom-full mb-2 rounded-2xl overflow-hidden z-50"
-          style={{
-            minWidth: 248,
-            background: '#fff',
-            border: '1px solid rgba(0,0,0,0.1)',
-            boxShadow: '0 18px 40px -18px rgba(30,50,80,0.4)',
-          }}
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+          style={{ background: 'rgba(15,23,42,0.45)', backdropFilter: 'blur(4px)' }}
+          onClick={() => setOpen(false)}
+          role="presentation"
         >
-          <p
-            className="px-3.5 pt-3 pb-1.5"
-            style={{ fontSize: 10.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', textTransform: 'uppercase' }}
+          <div
+            className="w-full rounded-[22px] overflow-hidden flex flex-col"
+            style={{ maxWidth: 460, maxHeight: '80vh', background: '#fff', boxShadow: '0 24px 60px -20px rgba(15,23,42,0.5)' }}
+            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Submit as which version"
           >
-            Submit as
-          </p>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => submit({})}
-            className="w-full text-left px-3.5 py-2 hover:bg-gray-50"
-            style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }}
-          >
-            New version (v{nextNumber})
-          </button>
-          {ordered.length > 0 && (
-            <>
-              <div style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }} />
-              <p
-                className="px-3.5 pt-2.5 pb-1"
-                style={{ fontSize: 10.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', textTransform: 'uppercase' }}
-              >
-                Replace existing
-              </p>
-              <div style={{ maxHeight: 220, overflowY: 'auto' }}>
-                {ordered.map((v) => (
-                  <button
-                    key={v.id}
-                    type="button"
-                    role="menuitem"
-                    disabled={!!v.locked}
-                    onClick={() => submit({ versionId: v.id, versionNumber: v.versionNumber })}
-                    className="w-full text-left px-3.5 py-2 hover:bg-gray-50 disabled:opacity-45 disabled:hover:bg-transparent"
-                    title={v.locked ? `v${v.versionNumber} is locked` : `Overwrite v${v.versionNumber}`}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <span style={{ fontSize: 12.5, fontWeight: 650, color: '#0B1220' }}>
-                        v{v.versionNumber}
-                      </span>
-                      {v.locked && <Lock size={10} style={{ color: '#9AA3AF' }} />}
-                      {v.isLive && (
-                        <span style={{ fontSize: 9.5, fontWeight: 700, color: '#047857' }}>LIVE</span>
-                      )}
-                    </span>
-                    <span className="block truncate" style={{ fontSize: 11, color: '#9AA3AF' }}>
-                      {v.notes || v.createdAt}
-                    </span>
-                  </button>
-                ))}
+            <div
+              className="flex items-center gap-2 px-4 py-3 shrink-0"
+              style={{ borderBottom: '1px solid rgba(0,0,0,0.07)' }}
+            >
+              <div className="flex-1 min-w-0">
+                <p style={{ fontSize: 14, fontWeight: 700, color: '#0B1220' }}>Submit as</p>
+                <p style={{ fontSize: 12, color: '#6B7280' }}>
+                  Add a new version, or replace one you already have.
+                </p>
               </div>
-            </>
-          )}
-        </div>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-black/5"
+                aria-label="Close"
+              >
+                <X size={15} style={{ color: '#6B7280' }} />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+              <button
+                type="button"
+                onClick={() => submit({})}
+                className="w-full text-left rounded-xl px-3.5 py-3 border"
+                style={{ borderColor: 'rgba(11,15,26,0.18)', background: 'rgba(11,15,26,0.03)' }}
+              >
+                <p style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }}>
+                  New version (v{nextNumber})
+                </p>
+                <p style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                  Keeps every earlier version as it is.
+                </p>
+              </button>
+
+              {ordered.length > 0 && (
+                <p
+                  className="px-1 pt-2"
+                  style={{ fontSize: 10.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', textTransform: 'uppercase' }}
+                >
+                  Replace existing
+                </p>
+              )}
+              {ordered.map((v) => (
+                <button
+                  key={v.id}
+                  type="button"
+                  disabled={!!v.locked}
+                  onClick={() => submit({ versionId: v.id, versionNumber: v.versionNumber })}
+                  className="w-full text-left rounded-xl px-3.5 py-2.5 border hover:bg-gray-50 disabled:opacity-45 disabled:hover:bg-transparent"
+                  style={{ borderColor: 'rgba(0,0,0,0.09)' }}
+                  title={v.locked ? `v${v.versionNumber} is locked` : `Overwrite v${v.versionNumber}`}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }}>
+                      v{v.versionNumber}
+                    </span>
+                    {v.locked && <Lock size={11} style={{ color: '#9AA3AF' }} />}
+                    {v.isLive && (
+                      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#047857' }}>LIVE</span>
+                    )}
+                    <span style={{ fontSize: 11, color: '#9AA3AF' }}>· {v.createdAt}</span>
+                  </span>
+                  <span className="block truncate" style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                    {v.locked ? 'Locked — cannot be replaced' : (v.notes || 'No note')}
+                  </span>
+                </button>
+              ))}
+
+              {!ordered.length && (
+                <p className="px-1 py-2" style={{ fontSize: 12, color: '#9AA3AF' }}>
+                  No saved versions yet — this submit will create v1.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
