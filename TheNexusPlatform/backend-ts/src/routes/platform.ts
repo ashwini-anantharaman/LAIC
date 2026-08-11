@@ -1171,11 +1171,20 @@ platformRouter.get("/bridge/summary", async (c) => {
     ]);
     return { coach: groupCoach ?? coachList[0] ?? null, coachList };
   })();
+  // WHICH PROGRAM ID THE BRIDGE DATA CARRIES. A club's launch pins the CLUB,
+  // and bridge-web stamps every session, assignment and submission with the
+  // pinned program (its launch cookie) — so for a club's people the data rows
+  // say <club>, while access.programId resolves to the connected PARENT.
+  // Querying the parent found nothing: Resume sat empty and every tally read
+  // zero for exactly the people the club feature is for. People (participant,
+  // roster group) and content (deal of the day) stay parent-scoped — that is
+  // where they actually live.
+  const dataProgramId = access.partnerProgramId ?? access.programId;
   const [s, { coach, coachList }, inProgress, deal] = await Promise.all([
-    graph.getBridgeActivitySummary(access.orgId, access.programId, access.profileId),
+    graph.getBridgeActivitySummary(access.orgId, dataProgramId, access.profileId),
     coachStrand,
     graph
-      .listBridgeInProgressSessions(access.programId, access.profileId)
+      .listBridgeInProgressSessions(dataProgramId, access.profileId)
       .catch(() => [] as Row[]),
     graph
       .getBridgeDealOfTheDay(
