@@ -1,14 +1,22 @@
-// The native board (Part II Phase A: view-only). Phone-tier bands, exactly
-// the web table's order — top bar, North, the centre (auction or trick),
-// East/West flanking, South big at the bottom, the result card when the
-// board is over. Everything policy-shaped (who's visible, who's dummy, seat
-// plates) is the SERVER'S answer via the session store; this file only draws.
+// The native board (Part II — Phase A view, Phase B play). Phone-tier bands,
+// exactly the web table's order — top bar, North, the centre (auction or
+// trick), East/West flanking, South big at the bottom, the result card when
+// the board is over. Everything policy-shaped (who's visible, who's dummy,
+// seat plates, whose turn) is the SERVER'S answer via the session store;
+// this file draws, and hands taps to the store's optimistic act().
 //
 // Layout prices itself off the window width with flex bands — RN has no CSS
 // reflow problem, so the web's scaled-fixed-stage trick stays behind.
 
-import { useMemo } from "react";
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { useMemo, useState } from "react";
+import {
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  useWindowDimensions,
+} from "react-native";
 
 import { Brand, Fonts } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
@@ -17,8 +25,10 @@ import { PROGRAM_ID } from "../../lib/config";
 import { useTableSession } from "../../lib/table/session-store";
 import {
   callLabel,
+  cardId,
   resultLabel,
   scoreBoard,
+  type Call,
   type Card,
   type GameState,
   type Seat,
@@ -60,14 +70,23 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
   const trick = state.tricks.length ? state.tricks[state.tricks.length - 1]! : null;
   const boardOver = b.boardOver || state.phase === "complete";
 
-  const hand = (seat: Seat, big: boolean) => (
-    <HandStrip
-      cards={displaySort(state.hands[seat])}
-      faceUp={b.visible[seat]}
-      backs={session.remainingCount(seat)}
-      w={big ? bigCard : smallCard}
-    />
-  );
+  // The playable hand: the seat whose action is next, when it's the
+  // viewer's to take (covers the takeover — the declarer's chair is theirs).
+  const legalIds = new Set(session.legalPlayList.map(cardId));
+  const hand = (seat: Seat, big: boolean) => {
+    const playable = session.myTurn && state.phase === "play" && state.turn === seat;
+    return (
+      <HandStrip
+        cards={displaySort(state.hands[seat])}
+        faceUp={b.visible[seat]}
+        backs={session.remainingCount(seat)}
+        w={big ? bigCard : smallCard}
+        {...(playable
+          ? { legal: legalIds, onPlay: (card: Card) => void session.act({ card }) }
+          : {})}
+      />
+    );
+  };
 
   const plate = (seat: Seat) => (
     <SeatPlateView
@@ -142,13 +161,13 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         {plate("S")}
       </View>
 
-      {/* Phase A is view-only: say so instead of pretending. */}
-      {!boardOver && b.myTurn && (
-        <Text style={styles.viewOnlyNote}>
-          Your turn — playing from the app arrives with the next update; for now the
-          webview table plays this board.
-        </Text>
+      {/* The bid tray, when the auction is the viewer's to move. */}
+      {session.myTurn && state.phase === "auction" && (
+        <BidPad legal={session.legalCallSet} onCall={(call) => void session.act({ call })} />
       )}
+
+      {session.actError ? <Text style={styles.actError}>{session.actError}</Text> : null}
+      {session.pending ? <Text style={styles.pendingNote}>…</Text> : null}
     </ScrollView>
   );
 }
@@ -185,11 +204,16 @@ function HandStrip({
   faceUp,
   backs,
   w,
+  legal,
+  onPlay,
 }: {
   cards: Card[];
   faceUp: boolean;
   backs: number;
   w: number;
+  /** Card ids the kernel says may be played — everything else dims. */
+  legal?: Set<string>;
+  onPlay?: (card: Card) => void;
 }) {
   const overlap = Math.floor(w * 0.55);
   if (!faceUp) {
@@ -205,11 +229,94 @@ function HandStrip({
   }
   return (
     <View style={styles.handRow}>
-      {cards.map((c, i) => (
-        <View key={`${c.suit}${c.rank}`} style={{ marginLeft: i === 0 ? 0 : -overlap }}>
-          <CardFace card={c} w={w} />
-        </View>
-      ))}
+      {cards.map((c, i) => {
+        const id = cardId(c);
+        const playable = !!onPlay && !!legal?.has(id);
+        const face = (
+          <View
+            style={[
+              { marginLeft: i === 0 ? 0 : -overlap },
+              // A tappable hand dims what the law refuses; a watching hand
+              // dims nothing — nothing there is being offered.
+              onPlay && !playable && { opacity: 0.45 },
+              playable && { marginTop: -Math.floor(w * 0.12) },
+            ]}
+          >
+            <CardFace card={c} w={w} />
+          </View>
+        );
+        return playable ? (
+          <Pressable key={id} onPress={() => onPlay(c)} hitSlop={4}>
+            {face}
+          </Pressable>
+        ) : (
+          <View key={id}>{face}</View>
+        );
+      })}
+    </View>
+  );
+}
+
+/** The bid tray: pick a level, tap a strain — or pass/double straight away.
+ *  Legality comes from the kernel's set; everything else renders disabled. */
+function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => void }) {
+  const [level, setLevel] = useState<number | null>(null);
+  const STRAINS: { key: string; label: string; red: boolean }[] = [
+    { key: "C", label: "♣", red: false },
+    { key: "D", label: "♦", red: true },
+    { key: "H", label: "♥", red: true },
+    { key: "S", label: "♠", red: false },
+    { key: "N", label: "NT", red: false },
+  ];
+  const levelHasBid = (l: number) => STRAINS.some((s) => legal.has(`${l}${s.key}`));
+  const send = (call: Call) => {
+    setLevel(null);
+    onCall(call);
+  };
+  return (
+    <View style={styles.bidPad}>
+      <View style={styles.bidRow}>
+        {[1, 2, 3, 4, 5, 6, 7].map((l) => (
+          <Pressable
+            key={l}
+            disabled={!levelHasBid(l)}
+            onPress={() => setLevel(level === l ? null : l)}
+            style={[
+              styles.bidKey,
+              level === l && styles.bidKeyOn,
+              !levelHasBid(l) && styles.bidKeyDim,
+            ]}
+          >
+            <Text style={[styles.bidKeyText, level === l && styles.bidKeyTextOn]}>{l}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={styles.bidRow}>
+        {STRAINS.map((s) => {
+          const call = level ? `${level}${s.key}` : null;
+          const ok = !!call && legal.has(call);
+          return (
+            <Pressable
+              key={s.key}
+              disabled={!ok}
+              onPress={() => call && send(call)}
+              style={[styles.bidKey, !ok && styles.bidKeyDim]}
+            >
+              <Text style={[styles.bidKeyText, s.red && { color: "#c0392b" }]}>{s.label}</Text>
+            </Pressable>
+          );
+        })}
+        {(["P", "X", "XX"] as Call[]).map((c) => (
+          <Pressable
+            key={c}
+            disabled={!legal.has(c)}
+            onPress={() => send(c)}
+            style={[styles.bidKey, styles.bidKeyWide, !legal.has(c) && styles.bidKeyDim]}
+          >
+            <Text style={styles.bidKeyText}>{c === "P" ? "Pass" : c}</Text>
+          </Pressable>
+        ))}
+      </View>
     </View>
   );
 }
@@ -378,12 +485,43 @@ const styles = StyleSheet.create({
   resultPoints: { fontFamily: Fonts.display, fontSize: 22, color: Brand.ink },
   resultNote: { fontFamily: Fonts.body, fontSize: 11.5, color: "#8b9a93", textAlign: "center" },
 
-  viewOnlyNote: {
-    fontFamily: Fonts.body,
-    fontSize: 12,
-    lineHeight: 18,
-    color: "rgba(255,244,215,0.8)",
+  bidPad: {
+    backgroundColor: "rgba(0,0,0,0.28)",
+    borderRadius: 14,
+    padding: 8,
+    gap: 6,
+    marginTop: 4,
+  },
+  bidRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
+  bidKey: {
+    minWidth: 38,
+    alignItems: "center",
+    backgroundColor: "#fffefa",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  bidKeyWide: { minWidth: 52 },
+  bidKeyOn: { backgroundColor: Brand.cream, borderWidth: 2, borderColor: Brand.maroon },
+  bidKeyDim: { opacity: 0.35 },
+  bidKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 15, color: Brand.ink },
+  bidKeyTextOn: { color: Brand.maroon },
+
+  actError: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 12.5,
+    color: Brand.white,
+    backgroundColor: "#b91c1c",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
     textAlign: "center",
-    marginTop: 6,
+    overflow: "hidden",
+  },
+  pendingNote: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 16,
+    color: "rgba(255,244,215,0.7)",
+    textAlign: "center",
   },
 });
