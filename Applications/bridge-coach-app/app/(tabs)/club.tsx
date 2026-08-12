@@ -20,8 +20,8 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
-import { router } from "expo-router";
-import { useEffect, useMemo, useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -319,8 +319,8 @@ export default function ClubScreen() {
     latest: ClubChallenge | null;
     resume: ClubChallenge | null;
   }>({ latest: null, resume: null });
-  useEffect(() => {
-    if (!token || !club) return;
+  const loadPinned = useCallback(() => {
+    if (!token || !club) return () => {};
     let cancelled = false;
     fetchClubChallenges(token, club.id)
       .then((rows) => {
@@ -333,6 +333,18 @@ export default function ClubScreen() {
       cancelled = true;
     };
   }, [token, club]);
+
+  useEffect(() => loadPinned(), [loadPinned]);
+
+  /**
+   * Re-read on every return to the tab.
+   *
+   * These two cards are decided from the challenge list, and that list changes
+   * elsewhere: archiving happens on a challenge's info screen, a new one is created in
+   * the platform's wizard, and finishing a board changes what "resume" means. Without
+   * this the tab kept pinning a challenge that had just been retired.
+   */
+  useFocusEffect(useCallback(() => loadPinned(), [loadPinned]));
 
   /**
    * What the Activities carousel shows, in order.

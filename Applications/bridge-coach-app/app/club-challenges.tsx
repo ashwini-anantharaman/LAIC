@@ -23,7 +23,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { SvgXml } from "react-native-svg";
-import { router, useLocalSearchParams } from "expo-router";
+import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -156,27 +156,56 @@ export default function ClubChallengesScreen() {
   const lastActive = useRef(0);
   const carousel = useRef<ScrollView>(null);
 
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    setAll(null);
-    setLoadError(null);
-    fetchClubChallenges(token, clubId)
-      .then((rows) => {
-        if (cancelled) return;
-        setAll(rows);
-        setActive(0);
-        lastActive.current = 0;
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setAll([]);
-        setLoadError("Couldn't load challenges.");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, clubId]);
+  /**
+   * `fresh` distinguishes the two reasons to read.
+   *
+   * A first load clears the list and starts at the first card. A REFRESH keeps both:
+   * blanking the carousel on every return would flash, and resetting the index would
+   * throw you off the challenge you were just looking at.
+   */
+  const load = useCallback(
+    (fresh: boolean) => {
+      if (!token) return () => {};
+      let cancelled = false;
+      if (fresh) {
+        setAll(null);
+        setLoadError(null);
+      }
+      fetchClubChallenges(token, clubId)
+        .then((rows) => {
+          if (cancelled) return;
+          setAll(rows);
+          setLoadError(null);
+          if (fresh) {
+            setActive(0);
+            lastActive.current = 0;
+          }
+        })
+        .catch(() => {
+          if (cancelled) return;
+          // A failed REFRESH keeps what is on screen — it is still true — and says
+          // nothing. Only a failed first load has nothing to show.
+          if (!fresh) return;
+          setAll([]);
+          setLoadError("Couldn't load challenges.");
+        });
+      return () => {
+        cancelled = true;
+      };
+    },
+    [token, clubId],
+  );
+
+  useEffect(() => load(true), [load]);
+
+  /**
+   * Re-read on every return to this screen.
+   *
+   * Archiving happens on the challenge's own info screen, so coming back here with a
+   * cached list showed the challenge still sitting in the live carousel — and never in
+   * the archive, since the app's copy still said archived: false.
+   */
+  useFocusEffect(useCallback(() => load(false), [load]));
 
 
   const pitch = ITEM_PITCH * s;

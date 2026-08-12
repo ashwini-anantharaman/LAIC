@@ -95,7 +95,14 @@ async function summarize(
 ): Promise<ChallengeSummary | null> {
   const access = await challengeViewerAccess(challengeId, viewerId);
   const challenge = access.challenge;
-  if (!challenge || challenge.status === "archived") return null;
+  // Archived challenges ARE returned, and `status` below says which they are.
+  //
+  // They used to be dropped here, which was right while the app had no way to show
+  // one: an archived challenge among the playable tiles is just confusing. The app now
+  // has an archive view, and a row it never receives cannot appear in it — so the
+  // decision moves to the client, which splits the list by status. Excluding them here
+  // made the archive permanently empty.
+  if (!challenge) return null;
 
   const [boards, plays, invites, baselines] = await Promise.all([
     listChallengeBoards(challengeId),
