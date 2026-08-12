@@ -55,6 +55,7 @@ export function BridgeEmbed({
   confirmUnfinishedExit = false,
   fullScreen = false,
   escapeTo,
+  leaveOnResults,
 }: {
   title: string;
   next: string;
@@ -88,6 +89,18 @@ export function BridgeEmbed({
    * "/bridge/challenges/<id>/play".
    */
   escapeTo?: { path: string; href: Href };
+  /**
+   * Leave when the embed reaches a challenge's RESULTS page.
+   *
+   * Finishing the last board redirects there, and that page draws the platform's own
+   * leaderboard — a second, differently-styled copy of the one the app's Challenges
+   * screen already shows. So the app takes the exit and shows its own.
+   *
+   * A pattern rather than an exact path, unlike escapeTo: the results URL carries the
+   * challenge id, and for a "latest challenge" launch the app never learns which id
+   * the platform resolved to.
+   */
+  leaveOnResults?: Href;
 }) {
   const { token } = useAuth();
   // The floating back arrow sits in the LEFT GUTTER, below the table's top
@@ -186,25 +199,34 @@ export function BridgeEmbed({
    */
   const [atTable, setAtTable] = useState(false);
 
-  /** Exact path-only test against `escapeTo`, and the one exit it triggers.
+  /** The exits: `escapeTo`'s exact path, and any challenge results page.
    *  Guarded so one landing replaces once — a replace mid-transition must not
    *  fire again off the next location report. */
   const escaped = useRef(false);
   const maybeEscape = useCallback(
     (href: string) => {
-      if (!escapeTo || escaped.current) return false;
+      if (escaped.current) return false;
+      if (!escapeTo && !leaveOnResults) return false;
       let path: string;
       try {
         path = new URL(href, "http://x").pathname.replace(/\/+$/, "");
       } catch {
         return false;
       }
-      if (path !== escapeTo.path) return false;
+      // /bridge/challenges/<id>/results — the id is anything without a slash, so this
+      // cannot also match /results under some deeper route.
+      const target =
+        escapeTo && path === escapeTo.path
+          ? escapeTo.href
+          : leaveOnResults && /^\/bridge\/challenges\/[^/]+\/results$/.test(path)
+            ? leaveOnResults
+            : null;
+      if (!target) return false;
       escaped.current = true;
-      router.replace(escapeTo.href);
+      router.replace(target);
       return true;
     },
-    [escapeTo],
+    [escapeTo, leaveOnResults],
   );
 
   const handleHostMessage = useCallback((data: unknown) => {

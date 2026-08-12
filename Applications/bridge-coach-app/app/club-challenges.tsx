@@ -23,7 +23,7 @@
 
 import { Ionicons } from "@expo/vector-icons";
 import { SvgXml } from "react-native-svg";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -200,6 +200,41 @@ export default function ClubChallengesScreen() {
     lastActive.current = 0;
     carousel.current?.scrollTo({ x: 0, animated: false });
   }, [showArchived]);
+
+  /**
+   * Arriving with ?id= selects that challenge — "See results" and finishing a
+   * challenge both land here, and landing on some other challenge's leaderboard
+   * would be worse than not navigating at all.
+   *
+   * Runs when the list arrives rather than on mount: the id cannot be resolved to a
+   * carousel index before the rows exist. If that challenge is archived, the archive
+   * view opens instead of silently showing nothing.
+   *
+   * DECLARED AFTER the reset-on-swap effect on purpose. Both react to showArchived,
+   * effects run in declaration order, and for an archived target they fire in the same
+   * commit — so the reset would otherwise land last and send the carousel back to 0.
+   */
+  const { id: wantedId } = useLocalSearchParams<{ id?: string }>();
+  const honoured = useRef<string | null>(null);
+  useEffect(() => {
+    if (!wantedId || all == null || honoured.current === wantedId) return;
+    const row = all.find((c) => c.id === wantedId);
+    if (!row) return;
+    if (row.archived !== showArchived) {
+      // Swap lists and let this effect run again — deliberately NOT marked handled
+      // yet, or the rerun would skip the scroll it exists to do.
+      setShowArchived(row.archived);
+      return;
+    }
+    const index = (all.filter((c) => c.archived === row.archived)).findIndex(
+      (c) => c.id === wantedId,
+    );
+    if (index < 0) return;
+    honoured.current = wantedId;
+    setActive(index);
+    lastActive.current = index;
+    carousel.current?.scrollTo({ x: index * pitch, animated: false });
+  }, [wantedId, all, showArchived, pitch]);
 
   const count = challenges?.length ?? 0;
   const onScroll = useCallback(

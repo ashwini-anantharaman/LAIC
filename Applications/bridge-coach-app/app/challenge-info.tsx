@@ -147,7 +147,15 @@ export default function ChallengeInfoScreen() {
         : "Start";
   const open = () => {
     if (!challenge) return;
-    // Opens the challenge itself; its entry page routes play vs results.
+    // A FINISHED challenge has nothing left to play, and the platform would answer
+    // with its own results page — the leaderboard the app already draws. Go straight
+    // to the app's, with this challenge selected, rather than into the embed just to
+    // turn around and leave it.
+    if (challenge.finished) {
+      router.push({ pathname: "/club-challenges", params: { id: challenge.id } });
+      return;
+    }
+    // Otherwise the platform's entry page decides which board is next.
     router.push({ pathname: "/challenge-play", params: { id: challenge.id } });
   };
 

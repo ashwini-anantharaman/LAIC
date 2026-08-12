@@ -40,6 +40,13 @@ export default function ChallengePlayScreen() {
           ? { path: "/bridge/challenges", href: { pathname: "/challenge-info", params: { id } } }
           : { path: "/bridge/challenges", href: "/club-challenges" }
       }
+      // Finishing the last board redirects to the platform's results page, which
+      // draws its OWN leaderboard — a second copy of the one the app's Challenges
+      // screen already shows, in the platform's styling. Leave instead, landing on
+      // the app's leaderboard with this challenge selected.
+      leaveOnResults={
+        id ? { pathname: "/club-challenges", params: { id } } : "/club-challenges"
+      }
     />
   );
 }
