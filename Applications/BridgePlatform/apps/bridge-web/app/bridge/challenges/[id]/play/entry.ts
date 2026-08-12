@@ -27,21 +27,19 @@ import {
   type ChallengeSnapshot,
 } from "@bridge/challenges";
 import type { Seat } from "@bridge/events";
-import type { CompiledKb } from "@bridge/kb";
-import type { SeatConfig } from "@bridge/sessions";
+import { SessionService, type SeatConfig } from "@bridge/sessions";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { audit } from "@/lib/audit";
-import { BEN_SEAT_LABEL, benAvailable } from "@/lib/benSeat";
-import { warmBen } from "@/lib/challengeBen";
 import {
   challengeStore,
   challengeViewerAccess,
   getChallenge,
   getChallengeBoard,
 } from "@/lib/challenges";
-import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
+import { ensureSeeds } from "@/lib/kb";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
-import { assertAiAllowed } from "@/lib/org";
+import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
+import { resolveQuickPlayLineup, type QuickPlayLineup } from "@/lib/quickPlay";
 import { sessionService } from "@/lib/sessions";
 
 const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
@@ -160,14 +158,29 @@ export async function reconcileChallengePlays(
 export type ChallengeEntryHref = string | null;
 
 /**
- * BEN EVERYWHERE, NO FALLBACK (spec §2). Without a BEN endpoint the robot seats
- * would quietly degrade to the shelved KB player, and a one-attempt board played
- * against the wrong opposition cannot be taken back — so refuse to start rather
- * than burn the attempt. The list page renders `?error=` as a banner.
+ * THE HOUSE PLAYER PLAYS THE OTHER THREE (owner direction 2026-08-11,
+ * superseding spec §2's BEN-everywhere): challenge robots are the same KB
+ * house lineup a fresh Play-tab board seats, resolved through the same
+ * resolveQuickPlayLineup. BEN was 20-45s per card, which made a six-board
+ * challenge an afternoon on a phone; BEN still computes the results page's
+ * comparison baselines, where nobody is waiting on it. With no compiling
+ * knowledge base there is no opposition — refuse to start rather than burn
+ * the one attempt; the list page renders `?error=` as a banner.
  */
-const BEN_MISSING_HREF = `/bridge/challenges?error=${encodeURIComponent(
-  "Challenges are played against BEN, and BEN isn't configured on this server yet.",
+const NO_LINEUP_HREF = `/bridge/challenges?error=${encodeURIComponent(
+  "No knowledge base compiles yet, so there are no house players to seat.",
 )}`;
+
+/** The lineup, or the honest refusal — shared by the scored and practice doors. */
+async function houseLineup(context: NexusBridgeContext): Promise<QuickPlayLineup | null> {
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const lineup = await resolveQuickPlayLineup(context);
+  if (!lineup) return null;
+  // The lineup cache is a shortcut, never a permission (quick-play's own rule).
+  await assertKbAllowed(context, lineup.kbId);
+  return lineup;
+}
 
 /**
  * Resolve the tap (spec A1). In order:
@@ -212,7 +225,6 @@ export async function enterChallenge(
   if (existing?.sessionId) {
     try {
       await sessionService().requireSession(existing.sessionId);
-      warmUpBen();
       return `/bridge/table2/${existing.sessionId}`;
     } catch {
       // The sitting itself is gone (its KB was deleted). There is nothing left
@@ -225,17 +237,14 @@ export async function enterChallenge(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return null;
 
-  if (!benAvailable()) return BEN_MISSING_HREF;
-
-  warmUpBen();
-  await ensureSeeds();
-  await assertAiAllowed(context);
-  const { kbId, compiled } = await liveKb();
+  const lineup = await houseLineup(context);
+  if (!lineup) return NO_LINEUP_HREF;
+  const ai = SessionService.seatFromPlayer(lineup.house, lineup.compiled);
 
   const record = await sessionService().createSession({
-    kbId,
-    compiled,
-    seats: seatsForBoard(board, userId),
+    kbId: lineup.kbId,
+    compiled: lineup.compiled,
+    seats: seatsForBoard(board, userId, ai),
     seed: boardNo,
     hands: board.pack,
     dealer: board.dealer,
@@ -244,10 +253,10 @@ export async function enterChallenge(
     createdBy: userId,
     programOrganizationId: orgScopeOf(context),
     nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
-    // THE STAMP that routes this sitting's BEN seats through the challenge
-    // decision cache (lib/sessions benDeciderFor). Without it the seats would
-    // take the ordinary decider, which degrades to the shelved KB player when
-    // BEN stumbles — the one thing a scored, one-attempt board must never do.
+    // THE STAMP is scoring's spine (freeze, the strip, the results view), and
+    // it would route BEN seats through the challenge decision cache if BEN
+    // ever sat here again — the house player is the opposition now (owner
+    // direction 2026-08-11).
     challenge: { challengeId, boardNo },
   });
 
@@ -306,8 +315,9 @@ export async function enterChallenge(
  *
  * It lands at an ORDINARY table: with no play record, `challengeTableContext`
  * finds nothing and the board wears no strip, no Results button, no control
- * overrides. The session IS stamped `practice`, though, so the robots are still
- * the cached challenge BEN and never the shelved KB player.
+ * overrides. The session IS stamped `practice`, though — the format
+ * (bidding-only) reads off it, and the robots are the same house lineup the
+ * scored sitting seats.
  *
  * NO CHROME IS NOT NO FORMAT (owner, 2026-08-10). What a board asks for belongs
  * to the challenge, not to the decoration, so a replay of a BIDDING-ONLY board
@@ -347,17 +357,14 @@ export async function enterChallengePractice(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return resultsHref;
 
-  if (!benAvailable()) return BEN_MISSING_HREF;
-
-  warmUpBen();
-  await ensureSeeds();
-  await assertAiAllowed(context);
-  const { kbId, compiled } = await liveKb();
+  const lineup = await houseLineup(context);
+  if (!lineup) return NO_LINEUP_HREF;
+  const ai = SessionService.seatFromPlayer(lineup.house, lineup.compiled);
 
   const record = await sessionService().createSession({
-    kbId,
-    compiled,
-    seats: seatsForBoard(board, userId),
+    kbId: lineup.kbId,
+    compiled: lineup.compiled,
+    seats: seatsForBoard(board, userId, ai),
     seed: boardNo,
     hands: board.pack,
     dealer: board.dealer,
@@ -378,48 +385,28 @@ export async function enterChallengePractice(
   return `/bridge/table2/${record.sessionId}`;
 }
 
-/**
- * Poke BEN so the cold start happens while the viewer is still being redirected
- * rather than while they are staring at a board (spec §2, BEN latency). Fired
- * and forgotten on purpose: awaiting it would trade "instant start" (A1) for a
- * container boot, and `warmBen` never throws — its whole job is to make the
- * request happen.
- */
-function warmUpBen(): void {
-  void warmBen().catch(() => {});
-}
-
 // ── seating ─────────────────────────────────────────────────────────────────
 
 /**
  * The board's seat plan as session seat configs. Read through
- * `boardParticipants` rather than assuming three BEN opponents (ADDENDUM A6) —
- * the day a live human-vs-human table arrives, only the plan changes. Every
- * non-human seat is BEN; the KB house player is shelved for challenges and is
- * never seated here, not even as a fallback.
+ * `boardParticipants` rather than assuming three robot opponents (ADDENDUM
+ * A6) — the day a live human-vs-human table arrives, only the plan changes.
+ * Every non-human seat is `ai` — the KB house player the ordinary Play-tab
+ * board seats (owner direction 2026-08-11; BEN sat here before, and still
+ * computes the results baselines).
  */
 export function seatsForBoard(
   board: Pick<ChallengeBoard, "humanSeat" | "participants">,
   userId: string,
+  ai: SeatConfig,
 ): Record<Seat, SeatConfig> {
   const seats = {} as Record<Seat, SeatConfig>;
   for (const participant of boardParticipants(board, userId)) {
     seats[participant.seat] =
       participant.kind === "user"
         ? { kind: "human", nexusUserId: participant.userId ?? userId }
-        : { kind: "ben", label: BEN_SEAT_LABEL };
+        : ai;
   }
-  for (const seat of SEATS) seats[seat] ??= { kind: "ben", label: BEN_SEAT_LABEL };
+  for (const seat of SEATS) seats[seat] ??= ai;
   return seats;
-}
-
-/** A session still lives inside a knowledge base (it carries the trace
- *  vocabulary); challenges don't care which, so take the first live compile —
- *  the same resolution the one-click BEN table uses. */
-async function liveKb(): Promise<{ kbId: string; compiled: CompiledKb }> {
-  for (const kb of (await kbStore().listKbs()).filter((k) => !k.archived)) {
-    const compiled = await kbService().liveCompile(kb.kbId);
-    if (compiled) return { kbId: kb.kbId, compiled };
-  }
-  throw new Error("No knowledge base has a live compile yet — boards are dealt inside one");
 }
