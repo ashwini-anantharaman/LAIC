@@ -78,7 +78,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 30,
   },
-  // The app's card language: cream face sitting on its maroon stacked edge.
+  // A clean cream tab — no stacked-edge shadow (owner request 2026-08-12:
+  // the dark edge it drew read as a stray line on the felt).
   tab: {
     width: TAB_W,
     height: 54,
@@ -87,11 +88,6 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: Brand.cardShadow,
-    shadowOffset: { width: -2, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
   },
   tabGlyph: {
     fontSize: 24,
@@ -107,11 +103,6 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: Radius.card,
     paddingHorizontal: 18,
     paddingVertical: 20,
-    shadowColor: Brand.cardShadow,
-    shadowOffset: { width: -2, height: 3 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 5,
   },
   // The leave-board dialog's own destructive pill — one voice for "this
   // ends the sitting".
