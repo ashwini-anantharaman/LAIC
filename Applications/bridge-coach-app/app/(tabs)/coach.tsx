@@ -4,7 +4,7 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { OptionCard, Screen } from "../../components/ui";
@@ -157,6 +157,14 @@ export default function CoachScreen() {
 
   return (
     <Screen style={styles.screen}>
+      {/* The whole tab SCROLLS (owner report 2026-08-11): a learner's stack
+          is one card per coach and the club just hired six — the fixed layout
+          cut the stack at the fold with no way to reach the rest. The header
+          scrolls with the cards; nothing here is chrome worth pinning. */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollBody}
+      >
       {coach ? (
         <View style={styles.headerBlock}>
           <Text style={styles.eyebrow}>Coaching</Text>
@@ -246,6 +254,7 @@ export default function CoachScreen() {
           ))
         )}
       </View>
+      </ScrollView>
     </Screen>
   );
 }
@@ -330,5 +339,8 @@ const styles = StyleSheet.create({
   createBtnPressed: { opacity: 0.75 },
   createBtnText: { fontSize: 13, color: Brand.cream, fontFamily: Fonts.heading },
   subtitle: { fontSize: 14, color: Colors.textMuted, lineHeight: 20, fontFamily: Fonts.body, },
-  options: { flex: 1, paddingTop: 24, gap: 12, paddingBottom: TAB_BAR_CLEARANCE },
+  // No flex:1 inside a ScrollView — content sizes itself and the scroll view
+  // measures it; the tab bar's clearance rides the scroll body's end.
+  options: { paddingTop: 24, gap: 12 },
+  scrollBody: { paddingBottom: TAB_BAR_CLEARANCE + 24 },
 });
