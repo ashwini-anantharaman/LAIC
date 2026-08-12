@@ -15,6 +15,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { ClubProvider } from "../lib/club-context";
+import { LeaveVeilHost } from "../components/leave-veil";
 import { Brand, Colors } from "../constants/theme";
 
 /** Routes reachable without a session (landing, login, register). */
@@ -98,6 +99,9 @@ export default function RootLayout() {
           </ClubProvider>
         </AuthGate>
       </AuthProvider>
+      {/* The exits' cream veil — above the whole stack, so leaving any screen
+          fades the same way arriving does. */}
+      <LeaveVeilHost />
     </GestureHandlerRootView>
   );
 }

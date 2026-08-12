@@ -25,6 +25,7 @@ import { useSelectedClubId } from "../../lib/club-context";
 import { PROGRAM_ID } from "../../lib/config";
 import { useTableSession } from "../../lib/table/session-store";
 import { LeaveBoardDialog } from "../leave-board-dialog";
+import { leaveWithFade } from "../leave-veil";
 import { Screen, ScreenHeader } from "../ui";
 import { CoachDock } from "./coach-dock";
 import {
@@ -82,7 +83,8 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
   // Leaving mid-board asks: keep it for Resume, or discard it. The store's
   // OWN phase decides — no postMessage dance, the state is right here.
-  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/play"));
+  const goBack = () =>
+    leaveWithFade(() => (router.canGoBack() ? router.back() : router.replace("/play")));
   const onBack = (defaultBack: () => void) => {
     const unfinished =
       !!b && !!state && !b.boardOver && state.phase !== "complete" && b.mySeat !== null;
@@ -195,7 +197,7 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
           setPickedSeat(null);
           void session
             .swapSeat(seat, playerId)
-            .then((id) => id && router.replace(`/table/${id}?native=1`));
+            .then((id) => id && leaveWithFade(() => router.replace(`/table/${id}?native=1`)));
         }}
       />
       {state && (
@@ -360,7 +362,7 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
               onPress={() =>
                 void session
                   .newDeal()
-                  .then((id) => id && router.replace(`/table/${id}?native=1`))
+                  .then((id) => id && leaveWithFade(() => router.replace(`/table/${id}?native=1`)))
               }
             />
           )}
@@ -373,9 +375,11 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
       {b.challenge?.done && (
         <Pressable
           onPress={() =>
-            b.challenge!.onward.href.includes("/results")
-              ? router.replace("/club-challenges")
-              : router.replace("/challenge-play")
+            leaveWithFade(() =>
+              b.challenge!.onward.href.includes("/results")
+                ? router.replace("/club-challenges")
+                : router.replace("/challenge-play"),
+            )
           }
           style={({ pressed }) => [styles.onwardBar, pressed && { opacity: 0.8 }]}
         >

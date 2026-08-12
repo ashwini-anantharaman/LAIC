@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
+import { leaveWithFade } from "./leave-veil";
 import { BoardLoading } from "./table/board-loading";
 import { QuitPullout } from "./table/quit-pullout";
 import { PrimaryButton, Screen, ScreenHeader } from "./ui";
@@ -222,7 +223,7 @@ export function BridgeEmbed({
             : null;
       if (!target) return false;
       escaped.current = true;
-      router.replace(target);
+      leaveWithFade(() => router.replace(target));
       return true;
     },
     [escapeTo, leaveOnResults],
@@ -259,8 +260,12 @@ export function BridgeEmbed({
     // discarded…) — start the summary refresh NOW so Resume and Play greet
     // the return with fresh lists instead of a stale-while-revalidate beat.
     if (token) refreshSummary(token, programId).catch(() => {});
-    if (router.canGoBack()) router.back();
-    else router.replace(backTo ?? "/home");
+    // Leave under the veil: the felt (or the discard cover) fades to cream,
+    // and home fades in under it — never a one-frame cut off a WebView.
+    leaveWithFade(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace(backTo ?? "/home");
+    });
   }, [backTo, token]);
 
   // While the discard runs, the WebView must stay MOUNTED (unmounting aborts

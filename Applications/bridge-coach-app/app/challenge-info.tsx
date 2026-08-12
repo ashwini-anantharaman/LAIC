@@ -26,6 +26,7 @@ import {
 } from "react-native";
 
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
+import { leaveWithFade } from "../components/leave-veil";
 import { TabLoading } from "../components/tab-loading";
 import { ChallengeTile } from "../components/challenge-tile";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
@@ -165,7 +166,11 @@ export default function ChallengeInfoScreen() {
       <View style={styles.page}>
         <View style={styles.titleRow}>
           <BackChevron
-            onPress={() => (router.canGoBack() ? router.back() : router.replace("/club-challenges"))}
+            onPress={() =>
+              leaveWithFade(() =>
+                router.canGoBack() ? router.back() : router.replace("/club-challenges"),
+              )
+            }
             style={{ marginRight: 8 * s }}
           />
           <Text style={styles.title} numberOfLines={1}>

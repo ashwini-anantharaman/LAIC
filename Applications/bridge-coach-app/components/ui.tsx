@@ -21,6 +21,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
+import { leaveWithFade } from "./leave-veil";
 import { Brand, Colors, Fonts, Radius, Spacing, Type } from "../constants/theme";
 
 export function Screen({
@@ -67,7 +68,8 @@ export function ScreenHeader({
    */
   onBack?: (goBack: () => void) => void;
 }) {
-  const goBack = () => (router.canGoBack() ? router.back() : router.replace(backTo));
+  const goBack = () =>
+    leaveWithFade(() => (router.canGoBack() ? router.back() : router.replace(backTo)));
   return (
     <View style={styles.header}>
       {showBack ? (

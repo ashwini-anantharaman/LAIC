@@ -8,6 +8,7 @@ import { router } from "expo-router";
 import { StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "./brand-chrome";
+import { leaveWithFade } from "./leave-veil";
 import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 
 export function ComingSoon({
@@ -23,7 +24,9 @@ export function ComingSoon({
   return (
     <BrandChrome
       onBack={
-        pushed ? () => (router.canGoBack() ? router.back() : router.replace("/home")) : undefined
+        pushed
+          ? () => leaveWithFade(() => (router.canGoBack() ? router.back() : router.replace("/home")))
+          : undefined
       }
     >
       <View style={styles.body}>
