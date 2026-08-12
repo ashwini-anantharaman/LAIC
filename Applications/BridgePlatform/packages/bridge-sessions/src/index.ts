@@ -362,6 +362,37 @@ export interface SessionServiceOptions {
   }) => SeatDecider;
 }
 
+/**
+ * Who is ENTITLED to act, once the dummy takeover is taken into account.
+ *
+ * Bridge law hands dummy's cards to the declarer, so `actingSeat()` already
+ * resolves both hands to the declarer's chair. That is right at a table of four
+ * people and wrong at a practice table: a learner whose robot partner wins the
+ * contract becomes dummy and then watches the robot play thirteen tricks from
+ * both hands. Here the learner takes the declarer's chair instead and plays it.
+ *
+ * THE GATE IS THAT THE PARTNER IS A ROBOT. A declarer seat occupied by another
+ * PERSON is left alone — nobody is ever handed someone else's cards — so this
+ * can only fire where the learner would otherwise have nothing to do. It is
+ * also play-only: `actingSeat()` maps dummy to declarer only once the contract
+ * is settled, so during the auction every seat still bids its own cards.
+ *
+ * Returns the seat whose occupant may submit the action; normally `actingSeat`.
+ */
+export function controllingSeat(
+  seats: Record<Seat, SeatConfig>,
+  state: GameState,
+  actingSeat: Seat,
+): Seat {
+  if (state.phase !== "play" || !state.contract) return actingSeat;
+  if (actingSeat !== state.contract.declarer) return actingSeat;
+  if (seats[actingSeat].kind === "human") return actingSeat;
+  const partner = TAKEOVER_PARTNER[actingSeat];
+  return seats[partner].kind === "human" ? partner : actingSeat;
+}
+
+const TAKEOVER_PARTNER: Record<Seat, Seat> = { N: "S", S: "N", E: "W", W: "E" };
+
 export class SessionService {
   private readonly now: () => string;
 
@@ -531,6 +562,37 @@ export class SessionService {
       ]),
     ) as Record<Seat, ReturnType<typeof createKbDecider>>;
 
+    // THE TAKEOVER HAS TO REACH THE DECIDERS, not just the view. The engine
+    // asks the DECLARER's decider for both the declarer's cards and dummy's,
+    // and deciders are wired per seat from the record — so a robot declarer
+    // partnered with the learner would keep playing both hands while the view
+    // said it was the learner's turn. Every robot seat is wrapped: at decision
+    // time it re-checks who controls it and raises the same AwaitingHumanError
+    // a human seat raises, so `step()` stops. That is exactly what it means —
+    // this board IS waiting on a person.
+    for (const chair of Object.keys(deciders) as Seat[]) {
+      if (record.seats[chair].kind === "human") continue;
+      const inner = deciders[chair];
+      // THE CHAIR, NOT THE ARGUMENT. `game.step()` calls the controller's
+      // decider with the seat whose CARD is being played — for dummy's card
+      // that is dummy, while the decider it reaches is the declarer's. Asking
+      // "who controls the seat passed in" would therefore answer about dummy
+      // and wave the robot through; the question is whether a human now holds
+      // THIS chair.
+      deciders[chair] = {
+        decideBid: async (state: GameState, s: Seat) => {
+          const owner = controllingSeat(record.seats, state, chair);
+          if (owner !== chair) throw new AwaitingHumanError(owner);
+          return inner.decideBid(state, s);
+        },
+        decidePlay: async (state: GameState, s: Seat) => {
+          const owner = controllingSeat(record.seats, state, chair);
+          if (owner !== chair) throw new AwaitingHumanError(owner);
+          return inner.decidePlay(state, s);
+        },
+      } as ReturnType<typeof createKbDecider>;
+    }
+
     const hands = record.board.hands ?? seededDeal(record.board.seed);
     const primed = record.events.filter(isActionEvent);
     const game = createGame(
@@ -555,7 +617,7 @@ export class SessionService {
       record,
       state,
       actingSeat,
-      actingIsHuman: record.seats[actingSeat].kind === "human",
+      actingIsHuman: record.seats[controllingSeat(record.seats, state, actingSeat)].kind === "human",
     };
   }
 
@@ -567,7 +629,10 @@ export class SessionService {
     if (game.getState().phase === "complete") return this.view(sessionId);
 
     const actingSeat = game.actingSeat();
-    if (record.seats[actingSeat].kind === "human") throw new AwaitingHumanError(actingSeat);
+    // The controller, not the chair: under a takeover the acting chair is a
+    // robot's but a person is holding it (see `controllingSeat`).
+    const controller = controllingSeat(record.seats, game.getState(), actingSeat);
+    if (record.seats[controller].kind === "human") throw new AwaitingHumanError(controller);
 
     await game.step();
     return this.persistNewEvents(record, newEvents(), game);
@@ -621,7 +686,10 @@ export class SessionService {
     const state = replay.getState();
     if (state.phase === "complete") throw new Error("Board is complete");
     const actingSeat = replay.actingSeat();
-    if (record.seats[actingSeat].kind !== "human")
+    // Not `actingSeat` directly: a learner who would be dummy declares their
+    // robot partner's contract themselves (see `controllingSeat`).
+    const controller = controllingSeat(record.seats, state, actingSeat);
+    if (record.seats[controller].kind !== "human")
       throw new Error(`Seat ${actingSeat} is not a human seat`);
     await replay.step();
     return this.persistNewEvents(record, log.getAll(), replay);
@@ -707,11 +775,13 @@ export class SessionService {
     record.updatedAt = this.now();
     await this.store.putSession(record);
     const actingSeat = game.actingSeat();
+    const nextState = game.getState();
     return {
       record,
-      state: game.getState(),
+      state: nextState,
       actingSeat,
-      actingIsHuman: record.seats[actingSeat].kind === "human",
+      actingIsHuman:
+        record.seats[controllingSeat(record.seats, nextState, actingSeat)].kind === "human",
     };
   }
 }
