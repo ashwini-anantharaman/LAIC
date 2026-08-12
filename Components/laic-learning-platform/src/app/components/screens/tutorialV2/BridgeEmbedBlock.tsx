@@ -140,6 +140,40 @@ const SKIN_FELT: Record<string, string> = {
   claret: 'radial-gradient(120% 110% at 35% 20%, #7d2136 0%, #631427 45%, #480e1c 100%)',
 };
 
+/**
+ * The thumbnail's gradients live in a stylesheet, not in style attributes.
+ *
+ * A host app can dress an embedded page by injecting CSS, and the coach app's
+ * skin flattens anything whose inline style mentions a gradient — reasonable
+ * for the page's own chrome, fatal here: the scrim is absolutely positioned
+ * across the whole thumbnail, so repainting it opaque hid the preview
+ * completely. Rules in a stylesheet are not style attributes, so they survive.
+ */
+const THUMB_STYLE_ID = 'cs-bridge-thumb-style';
+const THUMB_CSS = `
+.cs-bridge-scrim {
+  background: linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,0.72) 100%) !important;
+}
+${Object.entries(SKIN_FELT)
+  .map(([k, v]) => `.cs-bridge-felt-${k} { background: ${v} !important; }`)
+  .join('\n')}
+`;
+
+function useThumbStyles() {
+  useEffect(() => {
+    if (document.getElementById(THUMB_STYLE_ID)) return;
+    const el = document.createElement('style');
+    el.id = THUMB_STYLE_ID;
+    el.textContent = THUMB_CSS;
+    document.head.appendChild(el);
+  }, []);
+}
+
+/** Class for a skin's felt; unknown skins fall back like the map did. */
+function feltClass(skin: string): string {
+  return `cs-bridge-felt-${SKIN_FELT[skin] ? skin : 'bbo'}`;
+}
+
 /** A miniature of the table: felt, four hands, a trick in the middle. */
 function TablePreview({ skin, fan: fanned }: Readonly<{ skin: string; fan: boolean }>) {
   const card = (left: number, top: number, tilt = 0, w = 9, h = 13) => (
@@ -168,11 +202,11 @@ function TablePreview({ skin, fan: fanned }: Readonly<{ skin: string; fan: boole
   return (
     <div
       aria-hidden
+      className={feltClass(skin)}
       style={{
         position: 'relative',
         width: '100%',
         height: '100%',
-        background: SKIN_FELT[skin] || SKIN_FELT.bbo,
       }}
     >
       {hand(34, 6, 5, 6)}
@@ -196,11 +230,11 @@ function ChallengePreview({ skin, boards }: Readonly<{ skin: string; boards: num
   return (
     <div
       aria-hidden
+      className={feltClass(skin)}
       style={{
         position: 'relative',
         width: '100%',
         height: '100%',
-        background: SKIN_FELT[skin] || SKIN_FELT.bbo,
         display: 'flex',
         flexDirection: 'column',
       }}
@@ -528,6 +562,7 @@ export function BridgeEmbedBlock({
   }) => void;
   resultKeyPrefix?: string;
 }>) {
+  useThumbStyles();
   const [live, setLive] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -761,11 +796,8 @@ export function BridgeEmbedBlock({
             )}
             {/* The scrim keeps the label legible over any felt. */}
             <span
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: 'linear-gradient(180deg, rgba(11,15,26,0) 45%, rgba(11,15,26,0.72) 100%)',
-              }}
+              className="cs-bridge-scrim"
+              style={{ position: 'absolute', inset: 0 }}
             />
             {playable && (
               <span
