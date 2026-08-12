@@ -343,11 +343,16 @@ export default function ClubScreen() {
   // A button its role cannot open is not dimmed but ABSENT: dimming says "not
   // now", and this is "not yours". The grid closes up around what is left.
   const buttons = [
+    // Practice Deal is dimmed for now: the screen exists but the feature does not
+    // work yet, and a button that opens something broken is worse than one that
+    // plainly cannot be pressed. Still capability-gated, so the two rules stay
+    // separate — absent when it is not yours, dimmed when it is not ready. To
+    // restore it, put the push back and drop `disabled`; the route is untouched.
     canDeals && {
       key: "deal",
       label: "Practice Deal",
-      onPress: () => router.push("/practice-deals"),
-      disabled: false,
+      onPress: () => {},
+      disabled: true,
     },
     canChallenges && {
       key: "challenges",
@@ -355,7 +360,7 @@ export default function ClubScreen() {
       onPress: () => router.push("/club-challenges"),
       disabled: false,
     },
-    // Feedback is drawn but not built yet — dimmed so the grid still matches.
+    // Feedback is drawn but not built at all — dimmed for the same reason.
     { key: "feedback", label: "Feedback", onPress: () => {}, disabled: true },
     canChat && {
       key: "chat",
