@@ -497,12 +497,6 @@ export function VideoScriptPlayer({
           if (next && firingRef.current !== next.id) {
             firingRef.current = next.id;
             try { p.pauseVideo(); } catch { /* noop */ }
-            // Leave fullscreen so the question is answered where the transcript
-            // and chat are. A question stranded behind a fullscreen video is a
-            // gate the student cannot open.
-            if (document.fullscreenElement) {
-              void document.exitFullscreen?.().catch(() => {});
-            }
             setActiveCp(next);
             setTab('question');
           }
@@ -513,32 +507,6 @@ export function VideoScriptPlayer({
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [ready, checkpoints, cleared, activeCp, requireAnswer]);
-
-  /**
-   * A short window of transcript that follows playback, rather than the whole
-   * thing at once.
-   *
-   * The full list buried the panel — on a phone it was an endless wall the
-   * student had to scroll to find where they were. This keeps the current line
-   * with a little context either side, the way a video's own transcript does,
-   * and moves on as the video does.
-   */
-  const TRANSCRIPT_WINDOW = 5;
-  const transcriptWindow = useMemo(() => {
-    const segs = content.transcript || [];
-    if (segs.length <= TRANSCRIPT_WINDOW) return segs;
-    let current = segs.findIndex((sg) => pos >= sg.start && (sg.end == null || pos < sg.end));
-    if (current < 0) {
-      // Between segments (or before the first): fall back to the last one started.
-      current = segs.reduce((acc, sg, i) => (pos >= sg.start ? i : acc), 0);
-    }
-    // One line of lead-in, so the student can see what they just heard.
-    const start = Math.min(
-      Math.max(0, current - 1),
-      Math.max(0, segs.length - TRANSCRIPT_WINDOW),
-    );
-    return segs.slice(start, start + TRANSCRIPT_WINDOW);
-  }, [content.transcript, pos]);
 
   const maxSeekable = () => {
     if (!requireAnswer) return duration || Infinity;
@@ -625,8 +593,6 @@ export function VideoScriptPlayer({
                 onClick={(e) => e.stopPropagation()}
                 role="presentation"
               >
-                {/* Normally we drop out of fullscreen first; this is the
-                    fallback for a browser that would not let us. */}
                 {isFullscreen ? (
                   <div
                     className="rounded-2xl w-full"
@@ -765,7 +731,7 @@ export function VideoScriptPlayer({
                 {(content.transcript || []).length === 0 ? (
                   <p style={{ fontSize: 13, color: '#9AA3AF' }}>No transcript available for this video.</p>
                 ) : (
-                  transcriptWindow.map((seg) => {
+                  (content.transcript || []).map((seg) => {
                     const on = pos >= seg.start && (seg.end == null || pos < seg.end);
                     return (
                       <button
@@ -786,11 +752,6 @@ export function VideoScriptPlayer({
                       </button>
                     );
                   })
-                )}
-                {(content.transcript || []).length > TRANSCRIPT_WINDOW && (
-                  <p style={{ fontSize: 11, color: '#9AA3AF', paddingLeft: 10, paddingTop: 4 }}>
-                    Follows the video · {(content.transcript || []).length} lines in total
-                  </p>
                 )}
               </div>
             )}
