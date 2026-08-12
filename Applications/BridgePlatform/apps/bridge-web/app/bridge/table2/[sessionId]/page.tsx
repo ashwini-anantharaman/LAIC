@@ -197,8 +197,13 @@ export default async function PlayTablePage({
               ? "play"
               : "other",
         active: myTurn,
-        looking: lookingAt(coachState, mySeat),
-        think: thinkAid(coachState, mySeat),
+        // The seat they are PLAYING FROM, not the one they were dealt. Both
+        // coach modules branch on "am I dummy" and answer "nothing to decide";
+        // under a takeover that is exactly backwards — the learner is declaring
+        // and wants real help. Passing the declaring seat puts them on the
+        // module's existing declarer branch rather than restating its text.
+        looking: lookingAt(coachState, declaringSeat ?? mySeat),
+        think: thinkAid(coachState, declaringSeat ?? mySeat),
       }
     : undefined;
 

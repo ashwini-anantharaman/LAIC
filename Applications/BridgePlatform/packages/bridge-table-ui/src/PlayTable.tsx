@@ -479,8 +479,26 @@ export function PlayTable({
   // controls). Either way the hand is on screen: a defender sees dummy.
   const playing = inPlay || complete;
   const decHuman = declarer ? !!seats[declarer].human : false;
-  const dummyIsRow = playing && !!dummy && dummy !== "S" && decHuman;
-  const dummyIsStrip = playing && !!dummy && dummy !== "S" && !dummyIsRow;
+  /**
+   * The SECOND hand on screen beside the viewer's own.
+   *
+   * Normally that is dummy: a defender is entitled to see it, and a human
+   * declarer has to play from it. But a viewer who took over the declarer's
+   * chair — their partner won the contract and a robot would otherwise have
+   * played both hands — IS the dummy, and their own cards are already at the
+   * bottom of the phone. The hand with nowhere to go is then the declarer's,
+   * and without this they would be asked to play from a hand they cannot see.
+   */
+  const sideSeat: Seat | null =
+    !playing
+      ? null
+      : dummy === "S" && declarer && declarer !== "S" && decHuman
+        ? declarer
+        : dummy && dummy !== "S"
+          ? dummy
+          : null;
+  const dummyIsRow = !!sideSeat && decHuman;
+  const dummyIsStrip = !!sideSeat && !dummyIsRow;
 
   // Only the BOX is measured (box, above); the content height is COMPUTED from
   // the band constants and iterated to a FIXED POINT. The bar/tray heights are
@@ -1118,11 +1136,11 @@ export function PlayTable({
    * that is bridge law, not a layout preference.
    */
   const dummyRailEl =
-    dummyIsStrip && dummy ? (
+    dummyIsStrip && sideSeat ? (
       <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8, padding: "8px 6px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
-        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[dummy]}</span>
-        {visible[dummy]
-          ? dummySuitSpans(dummy).map((s) => (
+        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
+        {visible[sideSeat]
+          ? dummySuitSpans(sideSeat).map((s) => (
               <div key={s.suit} style={{ display: "flex", alignItems: "flex-start", gap: 3, fontSize: 24, fontWeight: 700, lineHeight: 1.12 }}>
                 <span style={{ flex: "none", color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
                 {/* A wrapping row of nowrap ranks: a long suit runs onto a
@@ -1141,15 +1159,15 @@ export function PlayTable({
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
   const dummyRowEl =
-    dummyIsRow && dummy ? (
+    dummyIsRow && sideSeat ? (
       // paddingTop reserves headroom for a playable card's translateY(-6px) lift
       // (well within the HAND_H.row budget), so the raised top is never clipped.
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
-        {visible[dummy]
+        {visible[sideSeat]
           ? fanLayout
-            ? fanHand(dummy, M_CARD)
-            : cardRow(dummy, M_CARD)
-          : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
+            ? fanHand(sideSeat, M_CARD)
+            : cardRow(sideSeat, M_CARD)
+          : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
 
