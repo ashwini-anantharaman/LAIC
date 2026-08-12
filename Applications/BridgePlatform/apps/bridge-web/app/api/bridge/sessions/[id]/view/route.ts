@@ -19,6 +19,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { canUse } from "@/lib/access";
+import { benAvailable } from "@/lib/benSeat";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { kbStore } from "@/lib/kb";
 import { loadTableView } from "@/lib/tableView";
@@ -107,6 +108,8 @@ export async function GET(
         seats: v.seats,
         seatNames: v.seatNames,
         roster,
+        // BEN as a seatable character — endpoint configured AND permitted.
+        benOffered: benAvailable() && v.control["table.ben_seat"],
         challenge: v.challenge
           ? {
               challengeId: v.challenge.challengeId,

@@ -11,8 +11,10 @@ import { NativeTable } from "../../components/table/native-table";
  *  the platform page which journey this is (no "⟵ table" door on a record
  *  opened from history — owner decision 2026-08-07).
  *
- *  ?native=1 renders the NATIVE board instead (Part II, view-only for now) —
- *  the flag stays until the native table reaches parity, then flips default. */
+ *  ?native=1 renders the NATIVE board instead (Part II) — strictly opt-in.
+ *  The platform's board and coach stay the default, exactly as they are
+ *  (owner direction 2026-08-12: the existing implementation is not to be
+ *  replaced; the native table earns its place behind the flag only). */
 export default function TableScreen() {
   const { sessionId, view, from, native } = useLocalSearchParams<{
     sessionId: string;
@@ -23,7 +25,7 @@ export default function TableScreen() {
 
   if (native === "1") {
     // The native table owns its whole screen — header, leave-board dialog,
-    // transport — because the save-or-discard question reads its own store.
+    // sheets — because the save-or-discard question reads its own store.
     return <NativeTable sessionId={String(sessionId ?? "")} />;
   }
 

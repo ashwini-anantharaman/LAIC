@@ -5,6 +5,7 @@
 // Skia. Sizes come from the caller so one primitive serves the small
 // opponents' rows, the trick area's mid-size and the south hand's big fan.
 
+import { memo } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts } from "../../constants/theme";
@@ -21,8 +22,9 @@ export function suitColor(suit: string): string {
   return suit === "H" || suit === "D" ? "#c0392b" : "#17211d";
 }
 
-/** One face-up card. `w` drives every internal size. */
-export function CardFace({ card, w }: { card: Card; w: number }) {
+/** One face-up card. `w` drives every internal size. Memoized: thirteen-card
+ *  fans redraw every fold, and a card's face never changes. */
+export const CardFace = memo(function CardFace({ card, w }: { card: Card; w: number }) {
   const h = w * 1.45;
   return (
     <View style={[styles.face, { width: w, height: h, borderRadius: w * 0.14 }]}>
@@ -39,17 +41,23 @@ export function CardFace({ card, w }: { card: Card; w: number }) {
       </Text>
     </View>
   );
-}
+});
 
-/** One face-down card — the deck's maroon back. */
-export function CardBack({ w }: { w: number }) {
+/** One face-down card — the skin's back (the deck's maroon by default). */
+export const CardBack = memo(function CardBack({ w, color }: { w: number; color?: string }) {
   const h = w * 1.45;
   return (
-    <View style={[styles.back, { width: w, height: h, borderRadius: w * 0.14 }]}>
+    <View
+      style={[
+        styles.back,
+        { width: w, height: h, borderRadius: w * 0.14 },
+        color ? { backgroundColor: color } : null,
+      ]}
+    >
       <View style={[styles.backInner, { borderRadius: w * 0.08 }]} />
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   face: {

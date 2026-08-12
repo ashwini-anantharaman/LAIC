@@ -30,6 +30,7 @@ import { CoachDock } from "./coach-dock";
 import {
   callLabel,
   cardId,
+  resolveSkin,
   resultLabel,
   scoreBoard,
   type Call,
@@ -38,6 +39,13 @@ import {
   type Seat,
 } from "../../lib/vendor/table-kernel/table-kernel";
 import { CardBack, CardFace, SUIT_GLYPH } from "./cards";
+import {
+  ChallengeOverlay,
+  HandsViewerSheet,
+  SeatsSheet,
+  SettingsSheet,
+  cycleSkin,
+} from "./sheets";
 
 const SUIT_ORDER = ["S", "H", "D", "C"] as const;
 
@@ -58,6 +66,12 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
   const { bootstrap: b, state } = session;
   const [leaveAsk, setLeaveAsk] = useState(false);
   const [savedNote, setSavedNote] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [seatsOpen, setSeatsOpen] = useState(false);
+  const [pickedSeat, setPickedSeat] = useState<Seat | null>(null);
+  const [handsOpen, setHandsOpen] = useState(false);
+  const [standingsOpen, setStandingsOpen] = useState(false);
+  const [confirmBids, setConfirmBids] = useState(false);
 
   const stage = Math.min(width, 480);
   const smallCard = Math.max(20, Math.floor(stage / 16));
@@ -100,6 +114,7 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         faceUp={b.visible[seat]}
         backs={session.remainingCount(seat)}
         w={big ? bigCard : smallCard}
+        back={skin.cardBack}
         {...(playable
           ? { legal: legalIds, onPlay: (card: Card) => void session.act({ card }) }
           : {})}
@@ -119,6 +134,15 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
   const canStep = b.control["table.step_controls"];
   const canUndo = b.control["table.undo"];
+  // The hands-record peek mirrors the web gate: the capability, or a
+  // finished UNCHALLENGED board (nothing left to hide).
+  const canHands = b.control["table.hands_view"] || (boardOver && !b.challenge);
+
+  // The skin dresses the felt — resolved through the kernel, same tokens the
+  // web table wears. feltFlat is the solid form (RN draws no CSS gradients).
+  const skin = resolveSkin(b.appearance.skin, b.appearance.overrides);
+  const feltColor = skin.feltFlat || "#1d5c46";
+  const accent = skin.accent || Brand.cream;
 
   return (
     <Screen>
@@ -137,7 +161,68 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         }}
         onStay={() => setLeaveAsk(false)}
       />
-    <ScrollView style={styles.felt} contentContainerStyle={styles.feltInner}>
+      <SettingsSheet
+        visible={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        bootstrap={b}
+        showAll={b.showAll}
+        onToggleHands={() => session.setHandsPref(b.showAll ? "mine" : "all")}
+        beatMs={session.beatMs}
+        onBeat={session.setBeatMs}
+        confirmBids={confirmBids}
+        onConfirmBids={() => setConfirmBids((v) => !v)}
+        onSkin={() => void session.setSkin(cycleSkin(b))}
+      />
+      <SeatsSheet
+        visible={seatsOpen}
+        onClose={() => {
+          setSeatsOpen(false);
+          setPickedSeat(null);
+        }}
+        bootstrap={b}
+        pickedSeat={pickedSeat}
+        onPickSeat={setPickedSeat}
+        onSwap={(seat, playerId) => {
+          setSeatsOpen(false);
+          setPickedSeat(null);
+          void session
+            .swapSeat(seat, playerId)
+            .then((id) => id && router.replace(`/table/${id}?native=1`));
+        }}
+      />
+      {state && (
+        <HandsViewerSheet
+          visible={handsOpen}
+          onClose={() => setHandsOpen(false)}
+          bootstrap={b}
+          state={state}
+        />
+      )}
+      {b.challenge && (
+        <ChallengeOverlay
+          visible={standingsOpen}
+          onClose={() => setStandingsOpen(false)}
+          challenge={b.challenge}
+        />
+      )}
+    <ScrollView style={[styles.felt, { backgroundColor: feltColor }]} contentContainerStyle={styles.feltInner}>
+      {/* A challenge board wears its strip above the felt. */}
+      {b.challenge && (
+        <View style={styles.challengeStrip}>
+          <Text style={styles.challengeTitle} numberOfLines={1}>
+            {b.challenge.strip.title}
+          </Text>
+          <Text style={styles.challengeCount}>
+            Board {b.challenge.strip.boardNo} of {b.challenge.strip.boardsTotal}
+          </Text>
+          {b.challenge.strip.showResults && (
+            <Pressable onPress={() => setStandingsOpen(true)} hitSlop={6}>
+              <Text style={[styles.challengeResults, { color: accent }]}>Results</Text>
+            </Pressable>
+          )}
+        </View>
+      )}
+
       {/* Top bar: the board's facts. */}
       <View style={styles.topBar}>
         <Text style={styles.topChip}>Board {b.board.number}</Text>
@@ -201,7 +286,11 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
       {/* The bid tray, when the auction is the viewer's to move. */}
       {session.myTurn && state.phase === "auction" && (
-        <BidPad legal={session.legalCallSet} onCall={(call) => void session.act({ call })} />
+        <BidPad
+          legal={session.legalCallSet}
+          confirm={confirmBids}
+          onCall={(call) => void session.act({ call })}
+        />
       )}
 
       {/* BEN held the beat (challenges have no fallback): say so, offer ⟳. */}
@@ -211,22 +300,34 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         </Pressable>
       )}
 
-      {/* Transport: pause/run the robots, step one decision, take one back. */}
-      {!boardOver && canStep && (
+      {/* Transport: pause/run the robots, step one decision, take one back —
+          plus the sheets' doors, each present only when the control is. */}
+      {!boardOver && (
         <View style={styles.transportRow}>
-          <Chip
-            label={session.paused ? "▶ Run" : "❚❚ Pause"}
-            onPress={() => session.setPaused(!session.paused)}
-          />
-          <Chip
-            label="▸ Step"
-            onPress={() => {
-              session.setPaused(true);
-              void session.step();
-            }}
-          />
+          {canStep && (
+            <>
+              <Chip
+                label={session.paused ? "▶ Run" : "❚❚ Pause"}
+                onPress={() => session.setPaused(!session.paused)}
+              />
+              <Chip
+                label="▸ Step"
+                onPress={() => {
+                  session.setPaused(true);
+                  void session.step();
+                }}
+              />
+            </>
+          )}
           {canUndo && state.auction.length > 0 && (
             <Chip label="↩ Undo" onPress={() => void session.undo()} />
+          )}
+          {b.control["table.seats_panel"] && (
+            <Chip label="Seats" onPress={() => setSeatsOpen(true)} />
+          )}
+          {canHands && <Chip label="Hands" onPress={() => setHandsOpen(true)} />}
+          {b.control["table.settings_menu"] && (
+            <Chip label="☰" onPress={() => setSettingsOpen(true)} />
           )}
         </View>
       )}
@@ -234,6 +335,7 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
       {/* A finished board's onward verbs. */}
       {boardOver && (
         <View style={styles.transportRow}>
+          {canHands && <Chip label="Hands" onPress={() => setHandsOpen(true)} />}
           {b.control["table.save_library"] && (
             <Chip
               label="Save play"
@@ -244,7 +346,7 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
               }
             />
           )}
-          {b.control["table.new_deal"] && (
+          {b.control["table.new_deal"] && !b.challenge && (
             <Chip
               label="New deal"
               onPress={() =>
@@ -257,6 +359,24 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         </View>
       )}
       {savedNote ? <Text style={styles.savedNote}>{savedNote}</Text> : null}
+
+      {/* A finished challenge board's way onward: the next board, or the
+          results. The web hrefs map to the app's own journeys. */}
+      {b.challenge?.done && (
+        <Pressable
+          onPress={() =>
+            b.challenge!.onward.href.includes("/results")
+              ? router.replace("/club-challenges")
+              : router.replace("/challenge-play")
+          }
+          style={({ pressed }) => [styles.onwardBar, pressed && { opacity: 0.8 }]}
+        >
+          <Text style={styles.onwardLabel}>{b.challenge.onward.label} →</Text>
+          {b.challenge.onward.note ? (
+            <Text style={styles.onwardNote}>{b.challenge.onward.note}</Text>
+          ) : null}
+        </Pressable>
+      )}
 
       {session.actError ? <Text style={styles.actError}>{session.actError}</Text> : null}
       {session.pending ? <Text style={styles.pendingNote}>…</Text> : null}
@@ -314,6 +434,7 @@ function HandStrip({
   faceUp,
   backs,
   w,
+  back,
   legal,
   onPlay,
 }: {
@@ -321,6 +442,8 @@ function HandStrip({
   faceUp: boolean;
   backs: number;
   w: number;
+  /** The skin's card-back color. */
+  back?: string;
   /** Card ids the kernel says may be played — everything else dims. */
   legal?: Set<string>;
   onPlay?: (card: Card) => void;
@@ -331,7 +454,7 @@ function HandStrip({
       <View style={styles.handRow}>
         {Array.from({ length: Math.max(0, backs) }, (_, i) => (
           <View key={i} style={{ marginLeft: i === 0 ? 0 : -overlap }}>
-            <CardBack w={w} />
+            <CardBack w={w} color={back} />
           </View>
         ))}
       </View>
@@ -368,9 +491,20 @@ function HandStrip({
 }
 
 /** The bid tray: pick a level, tap a strain — or pass/double straight away.
- *  Legality comes from the kernel's set; everything else renders disabled. */
-function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => void }) {
+ *  Legality comes from the kernel's set; everything else renders disabled.
+ *  With `confirm` on, a chosen call ARMS instead of sending — the second tap
+ *  (a labeled Confirm key) is the one that travels. */
+function BidPad({
+  legal,
+  confirm,
+  onCall,
+}: {
+  legal: Set<Call>;
+  confirm: boolean;
+  onCall: (call: Call) => void;
+}) {
   const [level, setLevel] = useState<number | null>(null);
+  const [armed, setArmed] = useState<Call | null>(null);
   const STRAINS: { key: string; label: string; red: boolean }[] = [
     { key: "C", label: "♣", red: false },
     { key: "D", label: "♦", red: true },
@@ -380,7 +514,12 @@ function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => v
   ];
   const levelHasBid = (l: number) => STRAINS.some((s) => legal.has(`${l}${s.key}`));
   const send = (call: Call) => {
+    if (confirm && armed !== call) {
+      setArmed(call);
+      return;
+    }
     setLevel(null);
+    setArmed(null);
     onCall(call);
   };
   return (
@@ -390,7 +529,10 @@ function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => v
           <Pressable
             key={l}
             disabled={!levelHasBid(l)}
-            onPress={() => setLevel(level === l ? null : l)}
+            onPress={() => {
+              setLevel(level === l ? null : l);
+              setArmed(null);
+            }}
             style={[
               styles.bidKey,
               level === l && styles.bidKeyOn,
@@ -410,7 +552,7 @@ function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => v
               key={s.key}
               disabled={!ok}
               onPress={() => call && send(call)}
-              style={[styles.bidKey, !ok && styles.bidKeyDim]}
+              style={[styles.bidKey, !ok && styles.bidKeyDim, armed === call && styles.bidKeyOn]}
             >
               <Text style={[styles.bidKeyText, s.red && { color: "#c0392b" }]}>{s.label}</Text>
             </Pressable>
@@ -421,12 +563,17 @@ function BidPad({ legal, onCall }: { legal: Set<Call>; onCall: (call: Call) => v
             key={c}
             disabled={!legal.has(c)}
             onPress={() => send(c)}
-            style={[styles.bidKey, styles.bidKeyWide, !legal.has(c) && styles.bidKeyDim]}
+            style={[styles.bidKey, styles.bidKeyWide, !legal.has(c) && styles.bidKeyDim, armed === c && styles.bidKeyOn]}
           >
             <Text style={styles.bidKeyText}>{c === "P" ? "Pass" : c}</Text>
           </Pressable>
         ))}
       </View>
+      {confirm && armed && (
+        <Pressable onPress={() => send(armed)} style={styles.confirmKey}>
+          <Text style={styles.confirmKeyText}>Confirm {callLabel(armed)}</Text>
+        </Pressable>
+      )}
     </View>
   );
 }
@@ -616,6 +763,39 @@ const styles = StyleSheet.create({
   bidKeyDim: { opacity: 0.35 },
   bidKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 15, color: Brand.ink },
   bidKeyTextOn: { color: Brand.maroon },
+  confirmKey: {
+    alignSelf: "center",
+    backgroundColor: Brand.cream,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 9,
+    marginTop: 2,
+  },
+  confirmKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: Brand.ink },
+
+  challengeStrip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "rgba(0,0,0,0.35)",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  challengeTitle: { flex: 1, fontFamily: Fonts.bodySemibold, fontSize: 12.5, color: Brand.white },
+  challengeCount: { fontFamily: Fonts.body, fontSize: 11.5, color: "rgba(255,255,255,0.8)" },
+  challengeResults: { fontFamily: Fonts.bodySemibold, fontSize: 12.5 },
+
+  onwardBar: {
+    backgroundColor: Brand.cream,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    alignItems: "center",
+    gap: 2,
+  },
+  onwardLabel: { fontFamily: Fonts.bodySemibold, fontSize: 14, color: Brand.ink },
+  onwardNote: { fontFamily: Fonts.body, fontSize: 11.5, color: "#7b7466", textAlign: "center" },
 
   transportRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
   transportChip: {

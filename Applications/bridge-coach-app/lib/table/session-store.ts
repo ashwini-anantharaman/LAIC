@@ -37,6 +37,8 @@ import {
   type GameEvent,
   type GameState,
   type Seat,
+  type SkinName,
+  type TableAppearance,
   type Vul,
 } from "../vendor/table-kernel/table-kernel";
 import { BridgeApiError, bridgeRequest } from "../bridge-api";
@@ -66,14 +68,31 @@ export interface TableBootstrap {
   showAll: boolean;
   visible: Record<Seat, boolean>;
   control: TableControl;
-  appearance: unknown;
+  appearance: TableAppearance;
   seats: Record<Seat, { name: string; strip: string; human: boolean; tag: string }>;
   seatNames: Record<Seat, string>;
   roster: { playerId: string; name: string; validationStatus: string }[];
+  /** BEN as a seatable character — endpoint configured AND permitted. */
+  benOffered: boolean;
   challenge: {
     challengeId: string;
     boardNo: number;
     biddingOnly: boolean;
+    strip: { title: string; boardNo: number; boardsTotal: number; showResults: boolean };
+    standings: {
+      rows: {
+        rank?: number;
+        name: string;
+        total: string;
+        isYou?: boolean;
+        tone?: string;
+      }[];
+      benRow?: { total: string; note?: string } | null;
+      scoringLabel: string;
+      note?: string;
+      emptyLabel?: string;
+    };
+    boards: { boardNo: number; text: string; tone?: string; current?: boolean }[];
     subtitle: string;
     done: boolean;
     onward: { label: string; href: string; note?: string };
@@ -218,6 +237,18 @@ export interface TableSession {
   discard: () => Promise<boolean>;
   /** Fresh cards, same lineup → the new session to open, or null. */
   newDeal: () => Promise<string | null>;
+
+  // ── Phase E: settings, seats, skins ───────────────────────────────────────
+  /** The ☰ show-all toggle: "auto" is the server's default rule. */
+  handsPref: "auto" | "all" | "mine";
+  setHandsPref: (pref: "auto" | "all" | "mine") => void;
+  /** The robots' pace (the ☰ speed rows: 350 / 750 / 1500). */
+  beatMs: number;
+  setBeatMs: (ms: number) => void;
+  /** Swap who sits a seat (a FORK) → the new session to open, or null. */
+  swapSeat: (seat: Seat, playerId: string) => Promise<string | null>;
+  /** Persist a new skin and re-dress the table. */
+  setSkin: (skin: SkinName) => Promise<void>;
 }
 
 export function useTableSession(
@@ -239,12 +270,19 @@ export function useTableSession(
   const storeRef = useRef(store);
   storeRef.current = store;
 
+  // "auto" leaves the server's default rule (spectators see all, players
+  // their own); the ☰ toggle overrides it explicitly.
+  const [handsPref, setHandsPrefState] = useState<"auto" | "all" | "mine">("auto");
+  const handsPrefRef = useRef(handsPref);
+  handsPrefRef.current = handsPref;
+
   const resync = useCallback(async () => {
     if (!token || busy.current) return;
     busy.current = true;
     try {
+      const pref = handsPrefRef.current;
       const bootstrap = await bridgeRequest<TableBootstrap>(
-        `/api/bridge/sessions/${encodeURIComponent(sessionId)}/view`,
+        `/api/bridge/sessions/${encodeURIComponent(sessionId)}/view${pref === "auto" ? "" : `?hands=${pref}`}`,
         { token, programId },
       );
       const env = await bridgeRequest<Envelope>(
@@ -335,6 +373,7 @@ export function useTableSession(
 
   const [paused, setPaused] = useState(false);
   const [benWaiting, setBenWaiting] = useState(false);
+  const [beatMs, setBeatMs] = useState(BEAT_MS);
   /** Bumped after every step ATTEMPT so the beat re-arms even when a step
    *  failed without changing the log (a transient error retries paced). */
   const [beat, setBeat] = useState(0);
@@ -375,9 +414,9 @@ export function useTableSession(
     if (b0.boardOver) return;
     if (paused || benWaiting || store.optimistic) return;
     if (turnFacts.actingIsHuman) return;
-    const timer = setTimeout(() => void stepOnce(), BEAT_MS);
+    const timer = setTimeout(() => void stepOnce(), beatMs);
     return () => clearTimeout(timer);
-  }, [store.bootstrap, turnFacts, store.confirmedSeq, paused, benWaiting, store.optimistic, beat, stepOnce]);
+  }, [store.bootstrap, turnFacts, store.confirmedSeq, paused, benWaiting, store.optimistic, beat, beatMs, stepOnce]);
 
   // Background holds the beat; coming back re-asks the server and STAYS
   // paused — resuming a scored board is the person's call, not the OS's.
@@ -457,6 +496,57 @@ export function useTableSession(
       return false;
     }
   }, [token, programId, sessionId]);
+
+  // ── Phase E: settings, seats, skins ─────────────────────────────────────
+
+  const setHandsPref = useCallback(
+    (pref: "auto" | "all" | "mine") => {
+      setHandsPrefState(pref);
+      handsPrefRef.current = pref;
+      // Visibility is the server's answer — re-ask with the new preference.
+      void resync();
+    },
+    [resync],
+  );
+
+  const swapSeat = useCallback(
+    async (seat: Seat, playerId: string): Promise<string | null> => {
+      if (!token) return null;
+      try {
+        const res = await bridgeRequest<{ sessionId: string }>(
+          `/api/bridge/sessions/${encodeURIComponent(sessionId)}/seats`,
+          { token, programId, method: "POST", body: { seat, playerId } },
+        );
+        return res.sessionId;
+      } catch (e) {
+        if (live.current)
+          dispatch({
+            kind: "reject",
+            reason: e instanceof BridgeApiError ? e.message : "Couldn't swap that seat.",
+          });
+        return null;
+      }
+    },
+    [token, programId, sessionId],
+  );
+
+  const setSkin = useCallback(
+    async (skin: SkinName) => {
+      if (!token) return;
+      try {
+        await bridgeRequest("/api/bridge/appearance", {
+          token,
+          programId,
+          method: "PATCH",
+          body: { skin },
+        });
+        await resync();
+      } catch {
+        // The old skin stays — a failed restyle costs nothing.
+      }
+    },
+    [token, programId, resync],
+  );
 
   const newDeal = useCallback(async (): Promise<string | null> => {
     if (!token) return null;
@@ -622,5 +712,11 @@ export function useTableSession(
     save,
     discard,
     newDeal,
+    handsPref,
+    setHandsPref,
+    beatMs,
+    setBeatMs,
+    swapSeat,
+    setSkin,
   };
 }
