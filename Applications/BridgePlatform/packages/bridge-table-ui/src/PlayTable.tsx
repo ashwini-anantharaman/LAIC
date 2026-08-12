@@ -99,7 +99,24 @@ const M_PLATE_MIN = 260;
 // ---------------------------------------------------------------------------
 const BAR_BASE = 52;
 const TOUCH = 44;
+/**
+ * What the dummy's spread USED to cost: a horizontal band across the top of the
+ * felt. It is a vertical RAIL beside the centre now (owner, 2026-08-11) — a
+ * defender must see dummy, but not at the price of a band — so the spread buys
+ * no height at all. The number stays because the budget still PRICES it: the
+ * centre band keeps exactly the felt it had, and the 54 is subtracted from the
+ * stack at the end, exactly as a hidden toolbar's thickness is. The freed height
+ * therefore leaves the table (it goes to the coach panel below) instead of being
+ * handed back to the felt as more green.
+ */
 const DUMMY_LINE = 54;
+/**
+ * The rail's width. Wide enough for a suit in bridge notation at the strip's old
+ * rank type (♠ plus about six ranks before the line wraps) and for the seat name
+ * to stay horizontal — at 136 of a 720 stage there is no need to rotate it —
+ * and narrow enough that the trick compass keeps the middle of the felt.
+ */
+const DUMMY_RAIL_W = 136;
 /** The hand band: the lift headroom the row is given (paddingTop), the card
     itself, the 3px gap and the seat plate — plus a few px of rounding reserve.
     Derived from M_CARD.h so shortening the card SHORTENS THE TABLE instead of
@@ -502,12 +519,31 @@ export function PlayTable({
   const coachSharePct = Math.max(0, Math.min(55, coachShare ?? 30));
   const tableSharePct = 100 - coachSharePct;
 
-  // The dummy is a ONE-LINE suit strip unless the human must play from it — then
-  // it stays a full card row (compactness must not cost the declarer controls).
+  // The dummy is a SIDE RAIL of suit lines unless the human must play from it —
+  // then it stays a full card row (compactness must not cost the declarer
+  // controls). Either way the hand is on screen: a defender sees dummy.
   const playing = inPlay || complete;
   const decHuman = declarer ? !!seats[declarer].human : false;
-  const dummyIsRow = playing && !!dummy && dummy !== "S" && decHuman;
-  const dummyIsStrip = playing && !!dummy && dummy !== "S" && !dummyIsRow;
+  /**
+   * The SECOND hand on screen beside the viewer's own.
+   *
+   * Normally that is dummy: a defender is entitled to see it, and a human
+   * declarer has to play from it. But a viewer who took over the declarer's
+   * chair — their partner won the contract and a robot would otherwise have
+   * played both hands — IS the dummy, and their own cards are already at the
+   * bottom of the phone. The hand with nowhere to go is then the declarer's,
+   * and without this they would be asked to play from a hand they cannot see.
+   */
+  const sideSeat: Seat | null =
+    !playing
+      ? null
+      : dummy === "S" && declarer && declarer !== "S" && decHuman
+        ? declarer
+        : dummy && dummy !== "S"
+          ? dummy
+          : null;
+  const dummyIsRow = !!sideSeat && decHuman;
+  const dummyIsStrip = !!sideSeat && !dummyIsRow;
 
   // The bottom action toolbar earns its band only when something real rides
   // it. For a learner inside the coach app every control it can carry is
@@ -598,8 +634,14 @@ export function PlayTable({
     // exactly as ?bars=off hands both.
     const topBarOn = showToolbars && !hideTopBar ? 1 : 0;
     const bottomBarOn = showToolbars && phoneBottomOn ? 1 : 0;
+    // The dummy strip gets the same treatment for the same reason: it is priced
+    // above so the centre band is sized to exactly the felt it had, and then
+    // taken back off here because the rail that replaced it stands BESIDE that
+    // band and occupies no height (origin/main: dummy hangs at the side).
     const content =
-      base + (usePad ? padHeight(cell) : 0) + centre - (2 - topBarOn - bottomBarOn) * bar;
+      base + (usePad ? padHeight(cell) : 0) + centre -
+      (2 - topBarOn - bottomBarOn) * bar -
+      (dummyIsStrip ? DUMMY_LINE : 0);
     return { bar, cell, centre, content, usePad, trayRow: trayRowFor(k), scale: Math.min(1, widthScale, availPx / content) };
   };
   const converge = (usePad: boolean) => {
@@ -1133,28 +1175,58 @@ export function PlayTable({
       <SeatsPopup onClose={() => setSeatsOpen(false)}>{railExtra}</SeatsPopup>
     ) : null;
 
-  /** Dummy as a ONE-LINE suit strip (♠AK9 ♥J7652 …) via the handText format —
-      the compact form when the human is NOT playing from dummy. */
+  /** Dummy's hand in bridge notation, one entry per suit HELD — the compact
+      form when the human is NOT playing from dummy. The ranks stay a LIST and
+      are joined by the layout: the rail wraps a long suit onto a second line,
+      and a joined string would break "10" across it. */
   const dummySuitSpans = (seat: Seat) =>
     DISPLAY.map((suit) => {
       const ranks = state.hands[seat]
         .filter((cd) => cd.suit === suit)
         .sort((a, b) => b.rank - a.rank)
-        .map((cd) => rankText(cd.rank))
-        .join("");
-      return ranks ? { suit, ranks } : null;
-    }).filter((x): x is { suit: Suit; ranks: string } => x != null);
+        .map((cd) => rankText(cd.rank));
+      return ranks.length ? { suit, ranks } : null;
+    }).filter((x): x is { suit: Suit; ranks: string[] } => x != null);
 
-  const dummyStripEl =
-    dummyIsStrip && dummy ? (
-      <div data-testid="dummy-strip" style={{ flex: "none", height: DUMMY_LINE, display: "flex", alignItems: "center", gap: 14, padding: "0 12px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
-        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[dummy]}</span>
-        {visible[dummy]
-          ? dummySuitSpans(dummy).map((s) => (
-              <span key={s.suit} style={{ fontSize: 26, fontWeight: 700, color: "#f2f6f4", whiteSpace: "nowrap" }}>
-                <span style={{ color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
-                {s.ranks}
-              </span>
+  /**
+   * Which side of the felt the rail hangs on. East is the right-hand opponent
+   * and West the left, so the rail sits where the seat itself does and the
+   * player never has to ask whose hand it is.
+   *
+   * North is the awkward one: it is the seat OPPOSITE, belonging to neither
+   * side, and it only ever reaches the rail when South is not the human (a
+   * declaring South gets the full card row instead). It goes LEFT. The right
+   * edge of a phone is the thumb's — Claim and ☰ sit at that end of the action
+   * bar — so a rail that is read and never touched keeps out of its way, and
+   * leaving the right to East alone keeps "the rail on my right is my RHO" true
+   * every time it appears there.
+   */
+  const dummyRailSide: "left" | "right" = dummy === "E" ? "right" : "left";
+
+  /**
+   * The dummy rail: a vertical strip beside the centre band rather than a band
+   * across the top of the felt (owner, 2026-08-11). The seat NAME is what
+   * labels it — never the player's — and the cards below it are gated on
+   * `visible[dummy]`, which the host only opens after the opening lead. Before
+   * the lead the rail is a name and nothing else: dummy spreads on the lead, and
+   * that is bridge law, not a layout preference.
+   */
+  const dummyRailEl =
+    dummyIsStrip && sideSeat ? (
+      <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8, padding: "8px 6px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
+        <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
+        {visible[sideSeat]
+          ? dummySuitSpans(sideSeat).map((s) => (
+              <div key={s.suit} style={{ display: "flex", alignItems: "flex-start", gap: 3, fontSize: 24, fontWeight: 700, lineHeight: 1.12 }}>
+                <span style={{ flex: "none", color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
+                {/* A wrapping row of nowrap ranks: a long suit runs onto a
+                    second line without ever splitting a "10" down the middle. */}
+                <span style={{ display: "flex", flexWrap: "wrap", minWidth: 0, color: "#f2f6f4" }}>
+                  {s.ranks.map((r, i) => (
+                    <span key={`${r}-${i}`} style={{ whiteSpace: "nowrap" }}>{r}</span>
+                  ))}
+                </span>
+              </div>
             ))
           : null}
       </div>
@@ -1163,15 +1235,15 @@ export function PlayTable({
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
   const dummyRowEl =
-    dummyIsRow && dummy ? (
+    dummyIsRow && sideSeat ? (
       // paddingTop reserves headroom for a playable card's translateY(-6px) lift
       // (well within the HAND_H.row budget), so the raised top is never clipped.
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
-        {visible[dummy]
+        {visible[sideSeat]
           ? fanLayout
-            ? fanHand(dummy, M_CARD)
-            : cardRow(dummy, M_CARD)
-          : backs(dummy, { w: M_CARD.backW, h: M_CARD.h })}
+            ? fanHand(sideSeat, M_CARD)
+            : cardRow(sideSeat, M_CARD)
+          : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
 
@@ -1199,20 +1271,24 @@ export function PlayTable({
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
       {showToolbars && !hideTopBar && <EdgeToolbar side="top" items={infoItems} condensed thickness={phoneFit.bar} bg={tok.barBg} accent={tok.accent} />}
-      {/* ONE felt wrapper behind dummy line/row, centre, pad and hand. The FLAT
-          skin variant, per Mobile Table.dc.html. flex:none — the felt ENDS at
-          the hand's plate, and the stage's slack reserve (slackFor) renders in
-          the stage's own white below it (owner, 2026-08-11: no green band under
-          the cards; supersedes the 2026-08-08 continuous-felt request). */}
+      {/* ONE felt wrapper behind the dummy row, centre (with its side rail),
+          pad and hand. The FLAT skin variant, per Mobile Table.dc.html.
+          flex:none — the felt ENDS at the hand's plate, and the stage's slack
+          reserve (slackFor) renders in the stage's own white below it (owner,
+          2026-08-11: no green band under the cards). */}
       <div style={{ flex: "none", display: "flex", flexDirection: "column", background: tok.feltFlat }}>
-        {dummyStripEl}
         {dummyRowEl}
         {/* The centre is the ONE flexible band, sized to the leftover (feltH).
             NO vertical padding: feltH is the border-box height and is also what
             the auction box is handed, so vertical padding would push the box
-            past feltH and overflow:hidden would eat the newest row. */}
+            past feltH and overflow:hidden would eat the newest row.
+            It is a ROW now: the dummy rail on its own side, then the felt. The
+            rail is `flex: none` and the felt `flex: 1`, so the band's height is
+            untouched by the hand hanging beside it and the compass simply
+            centres in what is left. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
-          <div style={{ width: "100%", height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
+          {dummyRailSide === "left" ? dummyRailEl : null}
+          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
             {/* FOUR reserved call rows, whatever the auction holds: the grid is
                 one fixed object from "You deal" to the last pass, and the fifth
                 row scrolls the first off the top. A grid that grew with the
@@ -1232,6 +1308,7 @@ export function PlayTable({
             {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
+          {dummyRailSide === "right" ? dummyRailEl : null}
         </div>
         {/* Column pad (cell sized from the leftover) OR the level tray — one on
             screen at a time. The pad falls back to the tray when the fit could

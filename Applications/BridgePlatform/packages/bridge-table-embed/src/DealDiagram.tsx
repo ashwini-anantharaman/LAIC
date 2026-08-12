@@ -21,6 +21,7 @@ import { useMemo } from "react";
 import { applyEvent, initialState, legalCalls, seededDeal } from "@bridge/engine";
 import type { Call, Card, Seat, Vul } from "@bridge/events";
 import { HandViewer, SeatDiagram } from "@bridge/table-ui";
+import { embedBox, type EmbedBoxOptions } from "./EmbedRoot";
 
 const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
 const SEAT_NAME: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
@@ -31,7 +32,7 @@ const BOARD_ASPECT = 1976 / 1232;
 
 const hcp = (cards: readonly Card[]) => cards.reduce((n, c) => n + Math.max(0, c.rank - 10), 0);
 
-export interface DealDiagramProps {
+export interface DealDiagramProps extends EmbedBoxOptions {
   /** The deal, derived exactly as <BridgeTable/> derives it. */
   seed?: number;
   /** Or the cards outright. */
@@ -63,6 +64,8 @@ export function DealDiagram({
   auction = [],
   highlightSeat = null,
   hiddenSeats = [],
+  isolate,
+  fontFamily,
 }: Readonly<DealDiagramProps>) {
   const hands = useMemo(() => deal ?? seededDeal(seed), [deal, seed]);
 
@@ -106,7 +109,7 @@ export function DealDiagram({
   for (const seat of SEATS) visible[seat] = !hiddenSeats.includes(seat);
 
   return (
-    <div style={{ width: "100%", aspectRatio: String(BOARD_ASPECT) }}>
+    <div style={{ ...embedBox({ isolate, fontFamily }), width: "100%", aspectRatio: String(BOARD_ASPECT) }}>
       <HandViewer
         boardLabel={boardLabel ?? seed}
         dealer={dealer}

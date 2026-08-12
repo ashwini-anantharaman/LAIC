@@ -39,6 +39,7 @@ import {
   type ControlState,
   type SoloChallengeDraft,
 } from "./challengeDraft";
+import { embedBox, type EmbedBoxOptions } from "./EmbedRoot";
 import { serializeHand } from "./dealText";
 import {
   ACCENT,
@@ -124,7 +125,7 @@ function boardsFromDraft(draft: SoloChallengeDraft | undefined): BoardDraftState
   });
 }
 
-export interface ChallengeCreatorProps {
+export interface ChallengeCreatorProps extends EmbedBoxOptions {
   /**
    * A draft to re-open — everything the author had, as the wizard produced it
    * or as a host stored it. Absent, the wizard starts from fresh random deals.
@@ -153,6 +154,8 @@ export function ChallengeCreator({
   onChange,
   createLabel = "Create challenge",
   seedBase,
+  isolate,
+  fontFamily,
 }: Readonly<ChallengeCreatorProps>) {
   // Normalised ONCE, on mount: the wizard owns its state from then on, so a
   // host that saves as you type cannot feed its own echo back in mid-edit.
@@ -321,7 +324,7 @@ export function ChallengeCreator({
   };
 
   return (
-    <div style={{ ...SHELL, display: "flex", flexDirection: "column", minWidth: 0 }}>
+    <div style={{ ...embedBox({ isolate, fontFamily }), ...SHELL, display: "flex", flexDirection: "column", minWidth: 0 }}>
       {/* ── header: identity + jump chips ──
           DELIBERATELY NOT STICKY. On the platform this wizard owns a page and
           pins its header; embedded it owns a box inside somebody else's

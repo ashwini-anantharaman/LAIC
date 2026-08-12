@@ -8,7 +8,7 @@ export type { PlayTableProps, PlayTableSeat, ResolvedAppearance } from "./PlayTa
 export { HandViewer } from "./HandViewer";
 export type { HandViewerProps, TrickLine } from "./HandViewer";
 
-export { BidColumns } from "./BidColumns";
+export { BidColumns, bidColumnsH } from "./BidColumns";
 export type { BidColumnsProps } from "./BidColumns";
 
 export { EdgeToolbar } from "./EdgeToolbar";

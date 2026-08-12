@@ -148,11 +148,30 @@ export function BridgeTable({
   const declarer = state.contract?.declarer ?? null;
   const dummy = declarer && state.phase !== "auction" ? PARTNER[declarer] : null;
 
+  /**
+   * THE LEARNER NEVER SITS OUT.
+   *
+   * Bridge law gives dummy's cards to the declarer, so a learner whose partner
+   * wins the contract is, by the book, a spectator for thirteen tricks: the
+   * engine already routes dummy's cards to the declarer's controller, and that
+   * controller is a robot. Correct, and useless to someone here to practise.
+   *
+   * So when the auction leaves the learner as dummy they change places with
+   * their partner and declare the contract themselves — one seat over, both
+   * hands theirs to play, which is the position the declarer was always going
+   * to be in. Nothing about the DEAL moves; only who is holding the cards.
+   *
+   * This can only ever fire in play (`dummy` is null until the contract is
+   * settled), so the auction is always bid from the seat the learner was dealt.
+   */
+  const playSeat = dummy === humanSeat && declarer ? declarer : humanSeat;
+  const swappedWithPartner = playSeat !== humanSeat;
+
   /** The learner plays their own seat — and the dummy, when they are declarer. */
   const humanControls = useCallback(
     (seat: Seat) =>
-      seat === humanSeat || (seat === dummy && declarer === humanSeat),
-    [humanSeat, dummy, declarer],
+      seat === playSeat || (seat === dummy && declarer === playSeat),
+    [playSeat, dummy, declarer],
   );
   const myTurn = state.phase !== "complete" && humanControls(state.turn);
 
@@ -247,19 +266,32 @@ export function BridgeTable({
   const visible = useMemo(() => {
     const out = {} as Record<Seat, boolean>;
     for (const seat of SEATS)
-      out[seat] = showAllHands || seat === humanSeat || seat === dummy;
+      out[seat] = showAllHands || seat === playSeat || seat === dummy;
     return out;
-  }, [showAllHands, humanSeat, dummy]);
+  }, [showAllHands, playSeat, dummy]);
 
   const seats = useMemo(() => {
-    const out = {} as Record<Seat, { name: string; human?: boolean }>;
+    const out = {} as Record<Seat, { name: string; tag?: string; human?: boolean }>;
     for (const seat of SEATS)
       out[seat] = {
-        name: seat === humanSeat ? "You" : SEAT_NAME[seat],
-        human: seat === humanSeat,
+        // "You" follows the cards, not the chair. After a swap the seat the
+        // learner was dealt is the dummy across the table, and it takes that
+        // seat's own name — the learner is playing from the other one now, and
+        // two seats both labelled "You" would say nothing about who acts.
+        name: seat === playSeat ? "You" : SEAT_NAME[seat],
+        // A swap must not be silent: the learner bid this auction from the
+        // other chair, so the seat they left is marked as theirs rather than
+        // just appearing to be somebody else's hand.
+        tag:
+          seat === dummy
+            ? swappedWithPartner && seat === humanSeat
+              ? "your seat · dummy"
+              : "dummy"
+            : undefined,
+        human: seat === playSeat,
       };
     return out;
-  }, [humanSeat]);
+  }, [playSeat, dummy, swappedWithPartner, humanSeat]);
 
   const score = state.phase === "complete" ? scoreBoard(state) : null;
 

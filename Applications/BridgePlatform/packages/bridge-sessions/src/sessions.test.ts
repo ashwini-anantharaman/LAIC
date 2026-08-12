@@ -21,6 +21,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   AwaitingHumanError,
+  controllingSeat,
   eventsFromRecording,
   InMemorySessionStore,
   SessionService,
@@ -494,3 +495,129 @@ describe("library store", () => {
     expect(await lib.getEntry("le_1")).toBeNull();
   });
 });
+
+// ── the dummy takeover ───────────────────────────────────────────────────────
+// A learner whose ROBOT partner wins the contract declares it themselves rather
+// than watching. The rule is one function so the service's gate, the view's
+// `actingIsHuman` and the felt's `myTurn` cannot drift apart; these pin its
+// edges — especially the edge it must NOT cross, a declarer seat held by
+// another person.
+describe("controllingSeat — the dummy takeover", () => {
+  const seats = (kinds: Record<Seat, "human" | "ai">) =>
+    Object.fromEntries(
+      (Object.keys(kinds) as Seat[]).map((s) => [
+        s,
+        kinds[s] === "human"
+          ? { kind: "human" as const, nexusUserId: `u-${s}` }
+          : { kind: "ai" as const, label: `bot-${s}`, playerId: `p-${s}`, settings: {} },
+      ]),
+    ) as Parameters<typeof controllingSeat>[0];
+
+  const playing = (declarer: Seat) =>
+    ({ phase: "play", contract: { declarer, level: 1, strain: "N", doubled: 0 } }) as unknown as Parameters<
+      typeof controllingSeat
+    >[1];
+
+  const SOLO = seats({ N: "ai", E: "ai", S: "human", W: "ai" });
+
+  it("hands the robot declarer's chair to the human dummy", () => {
+    expect(controllingSeat(SOLO, playing("N"), "N")).toBe("S");
+  });
+
+  it("leaves a human declarer alone — they already hold both hands", () => {
+    expect(controllingSeat(SOLO, playing("S"), "S")).toBe("S");
+  });
+
+  it("REFUSES to take over a seat held by another person", () => {
+    const pair = seats({ N: "human", E: "ai", S: "human", W: "ai" });
+    expect(controllingSeat(pair, playing("N"), "N")).toBe("N");
+  });
+
+  it("does not fire for an opponent's contract", () => {
+    expect(controllingSeat(SOLO, playing("E"), "E")).toBe("E");
+    expect(controllingSeat(SOLO, playing("E"), "W")).toBe("W");
+  });
+
+  it("does not fire during the auction", () => {
+    const auction = { phase: "auction", contract: null } as unknown as Parameters<
+      typeof controllingSeat
+    >[1];
+    expect(controllingSeat(SOLO, auction, "N")).toBe("N");
+  });
+})
+
+// The rule is only worth anything if it reaches the DECIDERS: the engine asks
+// the declarer's decider for both the declarer's cards and dummy's, and
+// deciders are wired per seat from the record — so a robot declarer partnered
+// with the learner would keep playing both hands while the view claimed it was
+// the learner's turn. This drives a real session to prove it stops.
+describe("the dummy takeover, end to end", () => {
+  /** N opens 1NT and everyone passes: N declares, S (the learner) is dummy. */
+  const primeNorthDeclares = (seed: number) =>
+    eventsFromRecording({
+      boardRef: "takeover",
+      dealer: "N",
+      vul: "none",
+      hands: seededDeal(seed),
+      auction: [
+        { seat: "N", call: "1N" },
+        { seat: "E", call: "P" },
+        { seat: "S", call: "P" },
+        { seat: "W", call: "P" },
+      ],
+      play: [],
+    }).events;
+
+  const seatedSession = async (seats: Record<Seat, SeatConfig>) => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    return service.createSession({
+      kbId,
+      compiled,
+      seats,
+      seed: 11,
+      dealer: "N",
+      vul: "none",
+      hands: seededDeal(11),
+      primedEvents: primeNorthDeclares(11),
+      createdBy: "u",
+    });
+  };
+
+  it("stops the robot declarer and waits for the learner instead", async () => {
+    const record = await seatedSession({
+      ...allAi,
+      S: { kind: "human", nexusUserId: "user_learner_lena" },
+    });
+
+    // The opening lead is EAST's — an opponent, and a robot, so it plays.
+    const led = await service.step(record.sessionId);
+    expect(led.state.tricks[0]!.plays.length).toBe(1);
+
+    // Now it is dummy's card, which the engine resolves to the declarer's
+    // chair. That chair is a robot's — and it must not play it.
+    const view = await service.view(record.sessionId);
+    expect(view.state.turn).toBe("S");
+    expect(view.actingSeat).toBe("N");
+    expect(view.actingIsHuman).toBe(true);
+    await expect(service.step(record.sessionId)).rejects.toThrow(AwaitingHumanError);
+
+    // The learner plays it instead, and it is accepted.
+    const legal = legalPlays(view.state, view.state.turn);
+    const after = await service.act(record.sessionId, { card: legal[0]! });
+    expect(after.state.tricks[0]!.plays.length).toBe(2);
+  });
+
+  it("leaves a board alone when the declarer is another person", async () => {
+    const record = await seatedSession({
+      ...allAi,
+      N: { kind: "human", nexusUserId: "user_north" },
+      S: { kind: "human", nexusUserId: "user_south" },
+    });
+    await service.step(record.sessionId); // East leads.
+
+    const view = await service.view(record.sessionId);
+    expect(view.actingSeat).toBe("N");
+    // Nothing was taken over: North is a person and plays their own cards.
+    expect(controllingSeat(record.seats, view.state, "N")).toBe("N");
+  });
+})
