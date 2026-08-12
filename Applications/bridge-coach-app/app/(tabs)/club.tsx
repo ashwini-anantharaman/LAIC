@@ -361,8 +361,11 @@ export default function ClubScreen() {
    * same challenge as the first. Everything else in the club's library lives on the
    * Challenges screen; these two are the entry points, not the index.
    *
-   * The tutorial after them opens a Content Studio page — the design's placeholder
-   * for the activity types a club home will carry later, but a real embed.
+   * Nothing else is pinned. A "Tutorial 1" card used to follow them, wired to one
+   * hardcoded Content Studio object — it demonstrated the shape of a non-challenge
+   * activity, but there is no flow behind it yet, and a card that opens the same fixed
+   * page for every club is a prototype rather than a feature. Real activity types join
+   * this list when they carry their own ids.
    */
   const activities: Activity[] = [
     {
@@ -398,12 +401,6 @@ export default function ClubScreen() {
           },
         ]
       : []),
-    {
-      id: "tutorial-1",
-      kind: "document",
-      title: "Tutorial 1",
-      onPress: () => router.push("/tutorial"),
-    },
   ];
 
   /**
