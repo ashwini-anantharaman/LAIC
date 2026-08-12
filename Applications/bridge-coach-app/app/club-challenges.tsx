@@ -37,7 +37,6 @@ import {
 } from "react-native";
 
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
-import { ChallengeFormPanel } from "../components/challenge-form-panel";
 import { ChallengeCaption, ChallengeTile } from "../components/challenge-tile";
 import { Avatar } from "../components/avatar";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
@@ -163,9 +162,6 @@ export default function ClubChallengesScreen() {
     };
   }, [token, clubId]);
 
-  const [configuring, setConfiguring] = useState(false);
-  const [draftName, setDraftName] = useState("");
-  const [draftBoards, setDraftBoards] = useState(8);
 
   const pitch = ITEM_PITCH * s;
   const captionH = (CAPTION_GAP + 13.633 * 1.35) * s;
@@ -183,42 +179,6 @@ export default function ClubChallengesScreen() {
     [pitch, count],
   );
 
-  const openConfigure = () => {
-    setDraftName(`Challenge ${count + 1}`);
-    setDraftBoards(8);
-    setConfiguring(true);
-  };
-
-  const saveChallenge = () => {
-    const name = draftName.trim();
-    if (!name) return;
-    // Device-local until the app grows a create flow of its own: real challenges
-    // are assembled on the platform.
-    const next: ClubChallenge = {
-      id: `local-${count + 1}`,
-      name,
-      description: "",
-      createdByName: "",
-      boards: draftBoards,
-      scoring: "mp",
-      scoringLabel: "MP score",
-      inviteStatus: "accepted",
-      finishedBoards: 0,
-      finished: false,
-      resultsUnlocked: true,
-      standings: [],
-      benTotal: null,
-      // A local draft is neither retired nor moderated by anyone — it exists only
-      // on this device, so there is nothing on the platform to archive.
-      archived: false,
-      moderator: false,
-    };
-    const index = count;
-    setChallenges((prev) => [...(prev ?? []), next]);
-    setActive(index);
-    lastActive.current = index;
-    setConfiguring(false);
-  };
 
   const challenge = challenges?.[active] ?? challenges?.[0] ?? null;
 
@@ -235,11 +195,14 @@ export default function ClubChallengesScreen() {
           <Text style={styles.title}>Challenges</Text>
           {canCreate ? (
             <Pressable
-              onPress={() => (configuring ? setConfiguring(false) : openConfigure())}
+              // The platform's wizard, not a native panel: a challenge needs boards,
+              // seats, scoring AND an invite list, and only that page has them. The
+              // local draft this replaced existed on one device and could not be
+              // played or invited to.
+              onPress={() => router.push("/challenge-new")}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityState={{ expanded: configuring }}
-              accessibilityLabel={configuring ? "Close challenge settings" : "Add a challenge"}
+              accessibilityLabel="Add a challenge"
               style={({ pressed }) => [
                 styles.plus,
                 {
@@ -251,26 +214,12 @@ export default function ClubChallengesScreen() {
                 pressed && styles.pressed,
               ]}
             >
-              <Ionicons
-                name={configuring ? "chevron-down" : "add"}
-                size={19 * s}
-                color={Brand.cream}
-              />
+              <Ionicons name="add" size={19 * s} color={Brand.cream} />
             </Pressable>
           ) : null}
         </View>
 
-        {configuring ? (
-          <ChallengeFormPanel
-            name={draftName}
-            boards={draftBoards}
-            onChangeName={setDraftName}
-            onChangeBoards={setDraftBoards}
-            onClose={() => setConfiguring(false)}
-            onSave={saveChallenge}
-            scale={s}
-          />
-        ) : challenges === null || challenges.length === 0 ? (
+        {challenges === null || challenges.length === 0 ? (
           // Same footprint as the carousel, so the button and leaderboard
           // below don't jump when the challenges arrive.
           <View
