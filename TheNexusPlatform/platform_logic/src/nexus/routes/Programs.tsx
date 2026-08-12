@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, Handshake, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -55,7 +55,6 @@ export function Programs() {
   const [programs, setPrograms] = useState<Program[] | null>(null);
   const [caps, setCaps] = useState<OrgCapabilities | null>(null);
   const [open, setOpen] = useState(false);
-  const [partnerOpen, setPartnerOpen] = useState(false);
   const [assigning, setAssigning] = useState<Program | null>(null);
   const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
   // Grid shows everything (category tag on each card); stack groups by
@@ -162,9 +161,6 @@ export function Programs() {
             >
               {view === "grid" ? <Layers className="size-4" /> : <LayoutGrid className="size-4" />}
             </button>
-            <Button variant="outline" onClick={() => setPartnerOpen(true)} disabled={programs.length === 0} title={programs.length === 0 ? "Create a program first — partners connect to one" : undefined}>
-              <Handshake className="size-4" /> New partner
-            </Button>
             <Button onClick={() => setOpen(true)}>
               <Plus className="size-4" /> New program
             </Button>
@@ -234,7 +230,6 @@ export function Programs() {
       )}
 
       <NewProgramDialog orgId={orgId} open={open} onOpenChange={setOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
-      <NewPartnerDialog orgId={orgId} open={partnerOpen} onOpenChange={setPartnerOpen} onDone={load} allowedFeatureKeys={allowedFeatureKeys} programs={programs} />
       <AssignAdminsDialog program={assigning} onClose={() => setAssigning(null)} />
       <EditFeaturesDialog program={editingFeatures} onClose={() => setEditingFeatures(null)} onDone={load} allowedFeatureKeys={allowedFeatureKeys} categories={categories} />
     </div>
@@ -915,20 +910,30 @@ function NewProgramDialog({
  * into the connected program (provisioned via No/Partial/Full); its People /
  * Community / Partners are its own.
  */
-function NewPartnerDialog({
+export function NewPartnerDialog({
   orgId,
   open,
   onOpenChange,
   onDone,
   allowedFeatureKeys,
   programs,
+  fixedConnectedId,
 }: {
   orgId: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onDone: () => void;
   allowedFeatureKeys: string[];
+  /** Choices for the connecting program. Ignored when `fixedConnectedId` is set. */
   programs: Program[];
+  /**
+   * Connect to THIS program, and do not ask.
+   *
+   * Passed from inside a program's own Partners tab, where the answer is already
+   * settled by where you are standing — offering a picker there invites choosing the
+   * wrong program from a screen that is about one.
+   */
+  fixedConnectedId?: string;
 }) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -943,15 +948,16 @@ function NewPartnerDialog({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (open) setConnectedId(programs[0]?.id ?? "");
+    if (open) setConnectedId(fixedConnectedId ?? programs[0]?.id ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, fixedConnectedId]);
   // Auto-suggest the slug from the name until the user edits it directly.
   const slugify = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   useEffect(() => { if (!slugEdited) setSlug(slugify(name)); }, [name, slugEdited]);
 
   function reset() {
-    setName(""); setDescription(""); setSlug(""); setSlugEdited(false); setConnectedId(programs[0]?.id ?? "");
+    setName(""); setDescription(""); setSlug(""); setSlugEdited(false);
+    setConnectedId(fixedConnectedId ?? programs[0]?.id ?? "");
     setFeatures({ ...DEFAULT_PROGRAM_FEATURES }); setFeatureAccess({});
     setAdmins([{ email: "", displayName: "" }]); setInvites(null); setCreatedSlug(null);
   }
@@ -1034,16 +1040,20 @@ function NewPartnerDialog({
               <Label htmlFor="pn-desc">Description</Label>
               <Input id="pn-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Who is this partner?" />
             </div>
-            <div className="space-y-1.5">
-              <Label>Connecting program</Label>
-              <p className="text-xs text-muted-foreground -mt-1">The program this partner is tied to. Its platforms are shown to the partner as a restricted view.</p>
-              <Select value={connectedId} onValueChange={setConnectedId}>
-                <SelectTrigger><SelectValue placeholder="Select a program" /></SelectTrigger>
-                <SelectContent>
-                  {programs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Asked only where the answer is genuinely open. Inside a program the
+                connection is that program, and a picker could only be wrong. */}
+            {fixedConnectedId ? null : (
+              <div className="space-y-1.5">
+                <Label>Connecting program</Label>
+                <p className="text-xs text-muted-foreground -mt-1">The program this partner is tied to. Its platforms are shown to the partner as a restricted view.</p>
+                <Select value={connectedId} onValueChange={setConnectedId}>
+                  <SelectTrigger><SelectValue placeholder="Select a program" /></SelectTrigger>
+                  <SelectContent>
+                    {programs.map((p) => <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="pn-slug">Login slug</Label>
               <p className="text-xs text-muted-foreground -mt-1">The partner signs in at <span className="font-mono">/partner/{slug || "…"}</span></p>

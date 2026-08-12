@@ -8,6 +8,7 @@ import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, Shi
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
+import { NewPartnerDialog } from "@/nexus/routes/Programs";
 import {
   Dialog,
   DialogContent,
@@ -1289,6 +1290,7 @@ export function ProgramPartners() {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -1323,7 +1325,8 @@ export function ProgramPartners() {
     listPartnersForProgram(programId).then(setPartners).catch(() => setPartners([]));
   }
 
-  useEffect(() => {
+  /** Named, so creating a partner can refresh the list it was just added to. */
+  const load = useCallback(() => {
     if (!programId) return;
     if (isPartner) {
       // A partner's own Partners tab shows just its connected (sister) program.
@@ -1334,6 +1337,21 @@ export function ProgramPartners() {
       listPartnersForProgram(programId).then(setPartners).catch(() => setPartners([]));
     }
   }, [programId, orgId, isPartner, program?.connected_program_id]);
+
+  useEffect(() => load(), [load]);
+
+  /**
+   * The Nexus envelope, for the dialog's Features section: a platform the org is not
+   * entitled to must not be offerable to its partners either. Fetched here because
+   * this tab is rendered on its own, not under the overview that already holds caps.
+   */
+  const [caps, setCaps] = useState<OrgCapabilities | null>(null);
+  useEffect(() => {
+    if (orgId) getOrgCapabilities(orgId).then(setCaps).catch(() => setCaps(null));
+  }, [orgId]);
+  const allowedFeatureKeys = PROGRAM_FEATURES.map((f) => f.key).filter(
+    (k) => !caps || caps.features[k] !== false,
+  );
 
   // A partner: show its sister program.
   if (isPartner) {
@@ -1361,7 +1379,34 @@ export function ProgramPartners() {
 
   return (
     <div>
-      <Head program={program} subtitle="Partner organizations connected to this program, each with its own login and a restricted view." />
+      <Head
+        program={program}
+        subtitle="Partner organizations connected to this program, each with its own login and a restricted view."
+        actions={
+          // Provisioning lives HERE now, not on the Programs page. Standing in a
+          // program already answers "connected to what", so the dialog opens with that
+          // settled — see NewPartnerDialog's fixedConnectedId. A partner's own Partners
+          // tab gets no button: a partner does not provision partners.
+          !isPartner && programId ? (
+            <Button variant="outline" onClick={() => setCreating(true)}>
+              <Handshake className="size-4" /> New partner
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {programId ? (
+        <NewPartnerDialog
+          orgId={orgId ?? ""}
+          open={creating}
+          onOpenChange={setCreating}
+          onDone={load}
+          allowedFeatureKeys={allowedFeatureKeys}
+          // Unused while fixedConnectedId is set; the picker is not rendered.
+          programs={[]}
+          fixedConnectedId={programId}
+        />
+      ) : null}
 
       {/* Removal lives on the PROGRAM's side only. A partner's own Partners tab
           (above) shows its connected program with no controls — it cannot remove
@@ -1394,7 +1439,7 @@ export function ProgramPartners() {
       {!partners ? (
         <Spinner />
       ) : partners.length === 0 ? (
-        <EmptyState>No partners yet. Create one with "New partner" on the Programs page, connected to this program.</EmptyState>
+        <EmptyState>No partners yet. Use "New partner" above — it connects to this program.</EmptyState>
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {partners.map((p) => {
