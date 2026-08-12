@@ -499,7 +499,7 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
   );
 
   return (
-    <div className="flex gap-5 p-5">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-5 p-4 sm:p-5">
       <div className="flex-1 min-w-0">
         <Card title="Course identity" icon={GraduationCap}>
           <div className="space-y-3">
@@ -573,7 +573,7 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
 
         <Card title="The learning experience" icon={Route}>
           <p style={{ fontSize: 12, color: '#6B7280', marginBottom: 6 }}>How do learners move through it?</p>
-          <div className="grid grid-cols-3 gap-2 mb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
             {[
               { id: 'Linear (in order)', sub: 'Learners move step by step' },
               { id: 'Open (any order)', sub: 'Learners choose where to start' },
@@ -630,7 +630,7 @@ function Step2({ cfg, setCfg }: { cfg: typeof DEFAULT_STRUCT; setCfg: (c: typeof
       </div>
 
       {/* Right preview */}
-      <div className="w-64 shrink-0">
+      <div className="w-full md:w-64 md:shrink-0">
         <div className="sticky top-4 rounded-2xl p-4 border border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(8px)' }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 8 }}>Your structure</p>
           <span className="inline-block px-2.5 py-1 rounded-lg mb-3 font-mono text-xs" style={{ background: '#0B0F1A', color: '#fff' }}>{hierarchy || 'Module › Lesson'}</span>
@@ -734,7 +734,7 @@ function Step3({ modules, setModules, contentName, groupName, assessName }: { mo
           <Plus size={14} />＋ Add {groupName}
         </button>
       </div>
-      <div className="w-56 shrink-0">
+      <div className="w-full md:w-56 md:shrink-0">
         <div className="sticky top-4 rounded-2xl p-4 border border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(8px)' }}>
           <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 8 }}>Parsed into</p>
           {[
@@ -829,7 +829,7 @@ function Step4({ modules, contentName, groupName, assessName }: { modules: Modul
           </div>
         ))}
       </div>
-      <div className="w-60 shrink-0">
+      <div className="w-full md:w-60 md:shrink-0">
         <div className="sticky top-4 space-y-3">
           <div className="rounded-2xl p-4 border border-white/50" style={{ background: 'rgba(255,255,255,0.65)', backdropFilter: 'blur(8px)' }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: '#0B1220', marginBottom: 10 }}>Teaching preferences</p>
@@ -1036,7 +1036,7 @@ function Step6({ modules, cfg }: { modules: Module[]; cfg: typeof DEFAULT_STRUCT
 
   return (
     <div className="p-5 max-w-2xl">
-      <div className="grid grid-cols-4 gap-3 mb-5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
           { label: 'Modules', val: modules.length },
           { label: 'Lessons', val: totalLessons },

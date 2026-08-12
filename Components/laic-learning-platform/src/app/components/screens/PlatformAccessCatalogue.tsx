@@ -751,7 +751,7 @@ export function PlatformAccessCatalogue() {
   const samples = catalogue.sampleRoleTemplates || [];
 
   return (
-    <div className="px-6 py-6 w-full space-y-5">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-5">
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="p-5 rounded-[24px]" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>

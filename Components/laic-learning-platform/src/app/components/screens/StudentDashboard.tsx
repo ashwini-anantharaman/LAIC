@@ -27,7 +27,7 @@ export function StudentDashboard() {
   const totalLessons = featuredCourse?.modules.reduce((s, m) => s + m.lessons.length, 0) || 0;
 
   return (
-    <div className="px-6 py-6 w-full space-y-6">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-6">
       {/* Header */}
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
         <p style={{ fontSize: 27, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.5px' }}>My learning</p>

@@ -8,8 +8,9 @@ import { OBJECTS } from '../../../lib/data';
 import type {
   Block, QuizContent, QuestionContent, FlashcardSetContent, BridgePlayContent, BiddingSequenceContent,
   ImageContent, VideoEmbedContent, VideoScriptContent, ConceptCardContent, SummaryContent, ReflectionContent,
-  AssignmentContent, DrillContent, LearningObject,
+  AssignmentContent, DrillContent, LearningObject, BridgeTableContent,
 } from '../../../lib/types';
+import { challengeSummary, readBridgeConfig } from '../../../lib/tutorialV2/bridgeEmbed';
 import { resolveLearningObject } from '../../../lib/objectUrls';
 import { getVersion, objectFromVersion } from '../../../lib/objectVersionsStore';
 import { renumberBlockQuestionLabels } from '../../../lib/tutorialOrder.js';
@@ -255,11 +256,28 @@ export function GlossarySidebar({
   );
 }
 
+/**
+ * How many things in this tutorial can be got right — the denominator of the
+ * cumulative pass.
+ *
+ * A CHALLENGE BLOCK COUNTS ITS BOARDS, and an OPENING BID DRILL ITS HANDS. Both
+ * resolve one at a time exactly as a quiz resolves question by question
+ * (BridgeEmbedBlock reports the same `onResolvedChange` shape for all of them),
+ * so a lesson of four boards, five drill hands and six questions is out of
+ * fifteen and the banner needs no second kind of arithmetic. A plain table block
+ * counts nothing: there is nothing to be right about.
+ */
 function countQuizQuestionsInBlocks(blocks: Block[]): number {
   let n = 0;
   for (const b of blocks) {
     if (b.type === 'quiz') n += ((b.content as QuizContent)?.questions || []).length;
     else if (b.type === 'question') n += 1;
+    else if (b.type === 'bridge-table') {
+      const c = readBridgeConfig(b.content || {});
+      const boards = challengeSummary(c.challenge);
+      if (c.kind === 'challenge' && boards) n += boards.boards;
+      else if (c.kind === 'bidding') n += c.biddingHands;
+    }
   }
   return n;
 }
@@ -1170,17 +1188,18 @@ function BlockRenderer({
     case 'bridge-table': {
       // The author's configuration, mounted as the real component. Dormant until
       // the reader opens it, so a lesson with several tables costs nothing to load.
-      const c = (block.content || {}) as {
-        kind?: string; seed?: number; skin?: string; showAllHands?: boolean; caption?: string;
-      };
+      // readBridgeConfig is the same reader the editor uses, so every knob the
+      // author set arrives here and anything a older block lacks falls back.
+      const c = (block.content || {}) as BridgeTableContent;
       return (
         <BridgeEmbedBlock
-          kind={c.kind}
-          seed={c.seed ?? 7}
-          skin={c.skin}
-          showAllHands={!!c.showAllHands}
+          config={readBridgeConfig(c)}
           caption={c.caption}
           readOnly
+          // A challenge reports completion and its mark down the same wire a
+          // quiz does; a table block simply never calls it.
+          onResolvedChange={quizProps?.onResolvedChange}
+          resultKeyPrefix={block.id}
         />
       );
     }

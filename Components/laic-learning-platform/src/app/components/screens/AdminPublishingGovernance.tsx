@@ -156,7 +156,7 @@ export function AdminPublishingGovernance() {
   };
 
   return (
-    <div className="px-6 py-6 w-full space-y-4">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-4">
       <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8 }}>
         Approved work waits here until you decide who it reaches. This is the one place that answers "published to whom?"
       </p>

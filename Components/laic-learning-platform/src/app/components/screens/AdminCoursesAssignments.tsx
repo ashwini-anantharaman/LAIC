@@ -34,7 +34,7 @@ export function AdminCoursesAssignments() {
   };
 
   return (
-    <div className="px-6 py-6 w-full space-y-5">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-5">
       {/* Header action */}
       <div className="flex items-center justify-between">
         <p style={{ fontSize: 12.5, color: '#9AA3AF' }}>Where a course begins its life before a developer picks it up.</p>

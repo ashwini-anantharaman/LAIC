@@ -42,7 +42,7 @@ export function VersionsPublishing() {
   }, [listAllObjectVersions, libraryById, objectVersionsTick]);
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       {versionsFor && (
         <ObjectVersionsModal object={versionsFor} onClose={() => setVersionsFor(null)} />
       )}
@@ -55,8 +55,8 @@ export function VersionsPublishing() {
         </p>
       )}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-        className="rounded-[24px] overflow-hidden" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
-        <table className="w-full">
+        className="rounded-[24px] overflow-x-auto" style={{ background: 'white', boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}>
+        <table className="w-full min-w-[720px]">
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
               {['Content', 'Version', 'Status', 'Date', 'Note', ''].map((h) => (

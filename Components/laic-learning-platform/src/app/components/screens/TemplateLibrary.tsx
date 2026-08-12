@@ -171,7 +171,7 @@ export function TemplateLibrary() {
   /* ── Focused editor: hide library chrome ─────────────────────── */
   if (isFocusing) {
     return (
-      <div className="px-6 py-6 w-full max-w-3xl mx-auto">
+      <div className="px-4 sm:px-6 py-5 sm:py-6 w-full max-w-3xl mx-auto">
         <button
           type="button"
           onClick={closeFocus}
@@ -361,7 +361,7 @@ export function TemplateLibrary() {
   };
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       <div className="flex flex-wrap items-start justify-between gap-3 mb-5">
         <div>
           <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px', marginBottom: 4 }}>

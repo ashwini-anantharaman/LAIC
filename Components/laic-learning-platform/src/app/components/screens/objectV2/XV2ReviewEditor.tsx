@@ -54,10 +54,10 @@ export function XV2ReviewEditor({
   } as unknown as LearningObject), [draft, blocks]);
 
   return (
-    <div className="min-h-full flex" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
+    <div className="min-h-full flex flex-col md:flex-row" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
       <div className="flex-1 min-w-0 flex flex-col">
         <div className="px-5 pt-5 pb-3 shrink-0">
-          <div className="flex items-center justify-between gap-3 mb-3">
+          <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 mb-3">
             <button
               type="button"
               onClick={onBack}

@@ -111,9 +111,13 @@ export function Layout() {
     setMobileLaunch(isNexusMobileShell());
   }, [nexusMode]);
 
-  // Standalone localhost/demo: always use the full desktop shell + persistent sidebar.
-  // Mobile drawer only when launched from the Nexus mobile org app.
-  const mobile = nexusMode ? (mobileLaunch || narrow) : false;
+  // A narrow viewport gets the drawer shell however the app was reached.
+  //
+  // This used to require nexusMode, so opening the site directly on a phone
+  // kept the persistent desktop sidebar: it took more than half of a 390px
+  // screen and crushed every screen into the strip beside it. How the session
+  // started says nothing about how wide the screen is.
+  const mobile = narrow || (nexusMode && mobileLaunch);
 
   useEffect(() => {
     if (!mobile) setNavOpen(false);

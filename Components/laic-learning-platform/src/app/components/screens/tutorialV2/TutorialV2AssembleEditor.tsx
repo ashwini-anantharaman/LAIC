@@ -20,7 +20,11 @@ import { TutorialV2NestedEditor } from './TutorialV2NestedEditor';
 import { parseYtId } from './TutorialV2SourcePanel';
 import { TutorialV2RefineSidebar } from './TutorialV2RefineSidebar';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
-import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
+import {
+  configToPartFields,
+  isBridgeEmbedPart,
+  readBridgeConfig,
+} from '../../../../lib/tutorialV2/bridgeEmbed';
 import { RichTextEditor } from '../../RichTextEditor';
 import { SubmitVersionMenu, type SubmitTarget } from '../SubmitVersionMenu';
 import { readDraggedImage } from '../../../../lib/tutorialV2/imageDrag';
@@ -307,7 +311,7 @@ export function TutorialV2AssembleEditor({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
         <div className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5">
           <div className="max-w-2xl w-full mx-auto">
             {mode === 'preview' ? (
@@ -411,13 +415,14 @@ export function TutorialV2AssembleEditor({
                         </div>
 
                         {isBridgeEmbedPart(p) ? (
-                          <BridgeEmbedBlock
-                            kind={p.embedKind}
-                            seed={p.embedSeed ?? 7}
-                            skin={p.embedSkin}
-                            caption={p.caption}
-                            onChangeCaption={(caption) => updatePart(p.id, { caption })}
-                          />
+                          <div onClick={(e) => e.stopPropagation()} role="presentation">
+                            <BridgeEmbedBlock
+                              config={readBridgeConfig(p)}
+                              caption={p.caption}
+                              onChangeCaption={(caption) => updatePart(p.id, { caption })}
+                              onChangeConfig={(next) => updatePart(p.id, configToPartFields(next))}
+                            />
+                          </div>
                         ) : isNestedEditablePart(p) ? (
                           <div>
                             <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>

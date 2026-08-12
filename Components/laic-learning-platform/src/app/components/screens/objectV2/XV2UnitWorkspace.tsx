@@ -82,7 +82,7 @@ export function XV2UnitWorkspace({
 
   return (
     <div className="max-w-3xl mx-auto">
-      <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-3 mb-3">
         <div className="flex gap-2">
           {(['write', ...(allowAiGenerate ? ['generate'] as const : [])] as Tab[]).map((t) => (
             <button

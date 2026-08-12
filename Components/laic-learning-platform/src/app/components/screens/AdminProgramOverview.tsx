@@ -34,7 +34,7 @@ export function AdminProgramOverview() {
   const maxCount = Math.max(...Object.values(statusCounts), 1);
 
   return (
-    <div className="px-6 py-6 w-full space-y-5">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-5">
       {/* Breadcrumb */}
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-2 flex-wrap">
