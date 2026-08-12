@@ -30,10 +30,10 @@ const DESIGN = { width: 390, height: 852 };
 
 /** Nest positions, labels and destinations — all in design coordinates. */
 const NESTS = [
-  { key: "play", label: "Play", href: "/play", x: 30, y: 203, w: 151, h: 91.5, lx: 86, ly: 220 },
-  { key: "learn", label: "Learn", href: "/learn", x: 204, y: 229, w: 151, h: 91.5, lx: 255, ly: 246 },
-  { key: "coach", label: "Coach", href: "/coach", x: 49, y: 416, w: 151, h: 91.5, lx: 97, ly: 434 },
-  { key: "club", label: "Club", href: "/club", x: 231, y: 446, w: 151, h: 91.5, lx: 270, ly: 462 },
+  { key: "play", label: "Play", href: "/play", x: 30, y: 203, w: 151, h: 91.5, ly: 220 },
+  { key: "learn", label: "Learn", href: "/learn", x: 204, y: 229, w: 151, h: 91.5, ly: 246 },
+  { key: "coach", label: "Coach", href: "/coach", x: 49, y: 416, w: 151, h: 91.5, ly: 434 },
+  { key: "club", label: "Club", href: "/club", x: 231, y: 446, w: 151, h: 91.5, ly: 462 },
   {
     key: "analysis",
     label: "Analysis",
@@ -42,7 +42,6 @@ const NESTS = [
     y: 562,
     w: 163,
     h: 98.8,
-    lx: 268,
     ly: 582,
     labelSize: Type.nestLabel - 1.2,
   },
@@ -104,7 +103,15 @@ export default function HomeScreen() {
             style={[
               styles.nestLabel,
               {
-                left: nest.lx * s,
+                // Spans the NEST and centres inside it, rather than being
+                // left-anchored at a hand-picked x. Those x values encoded
+                // "centre minus half the word", so they only stayed centred for
+                // the exact word and font metrics they were measured against —
+                // "Club" sat 17pt left of its nest because its number assumed a
+                // wider word. This cannot drift: rename a nest and the label
+                // stays centred.
+                left: nest.x * s,
+                width: nest.w * s,
                 top: nest.ly * s,
                 fontSize: ("labelSize" in nest ? nest.labelSize : Type.nestLabel) * s,
               },
@@ -145,6 +152,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     fontFamily: Fonts.display,
     color: Brand.cream,
+    // With the label spanning its nest, this is what does the centring.
+    textAlign: "center",
   },
   pressed: { opacity: 0.82 },
 });
