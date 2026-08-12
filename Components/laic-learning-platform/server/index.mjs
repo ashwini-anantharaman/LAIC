@@ -1120,6 +1120,38 @@ const LEARNING_ORG_ID = process.env.LEARNING_ORG_ID || '';
  */
 const LEARNING_PROGRAM_ID = process.env.LEARNING_PROGRAM_ID || '';
 
+/** Is this object currently published? Decides what a backup may overwrite. */
+async function isObjectPublished(id) {
+  const params = new URLSearchParams({
+    id: `eq.${id}`,
+    organization_id: `eq.${LEARNING_ORG_ID}`,
+    select: 'published_at',
+  });
+  const res = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+    headers: {
+      apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+    },
+  });
+  if (!res.ok) return false;
+  const rows = await res.json().catch(() => []);
+  return !!rows?.[0]?.published_at;
+}
+
+/**
+ * One row serves two masters: it is the published copy readers see AND this
+ * library's backup of work in progress. Those change at different times, so
+ * they must not write the same columns.
+ *
+ * A PUBLISH (version_number given) owns the published columns: blocks, status,
+ * version_number, published_at.
+ *
+ * A BACKUP (no version_number) owns only the draft. Against an unpublished row
+ * it writes everything, because it is the only copy there is. Against a
+ * PUBLISHED row it writes the draft and nothing else — otherwise every autosave
+ * would push work-in-progress content out to readers and overwrite the status
+ * that keeps a draft out of their view, which is exactly what happened.
+ */
 async function publishLearningObjectRow(row, share = false) {
   if (!NEXUS_SUPABASE_URL || !NEXUS_SUPABASE_SERVICE_ROLE_KEY || !LEARNING_ORG_ID) {
     throw new LlmError(503, 'not_configured', 'Shared-library publishing is not configured on the server.');
@@ -1127,6 +1159,32 @@ async function publishLearningObjectRow(row, share = false) {
   const id = String(row?.id || '').trim();
   const type = String(row?.type || '').trim();
   if (!id || !type) throw new LlmError(400, 'bad_object', 'Object id and type are required.');
+
+  const isPublish = row.version_number != null && Number.isFinite(Number(row.version_number));
+  if (!isPublish && !share && await isObjectPublished(id)) {
+    const draftOnly = {
+      pipeline_draft: row.pipeline_draft ?? null,
+      collection_ids: Array.isArray(row.collection_ids) ? row.collection_ids : [],
+      collection_names: Array.isArray(row.collection_names) ? row.collection_names : [],
+      updated_at: new Date().toISOString(),
+    };
+    const params = new URLSearchParams({ id: `eq.${id}`, organization_id: `eq.${LEARNING_ORG_ID}` });
+    const patched = await fetch(`${NEXUS_SUPABASE_URL}/rest/v1/learning_objects?${params}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: NEXUS_SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${NEXUS_SUPABASE_SERVICE_ROLE_KEY}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(draftOnly),
+    });
+    if (!patched.ok) {
+      const detail = await patched.text().catch(() => '');
+      throw new LlmError(502, 'supabase_error', `Draft backup failed (${patched.status}): ${detail.slice(0, 300)}`);
+    }
+    return { ok: true, id, mode: 'draft-backup' };
+  }
   const out = {
     id,
     organization_id: LEARNING_ORG_ID,
@@ -1150,7 +1208,7 @@ async function publishLearningObjectRow(row, share = false) {
   };
   // Which version this content came from, when an author published one
   // explicitly. Readers show it; null means "published before we tracked it".
-  if (row.version_number != null && Number.isFinite(Number(row.version_number))) {
+  if (isPublish) {
     out.version_number = Number(row.version_number);
     out.published_at = new Date().toISOString();
   }
