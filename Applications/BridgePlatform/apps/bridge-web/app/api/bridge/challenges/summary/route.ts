@@ -16,7 +16,7 @@
 // through the same client. CORS is open because the route never reads cookies
 // for the bearer path and answers only for the token it was handed.
 
-import { challengeScores, type ChallengeScoring } from "@bridge/challenges";
+import { challengeScores, type ChallengeScoring, type ChallengeStatus } from "@bridge/challenges";
 import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -63,6 +63,9 @@ interface ChallengeSummary {
   scoring: ChallengeScoring;
   boardCount: number;
   createdAt: string;
+  /** Archived challenges are retired: their results stay readable, play does not.
+   *  The app needs it to label one, and to offer a moderator the reverse. */
+  status: ChallengeStatus;
   inviteStatus: "pending" | "accepted" | "declined" | "none";
   viewer: {
     finishedBoards: number;
