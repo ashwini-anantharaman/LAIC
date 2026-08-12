@@ -109,7 +109,11 @@ export async function fetchLiveLearningObjects(token: string): Promise<LearningO
       .from("learning_objects")
       .select(LIST_COLUMNS)
       .eq("organization_id", LEARNING_ORG_ID as string)
-      .not("published_at", "is", null)
+      // No published_at filter HERE on purpose. isVisibleToLearners (lib/learning) is
+      // the single rule, and it also admits older content that was published before
+      // stamping existed — filtering the stamp server-side made this path stricter
+      // than the API path, so enabling migration 0005 would have silently retired
+      // that content again. One rule, applied in one place, over both paths.
       .order("updated_at", { ascending: false });
     if (error) {
       console.warn("[learning-live] read failed, falling back to the API:", error.message);

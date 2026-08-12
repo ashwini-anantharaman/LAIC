@@ -14,8 +14,9 @@
 -- It grants SELECT on learning_objects to `authenticated` only — never to `anon`,
 -- and never insert/update/delete. Two policies bound it:
 --
---   1. PUBLISHED ONLY. published_at must be non-null (0004). Draft and in-review
---      work stays invisible to clients no matter who asks.
+--   1. PUBLISHED ONLY. A stamp (published_at, 0004) or status = 'published' — see the
+--      policy below for why both. Draft and in-review work stays invisible to clients
+--      no matter who asks.
 --   2. THEIR OWN ORG. The row's organization_id must be one the caller holds a
 --      profile in. Without this arm, any signed-in user of any org could read
 --      every org's content — the exact isolation this pack exists to enforce.
@@ -73,7 +74,12 @@ drop policy if exists learning_objects_client_read on learning_objects;
 create policy learning_objects_client_read on learning_objects
   for select to authenticated
   using (
-    published_at is not null
+    -- PUBLISHED, by either signal. The stamp is the modern one, but content published
+    -- before published_at was written carries only status = 'published', and demanding
+    -- the stamp here would hide it from clients while the API still served it — two
+    -- read paths disagreeing about the same rows. Drafts have neither, so they stay
+    -- invisible, which is the point of the condition.
+    (published_at is not null or lower(coalesce(status, '')) = 'published')
     and organization_id is not null
     and learning_caller_in_org(organization_id)
   );
