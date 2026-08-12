@@ -235,6 +235,31 @@ test.describe("table API (T0): view bootstrap, envelope, lifecycle", () => {
     await a.post(`/api/bridge/sessions/${sessionId}/discard`);
   });
 
+  test("the coach payload arrives pre-rendered, from the learner's seat", async ({
+    context,
+    page,
+  }) => {
+    await signInAs(context, "user_learner_lena");
+    const a = await api(page);
+    const dealt = await a.post("/api/bridge/quick-play", {});
+    const { sessionId } = (await dealt.json()) as { sessionId: string };
+
+    const res = await a.get(`/api/bridge/sessions/${sessionId}/coach`);
+    expect(res.status()).toBe(200);
+    const coach = await res.json();
+    // Lena sits South — she is coached, not watching.
+    expect(coach.watcher).toBe(false);
+    expect(Array.isArray(coach.lines.looking)).toBe(true);
+    expect(coach.lines.looking.length).toBeGreaterThan(0);
+    expect(typeof coach.lines.looking[0].text).toBe("string");
+    expect(Array.isArray(coach.lines.think)).toBe(true);
+    expect(Array.isArray(coach.eventGroups)).toBe(true);
+    expect(typeof coach.status.looking).toBe("string");
+    expect(typeof coach.tellLabel).toBe("string");
+
+    await a.post(`/api/bridge/sessions/${sessionId}/discard`);
+  });
+
   test("new-deal forks fresh cards for the same table", async ({ context, page }) => {
     await signInAs(context, "user_orgadmin_olivia");
     const a = await api(page);

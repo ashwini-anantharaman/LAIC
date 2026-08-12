@@ -179,6 +179,8 @@ export interface TableSession {
   state: GameState | null;
   /** 13 minus plays — how many card backs a hidden seat shows. */
   remainingCount: (seat: Seat) => number;
+  /** The confirmed head — bump-watchers (the coach dock) refresh off it. */
+  headSeq: number;
   /** May the viewer act RIGHT NOW (their turn, nothing in flight)? */
   myTurn: boolean;
   /** The seat whose action is next — under a takeover, the declarer's chair. */
@@ -600,6 +602,7 @@ export function useTableSession(
     bootstrap: b,
     state,
     remainingCount,
+    headSeq: store.confirmedSeq,
     myTurn,
     actingSeat: turn?.actingSeat ?? null,
     legalCallSet,

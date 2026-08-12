@@ -17,6 +17,8 @@
 
 import { NextResponse } from "next/server";
 
+import { corsOptions, withCors } from "@/lib/cors";
+
 import { advisePlay } from "@/lib/coach/advise";
 import { partnershipSystem } from "@/lib/coach/verdicts";
 import { kbStore } from "@/lib/kb";
@@ -25,7 +27,13 @@ import { sessionService } from "@/lib/sessions";
 
 const PARTNER: Record<string, string> = { N: "S", S: "N", E: "W", W: "E" };
 
+export const OPTIONS = corsOptions("GET");
+
 export async function GET(request: Request): Promise<NextResponse> {
+  return withCors(await handle(request), "GET");
+}
+
+async function handle(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
   if (!context) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 

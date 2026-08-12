@@ -17,6 +17,8 @@
 
 import { NextResponse } from "next/server";
 
+import { corsOptions, withCors } from "@/lib/cors";
+
 import { advisePlay } from "@/lib/coach/advise";
 import { explainPlay, modelConfigured, type PlayExplanation } from "@/lib/coach/model";
 import { codeLabel } from "@/lib/coach/position";
@@ -66,7 +68,13 @@ function remember(key: string, value: PlayExplanation): void {
   cache.set(key, value);
 }
 
+export const OPTIONS = corsOptions("GET");
+
 export async function GET(request: Request): Promise<NextResponse> {
+  return withCors(await handle(request), "GET");
+}
+
+async function handle(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
   if (!context) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 

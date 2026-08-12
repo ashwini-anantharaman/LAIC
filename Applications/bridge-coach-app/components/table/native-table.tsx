@@ -26,6 +26,7 @@ import { PROGRAM_ID } from "../../lib/config";
 import { useTableSession } from "../../lib/table/session-store";
 import { LeaveBoardDialog } from "../leave-board-dialog";
 import { Screen, ScreenHeader } from "../ui";
+import { CoachDock } from "./coach-dock";
 import {
   callLabel,
   cardId,
@@ -259,6 +260,12 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
       {session.actError ? <Text style={styles.actError}>{session.actError}</Text> : null}
       {session.pending ? <Text style={styles.pendingNote}>…</Text> : null}
+
+      {/* The coach band under the felt — gated like everything else by the
+          server's control answer; refreshes off the confirmed head. */}
+      {b.control["table.coach"] && (
+        <CoachDock sessionId={sessionId} refreshKey={session.headSeq} />
+      )}
     </ScrollView>
     </Screen>
   );
