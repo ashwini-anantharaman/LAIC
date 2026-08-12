@@ -1330,6 +1330,50 @@ offeringsRouter.get("/programs/:program_id/chat", async (c) => {
   return c.json(await clubChat.listClubChatMessages(orgId, programId, profileId));
 });
 
+/**
+ * Clear the club's chat — every message, pinned ones included.
+ *
+ * Authority mirrors setting the club's header exactly: a fine-grained role governs
+ * alone (app.chat.moderate), and only a caller with NO role at all falls back to the
+ * coarse "club staff" check. Emptying a club's conversation is at least as
+ * consequential as changing its banner, so it gets the same shape rather than a
+ * looser one invented here.
+ *
+ * Reports the count, so "cleared" over an already-empty thread does not read as
+ * having done something.
+ */
+offeringsRouter.delete("/programs/:program_id/chat", async (c) => {
+  const { user, programId, orgId } = await _clubChatActor(c);
+  const staff = user.memberships.some(
+    (m) =>
+      m.org_id === orgId &&
+      _CLUB_STAFF.has(m.role) &&
+      (m.program_id === programId || (!m.program_id && m.role === "owner")),
+  );
+  const caps = await capabilitiesFor(user, { providerId: "club-app", orgId, programId });
+  if (caps.size > 0) {
+    if (!caps.has("app.chat.moderate")) {
+      throw new HttpError(403, "Missing capability: app.chat.moderate");
+    }
+  } else if (!staff) {
+    throw new HttpError(403, "Only a club's coaches can clear its chat");
+  }
+
+  const deleted = await clubChat.deleteAllClubChatMessages(programId);
+  await db.recordAuditEvent("club.chat_cleared", {
+    orgId,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: programId,
+    targetType: "program",
+    targetId: programId,
+    // The bodies are gone, so the trail records only how many — enough to show the
+    // act happened without preserving what was said.
+    metadata: { deleted },
+  });
+  return c.json({ ok: true, deleted });
+});
+
 offeringsRouter.post("/programs/:program_id/chat", async (c) => {
   const { user, programId, orgId, profileId } = await _clubChatActor(c);
   const req = parseBody(chatPostSchema, await c.req.json());
