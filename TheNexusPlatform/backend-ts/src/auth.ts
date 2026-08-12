@@ -405,9 +405,39 @@ export async function signInUser(email: string, password: string): Promise<Row> 
       id: data.user.id,
       email: data.user.email ?? email,
       access_token: data.session.access_token,
+      // The access token lives ~1 hour; without these two fields a client can
+      // only sign the user out when it dies. Demo-mode sign-ins return neither
+      // (their opaque tokens don't expire), and clients treat absence as
+      // "no refresh flow".
+      refresh_token: data.session.refresh_token,
+      expires_at: data.session.expires_at ?? null,
     };
   } catch (exc) {
     if (exc instanceof HttpError) throw exc;
     throw new HttpError(401, "Invalid credentials");
+  }
+}
+
+/**
+ * Trade a refresh token for a fresh session. Supabase rotates refresh tokens:
+ * the response's refresh_token REPLACES the one spent here — a client that
+ * keeps the old one will find it revoked (reuse detection kills the family).
+ * Demo mode has no refresh flow (its tokens don't expire): 404, and clients
+ * fall back to today's behavior.
+ */
+export async function refreshUserSession(refreshToken: string): Promise<Row> {
+  if (await demoMode()) throw new HttpError(404, "No refresh flow in demo mode");
+  const client = createEphemeralClient();
+  try {
+    const { data, error } = await client.auth.refreshSession({ refresh_token: refreshToken });
+    if (error || !data?.session) throw new HttpError(401, "Invalid refresh token");
+    return {
+      access_token: data.session.access_token,
+      refresh_token: data.session.refresh_token,
+      expires_at: data.session.expires_at ?? null,
+    };
+  } catch (exc) {
+    if (exc instanceof HttpError) throw exc;
+    throw new HttpError(401, "Invalid refresh token");
   }
 }

@@ -31,17 +31,12 @@ import {
   listChallengePlays,
   listChallengesForUser,
 } from "@/lib/challenges";
+import { corsHeaders, corsOptions } from "@/lib/cors";
 import { getBridgeContext, getBridgeContextFromToken } from "@/lib/nexus";
 
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
-  "Access-Control-Allow-Headers": "authorization, x-program-id, content-type",
-} as const;
+const CORS = corsHeaders("GET");
 
-export async function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS });
-}
+export const OPTIONS = corsOptions("GET");
 
 interface SummaryLeaderboardRow {
   rank: number;
