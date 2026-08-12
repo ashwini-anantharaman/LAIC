@@ -78,16 +78,26 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 30,
   },
-  // A clean cream tab — no stacked-edge shadow (owner request 2026-08-12:
-  // the dark edge it drew read as a stray line on the felt).
+  // The dark edge is a BORDER on the visible sides only (owner request
+  // 2026-08-12): a shadow bled a dark line along the application's edge,
+  // a border hugs the shape and stops where the screen begins. No right
+  // border — that side meets the panel or the screen edge.
   tab: {
     width: TAB_W,
     height: 54,
     backgroundColor: Brand.cream,
     borderTopLeftRadius: 14,
     borderBottomLeftRadius: 14,
+    borderColor: Brand.cardShadow,
+    borderLeftWidth: 2,
+    borderTopWidth: 2,
+    borderBottomWidth: 2,
     alignItems: "center",
     justifyContent: "center",
+    // Ride over the panel's left border where the two meet, so the pair
+    // reads as one outlined shape rather than two with a seam.
+    marginRight: -2,
+    zIndex: 1,
   },
   tabGlyph: {
     fontSize: 24,
@@ -101,6 +111,10 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.cream,
     borderTopLeftRadius: Radius.card,
     borderBottomLeftRadius: Radius.card,
+    borderColor: Brand.cardShadow,
+    borderLeftWidth: 2,
+    borderTopWidth: 2,
+    borderBottomWidth: 2,
     paddingHorizontal: 18,
     paddingVertical: 20,
   },
