@@ -2,7 +2,6 @@ import { useLocalSearchParams } from "expo-router";
 
 import { BridgeEmbed } from "../../components/bridge-embed";
 import { NativeTable } from "../../components/table/native-table";
-import { Screen, ScreenHeader } from "../../components/ui";
 
 /** One board at the table — opened by Resume, or from a list of unfinished
  *  boards. The table itself is the platform's (fluid design components).
@@ -23,12 +22,9 @@ export default function TableScreen() {
   }>();
 
   if (native === "1") {
-    return (
-      <Screen>
-        <ScreenHeader title="Board" backTo="/play" />
-        <NativeTable sessionId={String(sessionId ?? "")} />
-      </Screen>
-    );
+    // The native table owns its whole screen — header, leave-board dialog,
+    // transport — because the save-or-discard question reads its own store.
+    return <NativeTable sessionId={String(sessionId ?? "")} />;
   }
 
   const params = new URLSearchParams();

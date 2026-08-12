@@ -8,6 +8,7 @@
 // Layout prices itself off the window width with flex bands — RN has no CSS
 // reflow problem, so the web's scaled-fixed-stage trick stays behind.
 
+import { router } from "expo-router";
 import { useMemo, useState } from "react";
 import {
   Pressable,
@@ -23,6 +24,8 @@ import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import { PROGRAM_ID } from "../../lib/config";
 import { useTableSession } from "../../lib/table/session-store";
+import { LeaveBoardDialog } from "../leave-board-dialog";
+import { Screen, ScreenHeader } from "../ui";
 import {
   callLabel,
   cardId,
@@ -52,6 +55,8 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
   const { width } = useWindowDimensions();
   const session = useTableSession(token, programId, sessionId);
   const { bootstrap: b, state } = session;
+  const [leaveAsk, setLeaveAsk] = useState(false);
+  const [savedNote, setSavedNote] = useState<string | null>(null);
 
   const stage = Math.min(width, 480);
   const smallCard = Math.max(20, Math.floor(stage / 16));
@@ -59,11 +64,24 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
   const score = useMemo(() => (state ? scoreBoard(state) : null), [state]);
 
+  // Leaving mid-board asks: keep it for Resume, or discard it. The store's
+  // OWN phase decides — no postMessage dance, the state is right here.
+  const goBack = () => (router.canGoBack() ? router.back() : router.replace("/play"));
+  const onBack = (defaultBack: () => void) => {
+    const unfinished =
+      !!b && !!state && !b.boardOver && state.phase !== "complete" && b.mySeat !== null;
+    if (unfinished) setLeaveAsk(true);
+    else defaultBack();
+  };
+
   if (!b || !state) {
     return (
-      <View style={styles.loading}>
-        <Text style={styles.loadingText}>{session.error ?? "Taking your seat…"}</Text>
-      </View>
+      <Screen>
+        <ScreenHeader title="Board" backTo="/play" />
+        <View style={styles.loading}>
+          <Text style={styles.loadingText}>{session.error ?? "Taking your seat…"}</Text>
+        </View>
+      </Screen>
     );
   }
 
@@ -98,7 +116,26 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
     />
   );
 
+  const canStep = b.control["table.step_controls"];
+  const canUndo = b.control["table.undo"];
+
   return (
+    <Screen>
+      <ScreenHeader title="Board" backTo="/play" onBack={onBack} />
+      <LeaveBoardDialog
+        visible={leaveAsk}
+        // Save = the server already has every event; the board waits under
+        // Resume by simply being left alive.
+        onSave={() => {
+          setLeaveAsk(false);
+          goBack();
+        }}
+        onDiscard={() => {
+          setLeaveAsk(false);
+          void session.discard().finally(goBack);
+        }}
+        onStay={() => setLeaveAsk(false)}
+      />
     <ScrollView style={styles.felt} contentContainerStyle={styles.feltInner}>
       {/* Top bar: the board's facts. */}
       <View style={styles.topBar}>
@@ -166,9 +203,75 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         <BidPad legal={session.legalCallSet} onCall={(call) => void session.act({ call })} />
       )}
 
+      {/* BEN held the beat (challenges have no fallback): say so, offer ⟳. */}
+      {session.benWaiting && (
+        <Pressable onPress={session.retryBen} style={styles.benChip}>
+          <Text style={styles.benChipText}>BEN is thinking… tap to retry</Text>
+        </Pressable>
+      )}
+
+      {/* Transport: pause/run the robots, step one decision, take one back. */}
+      {!boardOver && canStep && (
+        <View style={styles.transportRow}>
+          <Chip
+            label={session.paused ? "▶ Run" : "❚❚ Pause"}
+            onPress={() => session.setPaused(!session.paused)}
+          />
+          <Chip
+            label="▸ Step"
+            onPress={() => {
+              session.setPaused(true);
+              void session.step();
+            }}
+          />
+          {canUndo && state.auction.length > 0 && (
+            <Chip label="↩ Undo" onPress={() => void session.undo()} />
+          )}
+        </View>
+      )}
+
+      {/* A finished board's onward verbs. */}
+      {boardOver && (
+        <View style={styles.transportRow}>
+          {b.control["table.save_library"] && (
+            <Chip
+              label="Save play"
+              onPress={() =>
+                void session
+                  .save("play")
+                  .then((id) => id && setSavedNote("Saved to your library."))
+              }
+            />
+          )}
+          {b.control["table.new_deal"] && (
+            <Chip
+              label="New deal"
+              onPress={() =>
+                void session
+                  .newDeal()
+                  .then((id) => id && router.replace(`/table/${id}?native=1`))
+              }
+            />
+          )}
+        </View>
+      )}
+      {savedNote ? <Text style={styles.savedNote}>{savedNote}</Text> : null}
+
       {session.actError ? <Text style={styles.actError}>{session.actError}</Text> : null}
       {session.pending ? <Text style={styles.pendingNote}>…</Text> : null}
     </ScrollView>
+    </Screen>
+  );
+}
+
+function Chip({ label, onPress }: { label: string; onPress: () => void }) {
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.transportChip, pressed && { opacity: 0.75 }]}
+    >
+      <Text style={styles.transportChipText}>{label}</Text>
+    </Pressable>
   );
 }
 
@@ -506,6 +609,31 @@ const styles = StyleSheet.create({
   bidKeyDim: { opacity: 0.35 },
   bidKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 15, color: Brand.ink },
   bidKeyTextOn: { color: Brand.maroon },
+
+  transportRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
+  transportChip: {
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderWidth: 1,
+    borderColor: "rgba(255,244,215,0.4)",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  transportChipText: { fontFamily: Fonts.bodySemibold, fontSize: 13, color: Brand.cream },
+  benChip: {
+    alignSelf: "center",
+    backgroundColor: Brand.cream,
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+  },
+  benChipText: { fontFamily: Fonts.bodySemibold, fontSize: 12.5, color: Brand.ink },
+  savedNote: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 12.5,
+    color: Brand.cream,
+    textAlign: "center",
+  },
 
   actError: {
     fontFamily: Fonts.bodySemibold,

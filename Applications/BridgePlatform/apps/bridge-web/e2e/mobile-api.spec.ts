@@ -235,6 +235,22 @@ test.describe("table API (T0): view bootstrap, envelope, lifecycle", () => {
     await a.post(`/api/bridge/sessions/${sessionId}/discard`);
   });
 
+  test("new-deal forks fresh cards for the same table", async ({ context, page }) => {
+    await signInAs(context, "user_orgadmin_olivia");
+    const a = await api(page);
+    const dealt = await a.post("/api/bridge/quick-play", {});
+    const { sessionId } = (await dealt.json()) as { sessionId: string };
+
+    const fresh = await a.post(`/api/bridge/sessions/${sessionId}/new-deal`);
+    expect(fresh.status()).toBe(200);
+    const next = (await fresh.json()) as { sessionId: string };
+    expect(next.sessionId).toBeTruthy();
+    expect(next.sessionId).not.toBe(sessionId);
+
+    await a.post(`/api/bridge/sessions/${sessionId}/discard`);
+    await a.post(`/api/bridge/sessions/${next.sessionId}/discard`);
+  });
+
   test("appearance round-trips through GET/PATCH", async ({ context, page }) => {
     await signInAs(context, "user_orgadmin_olivia");
     const a = await api(page);

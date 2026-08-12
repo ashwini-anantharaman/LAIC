@@ -22,7 +22,8 @@
 // begin), the opening lead (dummy spreads), completion (all face-up) —
 // re-asks the server; visibility is never guessed.
 
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 import {
   applyEvent,
@@ -169,6 +170,9 @@ function reduce(state: StoreState, msg: Msg): StoreState {
 /** How often a live board asks "did anything happen?". */
 const POLL_MS = 2_500;
 
+/** The robots' pace — one decision per beat, the web table's default. */
+const BEAT_MS = 750;
+
 export interface TableSession {
   bootstrap: TableBootstrap | null;
   /** The folded frame (confirmed ⊕ optimistic) — null until bootstrap lands. */
@@ -191,6 +195,27 @@ export interface TableSession {
   act: (action: { call?: Call; card?: Card }) => Promise<void>;
   /** Full re-bootstrap: policy boundaries, gaps, undo races, foregrounds. */
   resync: () => Promise<void>;
+
+  // ── Phase C: robots, transport, lifecycle ─────────────────────────────────
+  /** The robots' beat is held. Boards run by default; undo and backgrounding
+   *  pause them — resuming is always the person's choice. */
+  paused: boolean;
+  setPaused: (paused: boolean) => void;
+  /** A challenge BEN couldn't answer — the beat holds until retried. */
+  benWaiting: boolean;
+  retryBen: () => void;
+  /** One robot decision, by hand — the transport's ▸ chip. */
+  step: () => Promise<void>;
+  /** Take back the last decision; the board comes back PAUSED. */
+  undo: () => Promise<void>;
+  /** Back to the deal; paused, same as undo. */
+  rewind: () => Promise<void>;
+  /** Record the board into the library → the new entry's id, or null. */
+  save: (kind: "board" | "play", name?: string) => Promise<string | null>;
+  /** Delete this unfinished board (the leave dialog's destructive path). */
+  discard: () => Promise<boolean>;
+  /** Fresh cards, same lineup → the new session to open, or null. */
+  newDeal: () => Promise<string | null>;
 }
 
 export function useTableSession(
@@ -303,6 +328,151 @@ export function useTableSession(
     const timer = setInterval(() => void poll(), POLL_MS);
     return () => clearInterval(timer);
   }, [store.bootstrap, poll]);
+
+  // ── Phase C: the robot beat ────────────────────────────────────────────────
+
+  const [paused, setPaused] = useState(false);
+  const [benWaiting, setBenWaiting] = useState(false);
+  /** Bumped after every step ATTEMPT so the beat re-arms even when a step
+   *  failed without changing the log (a transient error retries paced). */
+  const [beat, setBeat] = useState(0);
+
+  const stepOnce = useCallback(async () => {
+    const s = storeRef.current;
+    if (!token || busy.current || s.optimistic) return;
+    try {
+      const env = await bridgeRequest<Envelope>(
+        `/api/bridge/sessions/${encodeURIComponent(sessionId)}/step`,
+        { token, programId, method: "POST", body: { sinceSeq: s.confirmedSeq } },
+      );
+      if (!live.current) return;
+      await applyEnvelope(env, "poll");
+    } catch (e) {
+      if (!live.current) return;
+      if (e instanceof BridgeApiError && e.status === 409) {
+        // A human's turn — our picture of whose move it is drifted. Re-ask.
+        await resync();
+        return;
+      }
+      if (e instanceof BridgeApiError && e.status === 503) {
+        // A challenge BEN with no fallback (spec §2): hold the beat and say
+        // so, instead of hammering a struggling engine.
+        setBenWaiting(true);
+        return;
+      }
+      // Transient — the bumped beat below re-arms a paced retry.
+    } finally {
+      if (live.current) setBeat((n) => n + 1);
+    }
+  }, [token, programId, sessionId, applyEnvelope, resync]);
+
+  const turnFacts = store.turn;
+  useEffect(() => {
+    const b0 = store.bootstrap;
+    if (!b0 || !turnFacts) return;
+    if (b0.boardOver) return;
+    if (paused || benWaiting || store.optimistic) return;
+    if (turnFacts.actingIsHuman) return;
+    const timer = setTimeout(() => void stepOnce(), BEAT_MS);
+    return () => clearTimeout(timer);
+  }, [store.bootstrap, turnFacts, store.confirmedSeq, paused, benWaiting, store.optimistic, beat, stepOnce]);
+
+  // Background holds the beat; coming back re-asks the server and STAYS
+  // paused — resuming a scored board is the person's call, not the OS's.
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (appState) => {
+      if (appState !== "active") {
+        setPaused(true);
+      } else {
+        void resync();
+      }
+    });
+    return () => sub.remove();
+  }, [resync]);
+
+  const retryBen = useCallback(() => setBenWaiting(false), []);
+
+  // ── Phase C: lifecycle verbs ──────────────────────────────────────────────
+
+  const undoLike = useCallback(
+    async (path: "undo" | "rewind") => {
+      const s = storeRef.current;
+      if (!token) return;
+      try {
+        const env = await bridgeRequest<Envelope>(
+          `/api/bridge/sessions/${encodeURIComponent(sessionId)}/${path}`,
+          { token, programId, method: "POST", body: { sinceSeq: s.confirmedSeq } },
+        );
+        if (!live.current) return;
+        // The head just moved BELOW the cursor — applyEnvelope rebuilds.
+        await applyEnvelope(env, "settle");
+        // Come back PAUSED: the point of undo is to inspect the decision —
+        // auto-play would instantly redo it.
+        setPaused(true);
+      } catch (e) {
+        if (live.current)
+          dispatch({
+            kind: "reject",
+            reason: e instanceof BridgeApiError ? e.message : "Couldn't take that back.",
+          });
+      }
+    },
+    [token, programId, sessionId, applyEnvelope],
+  );
+  const undo = useCallback(() => undoLike("undo"), [undoLike]);
+  const rewind = useCallback(() => undoLike("rewind"), [undoLike]);
+
+  const save = useCallback(
+    async (kind: "board" | "play", name?: string): Promise<string | null> => {
+      if (!token) return null;
+      try {
+        const res = await bridgeRequest<{ entryId: string }>(
+          `/api/bridge/sessions/${encodeURIComponent(sessionId)}/save`,
+          { token, programId, method: "POST", body: { kind, ...(name ? { name } : {}) } },
+        );
+        return res.entryId;
+      } catch (e) {
+        if (live.current)
+          dispatch({
+            kind: "reject",
+            reason: e instanceof BridgeApiError ? e.message : "Couldn't save that.",
+          });
+        return null;
+      }
+    },
+    [token, programId, sessionId],
+  );
+
+  const discard = useCallback(async (): Promise<boolean> => {
+    if (!token) return false;
+    try {
+      await bridgeRequest<{ discarded: boolean }>(
+        `/api/bridge/sessions/${encodeURIComponent(sessionId)}/discard`,
+        { token, programId, method: "POST" },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }, [token, programId, sessionId]);
+
+  const newDeal = useCallback(async (): Promise<string | null> => {
+    if (!token) return null;
+    try {
+      const res = await bridgeRequest<{ sessionId: string }>(
+        `/api/bridge/sessions/${encodeURIComponent(sessionId)}/new-deal`,
+        { token, programId, method: "POST" },
+      );
+      return res.sessionId;
+    } catch (e) {
+      if (live.current)
+        dispatch({
+          kind: "reject",
+          reason: e instanceof BridgeApiError ? e.message : "Couldn't deal fresh cards.",
+        });
+      return null;
+    }
+  }, [token, programId, sessionId]);
 
   // The pure fold: dealt hands + confirmed actions (+ the optimistic tap).
   const state = useMemo(() => {
@@ -439,5 +609,15 @@ export function useTableSession(
     error: store.error,
     act,
     resync,
+    paused,
+    setPaused,
+    benWaiting,
+    retryBen,
+    step: stepOnce,
+    undo,
+    rewind,
+    save,
+    discard,
+    newDeal,
   };
 }
