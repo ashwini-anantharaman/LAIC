@@ -5,14 +5,25 @@
 //
 // THE ONE RULE THAT GOVERNS ALL OF THIS: an inline style beats any host
 // selector, and a host's `!important` beats an inline style. Everything below
-// is inline, so it defends against normal host CSS and NOT against `!important`
-// — measured, not assumed:
+// is inline, so it defends against normal host CSS and NOT against `!important`.
 //
-//   host rule on the component root      default      isolate
-//   `flex: 1`                            held         held
-//   `flex: 1 !important`                 grow leaks   grow leaks
-//   `align-self: stretch !important`     stretches    stretches
-//   inherited font / colour / spacing    inherited    reset
+// Measured against a host that is actively hostile — `display:flex` at 640×760,
+// Georgia, 2.6 line-height, 1px tracking — with the drill as the component:
+//
+//   host rule on the component root    default        isolate
+//   `flex: 1`                          611 in 760     567 in 760   HELD
+//   `flex: 1 !important`               grow:1         grow:1       leaks
+//   `align-self: stretch !important`   760 in 760     760 in 760   leaks
+//   inherited font                     Georgia        system-ui    reset
+//   inherited letter-spacing           1px            normal       reset
+//
+// Two things that table corrects about the obvious guesses. `flex: 1 !important`
+// leaks along the MAIN axis, so in a row container it takes width, not height —
+// the component gets wider and therefore SHORTER (429px), which looks like the
+// defence working and is not. `align-self: stretch !important` is the one that
+// pulls height, and it is why `alignSelf` below matters as much as `flex`.
+// Colour is absent from the table on purpose: the leaves set their own inline,
+// so a host's `color` never reached them even before this existed.
 //
 // A host determined to break this with `!important` can, and only a shadow root
 // would stop them. That is deliberately not built: this family's animations
