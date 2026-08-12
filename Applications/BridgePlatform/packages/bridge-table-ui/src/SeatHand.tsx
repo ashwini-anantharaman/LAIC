@@ -6,6 +6,7 @@
 // WHICH are playable, this leaf only draws them.
 
 import type { Card } from "@bridge/events";
+import { useLayoutEffect, useRef } from "react";
 import { RED, GLYPH, DISPLAY, isRed, rankText } from "./tokens";
 import { LIFT, TableMotion } from "./motion";
 
@@ -52,6 +53,63 @@ export interface SeatHandProps {
   onPlay?: (card: Card) => void;
 }
 
+/**
+ * Slide the cards that STAY when one leaves, instead of teleporting them.
+ *
+ * The row is centred in the stage — measured on a live board: eleven cards at
+ * x59..331 inside a 366 stage, gaps of 47 and 47. So playing a card does not
+ * merely delete it; the row narrows by one pitch and RE-CENTRES, and every
+ * remaining card jumps sideways by half a pitch in the same frame. That jump is
+ * the jitter, and no amount of easing on the played card hides it.
+ *
+ * Standard FLIP, with two details this table forces:
+ *
+ *  · MEASURE IN VIEWPORT SPACE. A card's offsetLeft inside the row does not
+ *    change at all — the cards keep their places and the ROW moves — so the
+ *    only frame that sees the shift is the page's.
+ *  · UNPROJECT THE STAGE SCALE. The whole stage is transform:scale(~0.5) on a
+ *    phone, so a 12px shift on screen is 24px in the element's own coordinates.
+ *    The ratio is read off the element itself (rect width vs offsetWidth), so
+ *    it stays right at any tier without being told the scale.
+ *
+ * The offset rides a CSS variable rather than the inline `transform`, because
+ * the playable lift already owns that property; composing them in one
+ * declaration lets both move at once without either clobbering the other.
+ */
+function useHandSlide(keys: readonly string[]) {
+  const nodes = useRef(new Map<string, HTMLButtonElement | null>());
+  const lastX = useRef(new Map<string, number>());
+  useLayoutEffect(() => {
+    const reduce =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    for (const key of keys) {
+      const el = nodes.current.get(key);
+      if (!el) continue;
+      const now = el.getBoundingClientRect().left;
+      const was = lastX.current.get(key);
+      lastX.current.set(key, now);
+      if (was == null || Math.abs(was - now) < 0.5 || reduce) continue;
+      // rect/offset is the stage's cumulative scale; guard the degenerate case.
+      const k = el.offsetWidth > 0 ? el.getBoundingClientRect().width / el.offsetWidth : 1;
+      el.style.setProperty("--btu-dx", `${(was - now) / (k || 1)}px`);
+      el.style.transition = "none";
+      void el.offsetWidth; // commit the start frame before re-enabling motion
+      el.style.transition = "";
+      el.style.setProperty("--btu-dx", "0px");
+    }
+    // Cards that left take their measurement with them.
+    for (const key of [...lastX.current.keys()]) {
+      if (!keys.includes(key)) {
+        lastX.current.delete(key);
+        nodes.current.delete(key);
+      }
+    }
+  });
+  return nodes;
+}
+
 export function SeatHand({
   cards,
   metrics: m,
@@ -82,6 +140,8 @@ export function SeatHand({
 
   const rankWeight = m.weight ?? 700;
   const glyphWeight = m.weight ?? 400;
+  const keys = hand.map((c) => `${c.suit}${c.rank}`);
+  const nodes = useHandSlide(keys);
 
   if (layout === "row") {
     return (
@@ -92,6 +152,7 @@ export function SeatHand({
           return (
             <button
               key={`${card.suit}${card.rank}`}
+              ref={(el) => { nodes.current.set(`${card.suit}${card.rank}`, el); }}
               type="button"
               onClick={on ? () => onPlay?.(card) : undefined}
               aria-label={`Play ${rankText(card.rank)}${GLYPH[card.suit]}`}
@@ -102,7 +163,10 @@ export function SeatHand({
                 borderRadius: i === 0 ? "3px 0 0 3px" : "0 3px 3px 0",
                 marginLeft: i === 0 ? 0 : -(m.overlap ?? 1), padding: 0,
                 cursor: on ? "pointer" : "default",
-                transform: on ? "translateY(-6px)" : "none",
+                // The re-centre offset and the playable lift, composed: the FLIP
+                // owns --btu-dx and React owns the lift, so neither overwrites
+                // the other mid-slide.
+                transform: `translateX(var(--btu-dx, 0px)) translateY(${on ? -6 : 0}px)`,
                 // A lifted card rises ABOVE its neighbours: overlapped cards
                 // paint in hand order, so without this the next card clips the
                 // one the thumb is about to press.
