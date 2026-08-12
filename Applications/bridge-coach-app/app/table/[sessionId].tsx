@@ -1,51 +1,34 @@
 import { Stack, useLocalSearchParams } from "expo-router";
 
 import { BridgeEmbed } from "../../components/bridge-embed";
-import { NativeTable } from "../../components/table/native-table";
 
 /** One board at the table — opened by Resume, or from a list of unfinished
- *  boards. THE WEBVIEW BOARD IS THE DEFAULT (owner direction 2026-08-12,
- *  reversing the same day's native flip): the platform's table2 page and its
- *  coach, embedded — with the app's own chrome (the fade door, the felt
- *  loading cover, the quit pull-out) unchanged around it.
+ *  boards. The table is the platform's table2 page and its coach, embedded —
+ *  THE implementation (boss decision 2026-08-12: the app continues on the
+ *  webview; the native ports were removed the same day, and live in git
+ *  history at 31f0f5ba should that ever reverse). The app's own chrome — the
+ *  fade door, the felt loading cover, the quit pull-out — wraps it here.
  *
- *  `view=hands` opens the four-hand RECORD page (My Games' "View board");
- *  `from=…` tells the platform page which journey a record came from.
- *
- *  ?native=1 renders the NATIVE board instead — the platform table's phone
- *  tier and the original coach, ported 1:1 and fed by the JSON API. It is
- *  strictly opt-in; any future default flip is the owner's call alone. */
+ *  `view=hands` opens the hand-record view (all four hands, auction, play) —
+ *  what My Games' "View board" means by a finished board. `from=games` tells
+ *  the platform page which journey this is (no "⟵ table" door on a record
+ *  opened from history — owner decision 2026-08-07). */
 export default function TableScreen() {
-  const { sessionId, view, from, native } = useLocalSearchParams<{
+  const { sessionId, view, from } = useLocalSearchParams<{
     sessionId: string;
     view?: string;
     from?: string;
-    native?: string;
   }>();
 
   // A board door fades in rather than sliding — with the felt loading cover
   // inside, the tap→felt journey reads as one motion.
-  const fade = <Stack.Screen options={{ animation: "fade" }} />;
-
-  if (native === "1" && !(typeof view === "string" && view)) {
-    // The native table owns its whole screen — the pull-out exit, the
-    // leave-board dialog, the ☰ and Seats overlays — because the
-    // save-or-discard question reads its own store.
-    return (
-      <>
-        {fade}
-        <NativeTable sessionId={String(sessionId ?? "")} />
-      </>
-    );
-  }
-
   const params = new URLSearchParams();
   if (typeof view === "string" && view) params.set("view", view);
   if (typeof from === "string" && from) params.set("from", from);
   const query = params.toString();
   return (
     <>
-    {fade}
+    <Stack.Screen options={{ animation: "fade" }} />
     <BridgeEmbed
       title="Board"
       // The table page itself, not the /m/table redirect stub — the stub is
