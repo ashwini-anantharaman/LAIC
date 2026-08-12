@@ -1,9 +1,9 @@
-import { BridgeEmbed } from "../components/bridge-embed";
+import { Redirect } from "expo-router";
 
-/** Create Assignment (coach, from the Coach tab): author a board on the
- *  platform's deal editor, then — because of ?flow=assign — the save lands
- *  straight on the assign picker, and assigning lands on Assignments. One
- *  flow, three platform pages, one embed. */
+/** Create Assignment — the coach's author-then-assign flow, now fully native
+ *  (M3d; this was a BridgeEmbed of /m/library/new?flow=assign). Step one is
+ *  the deal editor; its save continues to the assign picker. The route stays
+ *  so the Coach tab's existing push lands exactly where it always did. */
 export default function CreateAssignmentScreen() {
-  return <BridgeEmbed title="Create Assignment" next="/m/library/new?flow=assign" backTo="/coach" />;
+  return <Redirect href="/deal-editor?kind=board&flow=assign" />;
 }
