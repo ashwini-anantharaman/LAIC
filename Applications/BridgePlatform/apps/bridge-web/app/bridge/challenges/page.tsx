@@ -1,7 +1,7 @@
 import { isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { respondInviteAction } from "./actions";
+import { respondInviteAction, setChallengeArchivedAction } from "./actions";
 import { FORMAT_OPTIONS, SCORING_OPTIONS, STANDINGS_OPTIONS } from "./draft";
 import { canCreateChallenge, requireFeature } from "@/lib/access";
 import {
@@ -296,14 +296,40 @@ function PlayCard({ row }: Readonly<{ row: Row }>) {
       ? `Start · board ${access.nextBoardNo ?? 1} of ${access.totalBoards}`
       : `Resume · board ${access.nextBoardNo ?? access.totalBoards} of ${access.totalBoards}`;
 
+  const archived = challenge.status === "archived";
+
   return (
-    <Link
-      href={href}
-      className="block rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-emerald-400"
-    >
-      <CardFacts row={row} />
-      <Progress access={access} />
-      <p className="mt-2 text-sm font-semibold text-emerald-800">{cta} →</p>
-    </Link>
+    <div className="rounded-xl border border-neutral-200 bg-white transition-colors hover:border-emerald-400">
+      {/* The whole card is the link, as before. The control below sits OUTSIDE it: a
+          form nested in an anchor is invalid, and its clicks would fight the link's. */}
+      <Link href={href} className="block p-4">
+        <CardFacts row={row} />
+        <Progress access={access} />
+        <p className="mt-2 text-sm font-semibold text-emerald-800">{cta} →</p>
+      </Link>
+
+      {/* Moderators only — the same people who decide who plays it decide when it
+          retires. Reopening is offered for the same reason it exists: archiving by
+          mistake should not be a dead end. */}
+      {access.viewerIsModerator ? (
+        <div className="flex justify-end border-t border-neutral-100 px-4 py-2">
+          <form action={setChallengeArchivedAction}>
+            <input type="hidden" name="challengeId" value={challenge.challengeId} />
+            <input type="hidden" name="archived" value={archived ? "0" : "1"} />
+            <button
+              type="submit"
+              className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-400"
+              title={
+                archived
+                  ? "Make this challenge playable again"
+                  : "Retire this challenge — its results stay readable"
+              }
+            >
+              {archived ? "Reopen" : "Archive"}
+            </button>
+          </form>
+        </div>
+      ) : null}
+    </div>
   );
 }

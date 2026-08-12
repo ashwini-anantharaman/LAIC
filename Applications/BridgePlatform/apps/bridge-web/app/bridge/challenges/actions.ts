@@ -40,7 +40,7 @@ const LIST = "/bridge/challenges";
  */
 async function auditChallenge(
   context: NexusBridgeContext,
-  action: "challenge.created" | "challenge.invite.responded" | "challenge.invited",
+  action: "challenge.created" | "challenge.invite.responded" | "challenge.invited" | "challenge.archived",
   challengeId: string,
   details: Record<string, unknown>,
 ): Promise<void> {
@@ -183,6 +183,47 @@ export async function respondInviteAction(formData: FormData): Promise<void> {
   if (invite.status === "pending") {
     await store.putInvite({ ...invite, status, respondedAt: new Date().toISOString() });
     await auditChallenge(context, "challenge.invite.responded", challengeId, { status });
+  }
+
+  revalidatePath(LIST);
+  redirect(LIST);
+}
+
+/**
+ * Archive a challenge, or bring it back.
+ *
+ * Archiving is how a finished challenge gets out of the way: the list already reads
+ * `status === "archived"` and offers the results instead of play, and the app's
+ * "latest challenge" resolver skips archived ones — so this is the switch those two
+ * were already waiting for, not new behaviour.
+ *
+ * Creator or moderator, exactly like inviting. Retiring a challenge everyone was
+ * invited to is a moderator's job, and the same people already decide who plays it.
+ *
+ * REVERSIBLE on purpose. Archiving by accident would otherwise be a dead end with no
+ * UI back — status is one field, so supporting both directions costs almost nothing
+ * and removes that trap. Nothing is deleted either way: boards, plays and standings
+ * are untouched, which is what makes the results still readable afterwards.
+ */
+export async function setChallengeArchivedAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await requireFeature(context, "page.challenges");
+
+  const challengeId = String(formData.get("challengeId") ?? "");
+  const archived = String(formData.get("archived") ?? "") === "1";
+
+  const store = challengeStore();
+  const challenge = await store.getChallenge(challengeId);
+  if (!challenge) throw new Error("That challenge is no longer there");
+
+  const mine = await store.getInvite(challengeId, context.nexusUserId);
+  const mayArchive = challenge.createdBy === context.nexusUserId || mine?.moderator === true;
+  if (!mayArchive) throw new Error("Only the creator or a moderator can archive a challenge");
+
+  const status = archived ? "archived" : "open";
+  if (challenge.status !== status) {
+    await store.putChallenge({ ...challenge, status });
+    await auditChallenge(context, "challenge.archived", challengeId, { status });
   }
 
   revalidatePath(LIST);
