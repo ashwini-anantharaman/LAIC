@@ -5,7 +5,7 @@
 // green with a card behind it while you are on the roster, and is a plain ink
 // outline while you are not.
 //
-//   Home     the latest challenge, then Practice Deal / Challenges / Feedback / Chat
+//   Home     the pinned challenge cards, then Challenges / Chat
 //   Members  the club roster, filtered by All Users / Members / Mentors
 //
 // The roster is REAL: /api/programs/:id/members is readable by any member of the
@@ -203,7 +203,6 @@ export default function ClubScreen() {
   // Each button is its own grant, so a role can have challenges without deals.
   const canChat = useCan("app.chat.view", true);
   const canChallenges = useCan("app.challenge.view", true);
-  const canDeals = useCan("app.deal.view", true);
   const canMembers = useCan("app.club.members.view", true);
 
   const [view, setView] = useState<View2>("home");
@@ -407,28 +406,25 @@ export default function ClubScreen() {
     },
   ];
 
-  // A button its role cannot open is not dimmed but ABSENT: dimming says "not
-  // now", and this is "not yours". The grid closes up around what is left.
+  /**
+   * Two buttons, one row: Challenges on the left, Chat on the right.
+   *
+   * Practice Deal and Feedback are gone rather than dimmed. Dimming was the honest
+   * treatment while they were coming; a row of two live buttons and two that never do
+   * anything is just a smaller promise repeated twice. Practice Deal's screen and route
+   * are untouched — restoring it is an entry in this list.
+   *
+   * A button its role cannot open is ABSENT, not dimmed: dimming says "not now", and
+   * this is "not yours". The row closes up around what is left, so a member without
+   * chat sees one button rather than a gap.
+   */
   const buttons = [
-    // Practice Deal is dimmed for now: the screen exists but the feature does not
-    // work yet, and a button that opens something broken is worse than one that
-    // plainly cannot be pressed. Still capability-gated, so the two rules stay
-    // separate — absent when it is not yours, dimmed when it is not ready. To
-    // restore it, put the push back and drop `disabled`; the route is untouched.
-    canDeals && {
-      key: "deal",
-      label: "Practice Deal",
-      onPress: () => {},
-      disabled: true,
-    },
     canChallenges && {
       key: "challenges",
       label: "Challenges",
       onPress: () => router.push("/club-challenges"),
       disabled: false,
     },
-    // Feedback is drawn but not built at all — dimmed for the same reason.
-    { key: "feedback", label: "Feedback", onPress: () => {}, disabled: true },
     canChat && {
       key: "chat",
       label: "Chat",
@@ -543,7 +539,14 @@ export default function ClubScreen() {
                 styles.grid,
                 {
                   marginTop: HOME.buttonsTop * s,
-                  height: (BTN.rowPitch + BTN.height + BTN.offset.y) * s,
+                  // Derived from the buttons present, not fixed at two rows: with a
+                  // single row the old height left a button's worth of dead space
+                  // between the grid and whatever follows.
+                  height:
+                    (Math.max(0, Math.ceil(buttons.length / 2) - 1) * BTN.rowPitch +
+                      BTN.height +
+                      BTN.offset.y) *
+                    s,
                 },
               ]}
             >
