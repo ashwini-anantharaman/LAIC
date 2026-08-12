@@ -21,7 +21,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -292,9 +292,17 @@ export default function ClubScreen() {
     // Search NARROWS whatever the role filter left, rather than replacing it: the
     // two answer different questions ("which kind of person" and "which person"),
     // and a search that silently cleared the filter would explain neither result.
+    // Alphabetical in EVERY view — All Users, a single role, a checkbox set, a search.
+    // The API returns whatever order the join produced, which is stable but arbitrary,
+    // so a roster you are scanning for one name had no order to scan by. Sorted here
+    // rather than per filter so no view can be the exception.
+    const byName = [...byRole].sort((a, b) =>
+      personName(a).localeCompare(personName(b), undefined, { sensitivity: "base" }),
+    );
+
     const q = query.trim().toLowerCase();
-    if (!q) return byRole;
-    return byRole.filter((r) =>
+    if (!q) return byName;
+    return byName.filter((r) =>
       // Name, email and role, because all three are on screen — searching for what
       // you can see and getting nothing is the failure to avoid. Email is included
       // even though the row shows only a name: it is how an admin knows two people
@@ -811,6 +819,80 @@ export default function ClubScreen() {
 }
 
 /** The roster list — every row states the person's standing on the right. */
+/**
+ * The A–Z index down the right edge of the roster.
+ *
+ * Tapping a letter jumps to the first person under it. Worth having because the list
+ * is now alphabetical AND can run to a club's whole membership — an index is only
+ * meaningful over a sorted list, which is why this arrives with the sort and not before.
+ *
+ * "#" collects everything that does not start with a letter (a name beginning with a
+ * digit, a symbol, or an email standing in for a missing name), so every row is
+ * reachable from the strip rather than most of them.
+ */
+const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const INDEX_STRIP = { width: 16, font: 9.5, gap: 1.5, right: 3 };
+
+/** Which bucket a name belongs to: its first letter, or "#". */
+function bucketOf(name: string): string {
+  const c = name.trim().charAt(0).toUpperCase();
+  return c >= "A" && c <= "Z" ? c : "#";
+}
+
+function IndexStrip({
+  people,
+  onJump,
+  scale: s,
+}: {
+  people: ProgramMemberRow[];
+  /** The row index to scroll to. */
+  onJump: (index: number) => void;
+  scale: number;
+}) {
+  // First row per bucket. Built from the LIST as displayed, so it follows the current
+  // filter and search rather than the whole club.
+  const firstIndex = new Map<string, number>();
+  people.forEach((p, i) => {
+    const b = bucketOf(personName(p));
+    if (!firstIndex.has(b)) firstIndex.set(b, i);
+  });
+
+  return (
+    <View style={[styles.indexStrip, { width: INDEX_STRIP.width * s, right: INDEX_STRIP.right * s }]}>
+      {[...ALPHABET, "#"].map((letter) => {
+        const target = firstIndex.get(letter);
+        const present = target !== undefined;
+        return (
+          <Pressable
+            key={letter}
+            disabled={!present}
+            onPress={() => present && onJump(target)}
+            hitSlop={{ left: 8, right: 8, top: 2, bottom: 2 }}
+            accessibilityRole="button"
+            accessibilityLabel={present ? `Jump to ${letter}` : `${letter}, nobody`}
+          >
+            <Text
+              style={[
+                styles.indexLetter,
+                {
+                  fontSize: INDEX_STRIP.font * s,
+                  marginVertical: INDEX_STRIP.gap * s,
+                  // A letter nobody is filed under is shown but quiet: hiding it would
+                  // make the strip's length change as you filter, and a moving index is
+                  // harder to aim at than a dim one.
+                  opacity: present ? 1 : 0.28,
+                },
+              ]}
+            >
+              {letter}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 function Roster({
   people,
   avatars,
@@ -827,6 +909,15 @@ function Roster({
   error: string | null;
   scale: number;
 }) {
+  const list = useRef<ScrollView>(null);
+  /**
+   * Rows are a uniform pitch, so a row's offset is exact arithmetic rather than a
+   * measured guess — index * pitch, less the list's own top padding so the row lands
+   * at the top edge instead of just below it.
+   */
+  const jumpTo = (index: number) =>
+    list.current?.scrollTo({ y: Math.max(0, index * PERSON_ROW.pitch * s), animated: true });
+
   if (error) return <Text style={styles.stateText}>{error}</Text>;
   if (loading) return <Text style={styles.stateText}>Loading the club roster…</Text>;
   // An empty list means two different things now, and saying the wrong one is a
@@ -841,9 +932,16 @@ function Roster({
   }
 
   return (
+    <View style={styles.rosterWrap}>
     <ScrollView
+      ref={list}
       style={styles.roster}
-      contentContainerStyle={{ paddingLeft: 22 * s, paddingRight: 20 * s, paddingTop: 18 * s }}
+      contentContainerStyle={{
+        paddingLeft: 22 * s,
+        // Room for the index strip, so a long name never runs under the letters.
+        paddingRight: (20 + INDEX_STRIP.width) * s,
+        paddingTop: 18 * s,
+      }}
       showsVerticalScrollIndicator={false}
     >
       {people.map((p, i) => (
@@ -857,6 +955,9 @@ function Roster({
       ))}
       <View style={{ height: PERSON_ROW.pitch * s }} />
     </ScrollView>
+
+    <IndexStrip people={people} onJump={jumpTo} scale={s} />
+    </View>
   );
 }
 
@@ -916,6 +1017,20 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.green,
   },
   btnLabel: { fontFamily: Fonts.displayMedium, color: Brand.white },
+  rosterWrap: { flex: 1, position: "relative" },
+  /** Down the right edge, over the list, centred vertically. */
+  indexStrip: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  indexLetter: {
+    fontFamily: Fonts.heading,
+    color: Brand.green,
+    textAlign: "center",
+  },
   roster: { flex: 1 },
   stateText: {
     fontFamily: Fonts.body,
