@@ -43,6 +43,17 @@ export function ContentWebView({
       bounces={false}
       overScrollMode="never"
       contentInsetAdjustmentBehavior="never"
+      // iOS defaults this to FALSE, which hands every video to the system's
+      // fullscreen player the moment it plays. The embedded lesson then loses
+      // its own surface: a video-script's checkpoint markers and its gating
+      // question live in the page, so a student watching in the system player
+      // sails straight past questions they were supposed to answer.
+      allowsInlineMediaPlayback
+      // Keep the tap-to-play requirement: without it, lessons start talking as
+      // soon as a screen opens.
+      mediaPlaybackRequiresUserAction
+      // Android's equivalent: let the PAGE decide when something is fullscreen.
+      allowsFullscreenVideo={false}
       onNavigationStateChange={(e) => onUrlChange?.(e.url)}
       onLoadEnd={() => onLoadEnd?.()}
       onError={() => onError?.()}
