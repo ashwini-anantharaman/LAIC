@@ -16,6 +16,7 @@
 
 import {
   NexusError,
+  clearClubChat,
   fetchClubChat,
   postClubChatMessage,
   setClubChatMessagePinned,
@@ -110,6 +111,19 @@ export async function sendMessage(
     mine: true,
   });
   return [...thread(programId)];
+}
+
+/**
+ * Clear the club's thread — every message, for everyone.
+ *
+ * The local mirror is emptied too. Without that the device that cleared it would
+ * keep showing the old messages until a reload, which is the one screen where a
+ * stale copy is most obviously wrong.
+ */
+export async function clearThread(token: string, programId: string): Promise<number> {
+  const deleted = await clearClubChat(token, programId);
+  localThreads.set(programId, []);
+  return deleted;
 }
 
 export async function setPinned(

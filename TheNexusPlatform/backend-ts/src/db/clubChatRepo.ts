@@ -81,6 +81,31 @@ export async function setProgramHeaderImage(
 }
 
 /**
+ * Delete every message in a club's thread.
+ *
+ * Deliberately whole-thread rather than per-message: what this exists for is
+ * resetting a club to a clean chat, and a moderator picking off messages one at a
+ * time is a different feature with a different UI.
+ *
+ * Hard delete. A soft flag would keep the bodies in the table, and "clear the chat"
+ * should mean the words are gone — not hidden behind a filter that some later read
+ * path forgets to apply. Pinned messages go with the rest: a pin is a property of a
+ * message, so nothing can outlive it.
+ *
+ * Returns how many were removed, so a caller can say so rather than claiming
+ * success over an empty thread.
+ */
+export async function deleteAllClubChatMessages(programId: string): Promise<number> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx
+      .delete(clubChatMessages)
+      .where(eq(clubChatMessages.programId, programId))
+      .returning({ id: clubChatMessages.id });
+    return rows.length;
+  });
+}
+
+/**
  * The club's thread, oldest first — the order a chat reads in.
  *
  * `limit` bounds it to the tail: a long-running club would otherwise grow the

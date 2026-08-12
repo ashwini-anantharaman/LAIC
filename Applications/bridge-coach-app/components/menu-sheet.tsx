@@ -5,8 +5,8 @@
 // separate sheets, one tap apart, are now three rows of one.
 //
 // OtherSheetBody is the coach's own surfaces, under two headings: "Coaching"
-// (Learners, Assignments, Reviews, Library) and "Club management", which today
-// holds the club's header image. COACH-ONLY, and the row that opens it is hidden
+// (Learners, Assignments, Reviews, Library) and "Club management", which holds
+// the club's header image and clearing its chat. COACH-ONLY, and the row that opens it is hidden
 // from a learner entirely rather than opening an empty section. Holding them here
 // is what lets the tree and the tab bar stay IDENTICAL for both roles.
 //
@@ -22,6 +22,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { clearThread } from "../lib/club-chat";
 import { confirmDestructive, notify } from "../lib/dialogs";
 import {
   loadClubHeader,
@@ -139,6 +140,9 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
   );
   const canSetHeader = can(context, "app.club.header.set", coach);
   const canRemoveHeader = can(context, "app.club.header.remove", coach);
+  // Emptying the club's conversation is moderation, not header management, so it has
+  // its own grant. Falls back to coach, like the rest of this section.
+  const canClearChat = can(context, "app.chat.moderate", coach);
 
   const go = (href: Href) => {
     // Dismiss first so the sheet isn't left open behind the pushed screen.
@@ -158,11 +162,12 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* Only shown to a role that can actually change something here. */}
-      {canSetHeader || canRemoveHeader ? (
+      {canSetHeader || canRemoveHeader || canClearChat ? (
         <>
           <Text style={styles.section}>Club management</Text>
           <View style={styles.rows}>
             <ClubHeaderRow canSet={canSetHeader} canRemove={canRemoveHeader} />
+            {canClearChat ? <ClearChatRow /> : null}
           </View>
         </>
       ) : null}
@@ -250,6 +255,44 @@ function ClubHeaderRow({ canSet, canRemove }: { canSet: boolean; canRemove: bool
       ) : null}
     </>
   );
+}
+
+/**
+ * Clear the club's chat.
+ *
+ * Destructive and irreversible — the messages are deleted, not hidden — so it
+ * confirms first, names what goes, and reports what actually happened rather than
+ * claiming success over an empty thread.
+ */
+function ClearChatRow() {
+  const { token } = useAuth();
+  const programId = useSelectedClubId();
+  const [busy, setBusy] = useState(false);
+
+  function clear() {
+    if (!token || !programId || busy) return;
+    confirmDestructive(
+      "Clear the club chat?",
+      "Every message is deleted for everyone, pinned ones included. This cannot be undone.",
+      "Clear chat",
+      () => {
+        setBusy(true);
+        clearThread(token, programId)
+          .then((n) =>
+            notify(
+              n > 0 ? "Chat cleared" : "Nothing to clear",
+              n > 0
+                ? `${n} message${n === 1 ? "" : "s"} deleted.`
+                : "This club's chat was already empty.",
+            ),
+          )
+          .catch(() => notify("Couldn't clear the chat", "Please try again."))
+          .finally(() => setBusy(false));
+      },
+    );
+  }
+
+  return <Row label="Clear chat" hint="Delete every message in this club" onPress={clear} />;
 }
 
 const styles = StyleSheet.create({

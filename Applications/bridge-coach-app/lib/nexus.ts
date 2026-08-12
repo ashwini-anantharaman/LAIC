@@ -260,6 +260,15 @@ export type ClubChatMessage = {
 };
 
 /** The club's thread, oldest first. Readable by any member of the club. */
+/** Clear a club's whole thread. Returns how many messages went. */
+export async function clearClubChat(token: string, programId: string): Promise<number> {
+  const res = await request<{ ok: boolean; deleted: number }>(
+    `/api/programs/${programId}/chat`,
+    { method: "DELETE", token },
+  );
+  return res.deleted ?? 0;
+}
+
 export function fetchClubChat(token: string, programId: string): Promise<ClubChatMessage[]> {
   return request<ClubChatMessage[]>(`/api/programs/${programId}/chat`, { token });
 }
