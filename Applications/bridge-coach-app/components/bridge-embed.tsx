@@ -1,17 +1,11 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  useWindowDimensions,
-  View,
-} from "react-native";
+import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
 import { BoardLoading } from "./table/board-loading";
+import { QuitPullout } from "./table/quit-pullout";
 import { PrimaryButton, Screen, ScreenHeader } from "./ui";
 import { Brand, Colors, Fonts, Spacing } from "../constants/theme";
 import { BRIDGE_LAUNCH_URL_OVERRIDE, PROGRAM_ID } from "../lib/config";
@@ -104,15 +98,6 @@ export function BridgeEmbed({
   leaveOnResults?: Href;
 }) {
   const { token } = useAuth();
-  // The floating back arrow sits in the LEFT GUTTER, below the table's top
-  // band. The top corner is not safe: a declarer playing from dummy has
-  // dummy's cards along the very top edge, and a cream arrow on a white card
-  // vanishes (tester report 2026-08-08). Below that band the gutter is felt
-  // in every phase — the auction sheet is inset, the trick cross and hands
-  // are centred. The band's height scales with the table's width (720-wide
-  // stage → bands ≈ width × 172/720), so the offset does too.
-  const { width: winW } = useWindowDimensions();
-  const floatBackTop = Math.min(150, Math.round(winW * 0.27));
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Where the user actually is inside the embed (native only) + the bridge
@@ -393,7 +378,8 @@ export function BridgeEmbed({
 
 
   return (
-    <Screen>
+    // While the loading cover is up, the safe areas wear the felt too.
+    <Screen style={fullScreen && boardCover ? styles.feltScreen : undefined}>
       {!immersive && (
         <ScreenHeader
           title={title}
@@ -440,30 +426,18 @@ export function BridgeEmbed({
         />
       )}
 
-      {/* Full-screen chrome: one back chip riding the board's top-left
-          corner, running the same guarded back as the header arrow. Hidden
-          while the loading cover is up (owner request 2026-08-12) — it
-          appears with the board; the cover's own fail-safe guarantees the
-          wait is bounded. */}
+      {/* Full-screen chrome: the FunBridge-style pull-out on the right edge
+          (owner request 2026-08-12) — a tab that slides out a Quit panel,
+          replacing the old floating back arrow. Hidden while the loading
+          cover is up; it appears with the board. Quit runs the same guarded
+          back the arrow did: only a screen that OPTED IN gets the
+          save-or-discard question — on an inferred full-screen board (an
+          assignment's Continue, a Replay) leaving simply leaves, because
+          discarding would delete the session an assignment row points at. */}
       {immersive && !discarding && !boardCover && (
-        <Pressable
-          // Only a screen that OPTED IN gets the save-or-discard question. On an
-          // inferred full-screen board — an assignment's Continue, a Replay —
-          // leaving simply leaves: the board keeps its progress, which is what
-          // "In progress" promises. Offering Discard here would delete the very
-          // session the assignment row points at and strand it.
-          onPress={() => (confirmUnfinishedExit ? handleBack(goBackNow) : goBackNow())}
-          accessibilityRole="button"
-          accessibilityLabel="Go back"
-          hitSlop={10}
-          style={({ pressed }) => [
-            styles.floatBack,
-            { top: floatBackTop },
-            pressed && styles.floatBackPressed,
-          ]}
-        >
-          <Text style={styles.floatBackGlyph}>‹</Text>
-        </Pressable>
+        <QuitPullout
+          onQuit={() => (confirmUnfinishedExit ? handleBack(goBackNow) : goBackNow())}
+        />
       )}
 
       <LeaveBoardDialog
@@ -483,6 +457,8 @@ export function BridgeEmbed({
 }
 
 const styles = StyleSheet.create({
+  /** While the board-loading cover is up, safe areas wear the felt too. */
+  feltScreen: { backgroundColor: "#1d5c46" },
   center: {
     flex: 1,
     alignItems: "center",
@@ -496,29 +472,6 @@ const styles = StyleSheet.create({
     backgroundColor: Brand.cream,
     alignItems: "center",
     justifyContent: "center",
-  },
-  // The full-screen mode's back control: just the arrow, no chip (owner
-  // direction 2026-08-08). The box stays 38px for the finger; only the glyph
-  // paints. Cream with a whisper of ink shadow, so it reads on the felt AND
-  // on the white auction sheet it can end up over.
-  floatBack: {
-    position: "absolute",
-    left: 4,
-    zIndex: 20,
-    width: 38,
-    height: 38,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  floatBackPressed: { opacity: 0.6 },
-  floatBackGlyph: {
-    fontSize: 34,
-    lineHeight: 38,
-    color: Brand.cream,
-    marginTop: -3,
-    textShadowColor: "rgba(31,31,31,0.65)",
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   stateText: {
     fontSize: 15,

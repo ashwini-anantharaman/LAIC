@@ -47,13 +47,14 @@ export default function PlayBoardScreen() {
   );
 
   return (
-    <Screen>
+    <Screen style={!error ? styles.feltScreen : undefined}>
       {/* A board door fades in — the felt cover then cross-fades into the
           table, so the whole journey reads as one motion. */}
       <Stack.Screen options={{ animation: "fade" }} />
-      {/* No back arrow while dealing (owner request) — it returns with the
-          error state, which is the only moment there's a decision to make. */}
-      <ScreenHeader title="Play" backTo="/play" showBack={!!error} />
+      {/* NO header while dealing (owner request 2026-08-12: not even a
+          flash of it) — the felt cover is the whole screen. The header,
+          with its back arrow, exists only in the error state. */}
+      {error ? <ScreenHeader title="Play" backTo="/play" /> : null}
       <View style={styles.body}>
         {!error ? (
           <BoardLoading ready={false} onGone={() => {}} label="Setting up the board…" />
@@ -78,6 +79,8 @@ export default function PlayBoardScreen() {
 }
 
 const styles = StyleSheet.create({
+  /** While dealing, the SAFE AREAS wear the felt too — no cream bars. */
+  feltScreen: { backgroundColor: "#1d5c46" },
   body: {
     flex: 1,
     alignItems: "center",

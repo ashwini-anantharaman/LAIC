@@ -92,10 +92,11 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
 
   if (!b || !state) {
     return (
-      <Screen>
-        {/* No back arrow while the felt loads (owner request) — it returns
-            with the board, or with an error worth deciding about. */}
-        <ScreenHeader title="Board" backTo="/play" showBack={!!session.error} />
+      <Screen style={!session.error ? styles.feltScreen : undefined}>
+        {/* NO header while the felt loads (owner request 2026-08-12: not
+            even a flash) — it exists only in the error state, where a back
+            arrow is a decision worth offering. */}
+        {session.error ? <ScreenHeader title="Board" backTo="/play" /> : null}
         <View style={styles.loading}>
           {session.error ? (
             <Text style={styles.loadingText}>{session.error}</Text>
@@ -663,6 +664,8 @@ function ResultCardView({
 }
 
 const styles = StyleSheet.create({
+  /** While loading, the SAFE AREAS wear the felt too — no cream bars. */
+  feltScreen: { backgroundColor: "#1d5c46" },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#1d5c46" },
   loadingText: { fontFamily: Fonts.body, fontSize: 14, color: Brand.cream },
 
