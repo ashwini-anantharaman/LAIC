@@ -89,6 +89,10 @@ export default function RootLayout() {
               screenOptions={{
                 headerShown: false,
                 contentStyle: { backgroundColor: Brand.cream },
+                // Every push fades (owner request 2026-08-12) — the same door
+                // the board screens already use, so tab→screen→board reads as
+                // one motion language instead of a hard cut.
+                animation: "fade",
               }}
             />
           </ClubProvider>

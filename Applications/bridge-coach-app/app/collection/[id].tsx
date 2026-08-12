@@ -7,6 +7,7 @@ import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Screen, ScreenHeader } from "../../components/ui";
+import { TabLoading } from "../../components/tab-loading";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { BridgeApiError } from "../../lib/bridge-api";
@@ -148,6 +149,8 @@ export default function CollectionScreen() {
           </>
         )}
       </ScrollView>
+
+      <TabLoading ready={detail !== null || loadError !== null} />
     </Screen>
   );
 }

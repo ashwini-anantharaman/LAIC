@@ -39,6 +39,7 @@ import { Image } from "expo-image";
 
 import { Avatar } from "../components/avatar";
 import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../components/brand-chrome";
+import { TabLoading } from "../components/tab-loading";
 import { BrandSheet } from "../components/brand-sheet";
 import { tintSvg } from "../components/svg-tint";
 import { ICON_PIN } from "../constants/brand-vectors";
@@ -546,6 +547,8 @@ export default function ClubChatScreen() {
           </ScrollView>
         )}
       </BrandSheet>
+
+      <TabLoading ready={messages !== null || error !== null} />
     </BrandChrome>
   );
 }

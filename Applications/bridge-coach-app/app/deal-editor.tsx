@@ -23,6 +23,7 @@ import {
 } from "react-native";
 
 import { Screen, ScreenHeader } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Brand, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { BridgeApiError } from "../lib/bridge-api";
@@ -260,6 +261,9 @@ export default function DealEditorScreen() {
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Nothing to fetch — the veil fades at once: a soft entrance. */}
+      <TabLoading ready />
     </Screen>
   );
 }

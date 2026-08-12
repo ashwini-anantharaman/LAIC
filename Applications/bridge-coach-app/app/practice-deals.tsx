@@ -32,6 +32,7 @@ import {
 } from "react-native";
 
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
+import { TabLoading } from "../components/tab-loading";
 import { ChallengeFormPanel } from "../components/challenge-form-panel";
 import { ChallengeTile } from "../components/challenge-tile";
 import { DealChat } from "../components/deal-chat";
@@ -247,6 +248,9 @@ export default function PracticeDealsScreen() {
           ) : null}
         </KeyboardAvoidingView>
       </View>
+
+      {/* Nothing to fetch — the veil fades at once: a soft entrance. */}
+      <TabLoading ready />
     </BrandChrome>
   );
 }

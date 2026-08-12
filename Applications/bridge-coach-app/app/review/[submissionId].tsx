@@ -21,6 +21,7 @@ import {
 } from "react-native";
 
 import { Screen, ScreenHeader } from "../../components/ui";
+import { TabLoading } from "../../components/tab-loading";
 import { Brand, Fonts, Spacing } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { BridgeApiError } from "../../lib/bridge-api";
@@ -255,6 +256,8 @@ export default function ReviewThreadScreen() {
           </View>
         )}
       </KeyboardAvoidingView>
+
+      <TabLoading ready={thread !== null || error !== null} />
     </Screen>
   );
 }

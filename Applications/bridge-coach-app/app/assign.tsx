@@ -10,6 +10,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Screen, ScreenHeader } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Brand, Fonts, Spacing } from "../constants/theme";
 import {
   createAssignment,
@@ -199,6 +200,8 @@ export default function AssignScreen() {
           <Text style={styles.assignButtonText}>{busy ? "Assigning…" : "Assign board"}</Text>
         </Pressable>
       </ScrollView>
+
+      <TabLoading ready={(entry !== null && pickers !== null) || error !== null} />
     </Screen>
   );
 }

@@ -8,6 +8,7 @@ import { useCallback, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { Screen, ScreenHeader } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE } from "../constants/theme";
 import {
   peekAssigned,
@@ -185,6 +186,8 @@ export default function AssignedScreen() {
           );
         })}
       </ScrollView>
+
+      <TabLoading ready={model !== null || loadError !== null} />
     </Screen>
   );
 }
