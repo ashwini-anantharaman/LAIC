@@ -22,8 +22,9 @@
 // you, results once it doesn't.
 
 import { Ionicons } from "@expo/vector-icons";
+import { SvgXml } from "react-native-svg";
 import { router } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   NativeScrollEvent,
@@ -39,7 +40,9 @@ import {
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
 import { ChallengeCaption, ChallengeTile } from "../components/challenge-tile";
 import { Avatar } from "../components/avatar";
+import { ICON_ARCHIVE_BOX } from "../constants/brand-vectors";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
+import { tintSvg } from "../components/svg-tint";
 import { useAuth } from "../lib/auth-context";
 import {
   fetchClubChallenges,
@@ -55,6 +58,17 @@ const DESIGN_WIDTH = 390;
 const TITLE_TOP = 0;
 /** The coach's + : a 30pt disc sitting just right of the title's last letter. */
 const PLUS = { size: 30, gap: 14 };
+/**
+ * The archive toggle (Figma 816:282): a 33-square with a 0.75 ink hairline and a
+ * 3.75 radius, holding the 18pt glyph centred. The design pins it at x=340 in a
+ * 390-wide frame — i.e. hard right — so it is laid out as "pushed to the end of the
+ * title row" rather than at a fixed x, which keeps it on the edge at any width.
+ */
+/** The glyph ships black; tinted once at module scope rather than per render. */
+const ARCHIVE_GLYPH_INK = tintSvg(ICON_ARCHIVE_BOX, Brand.ink);
+const ARCHIVE_GLYPH_CREAM = tintSvg(ICON_ARCHIVE_BOX, Brand.cream);
+
+const ARCHIVE_BTN = { size: 33, radius: 3.75, border: 0.75, glyph: 18, right: 17 };
 /** Tile 185.47 at left 101, the next at 338.53 — a wide slice peeks, which is
  *  how the design signals that it swipes. */
 const TILE = 185.469;
@@ -134,7 +148,9 @@ export default function ClubChallengesScreen() {
   const clubId = useSelectedClubId();
 
   // Null while loading — an empty carousel means "none", not "not yet".
-  const [challenges, setChallenges] = useState<ClubChallenge[] | null>(null);
+  const [all, setAll] = useState<ClubChallenge[] | null>(null);
+  /** Showing the archive instead of the live list. */
+  const [showArchived, setShowArchived] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [active, setActive] = useState(0);
   const lastActive = useRef(0);
@@ -143,18 +159,18 @@ export default function ClubChallengesScreen() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    setChallenges(null);
+    setAll(null);
     setLoadError(null);
     fetchClubChallenges(token, clubId)
       .then((rows) => {
         if (cancelled) return;
-        setChallenges(rows);
+        setAll(rows);
         setActive(0);
         lastActive.current = 0;
       })
       .catch(() => {
         if (cancelled) return;
-        setChallenges([]);
+        setAll([]);
         setLoadError("Couldn't load challenges.");
       });
     return () => {
@@ -165,6 +181,25 @@ export default function ClubChallengesScreen() {
 
   const pitch = ITEM_PITCH * s;
   const captionH = (CAPTION_GAP + 13.633 * 1.35) * s;
+
+  /**
+   * The carousel shows ONE of the two lists, never both mixed: live challenges, or
+   * the archive. An archived challenge is retired — leaving it among the playable
+   * ones is what made "which challenge am I supposed to open?" hard in the first
+   * place — but it is not gone, so the toggle above reaches it.
+   */
+  const challenges = useMemo(
+    () => (all == null ? null : all.filter((c) => c.archived === showArchived)),
+    [all, showArchived],
+  );
+
+  // Swapping lists changes their length, so a carousel index from the other list
+  // could point past the end — start each view at its first card.
+  useEffect(() => {
+    setActive(0);
+    lastActive.current = 0;
+    carousel.current?.scrollTo({ x: 0, animated: false });
+  }, [showArchived]);
 
   const count = challenges?.length ?? 0;
   const onScroll = useCallback(
@@ -217,6 +252,36 @@ export default function ClubChallengesScreen() {
               <Ionicons name="add" size={19 * s} color={Brand.cream} />
             </Pressable>
           ) : null}
+
+          {/* Pushed to the right edge — the design's x=340 in a 390 frame. */}
+          <View style={{ flex: 1 }} />
+          <Pressable
+            onPress={() => setShowArchived((v) => !v)}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityState={{ selected: showArchived }}
+            accessibilityLabel={showArchived ? "Show live challenges" : "Show archived challenges"}
+            style={({ pressed }) => [
+              styles.archiveBtn,
+              {
+                width: ARCHIVE_BTN.size * s,
+                height: ARCHIVE_BTN.size * s,
+                borderRadius: ARCHIVE_BTN.radius * s,
+                borderWidth: Math.max(1, ARCHIVE_BTN.border * s),
+                marginRight: ARCHIVE_BTN.right * s,
+                // Filled while you are IN the archive, so the toggle says which list
+                // you are looking at rather than only what it will do next.
+                backgroundColor: showArchived ? Brand.green : "transparent",
+              },
+              pressed && styles.pressed,
+            ]}
+          >
+            <SvgXml
+              xml={showArchived ? ARCHIVE_GLYPH_CREAM : ARCHIVE_GLYPH_INK}
+              width={ARCHIVE_BTN.glyph * s}
+              height={ARCHIVE_BTN.glyph * s}
+            />
+          </Pressable>
         </View>
 
         {challenges === null || challenges.length === 0 ? (
@@ -232,7 +297,10 @@ export default function ClubChallengesScreen() {
               <ActivityIndicator color={Brand.green} />
             ) : (
               <Text style={styles.fallbackText}>
-                {loadError ?? "No challenges yet — a coach starts one from live challenges."}
+                {loadError ??
+                  (showArchived
+                    ? "Nothing archived. Retired challenges collect here."
+                    : "No challenges yet — a coach starts one with the + above.")}
               </Text>
             )}
           </View>
@@ -360,6 +428,11 @@ const styles = StyleSheet.create({
     lineHeight: 21,
     paddingTop: 24,
     paddingHorizontal: 12,
+  },
+  archiveBtn: {
+    alignItems: "center",
+    justifyContent: "center",
+    borderColor: Brand.ink,
   },
   pressed: { opacity: 0.6 },
 });

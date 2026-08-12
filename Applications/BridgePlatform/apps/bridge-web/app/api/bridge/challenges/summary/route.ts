@@ -73,6 +73,16 @@ interface ChallengeSummary {
     finished: boolean;
     moderator: boolean;
     resultsUnlocked: boolean;
+    /**
+     * When THIS viewer last touched a board here — the latest completedAt, or
+     * startedAt for a board still open. Null if they have never played one.
+     *
+     * It exists so a client can say "resume what you were last playing" and mean
+     * it. Ordering by the challenge's own createdAt cannot: the challenge you are
+     * mid-way through is often not the newest one, which is exactly the case that
+     * made a single "latest" card hide an in-progress game.
+     */
+    lastPlayedAt: string | null;
   };
   /** Null while the viewer's results are locked — not the same as []. */
   leaderboard: SummaryLeaderboardRow[] | null;
@@ -162,6 +172,15 @@ async function summarize(
   }
 
   const invite = invites.find((i) => i.userId === viewerId);
+  // The viewer's own plays only: `plays` is the whole field's.
+  const lastPlayedAt =
+    plays
+      .filter((p) => p.userId === viewerId)
+      .map((p) => p.completedAt ?? p.startedAt)
+      .filter((t): t is string => !!t)
+      // ISO strings, so lexical max IS chronological max.
+      .sort()
+      .at(-1) ?? null;
   return {
     challengeId,
     title: challenge.title,
@@ -181,6 +200,7 @@ async function summarize(
       finished: access.viewerFinished,
       moderator: access.viewerIsModerator,
       resultsUnlocked: mayViewResults,
+      lastPlayedAt,
     },
     leaderboard,
     benTotalDisplay,

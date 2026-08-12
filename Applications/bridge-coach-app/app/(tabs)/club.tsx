@@ -41,7 +41,11 @@ import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
-import { fetchClubChallenges } from "../../lib/challenges";
+import {
+  fetchClubChallenges,
+  pickPinned,
+  type ClubChallenge,
+} from "../../lib/challenges";
 import { useClubs } from "../../lib/club-context";
 import { useCan } from "../../lib/use-can";
 import {
@@ -302,23 +306,28 @@ export default function ClubScreen() {
     );
   }, [roster, filter, checked, query]);
 
-  // The newest REAL challenge, for the thumbnail's caption. The summary comes
-  // newest-first; null (no challenges, or a failed read) hides the caption
-  // rather than captioning the tile with an invention. The id rides along so
-  // the tile can open the challenge's OWN info screen, not a table.
-  const [latest, setLatest] = useState<{ id: string; name: string; boards: number } | null>(null);
+  /**
+   * The two challenges the carousel pins: the newest playable one, and the one this
+   * viewer was last in the middle of. pickPinned decides which is which — see it for
+   * why "latest" and "resume" are different questions.
+   *
+   * A failed read leaves both null: the cards still appear, uncaptioned, and fall
+   * back to the app's own Challenges screen rather than captioning a tile with an
+   * invention.
+   */
+  const [pinned, setPinned] = useState<{
+    latest: ClubChallenge | null;
+    resume: ClubChallenge | null;
+  }>({ latest: null, resume: null });
   useEffect(() => {
     if (!token || !club) return;
     let cancelled = false;
     fetchClubChallenges(token, club.id)
       .then((rows) => {
-        const newest = rows[0];
-        if (!cancelled && newest) {
-          setLatest({ id: newest.id, name: newest.name, boards: newest.boards });
-        }
+        if (!cancelled) setPinned(pickPinned(rows));
       })
       .catch(() => {
-        // The tile still opens the latest challenge; only the caption is lost.
+        // Cards still open the Challenges screen; only the captions are lost.
       });
     return () => {
       cancelled = true;
@@ -326,35 +335,57 @@ export default function ClubScreen() {
   }, [token, club]);
 
   /**
-   * What the Activities carousel shows.
+   * What the Activities carousel shows, in order.
    *
-   * The FIRST entry is the latest challenge, unchanged: same tile, same tap —
-   * the bridge resolves which challenge "latest" is, since the app has no id to
-   * give it (see app/challenge-play.tsx).
+   * The first two slots are always challenges, and that is the point. One card said
+   * "latest", so a person mid-way through an older challenge could not see a new one
+   * — and once a new one arrived, could not get back to the game they had started.
+   * Two cards answer both:
    *
-   * The tutorial after it opens a Content Studio page in a webview. It is still
-   * the design's placeholder for the activity types a club home will carry later
-   * — the page is a fixed URL, not data — but it is a REAL embed, so the shape of
-   * a non-challenge activity is demonstrable. Adding a real type later is an entry
-   * in this list.
+   *   1. NEW CHALLENGE — the newest playable one, however far ahead of you it is.
+   *   2. RESUME — the board you actually left, however far behind.
+   *
+   * The second is omitted when there is nothing to resume, or when it would be the
+   * same challenge as the first. Everything else in the club's library lives on the
+   * Challenges screen; these two are the entry points, not the index.
+   *
+   * The tutorial after them opens a Content Studio page — the design's placeholder
+   * for the activity types a club home will carry later, but a real embed.
    */
   const activities: Activity[] = [
     {
       id: "latest-challenge",
       kind: "challenge",
-      // The summary may not have answered yet (or the club has none): the card
-      // still shows, uncaptioned, and the tap falls back to the app's OWN
-      // Challenges screen — never the embed, whose entry page bounces an
-      // unaccepted invite onto the platform's list (a screen the app never
-      // shows; owner direction 2026-08-11). With an id in hand it opens the
-      // challenge's info screen, same as the Challenges carousel.
-      title: latest?.name ?? "Challenge",
-      ...(latest ? { detail: `${latest.boards} Boards` } : {}),
+      // Uncaptioned until the summary answers; the tap then falls back to the app's
+      // OWN Challenges screen — never the embed, whose entry page bounces an
+      // unaccepted invite onto the platform's list (a screen the app never shows).
+      title: pinned.latest?.name ?? "Challenge",
+      ...(pinned.latest
+        ? {
+            detail: pinned.latest.inviteStatus === "pending"
+              ? "Invited"
+              : `${pinned.latest.boards} Boards`,
+          }
+        : {}),
       onPress: () =>
-        latest
-          ? router.push({ pathname: "/challenge-info", params: { id: latest.id } })
+        pinned.latest
+          ? router.push({ pathname: "/challenge-info", params: { id: pinned.latest.id } })
           : router.push("/club-challenges"),
     },
+    ...(pinned.resume
+      ? [
+          {
+            id: "resume-challenge",
+            kind: "challenge" as const,
+            title: "Resume",
+            // Which challenge, and how far in — "Resume" alone would not say what
+            // you are returning to.
+            detail: `${pinned.resume.name} · ${pinned.resume.finishedBoards}/${pinned.resume.boards}`,
+            onPress: () =>
+              router.push({ pathname: "/challenge-info", params: { id: pinned.resume!.id } }),
+          },
+        ]
+      : []),
     {
       id: "tutorial-1",
       kind: "document",

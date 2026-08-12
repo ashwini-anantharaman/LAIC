@@ -62,6 +62,9 @@ export type ClubChallenge = {
   archived: boolean;
   /** The creator, or someone invited AS a moderator — who may retire it. */
   moderator: boolean;
+  /** When THIS viewer last played a board here; null if never. What makes
+   *  "resume what you were last playing" honest — see pickPinned. */
+  lastPlayedAt: string | null;
 };
 
 type SummaryRow = {
@@ -78,6 +81,7 @@ type SummaryRow = {
     finished?: boolean;
     resultsUnlocked?: boolean;
     moderator?: boolean;
+    lastPlayedAt?: string | null;
   };
   leaderboard:
     | {
@@ -128,6 +132,7 @@ function mapRow(row: SummaryRow): ClubChallenge {
     // whose request would be refused.
     archived: row.status === "archived",
     moderator: row.viewer?.moderator ?? false,
+    lastPlayedAt: row.viewer?.lastPlayedAt ?? null,
     standings: (row.leaderboard ?? []).map((r) => ({
       rank: r.rank,
       name: r.name,
@@ -148,6 +153,48 @@ function mapRow(row: SummaryRow): ClubChallenge {
  * threads: it survives navigation, and a reload starts empty.
  */
 const lastFetched = new Map<string, ClubChallenge>();
+
+/**
+ * The two challenges the Club tab pins, in order.
+ *
+ * The problem this solves: the tab showed ONE challenge, "the latest", and a person
+ * mid-way through an older one had no way to see the new one — or, once a newer one
+ * arrived, no way back to the game they had started. Both are on screen now, and
+ * they answer different questions.
+ *
+ *   latest — the newest challenge that can be PLAYED. Not merely the newest row: a
+ *            declined or archived one is not playable, and a finished one is done.
+ *            A pending invite still counts, because the app answers invites in
+ *            place now, so tapping it is how you accept.
+ *
+ *   resume — the challenge this viewer most recently played and has NOT finished,
+ *            by lastPlayedAt. Not "the newest unfinished one": the point is to
+ *            return to the board you left, which may be seven challenges back.
+ *
+ * They collapse when they are the same challenge, which is the common case early on
+ * — one card, not the same tile twice.
+ *
+ * Archived challenges are excluded from both. Retired means retired; they are still
+ * reachable from the Challenges screen's archive view.
+ */
+export function pickPinned(all: ClubChallenge[]): {
+  latest: ClubChallenge | null;
+  resume: ClubChallenge | null;
+} {
+  const live = all.filter((c) => !c.archived && c.inviteStatus !== "declined");
+
+  // The summary arrives newest-first, so the first playable row IS the latest.
+  const latest = live.find((c) => !c.finished) ?? null;
+
+  const resume =
+    live
+      .filter((c) => !c.finished && c.finishedBoards > 0 && c.lastPlayedAt)
+      // ISO strings: lexical order is chronological.
+      .sort((a, b) => (a.lastPlayedAt! < b.lastPlayedAt! ? 1 : -1))[0] ?? null;
+
+  // One challenge cannot be both cards.
+  return { latest, resume: resume && resume.id !== latest?.id ? resume : null };
+}
 
 export function getCachedChallenge(id: string): ClubChallenge | null {
   return lastFetched.get(id) ?? null;
