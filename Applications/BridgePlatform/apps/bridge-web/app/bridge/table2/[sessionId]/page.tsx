@@ -10,22 +10,20 @@ import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine"
 import type { Seat } from "@bridge/events";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { after } from "next/server";
 import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@bridge/table-ui";
 import { EmbedTableState } from "@/components/mobile/EmbedTableState";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
-import { controllingSeat } from "@bridge/sessions";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { nextSkin, resolveSkin, skinLabel } from "@bridge/table-config";
 import { requireFeature } from "@/lib/access";
-import { getAppearance } from "@/lib/appearance";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
 import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { loadTableView } from "@/lib/tableView";
 import { lookingAt } from "@/lib/coach/looking";
 import { thinkAid } from "@/lib/coach/think";
 import { bidMeaningReader } from "@/lib/bidMeanings";
@@ -33,8 +31,6 @@ import type { CoachData } from "@/components/table/play/coachContent";
 import { CoachDock, type CoachPanelData } from "@/components/table/play/CoachPanel";
 import { patchAppearanceAction } from "./actions";
 import { ChallengeTableChrome } from "./ChallengeTableChrome";
-import { applyControlOverrides } from "./challengeControls";
-import { challengeTableContext, practiceIsBiddingOnly, tableControlAccess } from "./challengeTable";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -58,28 +54,60 @@ export default async function PlayTablePage({
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
+  const sessionId = sessionIdParam;
+  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
+  // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
+  // without them. A LOOK, not a permission: every control they carry is still
+  // reachable from the ☰ menu, so this hides chrome, it never removes ability.
+  const showToolbars = bars !== "off";
 
-  // THE BOARD'S FOUR INDEPENDENT LOADS, TOGETHER. The catalogue check, the
-  // viewer's appearance and the session fold each cost ~80–100ms and need
-  // nothing from one another; run sequentially they were ~260ms of the open,
-  // which is most of the wait before a board paints (measured 2026-08-09).
-  // The challenge lookup still follows, because it reads the folded view.
-  const [, embedded, appearance, viewResult] = await Promise.all([
+  // WHAT THIS TABLE IS TO THIS VIEWER — lib/tableView.ts, THE one resolver
+  // (GET /api/bridge/sessions/[id]/view reads the same one, so the page and
+  // the native app's table can never disagree about policy). It owns the
+  // parallel loads, the completion delivery, the challenge branch (incl. the
+  // freeze), bidding-only completion, the takeover, and every visibility and
+  // control answer this page renders.
+  const [, embedded, loaded] = await Promise.all([
     requireFeature(context, "page.play"),
     // Inside the coach app's WebView the host owns the frame and the table
     // renders its phone tier; on the desktop platform it keeps the wide view.
     isEmbeddedLaunch(),
-    // The viewer's saved skin & layout, threaded to the table. Fails open to
-    // the built-in look inside getAppearance.
-    getAppearance(context.nexusUserId),
-    // Settled, not thrown: a missing session is an ordinary event inside the
-    // host app (a discarded board tapped from a stale list), and the branch
-    // below needs `embedded` to decide where to send them.
-    sessionService()
-      .view(sessionIdParam)
-      .then((v) => ({ ok: true as const, v }))
-      .catch(() => ({ ok: false as const })),
+    loadTableView(context, sessionIdParam, { hands: handsParam }),
   ]);
+
+  if (!loaded.ok) {
+    // EMBEDDED, a bare 404 is a dead end inside the host app's frame — and a
+    // gone session is an ordinary event there (a discarded board tapped from
+    // a list that hadn't refreshed yet). Land somewhere the app recognizes:
+    // it watches for boardGone=1 and closes the screen.
+    if (embedded) redirect("/m/home?boardGone=1");
+    notFound();
+  }
+  const { v } = loaded;
+  const {
+    view,
+    playedOut,
+    auctionWasTheBoard,
+    boardOver,
+    challenge,
+    control,
+    appearance,
+    mySeat,
+    dummy,
+    takeover,
+    declaringSeat,
+    myTurn,
+    canSeeAllHands,
+    showAll,
+    visible,
+    boardNumber,
+    seatNames,
+  } = v;
+  const { record, state, actingSeat, actingIsHuman } = view;
+  const canSee = (seat: Seat) => visible[seat];
+  const seatName = (seat: Seat) => seatNames[seat];
+  const plate = (seat: Seat) => v.seats[seat];
+
   const resolvedAppearance = {
     ...resolveSkin(appearance.skin, appearance.overrides),
     handLayout: appearance.handLayout,
@@ -88,76 +116,7 @@ export default async function PlayTablePage({
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
   };
-  const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
-  // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
-  // without them. A LOOK, not a permission: every control they carry is still
-  // reachable from the ☰ menu, so this hides chrome, it never removes ability.
-  const showToolbars = bars !== "off";
 
-  if (!viewResult.ok) {
-    // EMBEDDED, a bare 404 is a dead end inside the host app's frame — and a
-    // gone session is an ordinary event there (a discarded board tapped from
-    // a list that hadn't refreshed yet). Land somewhere the app recognizes:
-    // it watches for boardGone=1 and closes the screen.
-    if (embedded) redirect("/m/home?boardGone=1");
-    notFound();
-  }
-  const view = viewResult.v;
-  const { record, state, actingSeat, actingIsHuman } = view;
-  // PLAYED OUT, narrowly — the engine's own "complete" phase. Distinct from
-  // `boardOver` below (which a bidding-only board reaches with the auction)
-  // and from the later `complete` alias main's result card reads; the two
-  // gates here want the strict sense: an assignment delivers when the play
-  // finished, and the hands-record peek opens only on a truly played board.
-  const playedOut = state.phase === "complete";
-
-  // THE COMPLETION EVENT. If this board belongs to an assignment, finishing it
-  // is what sends the play to its reviewers — and this is the moment we know it
-  // finished. It used to depend on someone later opening an assignments list,
-  // which meant feedback could simply never be delivered.
-  //
-  // after() so the player waits on nothing: the response is already sent, and
-  // delivery is idempotent, so a repeat render costs one cheap read.
-  if (playedOut) {
-    after(async () => {
-      const { deliverForSession } = await import("@/lib/assignments");
-      await deliverForSession(sessionId);
-    });
-  }
-
-  // CHALLENGE BRANCH (spec ADDENDUM A4). Null for every ordinary table, and
-  // null again if the challenge store is unreachable — normal play is never
-  // disturbed by anything below. This is also where a finished challenge board
-  // is frozen into its play record.
-  const challenge = await challengeTableContext(view, context);
-
-  // BIDDING-ONLY (owner, 2026-08-10): the board ends when the auction ends.
-  // The engine still moves to `play` and puts the opening leader on turn, but
-  // in this format that phase belongs to nobody — so from here down the board
-  // is treated as FINISHED. Derived from the challenge's format and the phase,
-  // never from the freeze: a freeze that failed to store must not leave the
-  // robots free to start playing the board out.
-  //
-  // A PRACTICE REPLAY IS THE SAME BOARD. It carries no chrome, so the format
-  // does not arrive on `challenge`; it comes off the session's own stamp
-  // instead. The alternative — cards in practice on a board the challenge
-  // never asked anyone to play — would be a different exercise wearing the
-  // same deal.
-  const biddingOnly = challenge ? challenge.biddingOnly : await practiceIsBiddingOnly(view);
-  const auctionWasTheBoard = biddingOnly && state.phase !== "auction";
-  /** The board has nothing left to do — either phase, either format. */
-  const boardOver = state.phase === "complete" || auctionWasTheBoard;
-
-  // Access catalogue first, then the board's controlOverrides laid OVER it in
-  // BOTH directions (spec §7): a control the creator hid is ABSENT from the
-  // toolbar and the ☰, a control they force-showed is present even where the
-  // catalogue denies it. Every gate below reads the resolved answer, so there
-  // is exactly one place the two layers meet.
-  const control = applyControlOverrides(
-    await tableControlAccess(context),
-    challenge?.board.controlOverrides,
-  );
   const canSeatsPanel = control["table.seats_panel"];
   const canBenSeat = control["table.ben_seat"];
   const canWorkbenchLink = control["table.workbench_link"];
@@ -176,56 +135,6 @@ export default async function PlayTablePage({
   // straight here. A CHALLENGE board keeps the gate even when complete — its
   // controlOverrides govern the capability itself.
   const handsView = viewParam === "hands" && (canHandsView || (playedOut && !challenge));
-
-  const mySeat =
-    (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
-      ([, c]) => c.kind === "human" && c.nexusUserId === context.nexusUserId,
-    )?.[0] ?? null;
-
-  const dummy =
-    state.phase !== "auction" && state.contract
-      ? (({ N: "S", S: "N", E: "W", W: "E" }) as Record<Seat, Seat>)[state.contract.declarer]
-      : null;
-
-  // At a challenge board the Hands control governs the CAPABILITY, not just the
-  // record view: hidden means unreachable, so ?hands=all is refused too and the
-  // ☰ row below is absent. Ordinary tables keep their existing behaviour.
-  const canSeeAllHands = !challenge || canHandsView;
-  const showAll = (handsParam === "all" || (handsParam !== "mine" && !mySeat)) && canSeeAllHands;
-  // Dummy spreads only after the opening lead — real-bridge timing.
-  const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
-  // A finished board is face-up — and a bidding-only board is finished the
-  // moment the auction is, so the four hands open then, exactly as they would
-  // after the thirteenth trick.
-  const canSee = (seat: Seat) =>
-    showAll ||
-    seat === mySeat ||
-    // The hand they took over is theirs from the moment they took it — a
-    // declarer sees their own cards without waiting for a lead.
-    seat === declaringSeat ||
-    (seat === dummy && leadMade) ||
-    boardOver;
-
-  // THE LEARNER NEVER SITS OUT. Dummy's cards belong to the declarer, so a
-  // learner whose ROBOT partner wins the contract would otherwise watch it play
-  // both hands. `controllingSeat` moves them into the declarer's chair instead,
-  // and refuses when that chair holds another PERSON. It is the same function
-  // the service gates `act()` on, so the felt cannot offer a play the server
-  // would refuse — or hide one it would accept.
-  const controller = controllingSeat(record.seats, state, actingSeat);
-  const takeover =
-    mySeat != null &&
-    dummy === mySeat &&
-    !!state.contract &&
-    record.seats[state.contract.declarer].kind !== "human";
-  /** The seat the learner plays FROM — their own, unless they took over. */
-  const declaringSeat = takeover ? state.contract!.declarer : null;
-
-  const myTurn =
-    !boardOver &&
-    actingIsHuman &&
-    record.seats[controller].kind === "human" &&
-    (record.seats[controller] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
 
   // The coach panel is live again (owner, 2026-08-06): gated by table.coach.
   const showCoach = canCoach;
@@ -317,33 +226,6 @@ export default async function PlayTablePage({
     : undefined;
 
   const score = scoreBoard(state);
-  const seatName = (seat: Seat) => {
-    const c = record.seats[seat];
-    return c.kind === "human" ? (c.nexusUserId === context.nexusUserId ? "you" : "human") : c.label;
-  };
-  // Identity strips (SeatPlate design): humans petrol, robots a distinct color
-  // per seat — that's what tells two BENs at one table apart.
-  const ROBOT_STRIPS: Record<Seat, string> = { N: "#e0813a", E: "#8e5bc4", S: "#3aa0e0", W: "#3ab77a" };
-  const seatStrip = (seat: Seat) =>
-    record.seats[seat].kind === "human" ? "#12525e" : ROBOT_STRIPS[seat];
-
-  /**
-   * One seat's plate. Under a takeover "you" follows the CARDS, not the chair:
-   * the seat being declared from says "you" and the seat the learner was dealt
-   * says "your seat · dummy", so the swap is legible instead of two plates both
-   * claiming to be the same person.
-   */
-  const plate = (seat: Seat) => ({
-    name:
-      takeover && seat === declaringSeat
-        ? "you"
-        : takeover && seat === mySeat
-          ? "your seat"
-          : seatName(seat),
-    tag: dummy === seat ? "dummy" : "",
-    strip: seatStrip(seat),
-    human: record.seats[seat].kind === "human" || (takeover && seat === declaringSeat),
-  });
 
   // The seat-swap panel in the rail — same swapSeatAction and fork semantics
   // as always, plus BEN as a seatable character when the server has
@@ -365,10 +247,6 @@ export default async function PlayTablePage({
       benOffered={benAvailable() && canBenSeat}
     />
   ) : null;
-
-  // The board card in the rail is sized for a number; "seeded-26105" is not
-  // one, so show its trailing digits and keep the full name in the tooltip.
-  const boardNumber = /(\d+)\s*$/.exec(record.board.name)?.[1] ?? record.board.name;
 
   // ☰ settings menu (SettingsMenu design): each row navigates with one param
   // changed — the app's convention for table toggles. `paused` is kept so a

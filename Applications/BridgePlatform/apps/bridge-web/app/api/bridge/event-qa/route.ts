@@ -16,6 +16,8 @@
 
 import { NextResponse } from "next/server";
 
+import { corsOptions, withCors } from "@/lib/cors";
+
 import { originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { answerEventQuestion, qaConfigured, qaPosition } from "@/lib/coach/eventQa";
@@ -61,7 +63,13 @@ function remember(key: string, answer: string): void {
 const normalize = (q: string): string =>
   q.toLowerCase().replace(/\s+/g, " ").replace(/[?.!\s]+$/, "").trim();
 
+export const OPTIONS = corsOptions("POST");
+
 export async function POST(request: Request): Promise<NextResponse> {
+  return withCors(await handle(request), "POST");
+}
+
+async function handle(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
   if (!context) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 

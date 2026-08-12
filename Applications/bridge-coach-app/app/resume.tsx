@@ -6,6 +6,7 @@ import { useCallback, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { OptionCard, Screen, ScreenHeader } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { type InProgressBoard } from "../lib/nexus";
@@ -66,6 +67,8 @@ export default function ResumeScreen() {
           )}
         </View>
       )}
+
+      <TabLoading ready={boards !== null} />
     </Screen>
   );
 }

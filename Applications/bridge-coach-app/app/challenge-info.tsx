@@ -26,6 +26,7 @@ import {
 } from "react-native";
 
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
+import { TabLoading } from "../components/tab-loading";
 import { ChallengeTile } from "../components/challenge-tile";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
@@ -312,6 +313,8 @@ export default function ChallengeInfoScreen() {
           </>
         )}
       </View>
+
+      <TabLoading ready={challenge !== null || error !== null} />
     </BrandChrome>
   );
 }

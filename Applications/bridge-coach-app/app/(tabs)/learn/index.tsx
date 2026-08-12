@@ -19,6 +19,7 @@ import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from 
 import { BrandChrome } from "../../../components/brand-chrome";
 import { CARD, PlayingCard } from "../../../components/playing-card";
 import { PrimaryButton } from "../../../components/ui";
+import { TabLoading } from "../../../components/tab-loading";
 import {
   Brand,
   Colors,
@@ -254,6 +255,10 @@ export default function LearnScreen() {
           ))}
 
       </ScrollView>
+
+      {/* Ready once the library (or its error) is in; the fail-safe hands a
+          slow load back to the in-page spinner below the title. */}
+      <TabLoading ready={cards !== null || error !== null} />
     </BrandChrome>
   );
 }

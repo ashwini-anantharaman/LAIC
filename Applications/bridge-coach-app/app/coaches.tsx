@@ -14,6 +14,7 @@ import {
   Screen,
   ScreenHeader,
 } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { useSelectedClubId } from "../lib/club-context";
@@ -172,6 +173,8 @@ export default function CoachesScreen() {
           <PrimaryButton label="Try again" onPress={load} />
         </View>
       )}
+
+      <TabLoading ready={coaches !== null || error !== null} />
     </Screen>
   );
 }

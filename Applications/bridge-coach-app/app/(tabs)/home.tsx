@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { SvgXml } from "react-native-svg";
 
 import { JigglingOwl } from "../../components/jiggling-owl";
+import { TabLoading } from "../../components/tab-loading";
 import { BrandAppBar } from "../../components/brand-app-bar";
 import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { WindTree } from "../../components/wind-tree";
@@ -139,6 +140,9 @@ export default function HomeScreen() {
         <BrandAppBar showActions={false} />
       </View>
 
+      {/* Nothing to wait for here — the veil fades at once, so entering the
+          tab reads as the same soft cross-fade as the data-backed tabs. */}
+      <TabLoading ready />
     </View>
   );
 }

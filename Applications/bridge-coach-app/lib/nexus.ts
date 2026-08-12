@@ -9,7 +9,7 @@
 //   - All authenticated calls send `Authorization: Bearer <access_token>`.
 
 import { GATE_SLUG, NEXUS_API_URL, ORG_SLUG, PROGRAM_ID } from "./config";
-import { reportSessionExpired } from "./session-expiry";
+import { reportSessionExpired, requestSessionRefresh } from "./session-expiry";
 
 export class NexusError extends Error {
   status: number;
@@ -27,6 +27,8 @@ async function request<T>(
     method?: string;
     token?: string;
     body?: unknown;
+    /** Set on the one retry after a refresh — never retry twice. */
+    _retried?: boolean;
   } = {},
 ): Promise<T> {
   let response: Response;
@@ -45,10 +47,19 @@ async function request<T>(
 
   const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
-    // A 401 on a TOKEN-BEARING call means the session token is dead (they
-    // live one hour) — report it so auth-context signs out to the login
-    // screen. Un-tokened 401s (a wrong password at login) are not that.
-    if (response.status === 401 && options.token) reportSessionExpired();
+    // A 401 on a TOKEN-BEARING call means the access token is dead (they live
+    // one hour). First ask auth-context for a refreshed token and retry ONCE;
+    // only when that can't happen (no refresh flow, refresh failed) does the
+    // sign-out fire. Un-tokened 401s (a wrong password at login) are not that.
+    if (response.status === 401 && options.token) {
+      if (!options._retried) {
+        const fresh = await requestSessionRefresh();
+        if (fresh && fresh !== options.token) {
+          return request<T>(path, { ...options, token: fresh, _retried: true });
+        }
+      }
+      reportSessionExpired();
+    }
     const detail =
       typeof json.detail === "string" ? json.detail : `Request failed (${response.status})`;
     throw new NexusError(response.status, detail);
@@ -76,10 +87,16 @@ export type Gate = {
 
 export type Session = {
   access_token: string;
+  /** Present in Supabase mode; rotates on every refresh. Absent = no refresh flow. */
+  refresh_token?: string;
+  /** Unix SECONDS when access_token dies (Supabase's unit). */
+  expires_at?: number;
 };
 
 export type GateSignupResult = {
   access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
   pending: boolean;
   landing: string | null;
 };
@@ -203,6 +220,19 @@ export function login(input: { email: string; password: string }): Promise<Sessi
   return request<Session>("/api/platform/auth/login", {
     method: "POST",
     body: { email: input.email, password: input.password, org_slug: ORG_SLUG },
+  });
+}
+
+/**
+ * Trade a refresh token for a fresh session. The response's refresh_token
+ * REPLACES the one sent (rotation). 401 = spent/revoked; 404 = the backend
+ * has no refresh flow (demo mode / older deploy) — both mean "give up".
+ * Deliberately un-tokened: a 401 here must not recurse into the retry net.
+ */
+export function refreshSession(refreshToken: string): Promise<Session> {
+  return request<Session>("/api/platform/auth/refresh", {
+    method: "POST",
+    body: { refresh_token: refreshToken },
   });
 }
 

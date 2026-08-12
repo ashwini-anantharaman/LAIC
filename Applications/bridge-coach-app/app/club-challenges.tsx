@@ -38,6 +38,7 @@ import {
 } from "react-native";
 
 import { BackChevron, BrandChrome } from "../components/brand-chrome";
+import { TabLoading } from "../components/tab-loading";
 import { ChallengeCaption, ChallengeTile } from "../components/challenge-tile";
 import { Avatar } from "../components/avatar";
 import { ICON_ARCHIVE_BOX } from "../constants/brand-vectors";
@@ -451,6 +452,8 @@ export default function ClubChallengesScreen() {
           )}
         </View>
       </View>
+
+      <TabLoading ready={all !== null || loadError !== null} />
     </BrandChrome>
   );
 }

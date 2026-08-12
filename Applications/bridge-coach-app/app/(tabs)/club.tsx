@@ -39,6 +39,7 @@ import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
 import { PERSON_ROW, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
+import { TabLoading } from "../../components/tab-loading";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
 import {
@@ -447,6 +448,8 @@ export default function ClubScreen() {
     return (
       <BrandChrome>
         <MyClubs clubs={clubs} onPick={select} scale={s} />
+        {/* Clubs are already known here — the veil is just the entrance fade. */}
+        <TabLoading ready />
       </BrandChrome>
     );
   }
@@ -799,6 +802,10 @@ export default function ClubScreen() {
           ) : null}
         </ScrollView>
       </BrandSheet>
+
+      {/* Ready once the clubs context has resolved which club this is —
+          the banner and title arrive together instead of correcting. */}
+      <TabLoading ready={!clubsLoading} />
     </BrandChrome>
   );
 }

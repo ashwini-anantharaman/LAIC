@@ -9,6 +9,7 @@ import {
 } from "react-native";
 
 import { OptionCard, PrimaryButton, Screen, ScreenHeader } from "../components/ui";
+import { TabLoading } from "../components/tab-loading";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { useSelectedClubId } from "../lib/club-context";
@@ -98,6 +99,8 @@ export default function LearnersScreen() {
           )}
         />
       )}
+
+      <TabLoading ready={learners !== null || error !== null} />
     </Screen>
   );
 }

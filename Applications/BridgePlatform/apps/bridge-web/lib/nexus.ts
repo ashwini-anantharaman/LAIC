@@ -62,6 +62,36 @@ export async function isEmbeddedLaunch(): Promise<boolean> {
 }
 
 /**
+ * The caller's Nexus session token for THIS request — the one credential the
+ * whole context/roster/library layer resolves from. Two carriers, one answer:
+ *   - `Authorization: Bearer <token>` — the native app, whose fetch has no
+ *     WebView cookie jar to send (same token the cookie would carry).
+ *   - the launch cookie — the browser/WebView flow, unchanged.
+ * The header wins when both are present: a bearer caller is asking as itself,
+ * whatever stale cookie the transport happened to carry.
+ */
+export async function requestAccessToken(): Promise<string | null> {
+  try {
+    const auth = (await headers()).get("authorization");
+    const bearer = auth?.match(/^Bearer\s+(.+)$/i)?.[1];
+    if (bearer) return bearer;
+  } catch {
+    // Outside a request scope (build-time render) there is no header to read.
+  }
+  const cookieStore = await cookies();
+  return cookieStore.get(NEXUS_TOKEN_COOKIE)?.value ?? null;
+}
+
+/** True when this request authenticated via the Authorization header. */
+async function bearerRequest(): Promise<boolean> {
+  try {
+    return /^Bearer\s+.+$/i.test((await headers()).get("authorization") ?? "");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The org that scopes this user's sessions/library rows (0019). Prefers the
  * §3.5 acting org when one is applied; falls back to the launch org.
  */
@@ -77,19 +107,28 @@ export function orgScopeOf(context: NexusBridgeContext): string {
  */
 export async function nexusProgramIdOf(): Promise<string | null> {
   if (nexusMode() !== "http") return null;
+  // Bearer callers carry the program alongside the token (`x-program-id`) —
+  // they have no launch cookie, and without this every scoped store read
+  // would land in the wrong 0022 instance scope.
+  try {
+    const header = (await headers()).get("x-program-id");
+    if (header) return header;
+  } catch {
+    // No request scope — fall through to the cookie.
+  }
   const cookieStore = await cookies();
   return cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value ?? null;
 }
 
-/** Server-side GET against Nexus with the launch-cookie token (http mode). */
+/** Server-side GET against Nexus with the caller's token (http mode) —
+ *  cookie or bearer, whichever this request carries. */
 async function nexusGet<T>(path: string): Promise<T | null> {
   if (nexusMode() !== "http") return null;
   const baseUrl = process.env.NEXUS_API_BASE_URL;
   if (!baseUrl) return null;
-  const cookieStore = await cookies();
-  const accessToken = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  const accessToken = await requestAccessToken();
   if (!accessToken) return null;
-  const programId = cookieStore.get(NEXUS_PROGRAM_COOKIE)?.value;
+  const programId = await nexusProgramIdOf();
   const sep = path.includes("?") ? "&" : "?";
   const qs = programId ? `${sep}program_id=${encodeURIComponent(programId)}` : "";
   try {
@@ -111,8 +150,7 @@ async function nexusGet<T>(path: string): Promise<T | null> {
  */
 export async function getMyCollectionGrants(): Promise<string[]> {
   if (nexusMode() !== "http") return [];
-  const cookieStore = await cookies();
-  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  const token = await requestAccessToken();
   if (!token) return [];
   const { cachedNexusGet } = await import("./nexusCache");
   return cachedNexusGet(`mycols:${token}`, async () => {
@@ -151,8 +189,7 @@ export async function getMyCoaches(): Promise<{ coach_id: string; name: string }
         "/api/platform/bridge/my-coaches",
       )
     )?.coaches ?? [];
-  const cookieStore = await cookies();
-  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  const token = await requestAccessToken();
   // Keyed by the token, never cached without one: the answer is per-learner, and
   // a shared key would hand one learner another's coaches.
   if (!token) return fetchCoaches();
@@ -177,8 +214,7 @@ export type RosterLearner = {
  * it opens. A hire propagates within the minute.
  */
 export async function getMyLearners(): Promise<RosterLearner[]> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  const token = await requestAccessToken();
   if (!token) return (await nexusGet<RosterLearner[]>("/api/platform/bridge/learners")) ?? [];
   const { cachedNexusGet } = await import("./nexusCache");
   return cachedNexusGet(`learners:${token}`, async () => {
@@ -203,8 +239,7 @@ export type ProgramCoach = {
  * not call this directly to build one.
  */
 export async function getProgramCoaches(): Promise<ProgramCoach[]> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  const token = await requestAccessToken();
   if (!token) return (await nexusGet<ProgramCoach[]>("/api/platform/bridge/coaches")) ?? [];
   const { cachedNexusGet } = await import("./nexusCache");
   return cachedNexusGet(`coaches:${token}`, async () => {
@@ -340,13 +375,23 @@ export const getBridgeContext = cache(
     }
 
     // http mode: a Nexus session token → GET /api/platform/bridge/context.
-    // Preferred credential: the launch-handoff cookie (app/nexus/launch) —
-    // Nexus's own session token, working against its dev demo-auth today and
-    // carrying a Supabase JWT unchanged later. Fallback: a shared Supabase
-    // session, when that env is configured.
+    // Credentials, in order:
+    //   1. `Authorization: Bearer` (+ `x-program-id`) — the native app; shares
+    //      the cross-request cache with the cookie path via
+    //      getBridgeContextFromToken, so every route guarded by
+    //      requireContext() is bearer-capable with no per-route work.
+    //   2. the launch-handoff cookie (app/nexus/launch) — the browser/WebView.
+    //   3. a shared Supabase session, when that env is configured.
     const baseUrl = process.env.NEXUS_API_BASE_URL;
     if (!baseUrl) {
       throw new Error("NEXUS_CLIENT_MODE=http requires NEXUS_API_BASE_URL");
+    }
+
+    if (await bearerRequest()) {
+      return getBridgeContextFromToken(
+        (await requestAccessToken()) as string,
+        await nexusProgramIdOf(),
+      );
     }
 
     const cookieStore = await cookies();

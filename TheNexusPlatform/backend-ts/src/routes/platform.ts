@@ -14,6 +14,7 @@ import {
   getOptionalUser,
   loadPlatformUser,
   mintSupabaseSession,
+  refreshUserSession,
   signInUser,
   type PlatformUser,
 } from "../auth";
@@ -286,6 +287,16 @@ function _authUserResponse(user: PlatformUser, accessToken: string): Row {
   };
 }
 
+/** The session's refresh fields, when the auth backend mints them (Supabase
+ *  mode). Demo-mode sessions carry neither — clients read absence as "no
+ *  refresh flow" and keep their old expiry behavior. */
+function _sessionExtras(session: Row): Row {
+  const extras: Row = {};
+  if (session.refresh_token) extras.refresh_token = session.refresh_token;
+  if (session.expires_at != null) extras.expires_at = session.expires_at;
+  return extras;
+}
+
 platformRouter.post("/auth/signup", async (c) => {
   const req = parseBody(signupSchema, await c.req.json());
 
@@ -429,6 +440,7 @@ platformRouter.post("/auth/login", async (c) => {
       }
       return c.json({
         ..._authUserResponse({ ...user, memberships: [] }, session.access_token),
+        ..._sessionExtras(session),
         org_id: org.id,
         org_slug: org.slug,
         participant_only: true,
@@ -437,12 +449,24 @@ platformRouter.post("/auth/login", async (c) => {
     const scoped: PlatformUser = { ...user, memberships: orgMemberships };
     return c.json({
       ..._authUserResponse(scoped, session.access_token),
+      ..._sessionExtras(session),
       org_id: org.id,
       org_slug: org.slug,
     });
   }
 
-  return c.json(_authUserResponse(user, session.access_token));
+  return c.json({ ..._authUserResponse(user, session.access_token), ..._sessionExtras(session) });
+});
+
+// Trade a refresh token for a fresh session. Rotation: the response's
+// refresh_token replaces the one sent — always store the newest. 401 on a
+// spent/invalid token; 404 in demo mode (no refresh flow there).
+platformRouter.post("/auth/refresh", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as Row;
+  const refreshToken = typeof body?.refresh_token === "string" ? body.refresh_token : "";
+  if (!refreshToken) throw new HttpError(400, "refresh_token required");
+  const session = await refreshUserSession(refreshToken);
+  return c.json(session);
 });
 
 // ── Dev-only test login (local/dev only) ────────────────────────────────────
@@ -771,13 +795,13 @@ platformRouter.post("/gates/:gate_id/signup", async (c) => {
       });
       if (gate.approval_required) {
         const session = await signInUser(email, password);
-        return c.json({ access_token: session.access_token, pending: true, landing: gate.landing ?? null });
+        return c.json({ access_token: session.access_token, ..._sessionExtras(session), pending: true, landing: gate.landing ?? null });
       }
     }
   }
 
   const session = await signInUser(email, password);
-  return c.json({ access_token: session.access_token, pending: false, landing: gate.landing ?? null });
+  return c.json({ access_token: session.access_token, ..._sessionExtras(session), pending: false, landing: gate.landing ?? null });
 });
 
 platformRouter.post("/gates/:gate_id/signin", async (c) => {
@@ -827,7 +851,7 @@ platformRouter.post("/gates/:gate_id/signin", async (c) => {
       `That account isn't part of this program yet. Ask an administrator to add you${gate.allow_signup ? ", or create an account below" : ""}.`,
     );
   }
-  return c.json({ access_token: session.access_token, landing: gate.landing ?? null });
+  return c.json({ access_token: session.access_token, ..._sessionExtras(session), landing: gate.landing ?? null });
 });
 
 platformRouter.get("/auth/me", async (c) => {
