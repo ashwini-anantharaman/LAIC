@@ -1,0 +1,36 @@
+{
+  "name": "@bridge/table-kernel",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The game-LAW kernel as one dependency-free ESM artifact, for hosts outside the workspace (the native coach app vendors dist/table-kernel.js). Law only: state fold, legality, scoring, vocabulary, skins, challenge logic — NO deciders, NO @bridge/kb, NO node builtins.",
+  "type": "module",
+  "main": "./dist/table-kernel.js",
+  "module": "./dist/table-kernel.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/table-kernel.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "//why-relative-engine-imports": "src/index.ts reaches @bridge/engine's law modules by RELATIVE path, never the package root: the root index re-exports ./decide, whose decider imports @bridge/kb, whose index exports JsonFileKbStore -> node:fs. One root import and the bundle stops loading in React Native.",
+  "//why-handwritten-types": "dist/index.d.ts is authored by hand (types/table-kernel.d.ts), not tsc-emitted: emitted declarations reference @bridge/* module specifiers a vendoring host cannot resolve. The law surface is small and stable; when a new export is needed, add it to the entry AND the d.ts.",
+  "scripts": {
+    "build": "vite build && node copy-types.mjs",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bridge/engine": "workspace:*",
+    "@bridge/events": "workspace:*",
+    "@bridge/table-config": "workspace:*",
+    "@bridge/table-ui": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5"
+  }
+}
