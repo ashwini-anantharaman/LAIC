@@ -1,61 +1,139 @@
-// The native board (Part II — Phase A view, Phase B play). Phone-tier bands,
-// exactly the web table's order — top bar, North, the centre (auction or
-// trick), East/West flanking, South big at the bottom, the result card when
-// the board is over. Everything policy-shaped (who's visible, who's dummy,
-// seat plates, whose turn) is the SERVER'S answer via the session store;
-// this file draws, and hands taps to the store's optimistic act().
-//
-// Layout prices itself off the window width with flex bands — RN has no CSS
-// reflow problem, so the web's scaled-fixed-stage trick stays behind.
+// The native board screen — the composition role of the web's
+// app/bridge/table2/[sessionId]/page.tsx, rewired to the session store
+// (owner direction 2026-08-12: the web table pasted and rewired). This file
+// decides WHAT the table shows — seats, visibility, transport, settings
+// rows, the coach's data — and PlayTable (the 1:1 port) decides how it
+// looks. The app chrome around it (the felt loading cover, the quit
+// pull-out, the leave-board dialog) is the same chrome the webview board
+// wears.
 
 import { router } from "expo-router";
-import { useMemo, useState } from "react";
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-  useWindowDimensions,
-} from "react-native";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { Brand, Fonts } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import { PROGRAM_ID } from "../../lib/config";
+import { fetchCoach, type CoachAuth, type CoachPanelData } from "../../lib/table/coach";
 import { useTableSession } from "../../lib/table/session-store";
 import { LeaveBoardDialog } from "../leave-board-dialog";
 import { leaveWithFade } from "../leave-veil";
 import { Screen, ScreenHeader } from "../ui";
-import { CoachDock } from "./coach-dock";
 import {
-  callLabel,
-  cardId,
+  nextSkin,
   resolveSkin,
   resultLabel,
   scoreBoard,
-  type Call,
+  skinLabel,
   type Card,
-  type GameState,
   type Seat,
 } from "../../lib/vendor/table-kernel/table-kernel";
 import { BoardLoading } from "./board-loading";
-import { CardBack, CardFace, SUIT_GLYPH } from "./cards";
-import {
-  ChallengeOverlay,
-  HandsViewerSheet,
-  SeatsSheet,
-  SettingsSheet,
-  cycleSkin,
-} from "./sheets";
+import { CoachDock } from "./coach-panel";
+import { PlayTable } from "./play-table";
+import { QuitPullout } from "./quit-pullout";
+import { SeatsPanel } from "./seats-popup";
+import { ChallengeOverlay } from "./sheets";
+import { GLYPH } from "./table-tokens";
 
-const SUIT_ORDER = ["S", "H", "D", "C"] as const;
+/** The coach payload refresh: debounced off the confirmed head — it compiles
+    the KB server-side and must never ride every robot card. */
+const COACH_DEBOUNCE_MS = 900;
 
-/** Sort a hand for display: spades→clubs, high card first. */
-function displaySort(cards: Card[]): Card[] {
-  const suitRank: Record<string, number> = { S: 0, H: 1, D: 2, C: 3 };
-  return [...cards].sort((a, b) =>
-    a.suit === b.suit ? b.rank - a.rank : suitRank[a.suit]! - suitRank[b.suit]!,
+/** The AutoAdvance rail (variant="rail" at railScale 1.5) + the page's Undo
+    chip — the transport group the bottom bar carries, wired to the store. */
+function TransportRail({
+  s = 1.5,
+  paused,
+  onPause,
+  stepActive,
+  onStep,
+  showUndo,
+  onUndo,
+  benThinking,
+}: {
+  s?: number;
+  paused: boolean;
+  onPause: () => void;
+  stepActive: boolean;
+  onStep: () => void;
+  showUndo: boolean;
+  onUndo: () => void;
+  benThinking: boolean;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 7 * s }}>
+      {/* A challenge robot's turn is a remote neural call; say so rather than
+          leaving the felt looking frozen. */}
+      {benThinking && (
+        <View
+          style={{
+            height: 30 * s,
+            paddingHorizontal: 10 * s,
+            borderRadius: 6,
+            backgroundColor: "rgba(255,255,255,.08)",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#cfe0d8", fontSize: 12 * s, fontWeight: "700" }}>BEN is thinking…</Text>
+        </View>
+      )}
+      <Pressable
+        onPress={onPause}
+        accessibilityLabel={paused ? "Play" : "Pause"}
+        style={{
+          height: 30 * s,
+          paddingHorizontal: 12 * s,
+          borderWidth: 1,
+          borderColor: paused ? "#a94848" : "rgba(255,255,255,.18)",
+          borderRadius: 6,
+          backgroundColor: paused ? "#8a3030" : "rgba(255,255,255,.10)",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Text style={{ color: paused ? "#fff" : "#eef4f1", fontSize: 13 * s, fontWeight: "700" }}>
+          {paused ? "Play" : "Pause"}
+        </Text>
+      </Pressable>
+      <Pressable
+        disabled={!stepActive}
+        onPress={onStep}
+        accessibilityLabel="step"
+        style={{
+          width: 30 * s,
+          height: 30 * s,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,.18)",
+          borderRadius: 6,
+          backgroundColor: "rgba(255,255,255,.10)",
+          alignItems: "center",
+          justifyContent: "center",
+          opacity: stepActive ? 1 : 0.42,
+        }}
+      >
+        <Text style={{ color: "#eef4f1", fontSize: 13 * s }}>▶</Text>
+      </Pressable>
+      {showUndo && (
+        <Pressable
+          onPress={onUndo}
+          accessibilityLabel="undo"
+          style={{
+            height: 30 * s,
+            paddingHorizontal: 12 * s,
+            borderWidth: 1,
+            borderColor: "rgba(255,255,255,.18)",
+            borderRadius: 6,
+            backgroundColor: "rgba(255,255,255,.10)",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <Text style={{ color: "#eef4f1", fontSize: 13 * s, fontWeight: "700" }}>↩ Undo</Text>
+        </Pressable>
+      )}
+    </View>
   );
 }
 
@@ -63,41 +141,62 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
   const { token } = useAuth();
   const clubId = useSelectedClubId();
   const programId = clubId ?? PROGRAM_ID;
-  const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const session = useTableSession(token, programId, sessionId);
   const { bootstrap: b, state } = session;
   const [leaveAsk, setLeaveAsk] = useState(false);
-  const [savedNote, setSavedNote] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [seatsOpen, setSeatsOpen] = useState(false);
-  const [pickedSeat, setPickedSeat] = useState<Seat | null>(null);
-  const [handsOpen, setHandsOpen] = useState(false);
   const [standingsOpen, setStandingsOpen] = useState(false);
+  const [pickedSeat, setPickedSeat] = useState<Seat | null>(null);
+  // Table toggles the web keeps in URL params — component state here.
+  const [auctionDisplay, setAuctionDisplay] = useState<"box" | "seats">("box");
   const [confirmBids, setConfirmBids] = useState(false);
 
-  const stage = Math.min(width, 480);
-  const smallCard = Math.max(20, Math.floor(stage / 16));
-  const bigCard = Math.max(34, Math.floor(stage / 9));
+  const auth: CoachAuth | null = useMemo(
+    () => (token ? { token, programId } : null),
+    [token, programId],
+  );
+
+  // ── the coach's data — the page recomputes it per render; the native host
+  // re-asks the route after a quiet beat per event batch. ──
+  const [coach, setCoach] = useState<CoachPanelData | null>(null);
+  const live = useRef(true);
+  useEffect(() => {
+    live.current = true;
+    return () => {
+      live.current = false;
+    };
+  }, []);
+  const coachOn = !!b?.control["table.coach"];
+  useEffect(() => {
+    if (!auth || !coachOn) return;
+    const timer = setTimeout(() => {
+      fetchCoach(auth, sessionId)
+        .then((p) => {
+          if (live.current) setCoach(p);
+        })
+        .catch(() => {});
+    }, COACH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [auth, sessionId, coachOn, session.headSeq]);
 
   const score = useMemo(() => (state ? scoreBoard(state) : null), [state]);
 
-  // Leaving mid-board asks: keep it for Resume, or discard it. The store's
-  // OWN phase decides — no postMessage dance, the state is right here.
+  // Leaving mid-board asks: keep it for Resume, or discard. The store's OWN
+  // phase decides — no postMessage dance, the state is right here.
   const goBack = () =>
     leaveWithFade(() => (router.canGoBack() ? router.back() : router.replace("/play")));
-  const onBack = (defaultBack: () => void) => {
+  const onQuit = () => {
     const unfinished =
       !!b && !!state && !b.boardOver && state.phase !== "complete" && b.mySeat !== null;
     if (unfinished) setLeaveAsk(true);
-    else defaultBack();
+    else goBack();
   };
 
   if (!b || !state) {
     return (
       <Screen style={!session.error ? styles.feltScreen : undefined}>
-        {/* NO header while the felt loads (owner request 2026-08-12: not
-            even a flash) — it exists only in the error state, where a back
-            arrow is a decision worth offering. */}
+        {/* NO header while the felt loads (owner request 2026-08-12: not even
+            a flash) — it exists only in the error state. */}
         {session.error ? <ScreenHeader title="Board" backTo="/play" /> : null}
         <View style={styles.loading}>
           {session.error ? (
@@ -110,57 +209,148 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
     );
   }
 
-  const trick = state.tricks.length ? state.tricks[state.tricks.length - 1]! : null;
   const boardOver = b.boardOver || state.phase === "complete";
+  const skin = resolveSkin(b.appearance.skin, b.appearance.overrides);
 
-  // The playable hand: the seat whose action is next, when it's the
-  // viewer's to take (covers the takeover — the declarer's chair is theirs).
-  const legalIds = new Set(session.legalPlayList.map(cardId));
-  const hand = (seat: Seat, big: boolean) => {
-    const playable = session.myTurn && state.phase === "play" && state.turn === seat;
-    return (
-      <HandStrip
-        cards={displaySort(state.hands[seat])}
-        faceUp={b.visible[seat]}
-        backs={session.remainingCount(seat)}
-        w={big ? bigCard : smallCard}
-        back={skin.cardBack}
-        {...(playable
-          ? { legal: legalIds, onPlay: (card: Card) => void session.act({ card }) }
-          : {})}
-      />
-    );
+  // The table is shown a COMPLETE board once the auction was the board — this
+  // puts the result card on the felt and folds the tray away (the page's rule).
+  const tableState = {
+    ...state,
+    ...(b.auctionWasTheBoard || boardOver ? { phase: "complete" as const } : {}),
+    dealer: b.board.dealer as Seat,
+    vul: b.board.vul,
   };
 
-  const plate = (seat: Seat) => (
-    <SeatPlateView
-      seat={seat}
-      name={b.seats[seat].name}
-      tag={b.seats[seat].tag}
-      strip={b.seats[seat].strip}
-      onTurn={!boardOver && state.turn === seat}
-    />
-  );
+  // ── the result card's lines (page.tsx's own phrasing) ──
+  const c = state.contract;
+  const contractText = c
+    ? `${c.level}${c.strain === "N" ? "NT" : GLYPH[c.strain]}${
+        c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""
+      } by ${c.declarer}`
+    : "Passed out";
+  const resultLine = score ? resultLabel(score) : b.auctionWasTheBoard ? contractText : "Passed out";
+  const resultScore = score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : "";
+  const completedAction = b.challenge?.done
+    ? {
+        label: `${b.challenge.onward.label} →`,
+        onPress: () =>
+          leaveWithFade(() =>
+            b.challenge!.onward.href.includes("/results")
+              ? router.replace("/club-challenges")
+              : router.replace("/challenge-play"),
+          ),
+      }
+    : undefined;
 
-  const canStep = b.control["table.step_controls"];
+  // ── gates: every control's PRESENCE is the server's answer ──
+  const canStepControls = b.control["table.step_controls"];
   const canUndo = b.control["table.undo"];
-  // The hands-record peek mirrors the web gate: the capability, or a
-  // finished UNCHALLENGED board (nothing left to hide).
-  const canHands = b.control["table.hands_view"] || (boardOver && !b.challenge);
+  const canHandsView = b.control["table.hands_view"];
+  const canSeatsPanel = b.control["table.seats_panel"];
+  const canSettingsMenu = b.control["table.settings_menu"];
+  const canSkinSettings = b.control["table.skin_settings"];
 
-  // The skin dresses the felt — resolved through the kernel, same tokens the
-  // web table wears. feltFlat is the solid form (RN draws no CSS gradients).
-  const skin = resolveSkin(b.appearance.skin, b.appearance.overrides);
-  const feltColor = skin.feltFlat || "#1d5c46";
-  const accent = skin.accent || Brand.cream;
+  // ── ☰ settings rows (page.tsx:263-329; hrefs become the store's verbs).
+  // "Appearance →" and "Verification workbench →" lead to other platform
+  // pages, not board surfaces — they have no native destination yet. ──
+  const speedLabel = session.beatMs === 350 ? "Fast" : session.beatMs === 1500 ? "Slow" : "Normal";
+  const nextSpeed = session.beatMs === 1500 ? 350 : session.beatMs === 350 ? 750 : 1500;
+  const settings = [
+    ...(b.canSeeAllHands
+      ? [
+          {
+            label: "Show all four hands",
+            value: b.showAll ? "On" : "Off",
+            on: () => session.setHandsPref(b.showAll ? "mine" : "all"),
+          },
+        ]
+      : []),
+    {
+      label: "Auction display",
+      value: auctionDisplay === "seats" ? "At seats" : "Centre box",
+      on: () => setAuctionDisplay((v) => (v === "seats" ? "box" : "seats")),
+    },
+    {
+      label: "Robot speed",
+      value: speedLabel,
+      on: () => session.setBeatMs(nextSpeed),
+    },
+    {
+      label: "Confirm bids",
+      value: confirmBids ? "On" : "Off",
+      on: () => setConfirmBids((v) => !v),
+    },
+    ...(canSkinSettings
+      ? [
+          {
+            label: "Skin",
+            value: skinLabel(b.appearance.skin),
+            on: () => void session.setAppearance({ skin: nextSkin(b.appearance.skin) }),
+          },
+          {
+            label: "Hand layout",
+            value: b.appearance.handLayout === "fan" ? "Fan" : "Row",
+            on: () =>
+              void session.setAppearance({
+                handLayout: b.appearance.handLayout === "fan" ? "row" : "fan",
+              }),
+          },
+          {
+            label: "Bid pad",
+            value: b.appearance.bidPad === "columns" ? "Suit columns" : "Level grid",
+            on: () =>
+              void session.setAppearance({
+                bidPad: b.appearance.bidPad === "columns" ? "grid" : "columns",
+              }),
+          },
+          {
+            label: "Centre frame",
+            value: b.appearance.centreFrame ? "On" : "Off",
+            on: () => void session.setAppearance({ centreFrame: !b.appearance.centreFrame }),
+          },
+        ]
+      : []),
+  ];
+
+  // ── the transport group (controlsAt(1.5): the rail + the Undo chip) ──
+  const controlsExtraNarrow = canStepControls ? (
+    <TransportRail
+      paused={session.paused}
+      onPause={() => session.setPaused(!session.paused)}
+      stepActive={!boardOver && !session.myTurn}
+      onStep={() => {
+        session.setPaused(true);
+        void session.step();
+      }}
+      showUndo={!!canUndo && state.auction.length > 0 && !boardOver}
+      onUndo={() => void session.undo()}
+      benThinking={session.benWaiting}
+    />
+  ) : undefined;
+
+  // ── the seats panel (railExtra), behind the bottom bar's Seats button ──
+  const railExtra = canSeatsPanel ? (
+    <SeatsPanel
+      seatNames={b.seatNames}
+      roster={b.roster}
+      benOffered={b.benOffered}
+      pickedSeat={pickedSeat}
+      onPickSeat={setPickedSeat}
+      onSwap={(seat, playerId) => {
+        setPickedSeat(null);
+        void session
+          .swapSeat(seat, playerId)
+          // The fork stays on the native table — it is opt-in, and the opt
+          // rides the navigation (the webview is the app's default).
+          .then((id) => id && leaveWithFade(() => router.replace(`/table/${id}?native=1`)));
+      }}
+    />
+  ) : undefined;
 
   return (
-    <Screen>
-      <ScreenHeader title="Board" backTo="/play" onBack={onBack} />
+    <View style={[styles.host, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <LeaveBoardDialog
         visible={leaveAsk}
-        // Save = the server already has every event; the board waits under
-        // Resume by simply being left alive.
         onSave={() => {
           setLeaveAsk(false);
           goBack();
@@ -171,43 +361,6 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
         }}
         onStay={() => setLeaveAsk(false)}
       />
-      <SettingsSheet
-        visible={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
-        bootstrap={b}
-        showAll={b.showAll}
-        onToggleHands={() => session.setHandsPref(b.showAll ? "mine" : "all")}
-        beatMs={session.beatMs}
-        onBeat={session.setBeatMs}
-        confirmBids={confirmBids}
-        onConfirmBids={() => setConfirmBids((v) => !v)}
-        onSkin={() => void session.setSkin(cycleSkin(b))}
-      />
-      <SeatsSheet
-        visible={seatsOpen}
-        onClose={() => {
-          setSeatsOpen(false);
-          setPickedSeat(null);
-        }}
-        bootstrap={b}
-        pickedSeat={pickedSeat}
-        onPickSeat={setPickedSeat}
-        onSwap={(seat, playerId) => {
-          setSeatsOpen(false);
-          setPickedSeat(null);
-          void session
-            .swapSeat(seat, playerId)
-            .then((id) => id && leaveWithFade(() => router.replace(`/table/${id}?native=1`)));
-        }}
-      />
-      {state && (
-        <HandsViewerSheet
-          visible={handsOpen}
-          onClose={() => setHandsOpen(false)}
-          bootstrap={b}
-          state={state}
-        />
-      )}
       {b.challenge && (
         <ChallengeOverlay
           visible={standingsOpen}
@@ -215,454 +368,92 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
           challenge={b.challenge}
         />
       )}
-    <ScrollView style={[styles.felt, { backgroundColor: feltColor }]} contentContainerStyle={styles.feltInner}>
-      {/* A challenge board wears its strip above the felt. */}
+
+      {/* ── ChallengeStrip (ChallengeStrip.tsx): the dark band above ── */}
       {b.challenge && (
         <View style={styles.challengeStrip}>
           <Text style={styles.challengeTitle} numberOfLines={1}>
             {b.challenge.strip.title}
           </Text>
-          <Text style={styles.challengeCount}>
-            Board {b.challenge.strip.boardNo} of {b.challenge.strip.boardsTotal}
-          </Text>
+          <View style={styles.challengeBadge}>
+            <Text style={styles.challengeBadgeText}>
+              Board {b.challenge.strip.boardNo} of {b.challenge.strip.boardsTotal}
+            </Text>
+          </View>
+          <View style={{ flex: 1, minWidth: 8 }} />
           {b.challenge.strip.showResults && (
-            <Pressable onPress={() => setStandingsOpen(true)} hitSlop={6}>
-              <Text style={[styles.challengeResults, { color: accent }]}>Results</Text>
+            <Pressable onPress={() => setStandingsOpen(true)} style={styles.challengeResults}>
+              <Text style={styles.challengeResultsText}>Results</Text>
             </Pressable>
           )}
-        </View>
-      )}
-
-      {/* Top bar: the board's facts. */}
-      <View style={styles.topBar}>
-        <Text style={styles.topChip}>Board {b.board.number}</Text>
-        <Text style={styles.topChip}>dealer {b.board.dealer}</Text>
-        <Text style={styles.topChip}>vul {b.board.vul}</Text>
-        {state.contract ? (
-          <Text style={[styles.topChip, styles.topChipStrong]}>
-            {callLabel(`${state.contract.level}${state.contract.strain}`)}
-            {state.contract.doubled === 1 ? " X" : state.contract.doubled === 2 ? " XX" : ""} by{" "}
-            {state.contract.declarer}
-          </Text>
-        ) : null}
-        <Text style={styles.topChip}>
-          NS {state.trickCount.NS} · EW {state.trickCount.EW}
-        </Text>
-      </View>
-
-      {/* North */}
-      <View style={styles.northBand}>
-        {plate("N")}
-        {hand("N", false)}
-      </View>
-
-      {/* West | centre | East */}
-      <View style={styles.middleBand}>
-        <View style={styles.sideSeat}>
-          {plate("W")}
-          {hand("W", false)}
-        </View>
-        <View style={styles.centre}>
-          {boardOver ? (
-            <ResultCardView
-              contract={state.contract}
-              line={score ? resultLabel(score) : b.auctionWasTheBoard ? "Bidding only" : "Passed out"}
-              points={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
-              note={
-                b.auctionWasTheBoard
-                  ? "The auction was the board."
-                  : b.challenge?.done
-                    ? b.challenge.onward.label
-                    : undefined
-              }
+          <View style={styles.challengeProgress}>
+            <View
+              style={[
+                styles.challengeProgressFill,
+                {
+                  width: `${Math.round(
+                    (b.challenge.strip.boardNo / Math.max(1, b.challenge.strip.boardsTotal)) * 100,
+                  )}%`,
+                },
+              ]}
             />
-          ) : trick && trick.plays.length > 0 && state.phase === "play" ? (
-            <TrickAreaView trick={trick} w={Math.floor(smallCard * 1.4)} stage={stage} />
-          ) : (
-            <AuctionBoxView state={state} />
-          )}
+          </View>
         </View>
-        <View style={styles.sideSeat}>
-          {plate("E")}
-          {hand("E", false)}
+      )}
+
+      {/* PHONE TIER ALWAYS (the web's embedded rule): the region is capped at
+          a phone width and the table renders its phone stack inside it. */}
+      <View style={styles.region}>
+        <View style={{ flex: 1, width: "100%", maxWidth: 480, alignSelf: "center" }}>
+          <PlayTable
+            state={tableState}
+            seats={b.seats}
+            visible={b.visible}
+            mySeat={b.mySeat}
+            legalCalls={[...session.legalCallSet]}
+            legalPlays={session.legalPlayList}
+            myTurn={session.myTurn}
+            boardLabel={b.board.number}
+            auctionDisplay={auctionDisplay}
+            confirmBids={confirmBids}
+            resultLine={resultLine}
+            resultScore={resultScore}
+            {...(b.auctionWasTheBoard
+              ? { resultDetail: "Bidding only · the auction was the board" }
+              : {})}
+            {...(completedAction ? { completedAction } : {})}
+            {...(b.challenge?.done && b.challenge.onward.note
+              ? { completedNote: b.challenge.onward.note }
+              : {})}
+            onCall={(call) => void session.act({ call })}
+            onPlay={(_seat: Seat, card: Card) => void session.act({ card })}
+            {...(controlsExtraNarrow ? { controlsExtraNarrow } : {})}
+            {...(railExtra ? { railExtra } : {})}
+            {...(canSettingsMenu ? { settings } : {})}
+            {...(canHandsView
+              ? {
+                  viewAction: {
+                    label: "Hands",
+                    on: () => router.push(`/table/${sessionId}?view=hands&from=table`),
+                  },
+                }
+              : {})}
+            tok={skin}
+            handLayout={b.appearance.handLayout}
+            bidPad={b.appearance.bidPad}
+            centreFrame={b.appearance.centreFrame}
+            fanSpread={b.appearance.fanSpread}
+            fanRadius={b.appearance.fanRadius}
+            hideTopBar
+            coachContent={coachOn && coach && auth ? <CoachDock data={coach} auth={auth} /> : undefined}
+          />
         </View>
       </View>
-
-      {/* South — the viewer's hand rides big. */}
-      <View style={styles.southBand}>
-        {hand("S", true)}
-        {plate("S")}
-      </View>
-
-      {/* The bid tray, when the auction is the viewer's to move. */}
-      {session.myTurn && state.phase === "auction" && (
-        <BidPad
-          legal={session.legalCallSet}
-          confirm={confirmBids}
-          onCall={(call) => void session.act({ call })}
-        />
-      )}
-
-      {/* BEN held the beat (challenges have no fallback): say so, offer ⟳. */}
-      {session.benWaiting && (
-        <Pressable onPress={session.retryBen} style={styles.benChip}>
-          <Text style={styles.benChipText}>BEN is thinking… tap to retry</Text>
-        </Pressable>
-      )}
-
-      {/* Transport: pause/run the robots, step one decision, take one back —
-          plus the sheets' doors, each present only when the control is. */}
-      {!boardOver && (
-        <View style={styles.transportRow}>
-          {canStep && (
-            <>
-              <Chip
-                label={session.paused ? "▶ Run" : "❚❚ Pause"}
-                onPress={() => session.setPaused(!session.paused)}
-              />
-              <Chip
-                label="▸ Step"
-                onPress={() => {
-                  session.setPaused(true);
-                  void session.step();
-                }}
-              />
-            </>
-          )}
-          {canUndo && state.auction.length > 0 && (
-            <Chip label="↩ Undo" onPress={() => void session.undo()} />
-          )}
-          {b.control["table.seats_panel"] && (
-            <Chip label="Seats" onPress={() => setSeatsOpen(true)} />
-          )}
-          {canHands && <Chip label="Hands" onPress={() => setHandsOpen(true)} />}
-          {b.control["table.settings_menu"] && (
-            <Chip label="☰" onPress={() => setSettingsOpen(true)} />
-          )}
-        </View>
-      )}
-
-      {/* A finished board's onward verbs. */}
-      {boardOver && (
-        <View style={styles.transportRow}>
-          {canHands && <Chip label="Hands" onPress={() => setHandsOpen(true)} />}
-          {b.control["table.save_library"] && (
-            <Chip
-              label="Save play"
-              onPress={() =>
-                void session
-                  .save("play")
-                  .then((id) => id && setSavedNote("Saved to your library."))
-              }
-            />
-          )}
-          {b.control["table.new_deal"] && !b.challenge && (
-            <Chip
-              label="New deal"
-              onPress={() =>
-                void session
-                  .newDeal()
-                  .then((id) => id && leaveWithFade(() => router.replace(`/table/${id}?native=1`)))
-              }
-            />
-          )}
-        </View>
-      )}
-      {savedNote ? <Text style={styles.savedNote}>{savedNote}</Text> : null}
-
-      {/* A finished challenge board's way onward: the next board, or the
-          results. The web hrefs map to the app's own journeys. */}
-      {b.challenge?.done && (
-        <Pressable
-          onPress={() =>
-            leaveWithFade(() =>
-              b.challenge!.onward.href.includes("/results")
-                ? router.replace("/club-challenges")
-                : router.replace("/challenge-play"),
-            )
-          }
-          style={({ pressed }) => [styles.onwardBar, pressed && { opacity: 0.8 }]}
-        >
-          <Text style={styles.onwardLabel}>{b.challenge.onward.label} →</Text>
-          {b.challenge.onward.note ? (
-            <Text style={styles.onwardNote}>{b.challenge.onward.note}</Text>
-          ) : null}
-        </Pressable>
-      )}
 
       {session.actError ? <Text style={styles.actError}>{session.actError}</Text> : null}
-      {session.pending ? <Text style={styles.pendingNote}>…</Text> : null}
 
-      {/* The coach band under the felt — gated like everything else by the
-          server's control answer; refreshes off the confirmed head. */}
-      {b.control["table.coach"] && (
-        <CoachDock sessionId={sessionId} refreshKey={session.headSeq} />
-      )}
-    </ScrollView>
-    </Screen>
-  );
-}
-
-function Chip({ label, onPress }: { label: string; onPress: () => void }) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.transportChip, pressed && { opacity: 0.75 }]}
-    >
-      <Text style={styles.transportChipText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-// ── Pieces ───────────────────────────────────────────────────────────────────
-
-function SeatPlateView({
-  seat,
-  name,
-  tag,
-  strip,
-  onTurn,
-}: {
-  seat: Seat;
-  name: string;
-  tag: string;
-  strip: string;
-  onTurn: boolean;
-}) {
-  return (
-    <View style={[styles.plate, onTurn && styles.plateOnTurn]}>
-      <View style={[styles.plateStrip, { backgroundColor: strip }]} />
-      <Text style={styles.plateSeat}>{seat}</Text>
-      <Text style={styles.plateName} numberOfLines={1}>
-        {name}
-        {tag ? ` · ${tag}` : ""}
-      </Text>
-    </View>
-  );
-}
-
-function HandStrip({
-  cards,
-  faceUp,
-  backs,
-  w,
-  back,
-  legal,
-  onPlay,
-}: {
-  cards: Card[];
-  faceUp: boolean;
-  backs: number;
-  w: number;
-  /** The skin's card-back color. */
-  back?: string;
-  /** Card ids the kernel says may be played — everything else dims. */
-  legal?: Set<string>;
-  onPlay?: (card: Card) => void;
-}) {
-  const overlap = Math.floor(w * 0.55);
-  if (!faceUp) {
-    return (
-      <View style={styles.handRow}>
-        {Array.from({ length: Math.max(0, backs) }, (_, i) => (
-          <View key={i} style={{ marginLeft: i === 0 ? 0 : -overlap }}>
-            <CardBack w={w} color={back} />
-          </View>
-        ))}
-      </View>
-    );
-  }
-  return (
-    <View style={styles.handRow}>
-      {cards.map((c, i) => {
-        const id = cardId(c);
-        const playable = !!onPlay && !!legal?.has(id);
-        const face = (
-          <View
-            style={[
-              { marginLeft: i === 0 ? 0 : -overlap },
-              // A tappable hand dims what the law refuses; a watching hand
-              // dims nothing — nothing there is being offered.
-              onPlay && !playable && { opacity: 0.45 },
-              playable && { marginTop: -Math.floor(w * 0.12) },
-            ]}
-          >
-            <CardFace card={c} w={w} />
-          </View>
-        );
-        return playable ? (
-          <Pressable key={id} onPress={() => onPlay(c)} hitSlop={4}>
-            {face}
-          </Pressable>
-        ) : (
-          <View key={id}>{face}</View>
-        );
-      })}
-    </View>
-  );
-}
-
-/** The bid tray: pick a level, tap a strain — or pass/double straight away.
- *  Legality comes from the kernel's set; everything else renders disabled.
- *  With `confirm` on, a chosen call ARMS instead of sending — the second tap
- *  (a labeled Confirm key) is the one that travels. */
-function BidPad({
-  legal,
-  confirm,
-  onCall,
-}: {
-  legal: Set<Call>;
-  confirm: boolean;
-  onCall: (call: Call) => void;
-}) {
-  const [level, setLevel] = useState<number | null>(null);
-  const [armed, setArmed] = useState<Call | null>(null);
-  const STRAINS: { key: string; label: string; red: boolean }[] = [
-    { key: "C", label: "♣", red: false },
-    { key: "D", label: "♦", red: true },
-    { key: "H", label: "♥", red: true },
-    { key: "S", label: "♠", red: false },
-    { key: "N", label: "NT", red: false },
-  ];
-  const levelHasBid = (l: number) => STRAINS.some((s) => legal.has(`${l}${s.key}`));
-  const send = (call: Call) => {
-    if (confirm && armed !== call) {
-      setArmed(call);
-      return;
-    }
-    setLevel(null);
-    setArmed(null);
-    onCall(call);
-  };
-  return (
-    <View style={styles.bidPad}>
-      <View style={styles.bidRow}>
-        {[1, 2, 3, 4, 5, 6, 7].map((l) => (
-          <Pressable
-            key={l}
-            disabled={!levelHasBid(l)}
-            onPress={() => {
-              setLevel(level === l ? null : l);
-              setArmed(null);
-            }}
-            style={[
-              styles.bidKey,
-              level === l && styles.bidKeyOn,
-              !levelHasBid(l) && styles.bidKeyDim,
-            ]}
-          >
-            <Text style={[styles.bidKeyText, level === l && styles.bidKeyTextOn]}>{l}</Text>
-          </Pressable>
-        ))}
-      </View>
-      <View style={styles.bidRow}>
-        {STRAINS.map((s) => {
-          const call = level ? `${level}${s.key}` : null;
-          const ok = !!call && legal.has(call);
-          return (
-            <Pressable
-              key={s.key}
-              disabled={!ok}
-              onPress={() => call && send(call)}
-              style={[styles.bidKey, !ok && styles.bidKeyDim, armed === call && styles.bidKeyOn]}
-            >
-              <Text style={[styles.bidKeyText, s.red && { color: "#c0392b" }]}>{s.label}</Text>
-            </Pressable>
-          );
-        })}
-        {(["P", "X", "XX"] as Call[]).map((c) => (
-          <Pressable
-            key={c}
-            disabled={!legal.has(c)}
-            onPress={() => send(c)}
-            style={[styles.bidKey, styles.bidKeyWide, !legal.has(c) && styles.bidKeyDim, armed === c && styles.bidKeyOn]}
-          >
-            <Text style={styles.bidKeyText}>{c === "P" ? "Pass" : c}</Text>
-          </Pressable>
-        ))}
-      </View>
-      {confirm && armed && (
-        <Pressable onPress={() => send(armed)} style={styles.confirmKey}>
-          <Text style={styles.confirmKeyText}>Confirm {callLabel(armed)}</Text>
-        </Pressable>
-      )}
-    </View>
-  );
-}
-
-function TrickAreaView({
-  trick,
-  w,
-  stage,
-}: {
-  trick: { leader: Seat; plays: { seat: Seat; card: Card }[] };
-  w: number;
-  stage: number;
-}) {
-  const box = Math.min(stage * 0.42, 190);
-  const h = w * 1.45;
-  const spot: Record<Seat, object> = {
-    N: { top: 0, left: box / 2 - w / 2 },
-    S: { bottom: 0, left: box / 2 - w / 2 },
-    W: { left: 0, top: box / 2 - h / 2 },
-    E: { right: 0, top: box / 2 - h / 2 },
-  };
-  return (
-    <View style={{ width: box, height: box }}>
-      {trick.plays.map((p) => (
-        <View key={p.seat} style={[{ position: "absolute" }, spot[p.seat]]}>
-          <CardFace card={p.card} w={w} />
-        </View>
-      ))}
-    </View>
-  );
-}
-
-function AuctionBoxView({ state }: { state: GameState }) {
-  const calls = state.auction;
-  return (
-    <View style={styles.auctionBox}>
-      <Text style={styles.auctionTitle}>
-        {calls.length === 0 ? "The auction opens" : "The auction"}
-      </Text>
-      <View style={styles.auctionFlow}>
-        {calls.map((a, i) => (
-          <Text
-            key={i}
-            style={[
-              styles.auctionChip,
-              { color: /[HD]/.test(a.call[1] ?? "") && a.call.length === 2 ? "#c0392b" : Brand.ink },
-            ]}
-          >
-            {a.seat} {callLabel(a.call)}
-          </Text>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function ResultCardView({
-  contract,
-  line,
-  points,
-  note,
-}: {
-  contract: { level: number; strain: string; declarer: Seat } | null;
-  line: string;
-  points: string;
-  note?: string;
-}) {
-  return (
-    <View style={styles.resultCard}>
-      <Text style={styles.resultTitle}>
-        {contract
-          ? `${contract.level}${contract.strain === "N" ? "NT" : SUIT_GLYPH[contract.strain]} by ${contract.declarer}`
-          : "Passed out"}
-      </Text>
-      <Text style={styles.resultLine}>{line}</Text>
-      {points ? <Text style={styles.resultPoints}>{points}</Text> : null}
-      {note ? <Text style={styles.resultNote}>{note}</Text> : null}
+      {/* The app's exit — the same pull-out the webview board wears. */}
+      <QuitPullout onQuit={onQuit} />
     </View>
   );
 }
@@ -671,186 +462,65 @@ const styles = StyleSheet.create({
   /** While loading, the SAFE AREAS wear the felt too — no cream bars. */
   feltScreen: { backgroundColor: "#1d5c46" },
   loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#1d5c46" },
-  loadingText: { fontFamily: Fonts.body, fontSize: 14, color: Brand.cream },
+  loadingText: { fontSize: 14, color: "#fff4d7" },
 
-  felt: { flex: 1, backgroundColor: "#1d5c46" },
-  feltInner: { padding: 12, paddingBottom: 28, gap: 10 },
+  host: { flex: 1, backgroundColor: "#fff", overflow: "hidden" },
+  region: { flex: 1, alignSelf: "stretch" },
 
-  topBar: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
-  topChip: {
-    fontFamily: Fonts.bodySemibold,
-    fontSize: 11.5,
-    color: Brand.cream,
-    backgroundColor: "rgba(0,0,0,0.25)",
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    overflow: "hidden",
-  },
-  topChipStrong: { backgroundColor: Brand.cream, color: Brand.ink },
-
-  northBand: { alignItems: "center", gap: 6 },
-  middleBand: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    minHeight: 150,
-  },
-  sideSeat: { alignItems: "center", gap: 6, maxWidth: 92 },
-  centre: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
-  southBand: { alignItems: "center", gap: 8, marginTop: 4 },
-
-  plate: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(0,0,0,0.3)",
-    borderRadius: 999,
-    paddingRight: 10,
-    overflow: "hidden",
-  },
-  plateOnTurn: { backgroundColor: Brand.cream },
-  plateStrip: { width: 6, alignSelf: "stretch" },
-  plateSeat: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: Brand.cream, paddingVertical: 4 },
-  plateName: { fontFamily: Fonts.body, fontSize: 11.5, color: "rgba(255,255,255,0.85)", maxWidth: 110 },
-
-  handRow: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap" },
-
-  auctionBox: {
-    backgroundColor: "rgba(255,254,250,0.94)",
-    borderRadius: 12,
-    padding: 10,
-    maxWidth: 230,
-  },
-  auctionTitle: {
-    fontFamily: Fonts.bodySemibold,
-    fontSize: 10,
-    letterSpacing: 1.6,
-    color: "#8b9a93",
-    textTransform: "uppercase",
-    marginBottom: 6,
-    textAlign: "center",
-  },
-  auctionFlow: { flexDirection: "row", flexWrap: "wrap", gap: 5, justifyContent: "center" },
-  auctionChip: {
-    fontFamily: Fonts.bodySemibold,
-    fontSize: 12.5,
-    backgroundColor: "#f1ede3",
-    borderRadius: 7,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
-    overflow: "hidden",
-  },
-
-  resultCard: {
-    backgroundColor: "#fffefa",
-    borderRadius: 14,
-    paddingHorizontal: 18,
-    paddingVertical: 14,
-    alignItems: "center",
-    gap: 3,
-    maxWidth: 240,
-  },
-  resultTitle: { fontFamily: Fonts.displayMedium, fontSize: 17, color: Brand.ink },
-  resultLine: { fontFamily: Fonts.body, fontSize: 13, color: "#5e5749" },
-  resultPoints: { fontFamily: Fonts.display, fontSize: 22, color: Brand.ink },
-  resultNote: { fontFamily: Fonts.body, fontSize: 11.5, color: "#8b9a93", textAlign: "center" },
-
-  bidPad: {
-    backgroundColor: "rgba(0,0,0,0.28)",
-    borderRadius: 14,
-    padding: 8,
-    gap: 6,
-    marginTop: 4,
-  },
-  bidRow: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
-  bidKey: {
-    minWidth: 38,
-    alignItems: "center",
-    backgroundColor: "#fffefa",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-  },
-  bidKeyWide: { minWidth: 52 },
-  bidKeyOn: { backgroundColor: Brand.cream, borderWidth: 2, borderColor: Brand.maroon },
-  bidKeyDim: { opacity: 0.35 },
-  bidKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 15, color: Brand.ink },
-  bidKeyTextOn: { color: Brand.maroon },
-  confirmKey: {
-    alignSelf: "center",
-    backgroundColor: Brand.cream,
-    borderRadius: 999,
-    paddingHorizontal: 18,
-    paddingVertical: 9,
-    marginTop: 2,
-  },
-  confirmKeyText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: Brand.ink },
-
+  // ChallengeStrip tokens (challengeTokens.ts).
   challengeStrip: {
+    height: 40,
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
-    backgroundColor: "rgba(0,0,0,0.35)",
-    borderRadius: 10,
+    gap: 8,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    backgroundColor: "#0e1a1c",
   },
-  challengeTitle: { flex: 1, fontFamily: Fonts.bodySemibold, fontSize: 12.5, color: Brand.white },
-  challengeCount: { fontFamily: Fonts.body, fontSize: 11.5, color: "rgba(255,255,255,0.8)" },
-  challengeResults: { fontFamily: Fonts.bodySemibold, fontSize: 12.5 },
-
-  onwardBar: {
-    backgroundColor: Brand.cream,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    alignItems: "center",
-    gap: 2,
+  challengeTitle: { flexShrink: 1, fontSize: 12.5, fontWeight: "700", color: "#eaf1ef" },
+  challengeBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,.06)",
   },
-  onwardLabel: { fontFamily: Fonts.bodySemibold, fontSize: 14, color: Brand.ink },
-  onwardNote: { fontFamily: Fonts.body, fontSize: 11.5, color: "#7b7466", textAlign: "center" },
-
-  transportRow: { flexDirection: "row", flexWrap: "wrap", gap: 8, justifyContent: "center" },
-  transportChip: {
-    backgroundColor: "rgba(0,0,0,0.3)",
+  challengeBadgeText: { fontSize: 10, fontWeight: "700", color: "#93aaa7" },
+  challengeResults: {
+    height: 26,
+    paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,244,215,0.4)",
-    borderRadius: 999,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderColor: "rgba(255,255,255,.22)",
+    borderRadius: 7,
+    backgroundColor: "rgba(255,255,255,.06)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  transportChipText: { fontFamily: Fonts.bodySemibold, fontSize: 13, color: Brand.cream },
-  benChip: {
-    alignSelf: "center",
-    backgroundColor: Brand.cream,
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 9,
+  challengeResultsText: { color: "#dbe8e6", fontSize: 11.5, fontWeight: "700" },
+  challengeProgress: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 2,
+    backgroundColor: "rgba(255,255,255,.10)",
   },
-  benChipText: { fontFamily: Fonts.bodySemibold, fontSize: 12.5, color: Brand.ink },
-  savedNote: {
-    fontFamily: Fonts.bodySemibold,
-    fontSize: 12.5,
-    color: Brand.cream,
-    textAlign: "center",
-  },
+  challengeProgressFill: { height: 2, backgroundColor: "#0d707c" },
 
   actError: {
-    fontFamily: Fonts.bodySemibold,
+    position: "absolute",
+    left: 12,
+    right: 12,
+    bottom: 90,
     fontSize: 12.5,
-    color: Brand.white,
-    backgroundColor: "#b91c1c",
-    borderRadius: 10,
+    fontWeight: "700",
+    color: "#fff",
+    backgroundColor: "#8a3030",
+    borderWidth: 1,
+    borderColor: "#a94848",
+    borderRadius: 6,
     paddingHorizontal: 12,
     paddingVertical: 8,
     textAlign: "center",
     overflow: "hidden",
-  },
-  pendingNote: {
-    fontFamily: Fonts.bodySemibold,
-    fontSize: 16,
-    color: "rgba(255,244,215,0.7)",
-    textAlign: "center",
+    zIndex: 20,
   },
 });

@@ -249,6 +249,8 @@ export interface TableSession {
   swapSeat: (seat: Seat, playerId: string) => Promise<string | null>;
   /** Persist a new skin and re-dress the table. */
   setSkin: (skin: SkinName) => Promise<void>;
+  /** Persist any appearance knobs (hand layout, bid pad, centre frame…). */
+  setAppearance: (patch: Record<string, unknown>) => Promise<void>;
 }
 
 export function useTableSession(
@@ -530,23 +532,25 @@ export function useTableSession(
     [token, programId, sessionId],
   );
 
-  const setSkin = useCallback(
-    async (skin: SkinName) => {
+  const setAppearance = useCallback(
+    async (patch: Record<string, unknown>) => {
       if (!token) return;
       try {
         await bridgeRequest("/api/bridge/appearance", {
           token,
           programId,
           method: "PATCH",
-          body: { skin },
+          body: patch,
         });
         await resync();
       } catch {
-        // The old skin stays — a failed restyle costs nothing.
+        // The old look stays — a failed restyle costs nothing.
       }
     },
     [token, programId, resync],
   );
+
+  const setSkin = useCallback((skin: SkinName) => setAppearance({ skin }), [setAppearance]);
 
   const newDeal = useCallback(async (): Promise<string | null> => {
     if (!token) return null;
@@ -718,5 +722,6 @@ export function useTableSession(
     setBeatMs,
     swapSeat,
     setSkin,
+    setAppearance,
   };
 }

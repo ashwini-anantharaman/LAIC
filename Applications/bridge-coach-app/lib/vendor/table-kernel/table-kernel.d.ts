@@ -240,6 +240,8 @@ export interface TableAppearance {
 }
 
 export const TABLE_SKINS: Record<SkinName, SkinTokens>;
+/** The suit-column bid pad's per-strain tints (table-skins.json). */
+export const STRAIN_TINT: Record<Strain, { bg: string; ink: string; edge: string }>;
 export const SKIN_ORDER: readonly SkinName[];
 export const DEFAULT_APPEARANCE: TableAppearance;
 export function resolveSkin(name: SkinName, overrides?: AppearanceOverrides): SkinTokens;

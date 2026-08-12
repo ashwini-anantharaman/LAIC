@@ -4,17 +4,17 @@ import { BridgeEmbed } from "../../components/bridge-embed";
 import { NativeTable } from "../../components/table/native-table";
 
 /** One board at the table — opened by Resume, or from a list of unfinished
- *  boards. The table itself is the platform's (fluid design components).
+ *  boards. THE WEBVIEW BOARD IS THE DEFAULT (owner direction 2026-08-12,
+ *  reversing the same day's native flip): the platform's table2 page and its
+ *  coach, embedded — with the app's own chrome (the fade door, the felt
+ *  loading cover, the quit pull-out) unchanged around it.
  *
- *  `view=hands` opens the hand-record view (all four hands, auction, play) —
- *  what My Games' "View board" means by a finished board. `from=games` tells
- *  the platform page which journey this is (no "⟵ table" door on a record
- *  opened from history — owner decision 2026-08-07).
+ *  `view=hands` opens the four-hand RECORD page (My Games' "View board");
+ *  `from=…` tells the platform page which journey a record came from.
  *
- *  ?native=1 renders the NATIVE board instead (Part II) — strictly opt-in.
- *  The platform's board and coach stay the default, exactly as they are
- *  (owner direction 2026-08-12: the existing implementation is not to be
- *  replaced; the native table earns its place behind the flag only). */
+ *  ?native=1 renders the NATIVE board instead — the platform table's phone
+ *  tier and the original coach, ported 1:1 and fed by the JSON API. It is
+ *  strictly opt-in; any future default flip is the owner's call alone. */
 export default function TableScreen() {
   const { sessionId, view, from, native } = useLocalSearchParams<{
     sessionId: string;
@@ -27,9 +27,10 @@ export default function TableScreen() {
   // inside, the tap→felt journey reads as one motion.
   const fade = <Stack.Screen options={{ animation: "fade" }} />;
 
-  if (native === "1") {
-    // The native table owns its whole screen — header, leave-board dialog,
-    // sheets — because the save-or-discard question reads its own store.
+  if (native === "1" && !(typeof view === "string" && view)) {
+    // The native table owns its whole screen — the pull-out exit, the
+    // leave-board dialog, the ☰ and Seats overlays — because the
+    // save-or-discard question reads its own store.
     return (
       <>
         {fade}
