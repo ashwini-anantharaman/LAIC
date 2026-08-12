@@ -192,8 +192,8 @@ export default function ClubChallengesScreen() {
   const saveChallenge = () => {
     const name = draftName.trim();
     if (!name) return;
-    // Device-local until the app grows a create flow of its own: real
-    // challenges are assembled on the platform ("Open live challenges").
+    // Device-local until the app grows a create flow of its own: real challenges
+    // are assembled on the platform.
     const next: ClubChallenge = {
       id: `local-${count + 1}`,
       name,
@@ -208,6 +208,10 @@ export default function ClubChallengesScreen() {
       resultsUnlocked: true,
       standings: [],
       benTotal: null,
+      // A local draft is neither retired nor moderated by anyone — it exists only
+      // on this device, so there is nothing on the platform to archive.
+      archived: false,
+      moderator: false,
     };
     const index = count;
     setChallenges((prev) => [...(prev ?? []), next]);

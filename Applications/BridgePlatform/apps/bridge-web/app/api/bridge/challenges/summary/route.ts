@@ -167,6 +167,9 @@ async function summarize(
     scoring: challenge.scoring,
     boardCount: access.totalBoards,
     createdAt: challenge.createdAt,
+    // The app needs this to label an archived challenge and to offer a moderator
+    // the reverse — without it the archive control could only ever be one-way.
+    status: challenge.status,
     inviteStatus:
       invite?.status ?? (challenge.createdBy === viewerId ? "accepted" : "none"),
     viewer: {

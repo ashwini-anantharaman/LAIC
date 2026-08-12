@@ -12,6 +12,7 @@
 // Data arrives via the module cache the Challenges screen already filled; a
 // cold open (reload straight onto this route) refetches the summary itself.
 
+import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useEffect, useState } from "react";
 import {
@@ -32,10 +33,11 @@ import {
   fetchClubChallenges,
   getCachedChallenge,
   respondToChallengeInvite,
+  setChallengeArchived,
   type ClubChallenge,
 } from "../lib/challenges";
 import { useSelectedClubId } from "../lib/club-context";
-import { notify } from "../lib/dialogs";
+import { confirmDestructive, notify } from "../lib/dialogs";
 
 const DESIGN_WIDTH = 390;
 const TILE = 155.47; // the Club home's thumbnail size — a poster, not a carousel
@@ -101,6 +103,41 @@ export default function ChallengeInfoScreen() {
     }
   };
 
+  /**
+   * Retire this challenge, or bring it back — moderators only.
+   *
+   * Here rather than on the list, because this is the screen that already knows one
+   * challenge and already answers invites for it. The platform's own list card can
+   * do the same thing, but the app deliberately never shows that page.
+   *
+   * Confirms first: archiving changes what everyone invited sees, so it is not a
+   * one-tap act. Reversible, and the button says which way it will go.
+   */
+  const [archiving, setArchiving] = useState(false);
+  const toggleArchive = () => {
+    if (!token || !challenge || archiving) return;
+    const next = !challenge.archived;
+    confirmDestructive(
+      next ? "Archive this challenge?" : "Reopen this challenge?",
+      next
+        ? "It stops being playable for everyone invited. Results stay readable, and you can reopen it."
+        : "It becomes playable again for everyone invited.",
+      next ? "Archive" : "Reopen",
+      () => {
+        setArchiving(true);
+        setChallengeArchived(token, clubId, challenge.id, next)
+          .then((status) => setChallenge({ ...challenge, archived: status === "archived" }))
+          .catch((e) =>
+            notify(
+              "Couldn't change that",
+              e instanceof Error ? e.message : "Please try again.",
+            ),
+          )
+          .finally(() => setArchiving(false));
+      },
+    );
+  };
+
   const buttonLabel = !challenge
     ? ""
     : challenge.finished
@@ -161,7 +198,41 @@ export default function ChallengeInfoScreen() {
                   <FactRow label="Invite" value="Awaiting your response" scale={s} />
                 ) : null}
                 {inviteDeclined ? <FactRow label="Invite" value="Declined" scale={s} /> : null}
+                {/* Archived is a fact about the challenge, so it is stated whether or
+                    not this viewer can change it. */}
+                {challenge.archived ? (
+                  <FactRow label="Status" value="Archived" scale={s} />
+                ) : null}
               </View>
+
+              {/* Moderators only — the platform refuses anyone else, so offering it
+                  more widely would only produce a button that fails. */}
+              {challenge.moderator ? (
+                <Pressable
+                  onPress={toggleArchive}
+                  disabled={archiving}
+                  accessibilityRole="button"
+                  accessibilityLabel={challenge.archived ? "Reopen challenge" : "Archive challenge"}
+                  style={({ pressed }) => [
+                    styles.archiveRow,
+                    { marginTop: 14 * s },
+                    (pressed || archiving) && styles.pressed,
+                  ]}
+                >
+                  <Ionicons
+                    name={challenge.archived ? "refresh-outline" : "archive-outline"}
+                    size={15 * s}
+                    color={Brand.ink}
+                  />
+                  <Text style={[styles.archiveText, { fontSize: 13 * s }]}>
+                    {archiving
+                      ? "Working…"
+                      : challenge.archived
+                        ? "Reopen challenge"
+                        : "Archive challenge"}
+                  </Text>
+                </Pressable>
+              ) : null}
 
               <Text style={[styles.heading, { paddingTop: 20 * s, paddingBottom: 8 * s }]}>
                 About this Challenge
@@ -295,5 +366,19 @@ const styles = StyleSheet.create({
     backgroundColor: "transparent",
   },
   declineText: { fontFamily: Fonts.bodySemibold, color: Brand.green },
+  /** A quiet, secondary control — an outline row, not a filled button: retiring a
+   *  challenge is deliberate but it is not the screen's main action. */
+  archiveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 7,
+    marginHorizontal: 25,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(31,31,31,0.28)",
+  },
+  archiveText: { fontFamily: Fonts.body, color: Brand.ink },
   pressed: { opacity: 0.6 },
 });

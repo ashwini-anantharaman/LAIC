@@ -58,6 +58,10 @@ export type ClubChallenge = {
   standings: ChallengeStanding[];
   /** BEN's unranked benchmark total, when the platform computed one. */
   benTotal: string | null;
+  /** Archived challenges are retired: results stay readable, play does not. */
+  archived: boolean;
+  /** The creator, or someone invited AS a moderator — who may retire it. */
+  moderator: boolean;
 };
 
 type SummaryRow = {
@@ -68,7 +72,13 @@ type SummaryRow = {
   scoring: "imps" | "mp" | "total";
   boardCount: number;
   inviteStatus?: "pending" | "accepted" | "declined" | "none";
-  viewer?: { finishedBoards?: number; finished?: boolean; resultsUnlocked?: boolean };
+  status?: "open" | "archived";
+  viewer?: {
+    finishedBoards?: number;
+    finished?: boolean;
+    resultsUnlocked?: boolean;
+    moderator?: boolean;
+  };
   leaderboard:
     | {
         rank: number;
@@ -113,6 +123,11 @@ function mapRow(row: SummaryRow): ClubChallenge {
     finishedBoards: row.viewer?.finishedBoards ?? 0,
     finished: row.viewer?.finished ?? false,
     resultsUnlocked: row.viewer?.resultsUnlocked ?? false,
+    // Absent on an older platform build: default to "not archived, not a
+    // moderator", so a stale bridge hides the control rather than offering one
+    // whose request would be refused.
+    archived: row.status === "archived",
+    moderator: row.viewer?.moderator ?? false,
     standings: (row.leaderboard ?? []).map((r) => ({
       rank: r.rank,
       name: r.name,
@@ -168,6 +183,56 @@ export async function fetchClubChallenges(
   const rows = (json.challenges ?? []).map(mapRow);
   for (const row of rows) lastFetched.set(row.id, row);
   return rows;
+}
+
+/**
+ * Retire a challenge, or bring it back.
+ *
+ * The platform's own list card can do this too, but the app can never reach that
+ * page — BridgeEmbed refuses to show it on purpose — so this is the app's door onto
+ * the same act, over the same dual auth the rest of this file uses.
+ *
+ * Creator or moderator; the platform enforces that, and this only offers it where
+ * the summary says the viewer qualifies.
+ */
+export async function setChallengeArchived(
+  token: string,
+  programId: string | null,
+  challengeId: string,
+  archived: boolean,
+): Promise<"open" | "archived"> {
+  const base = bridgeApiBase();
+  if (!base) throw new ChallengesError(0, "No bridge platform configured.");
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${base}/api/bridge/challenges/${encodeURIComponent(challengeId)}/archive`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+          ...(programId ? { "x-program-id": programId } : {}),
+        },
+        body: JSON.stringify({ archived }),
+      },
+    );
+  } catch {
+    throw new ChallengesError(0, "Cannot reach the bridge platform.");
+  }
+  if (!response.ok) {
+    // 404 means an older bridge build with no archive route — say so plainly
+    // rather than reporting a generic failure.
+    if (response.status === 404) {
+      throw new ChallengesError(404, "This bridge build cannot archive challenges yet.");
+    }
+    throw new ChallengesError(response.status, `Couldn't archive that challenge (${response.status})`);
+  }
+  const json = (await response.json().catch(() => ({}))) as { status?: "open" | "archived" };
+  // The list is cached for the info screen; drop it so the next read is the truth.
+  lastFetched.delete(challengeId);
+  return json.status ?? (archived ? "archived" : "open");
 }
 
 /**
