@@ -23,6 +23,7 @@ import { codeLabel } from "@/lib/coach/position";
 import { partnershipSystem } from "@/lib/coach/verdicts";
 import { positionKey, visiblePosition } from "@/lib/coach/visible";
 import { kbStore } from "@/lib/kb";
+import { corsOptions, withCors } from "@/lib/cors";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
@@ -49,7 +50,13 @@ function remember(key: string, hints: string[]): void {
   cache.set(key, hints);
 }
 
+export const OPTIONS = corsOptions("GET");
+
 export async function GET(request: Request): Promise<NextResponse> {
+  return withCors(await handle(request), "GET");
+}
+
+async function handle(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
   if (!context) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 

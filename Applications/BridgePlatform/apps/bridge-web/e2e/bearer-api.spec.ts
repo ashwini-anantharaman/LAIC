@@ -16,16 +16,18 @@ import { expect, test } from "@playwright/test";
 import { signInAs } from "./helpers";
 
 test.describe("/api/bridge/me", () => {
-  test("no credential → 404, never a 500", async ({ request }) => {
+  test("no credential → 401, never a 500", async ({ request }) => {
+    // Unauthenticated is 401 (2026-08-12) so the app's refresh-and-retry can
+    // fire; access DENIALS still read as 404.
     const res = await request.get("/api/bridge/me");
-    expect(res.status()).toBe(404);
+    expect(res.status()).toBe(401);
   });
 
   test("a bearer header alone grants nothing in stub mode", async ({ request }) => {
     const res = await request.get("/api/bridge/me", {
       headers: { Authorization: "Bearer some-token", "x-program-id": "p-1" },
     });
-    expect(res.status()).toBe(404);
+    expect(res.status()).toBe(401);
   });
 
   test("OPTIONS preflight is open for the app's headers", async ({ request }) => {

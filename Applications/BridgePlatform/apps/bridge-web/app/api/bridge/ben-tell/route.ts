@@ -22,6 +22,7 @@ import { benConfigured } from "@/lib/benRead";
 import { createBenTableClient, originalHand, parseBenCard, playedToBen } from "@/lib/benSeat";
 import { auctionToCtx, handToPbn, vulToBen } from "@/lib/benchmark";
 import { callLabel, cardLabel } from "@/lib/coach/position";
+import { corsOptions, withCors } from "@/lib/cors";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 
@@ -43,7 +44,13 @@ interface BenTell {
 // Serverless time limit: /play simulations sit far above the default.
 export const maxDuration = 60;
 
+export const OPTIONS = corsOptions("GET");
+
 export async function GET(request: Request): Promise<NextResponse> {
+  return withCors(await handle(request), "GET");
+}
+
+async function handle(request: Request): Promise<NextResponse> {
   const context = await getBridgeContext();
   if (!context) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 

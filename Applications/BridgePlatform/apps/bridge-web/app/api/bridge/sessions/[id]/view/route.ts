@@ -18,7 +18,6 @@ import type { Seat } from "@bridge/events";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { AccessError, apiError, requireContext } from "@/lib/api";
-import { canUse } from "@/lib/access";
 import { benAvailable } from "@/lib/benSeat";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { kbStore } from "@/lib/kb";
@@ -33,8 +32,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
+    // Signed-in and the session loads — EXACTLY the table2 page's own gate
+    // (page.tsx:55,83: redirect unsigned, notFound on a missing board). The
+    // earlier `page.play` check here was an INVENTED gate the page never had:
+    // a role without that key could deal a board (quick-play carries no such
+    // check either) and then be told "Not found" by its own table.
     const context = await requireContext();
-    if (!(await canUse(context, "page.play"))) throw new AccessError("No access");
     const { id } = await params;
     const hands = request.nextUrl.searchParams.get("hands") ?? undefined;
 

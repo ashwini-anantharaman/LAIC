@@ -13,12 +13,7 @@
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  coachLines,
-  coachStatus,
-  tellLabel,
-  type CoachData,
-} from "@/components/table/play/coachContent";
+import { type CoachData } from "@/components/table/play/coachContent";
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
@@ -85,27 +80,25 @@ export async function GET(
         : state.phase === "play"
           ? "play"
           : "other";
-    const data: CoachData = { phase, active: v.myTurn, looking, think };
-
+    // THE WEB DOCK'S OWN PAYLOAD, WHOLE (owner direction 2026-08-12: the
+    // native table renders the ORIGINAL coach, pasted and rewired, never a
+    // reduction) — exactly the CoachPanelData the page hands
+    // <CoachDock data={quanCoach}/>: the one-line position, the flip-card
+    // facts, the think scaffold with its known cards, the meaning-folded
+    // history, and the ask context.
     return NextResponse.json(
       {
-        watcher: !looking,
-        active: v.myTurn,
-        phase,
-        tellLabel: tellLabel(phase),
-        status: {
-          looking: coachStatus(data, "looking"),
-          think: coachStatus(data, "think"),
-        },
-        // The dock's two deterministic layers, as the web's own lines.
-        lines: {
-          looking: coachLines(data, "looking", { kind: "idle" }),
-          think: coachLines(data, "think", { kind: "idle" }),
-        },
-        eventGroups,
+        title: "Coach",
+        ...(looking ? { looking: looking.looking, facts: looking.facts } : {}),
+        ...(eventGroups.length ? { eventGroups } : {}),
+        ...(think ? { aid: think } : {}),
+        ...(v.mySeat
+          ? { ask: { sessionId: id, active: phase !== "other" && v.myTurn, phase } }
+          : {}),
         placeholder: v.mySeat
           ? "Your coach's notes for this board will appear here."
           : "Take a seat to be coached — right now you're watching.",
+        watcher: !looking,
       },
       { headers: CORS },
     );

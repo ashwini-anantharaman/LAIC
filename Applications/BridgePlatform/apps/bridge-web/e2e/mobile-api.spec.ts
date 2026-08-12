@@ -39,15 +39,18 @@ test.describe("signed out", () => {
     "/api/bridge/reviewers",
     "/api/bridge/library/collections",
   ]) {
-    test(`GET ${path} → 404`, async ({ request }) => {
+    test(`GET ${path} → 401`, async ({ request }) => {
+      // Unauthenticated is 401 (2026-08-12): the bearer client refreshes and
+      // retries only on 401 — a 404 turned every expired token into a
+      // permanent "Not found". Access DENIALS still read as 404.
       const res = await request.get(path);
-      expect(res.status()).toBe(404);
+      expect(res.status()).toBe(401);
     });
   }
 
-  test("POST /api/bridge/quick-play → 404", async ({ request }) => {
+  test("POST /api/bridge/quick-play → 401", async ({ request }) => {
     const res = await request.post("/api/bridge/quick-play", { data: {} });
-    expect(res.status()).toBe(404);
+    expect(res.status()).toBe(401);
   });
 });
 
@@ -235,7 +238,7 @@ test.describe("table API (T0): view bootstrap, envelope, lifecycle", () => {
     await a.post(`/api/bridge/sessions/${sessionId}/discard`);
   });
 
-  test("the coach payload arrives pre-rendered, from the learner's seat", async ({
+  test("the coach payload is the web dock's own CoachPanelData, from the learner's seat", async ({
     context,
     page,
   }) => {
@@ -249,13 +252,19 @@ test.describe("table API (T0): view bootstrap, envelope, lifecycle", () => {
     const coach = await res.json();
     // Lena sits South — she is coached, not watching.
     expect(coach.watcher).toBe(false);
-    expect(Array.isArray(coach.lines.looking)).toBe(true);
-    expect(coach.lines.looking.length).toBeGreaterThan(0);
-    expect(typeof coach.lines.looking[0].text).toBe("string");
-    expect(Array.isArray(coach.lines.think)).toBe(true);
-    expect(Array.isArray(coach.eventGroups)).toBe(true);
-    expect(typeof coach.status.looking).toBe("string");
-    expect(typeof coach.tellLabel).toBe("string");
+    // The exact fields <CoachDock data={quanCoach}/> consumes: the one-line
+    // position, the flip-card facts, the think scaffold, the ask context.
+    expect(typeof coach.looking).toBe("string");
+    expect(coach.looking.length).toBeGreaterThan(0);
+    expect(Array.isArray(coach.facts)).toBe(true);
+    expect(coach.facts.length).toBeGreaterThan(0);
+    expect(typeof coach.facts[0].label).toBe("string");
+    expect(typeof coach.facts[0].value).toBe("string");
+    expect(Array.isArray(coach.aid.candidates)).toBe(true);
+    expect(Array.isArray(coach.aid.knownCards)).toBe(true);
+    expect(coach.ask.sessionId).toBe(sessionId);
+    expect(["auction", "play", "other"]).toContain(coach.ask.phase);
+    expect(Array.isArray(coach.eventGroups ?? [])).toBe(true);
 
     await a.post(`/api/bridge/sessions/${sessionId}/discard`);
   });
@@ -295,18 +304,18 @@ test.describe("table API (T0): view bootstrap, envelope, lifecycle", () => {
     });
   });
 
-  test("signed out, every table route reads as 404", async ({ request }) => {
-    expect((await request.get("/api/bridge/sessions/x/view")).status()).toBe(404);
-    expect((await request.post("/api/bridge/sessions/x/undo", { data: {} })).status()).toBe(404);
-    expect((await request.post("/api/bridge/sessions/x/discard")).status()).toBe(404);
-    expect((await request.get("/api/bridge/appearance")).status()).toBe(404);
+  test("signed out, every table route reads as 401", async ({ request }) => {
+    expect((await request.get("/api/bridge/sessions/x/view")).status()).toBe(401);
+    expect((await request.post("/api/bridge/sessions/x/undo", { data: {} })).status()).toBe(401);
+    expect((await request.post("/api/bridge/sessions/x/discard")).status()).toBe(401);
+    expect((await request.get("/api/bridge/appearance")).status()).toBe(401);
   });
 });
 
 test.describe("challenge create (M3f)", () => {
-  test("signed out → 404 on both routes", async ({ request }) => {
-    expect((await request.get("/api/bridge/challenges/people")).status()).toBe(404);
-    expect((await request.post("/api/bridge/challenges", { data: {} })).status()).toBe(404);
+  test("signed out → 401 on both routes", async ({ request }) => {
+    expect((await request.get("/api/bridge/challenges/people")).status()).toBe(401);
+    expect((await request.post("/api/bridge/challenges", { data: {} })).status()).toBe(401);
   });
 
   test("the invite directory answers, minus the caller", async ({ context, page }) => {
