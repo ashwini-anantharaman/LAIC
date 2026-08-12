@@ -1,0 +1,389 @@
+// The native board (Part II Phase A: view-only). Phone-tier bands, exactly
+// the web table's order — top bar, North, the centre (auction or trick),
+// East/West flanking, South big at the bottom, the result card when the
+// board is over. Everything policy-shaped (who's visible, who's dummy, seat
+// plates) is the SERVER'S answer via the session store; this file only draws.
+//
+// Layout prices itself off the window width with flex bands — RN has no CSS
+// reflow problem, so the web's scaled-fixed-stage trick stays behind.
+
+import { useMemo } from "react";
+import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+
+import { Brand, Fonts } from "../../constants/theme";
+import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
+import { PROGRAM_ID } from "../../lib/config";
+import { useTableSession } from "../../lib/table/session-store";
+import {
+  callLabel,
+  resultLabel,
+  scoreBoard,
+  type Card,
+  type GameState,
+  type Seat,
+} from "../../lib/vendor/table-kernel/table-kernel";
+import { CardBack, CardFace, SUIT_GLYPH } from "./cards";
+
+const SUIT_ORDER = ["S", "H", "D", "C"] as const;
+
+/** Sort a hand for display: spades→clubs, high card first. */
+function displaySort(cards: Card[]): Card[] {
+  const suitRank: Record<string, number> = { S: 0, H: 1, D: 2, C: 3 };
+  return [...cards].sort((a, b) =>
+    a.suit === b.suit ? b.rank - a.rank : suitRank[a.suit]! - suitRank[b.suit]!,
+  );
+}
+
+export function NativeTable({ sessionId }: { sessionId: string }) {
+  const { token } = useAuth();
+  const clubId = useSelectedClubId();
+  const programId = clubId ?? PROGRAM_ID;
+  const { width } = useWindowDimensions();
+  const session = useTableSession(token, programId, sessionId);
+  const { bootstrap: b, state } = session;
+
+  const stage = Math.min(width, 480);
+  const smallCard = Math.max(20, Math.floor(stage / 16));
+  const bigCard = Math.max(34, Math.floor(stage / 9));
+
+  const score = useMemo(() => (state ? scoreBoard(state) : null), [state]);
+
+  if (!b || !state) {
+    return (
+      <View style={styles.loading}>
+        <Text style={styles.loadingText}>{session.error ?? "Taking your seat…"}</Text>
+      </View>
+    );
+  }
+
+  const trick = state.tricks.length ? state.tricks[state.tricks.length - 1]! : null;
+  const boardOver = b.boardOver || state.phase === "complete";
+
+  const hand = (seat: Seat, big: boolean) => (
+    <HandStrip
+      cards={displaySort(state.hands[seat])}
+      faceUp={b.visible[seat]}
+      backs={session.remainingCount(seat)}
+      w={big ? bigCard : smallCard}
+    />
+  );
+
+  const plate = (seat: Seat) => (
+    <SeatPlateView
+      seat={seat}
+      name={b.seats[seat].name}
+      tag={b.seats[seat].tag}
+      strip={b.seats[seat].strip}
+      onTurn={!boardOver && state.turn === seat}
+    />
+  );
+
+  return (
+    <ScrollView style={styles.felt} contentContainerStyle={styles.feltInner}>
+      {/* Top bar: the board's facts. */}
+      <View style={styles.topBar}>
+        <Text style={styles.topChip}>Board {b.board.number}</Text>
+        <Text style={styles.topChip}>dealer {b.board.dealer}</Text>
+        <Text style={styles.topChip}>vul {b.board.vul}</Text>
+        {state.contract ? (
+          <Text style={[styles.topChip, styles.topChipStrong]}>
+            {callLabel(`${state.contract.level}${state.contract.strain}`)}
+            {state.contract.doubled === 1 ? " X" : state.contract.doubled === 2 ? " XX" : ""} by{" "}
+            {state.contract.declarer}
+          </Text>
+        ) : null}
+        <Text style={styles.topChip}>
+          NS {state.trickCount.NS} · EW {state.trickCount.EW}
+        </Text>
+      </View>
+
+      {/* North */}
+      <View style={styles.northBand}>
+        {plate("N")}
+        {hand("N", false)}
+      </View>
+
+      {/* West | centre | East */}
+      <View style={styles.middleBand}>
+        <View style={styles.sideSeat}>
+          {plate("W")}
+          {hand("W", false)}
+        </View>
+        <View style={styles.centre}>
+          {boardOver ? (
+            <ResultCardView
+              contract={state.contract}
+              line={score ? resultLabel(score) : b.auctionWasTheBoard ? "Bidding only" : "Passed out"}
+              points={score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""}
+              note={
+                b.auctionWasTheBoard
+                  ? "The auction was the board."
+                  : b.challenge?.done
+                    ? b.challenge.onward.label
+                    : undefined
+              }
+            />
+          ) : trick && trick.plays.length > 0 && state.phase === "play" ? (
+            <TrickAreaView trick={trick} w={Math.floor(smallCard * 1.4)} stage={stage} />
+          ) : (
+            <AuctionBoxView state={state} />
+          )}
+        </View>
+        <View style={styles.sideSeat}>
+          {plate("E")}
+          {hand("E", false)}
+        </View>
+      </View>
+
+      {/* South — the viewer's hand rides big. */}
+      <View style={styles.southBand}>
+        {hand("S", true)}
+        {plate("S")}
+      </View>
+
+      {/* Phase A is view-only: say so instead of pretending. */}
+      {!boardOver && b.myTurn && (
+        <Text style={styles.viewOnlyNote}>
+          Your turn — playing from the app arrives with the next update; for now the
+          webview table plays this board.
+        </Text>
+      )}
+    </ScrollView>
+  );
+}
+
+// ── Pieces ───────────────────────────────────────────────────────────────────
+
+function SeatPlateView({
+  seat,
+  name,
+  tag,
+  strip,
+  onTurn,
+}: {
+  seat: Seat;
+  name: string;
+  tag: string;
+  strip: string;
+  onTurn: boolean;
+}) {
+  return (
+    <View style={[styles.plate, onTurn && styles.plateOnTurn]}>
+      <View style={[styles.plateStrip, { backgroundColor: strip }]} />
+      <Text style={styles.plateSeat}>{seat}</Text>
+      <Text style={styles.plateName} numberOfLines={1}>
+        {name}
+        {tag ? ` · ${tag}` : ""}
+      </Text>
+    </View>
+  );
+}
+
+function HandStrip({
+  cards,
+  faceUp,
+  backs,
+  w,
+}: {
+  cards: Card[];
+  faceUp: boolean;
+  backs: number;
+  w: number;
+}) {
+  const overlap = Math.floor(w * 0.55);
+  if (!faceUp) {
+    return (
+      <View style={styles.handRow}>
+        {Array.from({ length: Math.max(0, backs) }, (_, i) => (
+          <View key={i} style={{ marginLeft: i === 0 ? 0 : -overlap }}>
+            <CardBack w={w} />
+          </View>
+        ))}
+      </View>
+    );
+  }
+  return (
+    <View style={styles.handRow}>
+      {cards.map((c, i) => (
+        <View key={`${c.suit}${c.rank}`} style={{ marginLeft: i === 0 ? 0 : -overlap }}>
+          <CardFace card={c} w={w} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function TrickAreaView({
+  trick,
+  w,
+  stage,
+}: {
+  trick: { leader: Seat; plays: { seat: Seat; card: Card }[] };
+  w: number;
+  stage: number;
+}) {
+  const box = Math.min(stage * 0.42, 190);
+  const h = w * 1.45;
+  const spot: Record<Seat, object> = {
+    N: { top: 0, left: box / 2 - w / 2 },
+    S: { bottom: 0, left: box / 2 - w / 2 },
+    W: { left: 0, top: box / 2 - h / 2 },
+    E: { right: 0, top: box / 2 - h / 2 },
+  };
+  return (
+    <View style={{ width: box, height: box }}>
+      {trick.plays.map((p) => (
+        <View key={p.seat} style={[{ position: "absolute" }, spot[p.seat]]}>
+          <CardFace card={p.card} w={w} />
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function AuctionBoxView({ state }: { state: GameState }) {
+  const calls = state.auction;
+  return (
+    <View style={styles.auctionBox}>
+      <Text style={styles.auctionTitle}>
+        {calls.length === 0 ? "The auction opens" : "The auction"}
+      </Text>
+      <View style={styles.auctionFlow}>
+        {calls.map((a, i) => (
+          <Text
+            key={i}
+            style={[
+              styles.auctionChip,
+              { color: /[HD]/.test(a.call[1] ?? "") && a.call.length === 2 ? "#c0392b" : Brand.ink },
+            ]}
+          >
+            {a.seat} {callLabel(a.call)}
+          </Text>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+function ResultCardView({
+  contract,
+  line,
+  points,
+  note,
+}: {
+  contract: { level: number; strain: string; declarer: Seat } | null;
+  line: string;
+  points: string;
+  note?: string;
+}) {
+  return (
+    <View style={styles.resultCard}>
+      <Text style={styles.resultTitle}>
+        {contract
+          ? `${contract.level}${contract.strain === "N" ? "NT" : SUIT_GLYPH[contract.strain]} by ${contract.declarer}`
+          : "Passed out"}
+      </Text>
+      <Text style={styles.resultLine}>{line}</Text>
+      {points ? <Text style={styles.resultPoints}>{points}</Text> : null}
+      {note ? <Text style={styles.resultNote}>{note}</Text> : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#1d5c46" },
+  loadingText: { fontFamily: Fonts.body, fontSize: 14, color: Brand.cream },
+
+  felt: { flex: 1, backgroundColor: "#1d5c46" },
+  feltInner: { padding: 12, paddingBottom: 28, gap: 10 },
+
+  topBar: { flexDirection: "row", flexWrap: "wrap", gap: 6, justifyContent: "center" },
+  topChip: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 11.5,
+    color: Brand.cream,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    overflow: "hidden",
+  },
+  topChipStrong: { backgroundColor: Brand.cream, color: Brand.ink },
+
+  northBand: { alignItems: "center", gap: 6 },
+  middleBand: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    minHeight: 150,
+  },
+  sideSeat: { alignItems: "center", gap: 6, maxWidth: 92 },
+  centre: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 6 },
+  southBand: { alignItems: "center", gap: 8, marginTop: 4 },
+
+  plate: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 999,
+    paddingRight: 10,
+    overflow: "hidden",
+  },
+  plateOnTurn: { backgroundColor: Brand.cream },
+  plateStrip: { width: 6, alignSelf: "stretch" },
+  plateSeat: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: Brand.cream, paddingVertical: 4 },
+  plateName: { fontFamily: Fonts.body, fontSize: 11.5, color: "rgba(255,255,255,0.85)", maxWidth: 110 },
+
+  handRow: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap" },
+
+  auctionBox: {
+    backgroundColor: "rgba(255,254,250,0.94)",
+    borderRadius: 12,
+    padding: 10,
+    maxWidth: 230,
+  },
+  auctionTitle: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 10,
+    letterSpacing: 1.6,
+    color: "#8b9a93",
+    textTransform: "uppercase",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  auctionFlow: { flexDirection: "row", flexWrap: "wrap", gap: 5, justifyContent: "center" },
+  auctionChip: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 12.5,
+    backgroundColor: "#f1ede3",
+    borderRadius: 7,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    overflow: "hidden",
+  },
+
+  resultCard: {
+    backgroundColor: "#fffefa",
+    borderRadius: 14,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    alignItems: "center",
+    gap: 3,
+    maxWidth: 240,
+  },
+  resultTitle: { fontFamily: Fonts.displayMedium, fontSize: 17, color: Brand.ink },
+  resultLine: { fontFamily: Fonts.body, fontSize: 13, color: "#5e5749" },
+  resultPoints: { fontFamily: Fonts.display, fontSize: 22, color: Brand.ink },
+  resultNote: { fontFamily: Fonts.body, fontSize: 11.5, color: "#8b9a93", textAlign: "center" },
+
+  viewOnlyNote: {
+    fontFamily: Fonts.body,
+    fontSize: 12,
+    lineHeight: 18,
+    color: "rgba(255,244,215,0.8)",
+    textAlign: "center",
+    marginTop: 6,
+  },
+});

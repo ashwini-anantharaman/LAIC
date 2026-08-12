@@ -1,6 +1,8 @@
 import { useLocalSearchParams } from "expo-router";
 
 import { BridgeEmbed } from "../../components/bridge-embed";
+import { NativeTable } from "../../components/table/native-table";
+import { Screen, ScreenHeader } from "../../components/ui";
 
 /** One board at the table — opened by Resume, or from a list of unfinished
  *  boards. The table itself is the platform's (fluid design components).
@@ -8,13 +10,27 @@ import { BridgeEmbed } from "../../components/bridge-embed";
  *  `view=hands` opens the hand-record view (all four hands, auction, play) —
  *  what My Games' "View board" means by a finished board. `from=games` tells
  *  the platform page which journey this is (no "⟵ table" door on a record
- *  opened from history — owner decision 2026-08-07). */
+ *  opened from history — owner decision 2026-08-07).
+ *
+ *  ?native=1 renders the NATIVE board instead (Part II, view-only for now) —
+ *  the flag stays until the native table reaches parity, then flips default. */
 export default function TableScreen() {
-  const { sessionId, view, from } = useLocalSearchParams<{
+  const { sessionId, view, from, native } = useLocalSearchParams<{
     sessionId: string;
     view?: string;
     from?: string;
+    native?: string;
   }>();
+
+  if (native === "1") {
+    return (
+      <Screen>
+        <ScreenHeader title="Board" backTo="/play" />
+        <NativeTable sessionId={String(sessionId ?? "")} />
+      </Screen>
+    );
+  }
+
   const params = new URLSearchParams();
   if (typeof view === "string" && view) params.set("view", view);
   if (typeof from === "string" && from) params.set("from", from);
