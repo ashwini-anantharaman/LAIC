@@ -4,12 +4,13 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { OptionCard, Screen } from "../../components/ui";
 import { Brand, Colors, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { TabLoading } from "../../components/tab-loading";
 import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary, type SummaryCoach } from "../../lib/nexus";
@@ -144,13 +145,13 @@ export default function CoachScreen() {
     },
   ];
 
-  // Unknown role: a quiet spinner, not a guessed view that corrects itself.
+  // Unknown role: the tab veil, not a guessed view that corrects itself. The
+  // main return below mounts its own veil at full opacity, so the swap from
+  // this branch to the real view reads as one continuous cover that fades.
   if (coach === null) {
     return (
       <Screen style={styles.screen}>
-        <View style={styles.roleLoading}>
-          <ActivityIndicator color={Brand.green} />
-        </View>
+        <TabLoading ready={false} />
       </Screen>
     );
   }
@@ -255,6 +256,8 @@ export default function CoachScreen() {
         )}
       </View>
       </ScrollView>
+
+      <TabLoading ready />
     </Screen>
   );
 }
@@ -292,12 +295,6 @@ function coachStatus(co: SummaryCoach): string {
 
 const styles = StyleSheet.create({
   screen: { paddingHorizontal: Spacing.screen },
-  roleLoading: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingBottom: TAB_BAR_CLEARANCE,
-  },
   headerBlock: { paddingTop: 32, gap: 4 },
   eyebrow: {
     fontSize: 12,

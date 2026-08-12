@@ -32,6 +32,7 @@ import {
 } from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
+import { TabLoading } from "../../components/tab-loading";
 import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
@@ -172,6 +173,10 @@ export default function PlayScreen() {
 
         {error ? <Text style={styles.stateText}>{error}</Text> : null}
       </View>
+
+      {/* Ready once the club is known and the summary (or its error) is in —
+          the tiles' numbers arrive with the content, not after it. */}
+      <TabLoading ready={!clubsLoading && (summary !== null || error !== null)} />
     </BrandChrome>
   );
 }
