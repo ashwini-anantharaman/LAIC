@@ -1,8 +1,10 @@
-// The board's exit, FunBridge-style (owner request 2026-08-12): a small tab
-// riding the RIGHT edge of the felt. Tapping it slides out a light panel with
-// one red Quit button; the chevron flips and closes it again. Replaces the
-// floating back arrow — leaving a board becomes a deliberate two-tap gesture
-// instead of a corner tap a mis-aim can hit mid-play.
+// The board's exit — the pull-out idea from FunBridge, wearing Bridge Bird's
+// clothes (owner request 2026-08-12): a cream tab on its maroon stacked edge,
+// riding the BOTTOM-right of the screen so it never sits over the coach
+// panel. Tapping it slides out a cream card with one maroon Quit pill — the
+// same destructive color the leave-board dialog uses — and the chevron flips
+// to tuck it away. Replaces the floating back arrow: leaving a board is a
+// deliberate two-tap gesture instead of a corner tap a mis-aim can hit.
 //
 // Pure app chrome layered over the table (webview or native) — the board
 // implementation underneath is untouched.
@@ -10,18 +12,18 @@
 import { useRef, useState } from "react";
 import { Animated, Easing, Pressable, StyleSheet, Text } from "react-native";
 
-import { Fonts } from "../../constants/theme";
+import { Brand, Fonts, Radius } from "../../constants/theme";
 
-const PANEL_W = 280;
-const TAB_W = 44;
+const PANEL_W = 250;
+const TAB_W = 42;
 
 export function QuitPullout({
   onQuit,
-  top = "58%",
+  bottom = 26,
 }: {
   onQuit: () => void;
-  /** Vertical anchor of the tab — FunBridge parks it near the hand. */
-  top?: number | `${number}%`;
+  /** Distance from the screen's bottom — below the felt, clear of the coach. */
+  bottom?: number;
 }) {
   const [open, setOpen] = useState(false);
   const slide = useRef(new Animated.Value(0)).current;
@@ -41,13 +43,13 @@ export function QuitPullout({
   const translateX = slide.interpolate({ inputRange: [0, 1], outputRange: [PANEL_W, 0] });
 
   return (
-    <Animated.View style={[styles.host, { top, transform: [{ translateX }] }]}>
+    <Animated.View style={[styles.host, { bottom, transform: [{ translateX }] }]}>
       <Pressable
         onPress={toggle}
         hitSlop={10}
         accessibilityRole="button"
         accessibilityLabel={open ? "Close menu" : "Open menu"}
-        style={({ pressed }) => [styles.tab, pressed && { opacity: 0.8 }]}
+        style={({ pressed }) => [styles.tab, pressed && { opacity: 0.85 }]}
       >
         <Text style={styles.tabGlyph}>{open ? "›" : "‹"}</Text>
       </Pressable>
@@ -60,7 +62,7 @@ export function QuitPullout({
           accessibilityRole="button"
           style={({ pressed }) => [styles.quit, pressed && { opacity: 0.85 }]}
         >
-          <Text style={styles.quitText}>Quit</Text>
+          <Text style={styles.quitText}>Quit board</Text>
         </Pressable>
       </Animated.View>
     </Animated.View>
@@ -76,40 +78,48 @@ const styles = StyleSheet.create({
     alignItems: "center",
     zIndex: 30,
   },
+  // The app's card language: cream face sitting on its maroon stacked edge.
   tab: {
     width: TAB_W,
-    height: 56,
-    backgroundColor: "#f2f2f4",
-    borderTopLeftRadius: 16,
-    borderBottomLeftRadius: 16,
+    height: 54,
+    backgroundColor: Brand.cream,
+    borderTopLeftRadius: 14,
+    borderBottomLeftRadius: 14,
     alignItems: "center",
     justifyContent: "center",
-    // A soft lift off the felt, like the reference.
-    shadowColor: "#000",
-    shadowOffset: { width: -1, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3,
+    shadowColor: Brand.cardShadow,
+    shadowOffset: { width: -2, height: 3 },
+    shadowOpacity: 1,
+    shadowRadius: 0,
     elevation: 4,
   },
-  tabGlyph: { fontSize: 26, lineHeight: 30, color: "#17211d", marginTop: -2 },
+  tabGlyph: {
+    fontSize: 24,
+    lineHeight: 28,
+    color: Brand.maroon,
+    fontFamily: Fonts.displayMedium,
+    marginTop: -2,
+  },
   panel: {
     width: PANEL_W,
-    backgroundColor: "#f2f2f4",
-    borderTopLeftRadius: 18,
-    borderBottomLeftRadius: 18,
-    paddingHorizontal: 22,
-    paddingVertical: 34,
-    shadowColor: "#000",
+    backgroundColor: Brand.cream,
+    borderTopLeftRadius: Radius.card,
+    borderBottomLeftRadius: Radius.card,
+    paddingHorizontal: 18,
+    paddingVertical: 20,
+    shadowColor: Brand.cardShadow,
     shadowOffset: { width: -2, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
+    shadowOpacity: 1,
+    shadowRadius: 0,
     elevation: 5,
   },
+  // The leave-board dialog's own destructive pill — one voice for "this
+  // ends the sitting".
   quit: {
-    backgroundColor: "#e02b20",
-    borderRadius: 14,
-    paddingVertical: 15,
+    backgroundColor: Brand.maroon,
+    borderRadius: Radius.button,
+    paddingVertical: 14,
     alignItems: "center",
   },
-  quitText: { fontFamily: Fonts.bodySemibold, fontSize: 16, color: "#ffffff" },
+  quitText: { fontFamily: Fonts.displayMedium, fontSize: 15, color: Brand.white },
 });
