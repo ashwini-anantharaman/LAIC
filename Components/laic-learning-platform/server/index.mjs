@@ -473,6 +473,65 @@ function parsePastedYoutubeTranscript(text, url, titleHint) {
   };
 }
 
+/**
+ * Transcripts via Supadata, which fetches from IPs YouTube will talk to.
+ *
+ * YouTube refuses captions to datacenter ranges for some videos, and nothing
+ * we can do from a Vercel function changes that — the earlier player-client
+ * and watch-page attempts all fail on exactly the videos an author cares
+ * about. This is a paid service that does the fetching from somewhere
+ * acceptable, so it is the fallback rather than the first try: the free path
+ * still handles most videos and this one is metered.
+ */
+const SUPADATA_API_KEY = process.env.SUPADATA_API_KEY || '';
+
+/** Title via oEmbed — the transcript response carries none. Never fatal. */
+async function fetchYoutubeTitle(id) {
+  try {
+    const res = await fetch(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${id}`)}&format=json`,
+    );
+    if (!res.ok) return '';
+    const data = await res.json();
+    return String(data?.title || '');
+  } catch {
+    return '';
+  }
+}
+
+async function fetchYoutubeTranscriptSupadata(id) {
+  if (!SUPADATA_API_KEY) throw new Error('supadata not configured');
+  const res = await fetch(
+    `https://api.supadata.ai/v1/youtube/transcript?videoId=${encodeURIComponent(id)}`,
+    { headers: { 'x-api-key': SUPADATA_API_KEY } },
+  );
+  if (!res.ok) {
+    const detail = await res.text().catch(() => '');
+    throw new Error(`supadata ${res.status}${detail ? `: ${detail.slice(0, 160)}` : ''}`);
+  }
+  const data = await res.json();
+  const chunks = Array.isArray(data?.content) ? data.content : [];
+  if (!chunks.length) throw new Error('supadata returned no transcript');
+
+  // offset/duration arrive in milliseconds; the rest of the app works in
+  // seconds, and video-script checkpoints depend on that.
+  const segments = chunks.map((c, i) => {
+    const start = Number(c.offset || 0) / 1000;
+    const dur = Number(c.duration || 0) / 1000;
+    return {
+      id: `yt-${i}`,
+      start,
+      end: dur ? start + dur : undefined,
+      text: String(c.text || '').replace(/\s+/g, ' ').trim(),
+    };
+  }).filter((s) => s.text);
+  if (!segments.length) throw new Error('supadata transcript was empty');
+
+  const transcript = segments.map((s) => s.text).join(' ');
+  const title = (await fetchYoutubeTitle(id)) || `YouTube video ${id}`;
+  return { title, videoId: id, sentences: toSentences(transcript), segments };
+}
+
 async function fetchYoutubeTranscriptInnertube(id) {
   // The IOS player client returns caption URLs that work without a
   // proof-of-origin token, and honors fmt=json3. (The plain web timedtext
@@ -565,11 +624,18 @@ async function fetchYoutubeTranscriptInnertube(id) {
       lastErr = e;
     }
   }
-  // Every player client refused. Try the watch page before giving up.
+  // Every player client refused. Try the watch page, then Supadata.
   try {
     return await fetchYoutubeCaptionsFromWatchPage(id);
   } catch (e) {
     console.warn('[youtube] watch-page fallback failed:', e?.message || e);
+  }
+  if (SUPADATA_API_KEY) {
+    try {
+      return await fetchYoutubeTranscriptSupadata(id);
+    } catch (e) {
+      console.warn('[youtube] supadata fallback failed:', e?.message || e);
+    }
   }
 
   if (lastErr instanceof LlmError) throw lastErr;
