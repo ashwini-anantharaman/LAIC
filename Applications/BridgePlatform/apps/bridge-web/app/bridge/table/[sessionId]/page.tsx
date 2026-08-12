@@ -5,6 +5,7 @@ import {
   type Seat,
 } from "@bridge/events";
 import { legalCalls, legalPlays, resultLabel, scoreBoard } from "@bridge/engine";
+import { controllingSeat } from "@bridge/sessions";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { saveItemAction } from "@/app/bridge/kb/actions";
@@ -142,16 +143,32 @@ export default async function SessionPage({
   // this, a hand flips face-up the instant the auction ends, which reads as a
   // random reveal (often on the left, when West is dummy).
   const leadMade = state.tricks.length > 0 && (state.tricks[0]?.plays.length ?? 0) > 0;
+  // THE LEARNER NEVER SITS OUT — the same rule table2 and the service run on,
+  // out of `controllingSeat` so the three cannot drift. A learner whose ROBOT
+  // partner wins the contract declares it themselves instead of watching; a
+  // declarer seat held by another PERSON is never taken over.
+  const controller = controllingSeat(record.seats, state, actingSeat);
+  const takeover =
+    mySeat != null &&
+    dummy === mySeat &&
+    !!state.contract &&
+    record.seats[state.contract.declarer].kind !== "human";
+  /** The seat the learner plays FROM — their own, unless they took over. */
+  const declaringSeat = takeover ? state.contract!.declarer : null;
+
   const canSee = (seat: Seat) =>
     showAll ||
     seat === mySeat ||
+    // Taken over, so it is their hand now — a declarer sees their own cards
+    // without waiting for a lead.
+    seat === declaringSeat ||
     (seat === dummy && leadMade) ||
     state.phase === "complete";
 
   const myTurn =
     actingIsHuman &&
-    record.seats[actingSeat].kind === "human" &&
-    (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
+    record.seats[controller].kind === "human" &&
+    (record.seats[controller] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
   const legalNow = state.phase === "play" && myTurn ? legalPlays(state, state.turn) : null;
   const callsNow = state.phase === "auction" && myTurn ? legalCalls(state.auction, state.turn) : null;
 

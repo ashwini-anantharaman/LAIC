@@ -13,6 +13,7 @@ import { notFound, redirect } from "next/navigation";
 import { undoAction } from "@/app/bridge/table/actions";
 import { HandViewer } from "@bridge/table-ui";
 import { LivePlayTable } from "@/components/table/play/LivePlayTable";
+import { controllingSeat } from "@bridge/sessions";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { nextSkin, resolveSkin, skinLabel } from "@bridge/table-config";
@@ -146,13 +147,34 @@ export default async function PlayTablePage({
   // moment the auction is, so the four hands open then, exactly as they would
   // after the thirteenth trick.
   const canSee = (seat: Seat) =>
-    showAll || seat === mySeat || (seat === dummy && leadMade) || boardOver;
+    showAll ||
+    seat === mySeat ||
+    // The hand they took over is theirs from the moment they took it — a
+    // declarer sees their own cards without waiting for a lead.
+    seat === declaringSeat ||
+    (seat === dummy && leadMade) ||
+    boardOver;
+
+  // THE LEARNER NEVER SITS OUT. Dummy's cards belong to the declarer, so a
+  // learner whose ROBOT partner wins the contract would otherwise watch it play
+  // both hands. `controllingSeat` moves them into the declarer's chair instead,
+  // and refuses when that chair holds another PERSON. It is the same function
+  // the service gates `act()` on, so the felt cannot offer a play the server
+  // would refuse — or hide one it would accept.
+  const controller = controllingSeat(record.seats, state, actingSeat);
+  const takeover =
+    mySeat != null &&
+    dummy === mySeat &&
+    !!state.contract &&
+    record.seats[state.contract.declarer].kind !== "human";
+  /** The seat the learner plays FROM — their own, unless they took over. */
+  const declaringSeat = takeover ? state.contract!.declarer : null;
 
   const myTurn =
     !boardOver &&
     actingIsHuman &&
-    record.seats[actingSeat].kind === "human" &&
-    (record.seats[actingSeat] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
+    record.seats[controller].kind === "human" &&
+    (record.seats[controller] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
 
   // The coach panel is live again (owner, 2026-08-06): gated by table.coach.
   const showCoach = canCoach;
@@ -190,6 +212,24 @@ export default async function PlayTablePage({
   const ROBOT_STRIPS: Record<Seat, string> = { N: "#e0813a", E: "#8e5bc4", S: "#3aa0e0", W: "#3ab77a" };
   const seatStrip = (seat: Seat) =>
     record.seats[seat].kind === "human" ? "#12525e" : ROBOT_STRIPS[seat];
+
+  /**
+   * One seat's plate. Under a takeover "you" follows the CARDS, not the chair:
+   * the seat being declared from says "you" and the seat the learner was dealt
+   * says "your seat · dummy", so the swap is legible instead of two plates both
+   * claiming to be the same person.
+   */
+  const plate = (seat: Seat) => ({
+    name:
+      takeover && seat === declaringSeat
+        ? "you"
+        : takeover && seat === mySeat
+          ? "your seat"
+          : seatName(seat),
+    tag: dummy === seat ? "dummy" : "",
+    strip: seatStrip(seat),
+    human: record.seats[seat].kind === "human" || (takeover && seat === declaringSeat),
+  });
 
   // The seat-swap panel in the rail — same swapSeatAction and fork semantics
   // as always, plus BEN as a seatable character when the server has
@@ -413,12 +453,7 @@ export default async function PlayTablePage({
         dealer: record.board.dealer,
         vul: state.vul,
       }}
-      seats={{
-        N: { name: seatName("N"), tag: dummy === "N" ? "dummy" : "", strip: seatStrip("N"), human: record.seats.N.kind === "human" },
-        E: { name: seatName("E"), tag: dummy === "E" ? "dummy" : "", strip: seatStrip("E"), human: record.seats.E.kind === "human" },
-        S: { name: seatName("S"), tag: dummy === "S" ? "dummy" : "", strip: seatStrip("S"), human: record.seats.S.kind === "human" },
-        W: { name: seatName("W"), tag: dummy === "W" ? "dummy" : "", strip: seatStrip("W"), human: record.seats.W.kind === "human" },
-      }}
+      seats={{ N: plate("N"), E: plate("E"), S: plate("S"), W: plate("W") }}
       visible={{ N: canSee("N"), E: canSee("E"), S: canSee("S"), W: canSee("W") }}
       mySeat={mySeat}
       legalCalls={state.phase === "auction" && myTurn ? [...legalCalls(state.auction, state.turn)] : []}
