@@ -1,4 +1,4 @@
-import { useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 
 import { BridgeEmbed } from "../../components/bridge-embed";
 import { NativeTable } from "../../components/table/native-table";
@@ -23,10 +23,19 @@ export default function TableScreen() {
     native?: string;
   }>();
 
+  // A board door fades in rather than sliding — with the felt loading cover
+  // inside, the tap→felt journey reads as one motion.
+  const fade = <Stack.Screen options={{ animation: "fade" }} />;
+
   if (native === "1") {
     // The native table owns its whole screen — header, leave-board dialog,
     // sheets — because the save-or-discard question reads its own store.
-    return <NativeTable sessionId={String(sessionId ?? "")} />;
+    return (
+      <>
+        {fade}
+        <NativeTable sessionId={String(sessionId ?? "")} />
+      </>
+    );
   }
 
   const params = new URLSearchParams();
@@ -34,6 +43,8 @@ export default function TableScreen() {
   if (typeof from === "string" && from) params.set("from", from);
   const query = params.toString();
   return (
+    <>
+    {fade}
     <BridgeEmbed
       title="Board"
       // The table page itself, not the /m/table redirect stub — the stub is
@@ -48,5 +59,6 @@ export default function TableScreen() {
       // The board and its coach own the whole screen; the back chip floats.
       fullScreen
     />
+    </>
   );
 }

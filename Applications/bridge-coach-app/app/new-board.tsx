@@ -3,10 +3,11 @@
 // itself with the table, so it exists only for the moment the deal takes —
 // a felt-green beat instead of a webview booting a web app.
 
-import { router, useFocusEffect } from "expo-router";
+import { router, Stack, useFocusEffect } from "expo-router";
 import { useCallback, useRef, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
+import { BoardLoading } from "../components/table/board-loading";
 import { Screen, ScreenHeader } from "../components/ui";
 import { Brand, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
@@ -52,13 +53,15 @@ export default function NewBoardScreen() {
 
   return (
     <Screen>
-      <ScreenHeader title="New board" backTo="/play" />
+      {/* A board door fades in — the felt cover then cross-fades into the
+          table, so the whole journey reads as one motion. */}
+      <Stack.Screen options={{ animation: "fade" }} />
+      {/* No back arrow while dealing (owner request) — it returns with the
+          error state, which is the only moment there's a decision to make. */}
+      <ScreenHeader title="New board" backTo="/play" showBack={!!error} />
       <View style={styles.body}>
         {!error ? (
-          <>
-            <ActivityIndicator size="large" color={Brand.green} />
-            <Text style={styles.dealing}>Dealing your board…</Text>
-          </>
+          <BoardLoading ready={false} onGone={() => {}} label="Dealing your board…" />
         ) : (
           <>
             <Text style={styles.errorText}>{error.text}</Text>

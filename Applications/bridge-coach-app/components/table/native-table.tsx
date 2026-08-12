@@ -38,6 +38,7 @@ import {
   type GameState,
   type Seat,
 } from "../../lib/vendor/table-kernel/table-kernel";
+import { BoardLoading } from "./board-loading";
 import { CardBack, CardFace, SUIT_GLYPH } from "./cards";
 import {
   ChallengeOverlay,
@@ -92,9 +93,15 @@ export function NativeTable({ sessionId }: { sessionId: string }) {
   if (!b || !state) {
     return (
       <Screen>
-        <ScreenHeader title="Board" backTo="/play" />
+        {/* No back arrow while the felt loads (owner request) — it returns
+            with the board, or with an error worth deciding about. */}
+        <ScreenHeader title="Board" backTo="/play" showBack={!!session.error} />
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>{session.error ?? "Taking your seat…"}</Text>
+          {session.error ? (
+            <Text style={styles.loadingText}>{session.error}</Text>
+          ) : (
+            <BoardLoading ready={false} onGone={() => {}} />
+          )}
         </View>
       </Screen>
     );

@@ -11,6 +11,7 @@ import {
 
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
+import { BoardLoading } from "./table/board-loading";
 import { PrimaryButton, Screen, ScreenHeader } from "./ui";
 import { Brand, Colors, Fonts, Spacing } from "../constants/theme";
 import { BRIDGE_LAUNCH_URL_OVERRIDE, PROGRAM_ID } from "../lib/config";
@@ -127,10 +128,23 @@ export function BridgeEmbed({
   const selectedClubId = useSelectedClubId();
   const programId = programIdProp ?? selectedClubId ?? PROGRAM_ID;
 
+  // ── The board's loading cover (full-screen boards only) ───────────────────
+  // The webview boots blank while the platform handshakes and renders — a
+  // white beat between the tap and the felt. A felt-green cover with the
+  // dealing animation rides over it and cross-fades away when the table
+  // reports in (its first bridge:table state message — posted on native AND
+  // the web iframe). Purely app-side chrome: the embedded page is untouched.
+  const [boardCover, setBoardCover] = useState(fullScreen);
+  const [boardReady, setBoardReady] = useState(false);
+
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
     setUrl(null);
+    if (fullScreen) {
+      setBoardCover(true);
+      setBoardReady(false);
+    }
     // A signed-in origin from an earlier screen: the cookie session is
     // already there, so load the destination DIRECTLY — no launch mint, no
     // token exchange, no redirect. This is what makes switching screens
@@ -165,7 +179,7 @@ export function BridgeEmbed({
       if (e instanceof NexusError && e.status === 401) return;
       setError("Couldn't open the bridge platform. Check that it is running.");
     }
-  }, [token, next, programId]);
+  }, [token, next, programId, fullScreen]);
 
   useEffect(() => {
     load();
@@ -239,6 +253,8 @@ export function BridgeEmbed({
     if (m?.type === "bridge:table" && typeof m.sessionId === "string" && typeof m.phase === "string") {
       tableState.current = { sessionId: m.sessionId, phase: m.phase };
       setAtTable(true);
+      // The table reported in — the felt is drawn; the loading cover fades.
+      setBoardReady(true);
     }
     // Any other page inside /m reports its location; that is how the web iframe
     // learns the board has been left (a native WebView uses the url change).
@@ -414,10 +430,22 @@ export function BridgeEmbed({
         </View>
       )}
 
+      {/* The felt-green loading cover, over the whole screen until the table
+          reports in (or an error takes the stage). The back chip below rides
+          ABOVE it (zIndex 20 vs 10) — the exit is never covered. */}
+      {fullScreen && boardCover && !discarding && (
+        <BoardLoading
+          ready={boardReady || !!error}
+          onGone={() => setBoardCover(false)}
+        />
+      )}
+
       {/* Full-screen chrome: one back chip riding the board's top-left
-          corner, running the same guarded back as the header arrow. It stays
-          up during loading and errors too — it is the screen's only exit. */}
-      {immersive && !discarding && (
+          corner, running the same guarded back as the header arrow. Hidden
+          while the loading cover is up (owner request 2026-08-12) — it
+          appears with the board; the cover's own fail-safe guarantees the
+          wait is bounded. */}
+      {immersive && !discarding && !boardCover && (
         <Pressable
           // Only a screen that OPTED IN gets the save-or-discard question. On an
           // inferred full-screen board — an assignment's Continue, a Replay —
