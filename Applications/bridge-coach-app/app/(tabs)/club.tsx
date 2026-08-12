@@ -27,6 +27,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -205,6 +206,9 @@ export default function ClubScreen() {
   /** Which roles the filter sheet has ticked; empty means "no filter". */
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [filterOpen, setFilterOpen] = useState(false);
+  /** The roster search. Trimmed and lowercased where it is used, not here, so the
+   *  field shows exactly what was typed. */
+  const [query, setQuery] = useState("");
 
   // The club is whichever one is selected; My Clubs picks it when there are
   // several, and it is automatic when there is only one.
@@ -274,10 +278,29 @@ export default function ClubScreen() {
     // The checkbox filter wins when anything is ticked; otherwise the carousel's
     // single selection governs. Two ways to ask the same question, and the more
     // specific one is the one you just used.
-    if (checked.size > 0) return rows.filter((r) => checked.has(standingOf(r)));
-    if (filter === ALL) return rows;
-    return rows.filter((r) => standingOf(r) === filter);
-  }, [roster, filter, checked]);
+    const byRole =
+      checked.size > 0
+        ? rows.filter((r) => checked.has(standingOf(r)))
+        : filter === ALL
+          ? rows
+          : rows.filter((r) => standingOf(r) === filter);
+
+    // Search NARROWS whatever the role filter left, rather than replacing it: the
+    // two answer different questions ("which kind of person" and "which person"),
+    // and a search that silently cleared the filter would explain neither result.
+    const q = query.trim().toLowerCase();
+    if (!q) return byRole;
+    return byRole.filter((r) =>
+      // Name, email and role, because all three are on screen — searching for what
+      // you can see and getting nothing is the failure to avoid. Email is included
+      // even though the row shows only a name: it is how an admin knows two people
+      // with the same name apart.
+      [personName(r), r.email ?? "", standingOf(r)]
+        .join(" ")
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [roster, filter, checked, query]);
 
   // The newest REAL challenge, for the thumbnail's caption. The summary comes
   // newest-first; null (no challenges, or a failed read) hides the caption
@@ -594,9 +617,44 @@ export default function ClubScreen() {
               </Pressable>
             </View>
 
+            {/* Search sits BELOW the role pills and above the list: it narrows what
+                the pills selected, and reading top-to-bottom is the order the two
+                are applied in. */}
+            <View style={[styles.searchRow, { marginTop: 12 * s }]}>
+              <Ionicons name="search-outline" size={15 * s} color={Brand.ink} />
+              <TextInput
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search members"
+                placeholderTextColor="rgba(31,31,31,0.45)"
+                style={[styles.searchInput, { fontSize: Type.clubDetail * s }]}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="search"
+                // The list updates as you type, so the keyboard's Search key has
+                // nothing left to do but dismiss it.
+                onSubmitEditing={() => {}}
+                clearButtonMode="while-editing"
+                accessibilityLabel="Search members"
+              />
+              {/* Android has no clearButtonMode, so the clear is explicit — and on
+                  both platforms it only exists when there is something to clear. */}
+              {query.length > 0 ? (
+                <Pressable
+                  onPress={() => setQuery("")}
+                  hitSlop={10}
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear search"
+                >
+                  <Ionicons name="close-circle" size={15 * s} color="rgba(31,31,31,0.45)" />
+                </Pressable>
+              ) : null}
+            </View>
+
             <Roster
               people={people}
               avatars={avatars}
+              searching={query.trim().length > 0}
               loading={roster == null && rosterError == null}
               error={rosterError}
               scale={s}
@@ -707,18 +765,30 @@ function Roster({
   people,
   avatars,
   loading,
+  searching,
   error,
   scale: s,
 }: {
   people: ProgramMemberRow[];
   avatars: Map<string, string | null>;
   loading: boolean;
+  /** True when a search is narrowing the list — changes what "empty" means. */
+  searching: boolean;
   error: string | null;
   scale: number;
 }) {
   if (error) return <Text style={styles.stateText}>{error}</Text>;
   if (loading) return <Text style={styles.stateText}>Loading the club roster…</Text>;
-  if (people.length === 0) return <Text style={styles.stateText}>Nobody here yet.</Text>;
+  // An empty list means two different things now, and saying the wrong one is a
+  // small lie: "nobody here yet" about a full club that simply has no match for
+  // what was typed would read as the roster having failed to load.
+  if (people.length === 0) {
+    return (
+      <Text style={styles.stateText}>
+        {searching ? "Nobody matches that search." : "Nobody here yet."}
+      </Text>
+    );
+  }
 
   return (
     <ScrollView
@@ -757,6 +827,26 @@ const styles = StyleSheet.create({
   pillLabel: { fontFamily: Fonts.displayMedium },
   body: { flex: 1 },
   filterRow: { flexDirection: "row", justifyContent: "center" },
+  /** An outlined field on cream, matching the inactive filter pills rather than the
+   *  green-on-maroon inputs the sheets use — this sits on the page, not in a sheet. */
+  searchRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginHorizontal: 22,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(31,31,31,0.28)",
+  },
+  searchInput: {
+    flex: 1,
+    fontFamily: Fonts.body,
+    color: Brand.ink,
+    // The platform's own padding would make the row taller than its border.
+    padding: 0,
+  },
   filterBar: { flexDirection: "row", alignItems: "center" },
   filterButton: { alignItems: "center", justifyContent: "center", borderColor: Brand.ink },
   heading: {
