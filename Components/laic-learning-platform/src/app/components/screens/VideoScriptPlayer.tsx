@@ -397,24 +397,63 @@ export function VideoScriptPlayer({
    * WRAPPER keeps every overlay on top of the video. (YouTube's own controls
    * and fullscreen button are already disabled via controls:0 / fs:0.)
    */
-  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [nativeFs, setNativeFs] = useState(false);
+  /**
+   * Fullscreen without the Fullscreen API.
+   *
+   * iPhone Safari — and so the app's WKWebView — has no Element.requestFullscreen;
+   * only a bare <video> can go fullscreen there, and handing it the iframe would
+   * hand the screen to YouTube and take the checkpoints with it. So when the API
+   * is missing the stage simply covers the viewport itself. Our progress bar,
+   * its checkpoint markers and the gate are children of the stage, so they come
+   * along, and we can leave at a checkpoint without asking the browser.
+   */
+  const [coverFs, setCoverFs] = useState(false);
+  const isFullscreen = nativeFs || coverFs;
   const stageRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const onChange = () => setIsFullscreen(document.fullscreenElement === stageRef.current);
+    const onChange = () => setNativeFs(document.fullscreenElement === stageRef.current);
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
+  const exitFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    setCoverFs(false);
+  };
+  // The playback loop is started once; a ref keeps it calling the live version.
+  const exitFullscreenRef = useRef(exitFullscreen);
+  exitFullscreenRef.current = exitFullscreen;
+
   const toggleFullscreen = () => {
     const el = stageRef.current;
     if (!el) return;
-    if (document.fullscreenElement) {
-      void document.exitFullscreen().catch(() => {});
+    if (isFullscreen) {
+      exitFullscreen();
+      return;
+    }
+    if (typeof el.requestFullscreen === 'function') {
+      // Some browsers reject rather than throw; fall back rather than do nothing.
+      el.requestFullscreen().catch(() => setCoverFs(true));
     } else {
-      void el.requestFullscreen?.().catch(() => {});
+      setCoverFs(true);
     }
   };
+
+  // Escape leaves the covering fullscreen; the native one handles its own.
+  useEffect(() => {
+    if (!coverFs) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCoverFs(false); };
+    document.addEventListener('keydown', onKey);
+    // Stop the page behind scrolling under the cover.
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [coverFs]);
   const clearedRef = useRef<Set<string>>(new Set());
   const [activeCp, setActiveCp] = useState<VideoScriptCheckpoint | null>(null);
   const [tab, setTab] = useState<SideTab>(showTranscript ? 'transcript' : enableChat ? 'chat' : 'question');
@@ -500,9 +539,7 @@ export function VideoScriptPlayer({
             // Leave fullscreen so the question is answered where the transcript
             // and chat are. A question stranded behind a fullscreen video is a
             // gate the student cannot open.
-            if (document.fullscreenElement) {
-              void document.exitFullscreen?.().catch(() => {});
-            }
+            exitFullscreenRef.current();
             setActiveCp(next);
             setTab('question');
           }
@@ -609,6 +646,18 @@ export function VideoScriptPlayer({
               paddingTop: isFullscreen ? 0 : '56.25%',
               height: isFullscreen ? '100%' : undefined,
               borderRadius: isFullscreen ? 0 : 18,
+              // No Fullscreen API (iPhone, and the app's webview): cover the
+              // viewport ourselves. Above the app's own chrome, and using dvh
+              // so the phone's collapsing toolbars cannot crop the controls.
+              ...(coverFs
+                ? {
+                  position: 'fixed' as const,
+                  inset: 0,
+                  width: '100vw',
+                  height: '100dvh',
+                  zIndex: 90,
+                }
+                : null),
               overflow: 'hidden',
               background: '#000',
               boxShadow: isFullscreen ? undefined : '0 8px 28px -12px rgba(30,50,80,0.35)',
