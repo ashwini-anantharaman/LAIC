@@ -33,5 +33,12 @@ export interface BridgeTableProps {
     coachShare?: number;
     /** Fires once, when the last trick has resolved. */
     onComplete?: (state: GameState) => void;
+    /**
+     * Fires on EVERY position, the first included. A wrapper needs this when the
+     * board it is running ends somewhere other than the last trick — a
+     * bidding-only challenge board is over the moment the auction closes, and
+     * `onComplete` would never fire at all there.
+     */
+    onState?: (state: GameState) => void;
 }
-export declare function BridgeTable({ deal, seed, dealer, vul, humanSeat, showAllHands, appearance, decide, robotDelayMs, showCoach, coachShare, onComplete, }: Readonly<BridgeTableProps>): import("react").JSX.Element;
+export declare function BridgeTable({ deal, seed, dealer, vul, humanSeat, showAllHands, appearance, decide, robotDelayMs, showCoach, coachShare, onComplete, onState, }: Readonly<BridgeTableProps>): import("react").JSX.Element;

@@ -24,7 +24,7 @@ import { supabaseEnabled, uploadImage } from '../../../lib/supabase';
 import type {
   Block, CreatorPipelineDraft, ObjectStatus, ClusteredKnowledgeBase, ConceptCluster, ContentUnit,
   TutorialSectionPlan, TutorialTemplate, ObjectSelection, EditAction, MarkupFlag,
-  SummaryContent, ReflectionContent, AssignmentContent, DrillContent, VideoScriptContent,
+  SummaryContent, ReflectionContent, AssignmentContent, DrillContent, VideoScriptContent, BridgeTableContent,
   LearningObject, AssistantMessage, TutorialDefinition, DefinedSection,
 } from '../../../lib/types';
 import { UNASSIGNED_SECTION_ID } from '../../../lib/types';
@@ -59,6 +59,11 @@ import {
   toFlatSectionBlockRecipe,
   type LibraryObjectChoice,
 } from '../../../lib/tutorialTemplates';
+import {
+  configToBlockContent,
+  configToPartFields,
+  readBridgeConfig,
+} from '../../../lib/tutorialV2/bridgeEmbed';
 import { orderTutorialParts } from '../../../lib/tutorialOrder.js';
 import { getDefaultTemplateId } from '../../../lib/templateDefaults';
 import {
@@ -237,17 +242,16 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
     // A Bridge table travels as its CONFIG. Without this case it fell through to
     // the rich-text default below and a published tutorial carried the words
     // "Bridge table" instead of a table.
+    //
+    // NOTE: there are TWO partsToBlocks — this one (V1) and the one in
+    // lib/tutorialV2/draftModel.ts (which is what Tutorial V2 actually saves
+    // through). Both delegate the field mapping to configToBlockContent so a
+    // new knob cannot land in one and not the other.
     if (p.type === 'bridge-embed')
       return {
         id,
         type: 'bridge-table',
-        content: {
-          kind: p.embedKind || 'table',
-          seed: typeof p.embedSeed === 'number' ? p.embedSeed : 7,
-          skin: p.embedSkin || 'bbo',
-          showAllHands: !!p.embedShowAllHands,
-          caption: p.caption || '',
-        },
+        content: configToBlockContent(readBridgeConfig(p), p.caption || ''),
       };
     return {
       id,
@@ -265,17 +269,17 @@ function partsToBlocks(parts: any[], fv: Record<string, any> = {}): Block[] {
 function blocksToParts(blocks: Block[]): any[] {
   return (blocks || []).map((b, i) => {
     const id = b.id || `edit-${i}`;
+    // Re-opening a saved tutorial must restore the author's Configure choices,
+    // not reset them to the defaults. configToPartFields is the inverse of the
+    // configToBlockContent used on the way out.
     if (b.type === 'bridge-table') {
-      const c = (b.content || {}) as any;
+      const c = (b.content || {}) as BridgeTableContent;
       return {
         id,
         type: 'bridge-embed',
         label: 'Bridge table',
-        embedKind: c.kind || 'table',
-        embedSeed: typeof c.seed === 'number' ? c.seed : 7,
-        embedSkin: c.skin || 'bbo',
-        embedShowAllHands: !!c.showAllHands,
         caption: c.caption || '',
+        ...configToPartFields(readBridgeConfig(c)),
       };
     }
     if (b.type === 'library-embed') {

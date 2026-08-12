@@ -3,7 +3,11 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
-import { isBridgeEmbedPart } from '../../../../lib/tutorialV2/bridgeEmbed';
+import {
+  configToPartFields,
+  isBridgeEmbedPart,
+  readBridgeConfig,
+} from '../../../../lib/tutorialV2/bridgeEmbed';
 import {
   ArrowLeft, Check, Loader2, PenLine, Sparkles, AlertTriangle,
   Image as ImageIcon, Youtube, Upload, ExternalLink, Plus, Trash2, Type,
@@ -549,11 +553,10 @@ function WritePane({
           </div>
           {isBridgeEmbedPart(p) ? (
             <BridgeEmbedBlock
-              kind={p.embedKind}
-              seed={p.embedSeed ?? 7}
-              skin={p.embedSkin}
+              config={readBridgeConfig(p)}
               caption={p.caption}
               onChangeCaption={(caption) => onChangePart(p.id, { caption })}
+              onChangeConfig={(next) => onChangePart(p.id, configToPartFields(next))}
             />
           ) : isNestedEditablePart(p) ? (
             <div>

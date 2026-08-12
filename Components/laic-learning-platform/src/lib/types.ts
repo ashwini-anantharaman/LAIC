@@ -879,15 +879,38 @@ export type BlockContent =
   | DrillContent
   | LibraryEmbedContent;
 
-/** A published Bridge table block: everything needed to mount the component. */
+/**
+ * A published Bridge table block: everything needed to mount the component.
+ * These are the author's Configure choices, frozen at save. Every field is
+ * optional because older saved blocks predate the knob; the reader fills the
+ * gaps from `BRIDGE_EMBED_DEFAULTS`.
+ */
 export interface BridgeTableContent {
-  /** Which Bridge component (today: 'table'). */
+  /**
+   * The MODE: 'table' (one playable board), 'challenge' (boards against BEN,
+   * scored) or 'bidding' (the opening-bid drill, marked against the author).
+   */
   kind?: string;
   /** The deal, derived deterministically so every reader sees the same board. */
   seed?: number;
   skin?: string;
   showAllHands?: boolean;
   caption?: string;
+  /** The seat the learner sits and plays. */
+  humanSeat?: 'N' | 'E' | 'S' | 'W';
+  dealer?: 'N' | 'E' | 'S' | 'W';
+  vul?: 'none' | 'ns' | 'ew' | 'both';
+  handLayout?: 'row' | 'fan';
+  bidPad?: 'grid' | 'columns';
+  showCoach?: boolean;
+  robotDelayMs?: number;
+  /**
+   * challenge mode: the authored challenge — @bridge/table-embed's own
+   * `SoloChallengeDraft`. Opaque here; the package validates it.
+   */
+  challenge?: unknown;
+  /** bidding mode: how many of the authored opening-bid hands to ask. */
+  biddingHands?: number;
 }
 
 export interface Block {
