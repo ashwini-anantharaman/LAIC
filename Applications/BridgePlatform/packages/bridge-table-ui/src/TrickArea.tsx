@@ -69,55 +69,80 @@ const CARD = { w: 56, h: 80 };
  * CLUSTER_ORDER. On a 2x2 footprint no arrangement leaves all four indexes
  * whole; this spends that on a flank's pip instead of the top card's.
  */
-const flankTop = (h: number) => Math.round(h * 0.7);
+const flankTop = (h: number) => Math.round(h * 0.5);
 /** The compass's box for a card box: exactly the union of the four positions —
     two cards wide (the flanks) by two tall (the touching vertical pair). */
+/**
+ * A SEAM between the two columns, so E's outward index clears N and S.
+ *
+ * The vertical constraint solves itself — the flanks sit at half a card, which
+ * is below N's index block and above S's. The horizontal one does not: N and S
+ * share the centre column, and their bodies reach far enough right to graze the
+ * index E keeps on its right edge. Widening the box by this much moves E's
+ * index just past N's right edge and W's just short of N's left one. Derived
+ * from the card so it holds if the card is resized; measured at 0.15 for the
+ * shipped 89-wide card, where the constraint needs 13px and this gives 13.
+ */
+const clusterGap = (w: number) => Math.round(w * 0.15);
 export function clusterBox(card: { w: number; h: number } = CARD) {
-  return { w: card.w * 2, h: card.h * 2 };
+  return { w: card.w * 2 + clusterGap(card.w), h: card.h * 2 };
 }
 export const CLUSTER = clusterBox(CARD);
 /** Seat -> top-left inside the compass box. N and S share the centre column and
     meet edge to edge; W/E flank that seam, half a card outside and half down. */
 const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number; top: number }> => {
-  const half = Math.round(card.w / 2);
+  const gap = clusterGap(card.w);
+  const centre = Math.round((card.w + gap) / 2);
   const fy = flankTop(card.h);
   return {
-    N: { left: half, top: 0 },
+    N: { left: centre, top: 0 },
     W: { left: 0, top: fy },
-    E: { left: card.w, top: fy },
-    S: { left: half, top: card.h },
+    E: { left: card.w + gap, top: fy },
+    S: { left: centre, top: card.h },
   };
 };
 /**
- * Paint order is SPATIAL, not play order: strictly TOP TO BOTTOM (N, then the
- * W/E flanks, then S). A fixed order means the compass never reshuffles under
- * the eye as cards land, and among the four possible orders this is the one
- * that protects what a card SAYS.
+ * PAINT ORDER IS PLAY ORDER — the last card played sits on top, the way it does
+ * on a table and in BBO (owner, 2026-08-12). That is a real constraint, not a
+ * preference: with play order, ANY card can land over ANY other, so a layout
+ * may not rely on knowing who covers whom.
  *
- * It used to protect the whole index: at the old three-quarter-card offset a
- * card only ever covered the blank strip BELOW its neighbour's rank and pip.
- * Closing the vertical pair SPENDS that strip. With N and S touching, every
- * flank crosses N's lower half and is crossed by S's upper half, and because
- * the index lives at the card's left edge — under the column, on both sides —
- * no arrangement of four cards on a 2x2 footprint leaves all four indexes
- * whole. What survives, measured at the phone's 56x96 card (rank ink rows
- * 5-32, pip ink rows 39-64, and half a card down is row 48):
+ * The previous geometry did rely on it. Paint order was fixed and spatial
+ * (N, W, E, S) precisely because on a 2x2 footprint, with every index in the
+ * top-left corner, no arrangement leaves all four indexes whole — the fixed
+ * order was what chose WHICH index got clipped. Play order takes that choice
+ * away, so the index had to move instead.
  *
- *  · every RANK is untouched, on all four seats and for every rank INCLUDING
- *    the two-glyph "10" — the covering edge falls at row 48, sixteen rows below
- *    the rank's baseline, whichever neighbour is doing the covering;
- *  · S — the seat you play from — is covered by nothing at all, and W keeps its
- *    pip, which S crosses only on the blank right of the index;
- *  · what is lost is the lower two thirds of ONE pip on N and one on E, split
- *    evenly by the half-card offset: the flanks take exactly as much off N as S
- *    takes off them. The suit still shows its top, and its colour.
+ * THE INDEX NOW SITS ON THE EDGE THAT FACES AWAY FROM THE CENTRE. That corner
+ * is on the outside of the cluster by construction, so no sibling can reach it
+ * — in any order, for any trick:
  *
- * That is the best of the four orders, not merely the incumbent. Painting a
- * flank over S covers S's rank (S's index is under the flank's upper half);
- * painting the flanks under N covers theirs, and clips a "10" outright, because
- * N and S then cross the flanks' index rows rather than the strip beside it.
+ *      N ─ top-left        W ─ top-left
+ *      E ─ top-RIGHT       S ─ bottom-left
+ *
+ * Checked against the box below (flanks at half a card, N/S touching, so the
+ * bodies span N y[0,h], W/E y[0.5h,1.5h], S y[h,2h] and N/S x[0.5w,1.5w],
+ * W x[0,w], E x[w,2w]) with an index block of roughly 0.32w x 0.36h:
+ *
+ *   N  x[0.50w,0.82w] y[0,0.36h]      W and E start at 0.5h — clear
+ *   W  x[0,0.32w]     y[0.5h,0.86h]   nothing else reaches left of 0.5w
+ *   E  x[1.68w,2w]    y[0.5h,0.86h]   N and S stop at 1.5w — clear
+ *   S  x[0.50w,0.82w] y[1.64h,2h]     W and E stop at 1.5h — clear
+ *
+ * So the footprint stays exactly two cards by two — no space was bought for
+ * this — and the flanks moved back UP to half a card, which the old top-left
+ * index could not afford. Every rank and every pip is now whole on all four
+ * seats, which the fixed order never managed.
  */
-const CLUSTER_ORDER: Seat[] = ["N", "W", "E", "S"];
+const INDEX_CORNER: Record<Seat, CSSProperties> = {
+  N: { left: 4, top: 2 },
+  W: { left: 4, top: 2 },
+  E: { right: 4, top: 2 },
+  S: { left: 4, bottom: 2 },
+};
+
+/** Which way the empty-slot arrow points: away from the centre, at its seat. */
+const ARROW: Record<Seat, string> = { N: "▲", E: "▶", S: "▼", W: "◀" };
 
 export function TrickArea({
   plays,
@@ -169,13 +194,16 @@ export function TrickArea({
       <div style={{ width: box.w * scale, height: box.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TableMotion />
         <div style={{ position: "relative", width: box.w, height: box.h, flex: "none", transform: `scale(${scale})`, transformOrigin: "center center" }}>
-          {CLUSTER_ORDER.map((seat, z) => {
-            const play = plays.find((p) => p.seat === seat);
+          {(["N", "W", "E", "S"] as Seat[]).map((seat) => {
+            const order = plays.findIndex((p) => p.seat === seat);
+            const play = order >= 0 ? plays[order] : undefined;
             const pos = pos4[seat];
             const onTurn = seat === turn;
             const rank = play ? rankText(play.card.rank) : "";
+            // z IS the play order. An empty slot sits under every card so the
+            // arrow never rides over one; the nth card played sits at n.
             return (
-              <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, zIndex: z + 1 }}>
+              <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, zIndex: play ? order + 2 : 1 }}>
                 {play ? (
                   // Keyed on the card so a NEW card mounts (and deals in); a
                   // re-render of the same card must not replay the animation.
@@ -186,18 +214,22 @@ export function TrickArea({
                     className={DEAL}
                     style={{ position: "relative", display: "block", width: card.w, height: card.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)", boxSizing: "border-box" }}
                   >
-                    {/* Bold face: a heavy rank with the pip directly beneath it,
-                        both pinned to the card's TOP-LEFT — the strip the paint
-                        order guarantees no neighbour covers, so every card on
-                        the compass still says what it is. */}
-                    <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
+                    {/* Bold face: a heavy rank with the pip directly beneath
+                        it, pinned to the corner this seat points AWAY from the
+                        centre with — the one strip no sibling can reach, in any
+                        play order. See INDEX_CORNER. */}
+                    <span style={{ position: "absolute", ...INDEX_CORNER[seat], display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
                       <span style={{ fontSize: rank.length > 1 ? Math.min(index.rank, twoGlyphCap) : index.rank, fontWeight: 800, letterSpacing: "-.02em" }}>{rank}</span>
                       <span style={{ fontSize: index.glyph, fontWeight: 700 }}>{GLYPH[play.card.suit]}</span>
                     </span>
                   </span>
                 ) : (
-                  <span style={{ display: "flex", width: card.w, height: card.h, alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ display: "block", width: onTurn ? 24 : 0, height: 5, borderRadius: 3, background: onTurn ? "rgba(255,255,255,.62)" : "transparent" }} />
+                  // Whose turn it is, as an ARROW pointing at the seat rather
+                  // than a bar that only marked a position (owner, 2026-08-12).
+                  // It sits in that seat's empty slot, so it points outward from
+                  // the centre at the player who owes a card.
+                  <span data-testid="turn-arrow" data-seat={onTurn ? seat : undefined} style={{ display: "flex", width: card.w, height: card.h, alignItems: "center", justifyContent: "center", fontSize: Math.round(card.w * 0.42), lineHeight: 1, color: "rgba(255,255,255,.78)", textShadow: "0 1px 3px rgba(0,0,0,.5)", opacity: onTurn ? 1 : 0, transition: "opacity 160ms ease" }}>
+                    {ARROW[seat]}
                   </span>
                 )}
               </div>

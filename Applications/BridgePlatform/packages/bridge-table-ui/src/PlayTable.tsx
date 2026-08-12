@@ -76,11 +76,30 @@ const M_CARD: SeatHandMetrics & { backW: number } = {
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
-/** The trick's cards ARE the hand's cards (owner, 2026-08-11): a centre card
-    bigger than the cards you hold reads as a different deck. The compass takes
-    the hand's card box and index type, so the two match exactly. */
-const M_TRICK_CARD = { w: M_CARD.w, h: M_CARD.h };
-const M_TRICK_INDEX = { rank: M_CARD.rank, glyph: M_CARD.glyph };
+/**
+ * The trick card is LARGER than a hand card — 1.3x on height (owner,
+ * 2026-08-12), reversing the 2026-08-11 instruction that the two match. At hand
+ * size the played cards receded: the trick is the one thing everybody at the
+ * table is looking at, and it read as four more cards rather than as the trick.
+ * The band has the room — the compass uses roughly 192 of about 565 units.
+ *
+ * THE RATIO CHANGES TOO, and that matters more than the scale. A hand card is
+ * 56x96, a 1:1.71 box, and it is that tall-and-narrow ON PURPOSE: cards in the
+ * hand overlap by 8, so all anyone ever sees of one is the index strip down its
+ * left edge. A trick card is seen WHOLE, so it takes a real card's 1:1.4 —
+ * scaling the hand's 1:1.71 instead produced a card so narrow that a two-glyph
+ * "10" spanned nearly its full width and spilled out of the corner the layout
+ * had promised to keep clear.
+ *
+ * The index is sized against the CARD, not against the hand's index, for the
+ * same reason: the hand's rank fills its card because that is all you can see
+ * of it, whereas on a whole card an index that deep looks like a printing error.
+ */
+const M_TRICK_H = Math.round(M_CARD.h * 1.3);
+const M_TRICK_CARD = { w: Math.round(M_TRICK_H / 1.4), h: M_TRICK_H };
+// Sized so the stacked block clears half a card: the flanks sit at h/2, and an
+// index taller than that is clipped by them at the top of N and the bottom of S.
+const M_TRICK_INDEX = { rank: Math.round(M_TRICK_H * 0.30), glyph: Math.round(M_TRICK_H * 0.22) };
 const M_TRICK_BOX = clusterBox(M_TRICK_CARD);
 /** The phone plate's floor. It still narrows with the hand it labels, but never
     past what it has to SAY: at two cards left the hand is 104px wide and the
