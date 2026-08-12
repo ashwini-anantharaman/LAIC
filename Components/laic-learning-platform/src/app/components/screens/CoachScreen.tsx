@@ -93,7 +93,7 @@ export function CoachScreen() {
   const interactionChips = ['Ask AI', 'Quiz me', 'Flashcards', 'Reflections', 'Notes'];
 
   return (
-    <div className="px-6 py-6 w-full space-y-6">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-6">
 
       {/* Available to assign */}
       <div>

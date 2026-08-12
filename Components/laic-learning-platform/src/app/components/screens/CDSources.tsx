@@ -189,7 +189,7 @@ function AddModal({ onClose, onAdd }: { onClose: () => void; onAdd: (src: Collec
                 What are you bringing in?{' '}
                 <span style={{ fontWeight: 500, color: '#9AA3AF' }}>Select all that apply</span>
               </p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {SOURCE_KINDS.map((k) => {
                   const on = selKinds.some((x) => x.id === k.id);
                   return (

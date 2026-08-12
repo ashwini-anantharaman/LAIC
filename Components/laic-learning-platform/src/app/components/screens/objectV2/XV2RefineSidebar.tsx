@@ -202,7 +202,7 @@ export function XV2RefineSidebar({
   return (
     <div
       className="shrink-0 self-stretch flex flex-col border-l"
-      style={{ width: 'min(400px, 42vw)', background: 'rgba(255,255,255,0.95)', borderColor: 'rgba(0,0,0,0.08)' }}
+      style={{ width: 'min(400px, 100%)', background: 'rgba(255,255,255,0.95)', borderColor: 'rgba(0,0,0,0.08)' }}
     >
       <div className="flex items-center gap-1 px-2 py-2 border-b" style={{ borderColor: 'rgba(0,0,0,0.06)' }}>
         {(['hoot', 'sources', 'add'] as Tab[]).map((t) => (

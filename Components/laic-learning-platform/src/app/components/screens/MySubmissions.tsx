@@ -40,7 +40,7 @@ export function MySubmissions() {
   const openCount = FEEDBACK_INBOX.reduce((sum, g) => sum + g.comments.filter(c => !resolved.has(c.id)).length, 0);
 
   return (
-    <div className="px-6 py-6 w-full space-y-6">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-6">
 
       {/* Feedback inbox */}
       {openCount > 0 && (

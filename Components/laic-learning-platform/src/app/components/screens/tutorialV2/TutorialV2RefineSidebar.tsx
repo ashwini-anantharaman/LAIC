@@ -443,7 +443,7 @@ export function TutorialV2RefineSidebar({
     <aside
       className="shrink-0 flex flex-col border-l min-h-0"
       style={{
-        width: 'min(400px, 42vw)',
+        width: 'min(400px, 100%)',
         background: '#fff',
         borderColor: 'rgba(0,0,0,0.08)',
         boxShadow: '-8px 0 24px -16px rgba(30,50,80,0.18)',

@@ -148,7 +148,7 @@ function SortableObjectRow({
   return (
     <div
       ref={setNodeRef}
-      className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-gray-50/80"
+      className="flex flex-wrap items-center gap-y-2 gap-x-3 px-3 sm:px-4 py-3 transition-colors hover:bg-gray-50/80"
       style={{
         borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.05)',
         transform: CSS.Transform.toString(transform),
@@ -727,7 +727,7 @@ export function ObjectLibrary() {
   );
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       {versionToast && (
         <div
           className="fixed bottom-5 left-1/2 z-[70] -translate-x-1/2 px-4 py-2.5 rounded-full text-white shadow-lg"
@@ -770,7 +770,7 @@ export function ObjectLibrary() {
                 Double-click a folder to open it · nest folders inside folders
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-1 justify-end min-w-[200px]">
+            <div className="flex flex-wrap items-center gap-2 flex-1 justify-end min-w-0">
               <div
                 className="flex items-center gap-2 px-3.5 py-2 rounded-full flex-1 max-w-xs"
                 style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)' }}

@@ -307,7 +307,7 @@ export function TutorialV2AssembleEditor({
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 flex">
+      <div className="flex-1 min-h-0 flex flex-col md:flex-row">
         <div className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5">
           <div className="max-w-2xl w-full mx-auto">
             {mode === 'preview' ? (

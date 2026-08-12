@@ -213,7 +213,7 @@ export function AccessDocScreen({ docId }: { docId: DocId }) {
   const content = useMemo(() => renderMarkdown(doc.body), [doc.body]);
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}

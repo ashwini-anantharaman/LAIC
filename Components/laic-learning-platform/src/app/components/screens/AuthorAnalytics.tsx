@@ -22,7 +22,7 @@ const COMPLETION_BAR = PER_OBJECT_DATA.map(o => ({ name: o.title.split(' — ')[
 
 export function AuthorAnalytics() {
   return (
-    <div className="px-6 py-6 w-full space-y-5">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full space-y-5">
       {/* 4 stat cards */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
         className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -56,7 +56,8 @@ export function AuthorAnalytics() {
         <div className="px-5 py-3.5 border-b" style={{ borderColor: 'rgba(0,0,0,0.05)' }}>
           <p style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}>Per-content breakdown — last 30 days</p>
         </div>
-        <table className="w-full">
+        <div className="overflow-x-auto">
+        <table className="w-full min-w-[620px]">
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(0,0,0,0.05)' }}>
               {['Content', 'Views', 'Completion %', 'Signals'].map(h => (
@@ -94,6 +95,7 @@ export function AuthorAnalytics() {
             ))}
           </tbody>
         </table>
+        </div>
         <div className="px-5 py-3 border-t" style={{ borderColor: 'rgba(0,0,0,0.05)', background: 'rgba(0,0,0,0.01)' }}>
           <p style={{ fontSize: 12, color: '#9AA3AF' }}>Analytics figures are illustrative/seeded — not computed from real usage in this prototype.</p>
         </div>

@@ -34,7 +34,7 @@ export function CDHome() {
   const recentObjects = myObjects.slice(0, 4);
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       {/* Program banner */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
         className="flex items-center gap-4 p-4 rounded-[24px] mb-6"

@@ -1012,7 +1012,7 @@ export function CDCreate() {
   };
 
   return (
-    <div className="px-6 py-6 w-full">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       <div className="mb-6">
         <h2 style={{ fontSize: 18, fontWeight: 700, color: '#0B1220', letterSpacing: '-0.3px', marginBottom: 4 }}>
           What would you like to create?

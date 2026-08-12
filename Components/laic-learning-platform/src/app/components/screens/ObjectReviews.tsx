@@ -107,9 +107,9 @@ export function ObjectReviews() {
   const queue = (nexusMode ? [] : REVIEWS).filter(r => r.type === 'object');
 
   return (
-    <div className="px-6 py-6 w-full flex gap-5">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full flex flex-col md:flex-row gap-4 md:gap-5">
       {/* Queue */}
-      <div className={`space-y-3 ${selected ? 'w-64 shrink-0' : 'flex-1'}`}>
+      <div className={`space-y-3 ${selected ? 'w-full md:w-64 md:shrink-0' : 'flex-1'}`}>
         <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 12 }}>
           {queue.length} item{queue.length !== 1 ? 's' : ''} in queue
         </p>

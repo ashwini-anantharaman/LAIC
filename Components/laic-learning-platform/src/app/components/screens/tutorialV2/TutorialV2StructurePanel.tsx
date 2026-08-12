@@ -170,8 +170,8 @@ export function TutorialV2StructurePanel({
 
   const addSidebar = freeform ? (
     <aside
-      className="w-60 shrink-0 rounded-2xl px-3.5 py-4 space-y-4"
-      style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)', position: 'sticky', top: 12 }}
+      className="w-full md:w-60 md:shrink-0 rounded-2xl px-3.5 py-4 space-y-4"
+      style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)' }}
     >
       <p style={{ fontSize: 11.5, fontWeight: 700, color: '#9AA3AF', letterSpacing: '.05em', textTransform: 'uppercase' }}>
         Add to tutorial
@@ -227,7 +227,7 @@ export function TutorialV2StructurePanel({
   ) : null;
 
   return (
-    <div className={freeform ? 'px-1 flex gap-5 items-start' : 'px-1'}>
+    <div className={freeform ? 'px-1 flex flex-col md:flex-row gap-4 md:gap-5 md:items-start' : 'px-1'}>
     <div className="space-y-5 flex-1 min-w-0">
       <div>
         <p style={{ fontSize: 13.5, color: '#6B7280' }}>

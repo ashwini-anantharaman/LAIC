@@ -35,7 +35,7 @@ export function TestContainer() {
   };
 
   return (
-    <div className="px-6 py-6 w-full h-full flex flex-col gap-4 min-h-[calc(100vh-3.5rem)]">
+    <div className="px-4 sm:px-6 py-5 sm:py-6 w-full h-full flex flex-col gap-4 min-h-[calc(100vh-3.5rem)]">
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
