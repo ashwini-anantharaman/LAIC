@@ -335,11 +335,25 @@ export function BridgeEmbed({
   // its cookies, its HTTP and bytecode caches — stays alive. Unparking loads
   // the (possibly new) destination into that warm browser: an in-place
   // navigation instead of a WebView boot, which is this mode's whole point.
+  //
+  // The blanking WAITS OUT the exit transition (2026-08-13). The phone's
+  // post-mortem strip showed the crash landing right here: park fired the
+  // instant the route popped, so the WebView's source changed while the
+  // screen-pop fade and the veil's reveal were both mid-flight — and that
+  // source-change-during-transition is what killed the app natively (a
+  // browser, with no native transitions, never reproduced it). Every other
+  // reset is safe immediately; only the WebView navigation defers until the
+  // motion has settled (pop fade + veil cover/settle/reveal ≈ 500ms).
+  const parkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     if (!persistent) return;
     boardDebug("park effect", { parked });
     if (parked) {
-      setUrl("about:blank");
+      parkTimer.current = setTimeout(() => {
+        parkTimer.current = null;
+        boardDebug("park: about:blank applied");
+        setUrl("about:blank");
+      }, 700);
       tableState.current = null;
       setAtTable(false);
       setBoardCover(false);
@@ -349,15 +363,35 @@ export function BridgeEmbed({
       setError(null);
       escaped.current = false;
     } else {
+      // Unparking before the deferred blank landed: cancel it — load() sets
+      // the real destination, and a late about:blank would clobber it.
+      if (parkTimer.current) {
+        clearTimeout(parkTimer.current);
+        parkTimer.current = null;
+      }
       escaped.current = false;
       load();
     }
+    return () => {
+      if (parkTimer.current) {
+        clearTimeout(parkTimer.current);
+        parkTimer.current = null;
+      }
+    };
   }, [persistent, parked, load]);
 
   // The embed session died (bounced to /welcome): re-launch once, guarded
   // against loops. Only observable on native.
   const handleUrlChange = useCallback(
     (u: string) => {
+      // A parked board's trailing events (the old page winding down, the
+      // deferred about:blank landing) must not re-mark the table or trigger
+      // relaunches while the exit transition runs — drop them at the door.
+      if (persistent && parked) {
+        boardDebug("urlChange ignored (parked)", u.slice(0, 60));
+        currentUrl.current = u;
+        return;
+      }
       boardDebug("urlChange", u);
       currentUrl.current = u;
       // A page the app refuses to show — leave for the native screen instead.
@@ -398,7 +432,7 @@ export function BridgeEmbed({
         }
       }
     },
-    [load, goBackNow, maybeEscape],
+    [load, goBackNow, maybeEscape, persistent, parked],
   );
 
   // Re-entering the tab resets the embed to its start page — CHEAPLY: the
