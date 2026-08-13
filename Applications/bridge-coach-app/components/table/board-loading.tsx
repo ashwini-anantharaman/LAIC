@@ -1,7 +1,7 @@
 // The board's loading screen — a felt-green beat with three card backs being
 // dealt in a gentle loop, instead of a white webview booting a web app (or a
-// bare spinner). One component for every door to a board: the webview table,
-// the native table, and the "dealing your board…" starts.
+// bare spinner). One component for every door to a board: the webview table
+// and the "dealing your board…" starts.
 //
 // The parent keeps this mounted and flips `ready`; the cover then fades out
 // over ~350ms and calls `onGone`, so the board underneath appears as a
@@ -9,10 +9,20 @@
 // too long as ready — nobody gets stranded behind a loading screen.
 
 import { useEffect, useRef } from "react";
-import { Animated, Easing, StyleSheet, Text } from "react-native";
+import { Animated, Easing, StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts } from "../../constants/theme";
-import { CardBack } from "./cards";
+
+/** One face-down card — the deck's maroon back (formerly table/cards.tsx,
+ *  inlined when the native table's card primitives were removed). */
+function CardBack({ w }: { w: number }) {
+  const h = w * 1.45;
+  return (
+    <View style={[styles.back, { width: w, height: h, borderRadius: w * 0.14 }]}>
+      <View style={[styles.backInner, { borderRadius: w * 0.08 }]} />
+    </View>
+  );
+}
 
 const FADE_MS = 350;
 /** No signal after this long → fade out anyway and let the screen speak. */
@@ -119,4 +129,11 @@ const styles = StyleSheet.create({
   },
   fan: { flexDirection: "row", alignItems: "flex-end" },
   label: { fontFamily: Fonts.displayMedium, fontSize: 15, color: Brand.cream },
+  back: {
+    backgroundColor: Brand.maroon,
+    borderWidth: 1,
+    borderColor: Brand.cardShadow,
+    padding: 3,
+  },
+  backInner: { flex: 1, borderWidth: 1, borderColor: "rgba(255,244,215,0.35)" },
 });

@@ -52,6 +52,7 @@ export function BridgeEmbed({
   fullScreen = false,
   escapeTo,
   leaveOnResults,
+  parked,
 }: {
   title: string;
   next: string;
@@ -97,7 +98,18 @@ export function BridgeEmbed({
    * the platform resolved to.
    */
   leaveOnResults?: Href;
+  /**
+   * PERSISTENT MODE (the table host). Defined at all — true or false — means
+   * this embed outlives its screens: the WebView element is never unmounted,
+   * so opening the next board is an in-place navigation of an already-booted
+   * browser (warm process, cookies, HTTP + bytecode caches) instead of a
+   * fresh WebView paying the whole boot again. `true` = no table screen is
+   * focused right now: the page is sent to about:blank — the old board's
+   * timers stop exactly as an unmount stopped them — and the host hides.
+   */
+  parked?: boolean;
 }) {
+  const persistent = parked !== undefined;
   const { token } = useAuth();
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +138,11 @@ export function BridgeEmbed({
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
-    setUrl(null);
+    // Persistent embeds keep the WebView mounted between boards — nulling the
+    // url would unmount it and throw the booted browser away, which is the
+    // entire cost this mode exists to avoid. The url flips straight from
+    // about:blank (parked) to the next destination instead.
+    if (!persistent) setUrl(null);
     if (fullScreen) {
       setBoardCover(true);
       setBoardReady(false);
@@ -165,11 +181,13 @@ export function BridgeEmbed({
       if (e instanceof NexusError && e.status === 401) return;
       setError("Couldn't open the bridge platform. Check that it is running.");
     }
-  }, [token, next, programId, fullScreen]);
+  }, [token, next, programId, fullScreen, persistent]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    // Persistent embeds load through the park/unpark effect below instead —
+    // loading here would boot the destination while the host is parked.
+    if (!persistent) load();
+  }, [load, persistent]);
 
   // ── Leaving an unfinished board (confirmUnfinishedExit) ───────────────────
   // The table page reports { sessionId, phase } as they change (its
@@ -296,6 +314,30 @@ export function BridgeEmbed({
     setLeaveAsk(true);
   }, []);
 
+  // ── Persistent mode's lifecycle (the table host) ───────────────────────────
+  // Parking sends the page to about:blank: the old board's timers die exactly
+  // as an unmount killed them, while the WebView itself — the booted browser,
+  // its cookies, its HTTP and bytecode caches — stays alive. Unparking loads
+  // the (possibly new) destination into that warm browser: an in-place
+  // navigation instead of a WebView boot, which is this mode's whole point.
+  useEffect(() => {
+    if (!persistent) return;
+    if (parked) {
+      setUrl("about:blank");
+      tableState.current = null;
+      setAtTable(false);
+      setBoardCover(false);
+      setBoardReady(false);
+      setDiscarding(false);
+      setLeaveAsk(false);
+      setError(null);
+      escaped.current = false;
+    } else {
+      escaped.current = false;
+      load();
+    }
+  }, [persistent, parked, load]);
+
   // The embed session died (bounced to /welcome): re-launch once, guarded
   // against loops. Only observable on native.
   const handleUrlChange = useCallback(
@@ -345,34 +387,33 @@ export function BridgeEmbed({
   // Re-entering the tab resets the embed to its start page — CHEAPLY: the
   // cookie session from the first launch is reused (no token mint, no
   // handshake), and if the embed is already sitting on the start page
-  // (knowable on native), nothing reloads at all.
+  // (knowable on native), nothing reloads at all. The hook itself lives in a
+  // child rendered only when asked for (FocusReset): a persistent embed
+  // mounts OUTSIDE any navigator screen, where useFocusEffect would throw.
   const focusedOnce = useRef(false);
-  useFocusEffect(
-    useCallback(() => {
-      if (!resetOnFocus) return;
-      if (!focusedOnce.current) {
-        focusedOnce.current = true; // mount already loaded
-        return;
+  const onFocusReset = useCallback(() => {
+    if (!focusedOnce.current) {
+      focusedOnce.current = true; // mount already loaded
+      return;
+    }
+    const origin = originRef.current;
+    const cur = currentUrl.current;
+    if (cur && origin) {
+      try {
+        const parsed = new URL(cur);
+        const target = next.split("?")[0] ?? next;
+        if (parsed.origin === origin && parsed.pathname === target) return;
+      } catch {
+        // Unparseable URL — fall through to a reset.
       }
-      const origin = originRef.current;
-      const cur = currentUrl.current;
-      if (cur && origin) {
-        try {
-          const parsed = new URL(cur);
-          const target = next.split("?")[0] ?? next;
-          if (parsed.origin === origin && parsed.pathname === target) return;
-        } catch {
-          // Unparseable URL — fall through to a reset.
-        }
-      }
-      if (origin) {
-        const sep = next.includes("?") ? "&" : "?";
-        setUrl(`${origin}${next}${sep}_r=${Date.now()}`);
-      } else {
-        load();
-      }
-    }, [resetOnFocus, next, load]),
-  );
+    }
+    if (origin) {
+      const sep = next.includes("?") ? "&" : "?";
+      setUrl(`${origin}${next}${sep}_r=${Date.now()}`);
+    } else {
+      load();
+    }
+  }, [next, load]);
 
   // The board owns the screen whether the host screen asked for it (a table
   // route) or the embed simply navigated onto one (an assignment's Start, a
@@ -385,6 +426,7 @@ export function BridgeEmbed({
   return (
     // While the loading cover is up, the safe areas wear the felt too.
     <Screen style={fullScreen && boardCover ? styles.feltScreen : undefined}>
+      {resetOnFocus ? <FocusReset onFocus={onFocusReset} /> : null}
       {!immersive && (
         <ScreenHeader
           title={title}
@@ -459,6 +501,17 @@ export function BridgeEmbed({
       />
     </Screen>
   );
+}
+
+/** The one caller of useFocusEffect, mounted only inside real screens — see
+ *  onFocusReset above. */
+function FocusReset({ onFocus }: { onFocus: () => void }) {
+  useFocusEffect(
+    useCallback(() => {
+      onFocus();
+    }, [onFocus]),
+  );
+  return null;
 }
 
 const styles = StyleSheet.create({

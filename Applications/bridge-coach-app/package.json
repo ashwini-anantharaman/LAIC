@@ -10,9 +10,7 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "publish:preview": "dotenv -e .env.eas -- eas update --branch preview --clear-cache",
-    "publish:production": "dotenv -e .env.eas -- eas update --branch production --clear-cache",
-    "sync:kernel": "node scripts/sync-kernel.js"
-  },
+    "publish:production": "dotenv -e .env.eas -- eas update --branch production --clear-cache"  },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.4.0",
