@@ -1331,9 +1331,14 @@ export function PlayTable({
     // thing inside a squeezed band must not make. The first version floored
     // both this and the pitch and duly overflowed a 111px rail by 20px.
     const avail = Math.max(24, feltH - 40);
-    // How much of the LAST card shows beyond the strip — the only card with a
-    // whole face. It yields with everything else when the band is tight.
-    const TAIL = Math.max(6, Math.min(22, Math.round(avail * 0.12)));
+    // How much of the LAST card shows beyond its strip. It is the only card
+    // with room below its index, and that room is BLANK — a whole card face
+    // with nothing on it, which reads as a gap in the hand rather than as a
+    // card (owner, 2026-08-13). So it is an edge, not a face: a fifth of a
+    // strip, enough to say "the stack ends here" and no more. Derived from the
+    // strip rather than the band, so it stays in proportion at any size.
+    const rough = Math.max(4, Math.floor(avail / Math.max(1, n)));
+    const TAIL = Math.max(3, Math.min(12, Math.round(rough * 0.2)));
     // Solve for the strip, then the rest follows: n strips plus one tail must
     // fit. The cap is in AUTHORED units and the stage renders at about half, so
     // 46 is a card's worth of strip rather than a thin ribbon.
