@@ -2009,36 +2009,8 @@ platformRouter.get("/learning/context", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   const mapped = LEARNING_ROLE_MAP[access.level];
-  // A person's custom Learning role (if assigned) carries per-area view/edit
-  // perms that gate the app's nav/screens. Admins get no custom role (they see
-  // everything); everyone else is confined to their role's granted areas.
-  const isAdmin = access.level === "admin";
-  const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
-  // Effective learning capabilities — the app gates its screens on these:
-  //  • admin        → everything the catalogue grants (full access)
-  //  • custom role  → exactly the capabilities that Content Studio role binds
-  //  • program role → a "partial" program-role grant binds specific learning
-  //                   capabilities (filtered to the learning catalogue)
-  //  • otherwise    → the launch level's sample-role capabilities (edit →
-  //                   content-developer, comment → reviewer, view → learner).
-  // Defensive: never let capability computation break context resolution.
-  let capabilities: string[] = [];
-  try {
-    const learningDoc = await catalogue.getCatalogue("learning");
-    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
-    const programCaps = access.programRoleCapabilities?.length
-      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
-      : [];
-    capabilities = isAdmin
-      ? _learningCapsForLevel(learningDoc, "admin")
-      : Array.isArray(roleCaps) && roleCaps.length
-        ? (roleCaps as string[])
-        : programCaps.length
-          ? programCaps
-          : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
-  } catch (e) {
-    console.error("learning/context capability computation failed (using empty set):", e);
-  }
+  const eff = await _learningEffective(user, access);
+  const { isAdmin, capabilities, customRole } = eff;
   // An exact pre-built learning role on the grant (picked in the role builder,
   // or implied — a bridge coach arrives as the learning app's `coach`) is
   // authoritative, same as the bridge context: flattening it through the
@@ -2212,6 +2184,88 @@ async function _learningPermsWithCaps(
     else delete next.typeScopes;
   }
   return next;
+}
+
+/**
+ * What the caller may do in the learning platform — the ONE resolver.
+ *
+ * Every learning route reads this; none computes capabilities itself. That is the
+ * discipline `appAccessFor` uses for the club app (accessCatalogue/appRoles.ts):
+ * there is no unclamped export, so no call site can forget the org's ceiling.
+ *
+ * Precedence, unchanged from what /learning/context did inline:
+ *   • admin        → everything the catalogue grants
+ *   • custom role  → exactly what that Content Studio role binds
+ *   • program role → a "partial" grant's learning capabilities
+ *   • otherwise    → the launch LEVEL's sample-role capabilities
+ *
+ * `fineGrained` records WHICH of those answered. It matters because the sample
+ * templates are incomplete — `learning-content-developer` grants no
+ * `object.delete` and none of the `publish.*` ids — and every partner club member
+ * is hardcoded to level "edit", so a naive "capability absent → refuse" would strip
+ * publishing and deleting from every club member on day one. Level-derived callers
+ * are therefore governed by each endpoint's coarse guard, exactly as
+ * enforce.ts:76-85 already decides for the same reason.
+ */
+async function _learningEffective(
+  user: PlatformUser,
+  access: ResolvedPlatformAccess,
+): Promise<{
+  isAdmin: boolean;
+  fineGrained: boolean;
+  capabilities: string[];
+  typeScopes: Record<string, string[]>;
+  customRole: Row | null;
+}> {
+  const isAdmin = access.level === "admin";
+  const customRole = !isAdmin && user.email
+    ? await graph.getLearningRoleForEmail(access.programId, user.email)
+    : null;
+
+  let capabilities: string[] = [];
+  let fineGrained = false;
+  // Defensive: never let capability computation break context resolution.
+  try {
+    const learningDoc = await catalogue.getCatalogue("learning");
+    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+    const programCaps = access.programRoleCapabilities?.length
+      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
+      : [];
+    if (isAdmin) {
+      capabilities = _learningCapsForLevel(learningDoc, "admin");
+    } else if (Array.isArray(roleCaps) && roleCaps.length) {
+      capabilities = roleCaps as string[];
+      fineGrained = true;
+    } else if (programCaps.length) {
+      capabilities = programCaps;
+      fineGrained = true;
+    } else {
+      capabilities = _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+    }
+  } catch (e) {
+    console.error("learning/context capability computation failed (using empty set):", e);
+  }
+
+  // The org's CEILING, applied to every branch above INCLUDING admin. A club's
+  // administrator holds what the club WAS GIVEN, not everything the catalogue
+  // defines — the same call the club app makes (appAccessFor), and the case most
+  // likely to be tested first. Clamped against the CLUB's own program id, because
+  // that is where feature_access lives; clampCapsToProvisioning intersects the
+  // org's envelope as well, so the parent's ceiling still applies.
+  //
+  // Deliberately OUTSIDE the try above: an unloadable program already imposes no
+  // ceiling (provisioning.ts), and a catalogue failure must leave the set
+  // unclamped rather than read as denial. Absent is not denial, all the way down.
+  capabilities = await provisioning.clampCapsForProgram(
+    access.partnerProgramId ?? access.programId,
+    capabilities,
+  );
+
+  const rawScopes = (customRole?.perms as Row | undefined)?.typeScopes;
+  const typeScopes =
+    rawScopes && typeof rawScopes === "object" ? (rawScopes as Record<string, string[]>) : {};
+
+  return { isAdmin, fineGrained, capabilities, typeScopes, customRole };
 }
 
 /** The capability ids a launch LEVEL implies, sourced from the learning

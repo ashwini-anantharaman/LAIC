@@ -474,7 +474,13 @@ function StudioApp() {
         const uid = ctx.nexusUserId || 'nexus';
         const isAdmin = ctx.is_admin ?? r === 'administrator';
         const perms = ctx.learning_role?.perms ?? null;
-        const caps = isAdmin ? null : (ctx.capabilities ?? null);
+        // Admins are NOT exempt. This used to be `isAdmin ? null : …`, discarding the
+        // server's answer and treating null as unrestricted — which made the org's
+        // provisioning ceiling decorative for exactly the person most likely to test
+        // it. The server clamps every branch, admin included, to what the org
+        // provisioned this club; take what it says. An empty/absent list still means
+        // "nothing recorded" and falls back to perms, as before.
+        const caps = ctx.capabilities ?? null;
         setNexusMode(true);
         setLearningIsAdmin(isAdmin);
         setLearningPerms(perms);
