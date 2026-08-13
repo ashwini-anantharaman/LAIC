@@ -159,7 +159,12 @@ export function ProgramTeam() {
     const prog = (program?.feature_access as Record<string, { capabilities: string[] }> | null) ?? {};
     const org = orgCaps?.featureAccess ?? {};
     const out: Record<string, { capabilities: string[] }> = {};
-    for (const key of ["learning", "bridge"]) {
+    // All THREE platform keys. `clubapp` was missing, so the builder offered a club
+    // every app capability the catalogue defines even when the org had provisioned a
+    // narrow subset — and the backend then clamped the save, silently dropping what
+    // the picker had just shown as granted. The list you pick from and the list that
+    // survives must be the same list.
+    for (const key of ["learning", "bridge", "clubapp"]) {
       const p = prog[key]?.capabilities, o = org[key]?.capabilities;
       if (p && o) out[key] = { capabilities: p.filter((c) => o.includes(c)) };
       else if (p) out[key] = { capabilities: p };

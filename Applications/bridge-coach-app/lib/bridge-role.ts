@@ -187,9 +187,36 @@ export function hasFineGrants(context: RoleContext | null): boolean {
 }
 
 /**
+ * Is `capability` within the org's CEILING for this club?
+ *
+ * Provisioning is a different question from "what does your role grant", and it has
+ * to be asked FIRST, because the two cases below that make the app usable —
+ * the structural-tier bypass and the empty-set fallback — both answer yes without
+ * ever consulting a capability set. If the ceiling were folded into that set, an
+ * admin would ignore it, which is the person most likely to test the toggle.
+ *
+ * Silence means UNRESTRICTED, deliberately: an older server sends neither field, and
+ * a club with no `feature_access` recorded is provisioned "Full", not "None". Reading
+ * absence as denial is precisely the mistake that took the `+` from B2F3's mentors.
+ * Real denial arrives as `app_enabled === false`.
+ *
+ * Only `app.*` ids are club-app capabilities; anything else is another catalogue's
+ * and no business of this ceiling.
+ */
+function withinProvisioning(context: RoleContext | null, capability: string): boolean {
+  const app = context?.app;
+  if (!app || !capability.startsWith("app.")) return true;
+  if (app.app_enabled === false) return false;
+  const provisioned = app.provisioned_capabilities;
+  if (!provisioned || provisioned.length === 0) return true;
+  return provisioned.includes(capability);
+}
+
+/**
  * May this person do `capability`?
  *
- * Three cases, in order:
+ * The org's ceiling is checked first (withinProvisioning) — a club cannot exceed
+ * what it was provisioned, whoever is asking. Within the ceiling, three cases:
  *   1. A structural tier (the club's owner/administrator) — always yes. They
  *      bypass the catalogue server-side too, so gating them here would only
  *      disagree with the server.
@@ -207,6 +234,7 @@ export function can(
   fallback = false,
 ): boolean {
   if (!context) return fallback;
+  if (!withinProvisioning(context, capability)) return false;
   if (isCoach(context)) return true;
   const caps = capabilitiesOf(context);
   if (caps.size === 0) return fallback;

@@ -19,6 +19,7 @@
 import * as db from "../platformDb";
 import { getCatalogue, validGrantsAcross } from "./store";
 import { grantableCapabilities } from "./resolver";
+import { clampCapsForProgram } from "./provisioning";
 
 export interface AppRole {
   id: string;
@@ -120,8 +121,15 @@ export async function starterCapabilities(templateId: string): Promise<string[]>
  *   3. A club-authored app-only role (the appRoles store), for a club that
  *      wants app roles independent of its console roles.
  *   4. Nothing.
+ *
+ * Whatever the source, the result is CLAMPED to what the org provisioned for this
+ * club (provisioning.ts). Roles distribute authority within the org's ceiling; they
+ * cannot raise it. The clamp applies to the two short-circuits above as well — a club
+ * administrator holds everything the club WAS GIVEN, not everything the catalogue
+ * defines — because a bypass that ignored provisioning would make the console's
+ * Features toggles advisory for exactly the people most likely to test them.
  */
-export async function appAccessFor(
+async function appAccessUnclamped(
   programId: string,
   input: {
     structuralTier?: boolean;
@@ -175,4 +183,22 @@ export async function appAccessFor(
     }
   }
   return { roleName: input.roleName ?? null, capabilities: [] };
+}
+
+/**
+ * appAccessFor = whoever you are, clamped to what your club was provisioned.
+ *
+ * The resolution above answers "what does this person's ROLE grant?"; this answers
+ * "and what did the org actually give this club?". Keeping them separate means the
+ * ceiling cannot be forgotten at a call site — there is no unclamped export.
+ */
+export async function appAccessFor(
+  programId: string,
+  input: NonNullable<Parameters<typeof appAccessUnclamped>[1]> = {},
+): Promise<{ roleName: string | null; capabilities: string[] }> {
+  const resolved = await appAccessUnclamped(programId, input);
+  return {
+    roleName: resolved.roleName,
+    capabilities: await clampCapsForProgram(programId, resolved.capabilities),
+  };
 }

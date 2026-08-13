@@ -579,6 +579,18 @@ export type AppContext = {
   role_name: string | null;
   capabilities: string[];
   is_admin: boolean;
+  /**
+   * The org's CEILING for this club — what it was PROVISIONED, as opposed to what
+   * this person's role grants. Enforced by can() ahead of all role logic, because
+   * neither the admin bypass nor the empty-set fallback consults `capabilities`.
+   *
+   * Both are optional: an older server omits them, and their absence must read as
+   * "no ceiling known" rather than "nothing provisioned".
+   *   app_enabled === false        → the club app is off for this club.
+   *   provisioned_capabilities     → only these `app.*` ids; null/absent = all.
+   */
+  app_enabled?: boolean;
+  provisioned_capabilities?: string[] | null;
 };
 
 export function fetchAppContext(token: string, programId: string): Promise<AppContext> {

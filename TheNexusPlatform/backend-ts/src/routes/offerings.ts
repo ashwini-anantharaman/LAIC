@@ -16,9 +16,9 @@ import * as db from "../platformDb";
 import { dbEnabled } from "../db/client";
 import * as graph from "../db/orgGraphRepo";
 import * as clubChat from "../db/clubChatRepo";
-import { validGrantsAcross, getCatalogue, type CatalogueRef } from "../accessCatalogue/store";
-import { grantableCapabilities } from "../accessCatalogue/resolver";
+import { validGrantsAcross, type CatalogueRef } from "../accessCatalogue/store";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
+import { clampCapsToProvisioning } from "../accessCatalogue/provisioning";
 import { isOfferingAdmin } from "../permissions";
 import { platformRoleConfig } from "../platformAccess";
 import { BRIDGE_PREBUILT_ROLES } from "../platformAccess";
@@ -936,45 +936,6 @@ function _permsWithinFeatures<V>(perms: Record<string, V>, programFeatures: unkn
 // Platform areas provisioned "Partial" cap what their roles may grant. Drop any
 // learning/bridge capability the program (intersected with the org envelope)
 // didn't provision. Full/unrestricted platforms pass through untouched.
-const _FEATURE_ACCESS_PROVIDER: Record<string, "learning" | "bridge" | "club-app"> = {
-  learning: "learning",
-  bridge: "bridge",
-  clubapp: "club-app",
-};
-async function _clampCapsToProvisioning(program: Record<string, unknown>, capabilities: string[]): Promise<string[]> {
-  const featureAccess = (program.feature_access as Record<string, { capabilities?: string[] }> | null) ?? {};
-  const enabled = normalizeProgramFeatures(program.features as Record<string, unknown>);
-  const orgCaps = await db.getOrgCapabilities(program.org_id as string).catch(() => null);
-  const orgAccess = (orgCaps?.featureAccess as Record<string, { capabilities?: string[] }> | undefined) ?? {};
-  // The allowed set for one platform key: program partial ∩ org partial (either
-  // absent = no restriction from that level). null = fully unrestricted.
-  const allowedFor = (key: string): Set<string> | null => {
-    const prog = featureAccess[key]?.capabilities;
-    const org = orgAccess[key]?.capabilities;
-    if (prog && org) return new Set(prog.filter((c) => org.includes(c)));
-    if (prog) return new Set(prog);
-    if (org) return new Set(org);
-    return null;
-  };
-  const platformCapSets: Record<string, Set<string>> = {};
-  const platformAllowed: Record<string, Set<string> | null> = {};
-  for (const key of Object.keys(_FEATURE_ACCESS_PROVIDER)) {
-    platformCapSets[key] = new Set(grantableCapabilities(await getCatalogue(_FEATURE_ACCESS_PROVIDER[key])));
-    platformAllowed[key] = allowedFor(key);
-  }
-  return capabilities.filter((id) => {
-    for (const key of Object.keys(_FEATURE_ACCESS_PROVIDER)) {
-      if (platformCapSets[key].has(id)) {
-        // A DISABLED platform grants nothing, regardless of any stale caps sent.
-        if (enabled[key as keyof typeof enabled] === false) return false;
-        const allowed = platformAllowed[key];
-        return allowed ? allowed.has(id) : true;
-      }
-    }
-    return true; // not a platform capability → unaffected
-  });
-}
-
 offeringsRouter.get("/programs/:program_id/roles", async (c) => {
   const user = await getCurrentUser(c);
   if (!dbEnabled()) throw new HttpError(501, "This feature requires the database backend");
@@ -1011,7 +972,7 @@ offeringsRouter.post("/programs/:program_id/roles", async (c) => {
   // profile-id mismatch (the FK targets profiles.id).
   const perms = _permsWithinFeatures(req.perms, program.features);
   const validCaps = req.capabilities !== undefined
-    ? await _clampCapsToProvisioning(
+    ? await clampCapsToProvisioning(
         program,
         await validGrantsAcross(_programRoleCatalogues(programId), req.capabilities),
       )
@@ -1054,7 +1015,7 @@ offeringsRouter.patch("/roles/:role_id", async (c) => {
     // Program roles: also clamp to the program's Partial provisioning envelope.
     if (existing.program_id) {
       const program = await db.getProgram(existing.program_id as string);
-      if (program) validCaps = await _clampCapsToProvisioning(program, validCaps);
+      if (program) validCaps = await clampCapsToProvisioning(program, validCaps);
     }
     const base = (perms ?? (existing.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
     perms = { ...base, capabilities: validCaps };

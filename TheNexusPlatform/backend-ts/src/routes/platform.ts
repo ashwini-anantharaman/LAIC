@@ -27,6 +27,7 @@ import * as graph from "../db/orgGraphRepo";
 import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
+import * as provisioning from "../accessCatalogue/provisioning";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
@@ -1002,6 +1003,8 @@ platformRouter.get("/bridge/context", async (c) => {
    * set empty and the coarse bridge role still governs.
    */
   let appCapabilities: string[] = [];
+  // Unset until resolved: absent means "no ceiling known", never "nothing given".
+  let appProvisioned: { enabled: boolean; capabilities: string[] | null } | null = null;
   if (access.partnerClub && access.partnerProgramId) {
     try {
       const clubProgram = await db.getProgram(access.partnerProgramId);
@@ -1037,6 +1040,11 @@ platformRouter.get("/bridge/context", async (c) => {
         programRoleCapabilities: granted,
       });
       appCapabilities = resolved.capabilities;
+      // The org's CEILING, separate from the role's grants — canCreateChallenge
+      // falls back to a coarse "a mentor may create" rule when the grants are
+      // empty, and that fallback must not outrank provisioning. See
+      // accessCatalogue/provisioning.ts.
+      appProvisioned = await provisioning.appProvisioning(access.partnerProgramId);
     } catch (e) {
       console.error("bridge/context app-capability resolution failed (using empty set):", e);
     }
@@ -1121,6 +1129,8 @@ platformRouter.get("/bridge/context", async (c) => {
     nexus_club_program_id: access.partnerProgramId ?? null,
     /** The club role's APP capabilities — empty/absent for a non-club caller. */
     nexus_app_capabilities: appCapabilities,
+    nexus_app_enabled: appProvisioned ? appProvisioned.enabled : undefined,
+    nexus_app_provisioned_capabilities: appProvisioned ? appProvisioned.capabilities : undefined,
     program_name: access.programName,
     role_name: roleName,
   });
@@ -1806,12 +1816,23 @@ platformRouter.get("/club-app/context", async (c) => {
     // A bad role or catalogue must never lock someone out of the app entirely.
     console.error("club-app/context capability computation failed (using empty set):", e);
   }
+  // The org's CEILING, sent as its own fact. The app cannot derive it from
+  // `capabilities` above: an empty set there means "no fine role" (and the app
+  // falls back to coarse behaviour), while an admin skips capabilities entirely.
+  // Provisioning has to be enforceable in both of those cases. See
+  // provisioning.ts → appProvisioning.
+  const ceiling = await provisioning.appProvisioning(programId).catch(() => ({
+    enabled: true,
+    capabilities: null as string[] | null,
+  }));
   return c.json({
     program_id: programId,
     program_name: programName,
     role_name: result.roleName,
     capabilities: result.capabilities,
     is_admin: structuralTier,
+    app_enabled: ceiling.enabled,
+    provisioned_capabilities: ceiling.capabilities,
   });
 });
 

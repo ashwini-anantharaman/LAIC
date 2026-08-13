@@ -88,6 +88,29 @@ function clubAppCapabilities(context: NexusBridgeContext): string[] | null {
 }
 
 /**
+ * Is an `app.*` capability within what the ORG provisioned for this club?
+ *
+ * Asked before any role rule, because the rule below falls back to a coarse "a
+ * mentor may create" when a club has authored no app permissions — and that
+ * fallback must not outrank provisioning. Provisioning is the ceiling; roles
+ * distribute beneath it.
+ *
+ * Absence means UNRESTRICTED, matching the server that sends it: a club with no
+ * `feature_access` recorded is provisioned "Full", and an older Nexus sends neither
+ * field. Denial arrives explicitly as `nexus_app_enabled === false`.
+ */
+function withinAppProvisioning(context: NexusBridgeContext, capability: string): boolean {
+  const ext = context as NexusBridgeContext & {
+    nexus_app_enabled?: boolean;
+    nexus_app_provisioned_capabilities?: string[] | null;
+  };
+  if (ext.nexus_app_enabled === false) return false;
+  const provisioned = ext.nexus_app_provisioned_capabilities;
+  if (!Array.isArray(provisioned) || provisioned.length === 0) return true;
+  return provisioned.includes(capability);
+}
+
+/**
  * May this caller create a challenge?
  *
  * Two gates, not one. bridge-access lets every club member reach
@@ -103,6 +126,10 @@ export async function canCreateChallenge(context: NexusBridgeContext): Promise<b
   if (!(await canUse(context, "challenge.create"))) return false;
   const appCaps = clubAppCapabilities(context);
   if (appCaps === null) return true; // not a club caller
+
+  // The org's ceiling first: a club that was not provisioned challenge creation
+  // cannot create, whatever its own roles say and whoever is asking.
+  if (!withinAppProvisioning(context, "app.challenge.create")) return false;
 
   // THREE cases, the same order the app's own `can()` uses — the third is the one
   // that matters. A club role that carries no club-app capabilities at all is not
