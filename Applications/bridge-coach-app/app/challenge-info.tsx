@@ -37,6 +37,7 @@ import {
   respondToChallengeInvite,
   setChallengeArchived,
   type ClubChallenge,
+  describeChallengesError,
 } from "../lib/challenges";
 import { useSelectedClubId } from "../lib/club-context";
 import { confirmDestructive, notify } from "../lib/dialogs";
@@ -77,7 +78,7 @@ export default function ChallengeInfoScreen() {
         if (found) setChallenge(found);
         else setError("This challenge is no longer available.");
       })
-      .catch(() => !cancelled && setError("Couldn't load this challenge."));
+      .catch((e) => !cancelled && setError(describeChallengesError(e)));
     return () => {
       cancelled = true;
     };

@@ -213,6 +213,27 @@ export function getCachedChallenge(programId: string | null, id: string): ClubCh
  * platform's visibility rule allows. `programId` is the selected club — the
  * same program the challenge embeds launch as.
  */
+/**
+ * Why a challenge read failed, in words a tester can act on.
+ *
+ * Both screens used to collapse every failure into "Couldn't load challenges", which
+ * hides the one distinction that matters: the bridge platform maps an access failure
+ * to 404 (never 403), so "this club has no Bridge Platform access" and "that thing is
+ * genuinely missing" arrive identically — and a club with the feature switched off
+ * then looks exactly like club-scoping working correctly.
+ */
+export function describeChallengesError(e: unknown): string {
+  if (!(e instanceof ChallengesError)) return "Couldn't load challenges.";
+  if (e.status === 0) return "Can't reach the bridge platform.";
+  if (e.status === 401) return "Your session expired — sign in again.";
+  if (e.status === 404 || e.status === 403) {
+    // The platform's 404-for-forbidden. Naming the club is the fastest way to see
+    // that it is THIS club that lacks access, not the app that is broken.
+    return "This club doesn't have Bridge Platform access — turn it on in Nexus under the club's Features.";
+  }
+  return `Couldn't load challenges (${e.status}).`;
+}
+
 export async function fetchClubChallenges(
   token: string,
   programId: string | null,

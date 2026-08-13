@@ -323,19 +323,42 @@ export default function ClubScreen() {
    * back to the app's own Challenges screen rather than captioning a tile with an
    * invention.
    */
-  const [pinned, setPinned] = useState<{
+  const [loaded, setPinned] = useState<{
+    /** WHICH CLUB these two belong to. */
+    clubId: string | null;
     latest: ClubChallenge | null;
     resume: ClubChallenge | null;
-  }>({ latest: null, resume: null });
+  }>({ clubId: null, latest: null, resume: null });
+
+  /**
+   * Only ever render cards belonging to the club on screen.
+   *
+   * This tab does not unmount on a club switch, so the previous club's cards used to
+   * stay up — and because a failed read left them alone (the old comment claimed
+   * otherwise), a club whose Bridge access is switched off showed the OTHER club's
+   * challenge, which then failed to open. It read as scoping working when it was
+   * really one club's data leaking into another's screen.
+   *
+   * Checking the owner here rather than clearing on switch means a stale club's cards
+   * cannot render even for a frame, whatever order the effects run in.
+   */
+  const pinned =
+    loaded.clubId && loaded.clubId === club?.id
+      ? { latest: loaded.latest, resume: loaded.resume }
+      : { latest: null, resume: null };
+
   const loadPinned = useCallback(() => {
     if (!token || !club) return () => {};
+    const forClub = club.id;
     let cancelled = false;
-    fetchClubChallenges(token, club.id)
+    fetchClubChallenges(token, forClub)
       .then((rows) => {
-        if (!cancelled) setPinned(pickPinned(rows));
+        if (!cancelled) setPinned({ clubId: forClub, ...pickPinned(rows) });
       })
       .catch(() => {
-        // Cards still open the Challenges screen; only the captions are lost.
+        // The cards fall back to the app's own Challenges screen, which reports WHY
+        // (see describeChallengesError) — better than a caption from another club.
+        if (!cancelled) setPinned({ clubId: forClub, latest: null, resume: null });
       });
     return () => {
       cancelled = true;

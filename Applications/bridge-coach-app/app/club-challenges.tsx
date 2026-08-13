@@ -50,6 +50,7 @@ import {
   fetchClubChallenges,
   type ChallengeStanding,
   type ClubChallenge,
+  describeChallengesError,
 } from "../lib/challenges";
 import { useSelectedClubId } from "../lib/club-context";
 import { useCan } from "../lib/use-can";
@@ -183,13 +184,13 @@ export default function ClubChallengesScreen() {
             lastActive.current = 0;
           }
         })
-        .catch(() => {
+        .catch((e) => {
           if (cancelled) return;
           // A failed REFRESH keeps what is on screen — it is still true — and says
           // nothing. Only a failed first load has nothing to show.
           if (!fresh) return;
           setAll([]);
-          setLoadError("Couldn't load challenges.");
+          setLoadError(describeChallengesError(e));
         });
       return () => {
         cancelled = true;
