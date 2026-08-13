@@ -64,6 +64,7 @@ export default async function PlayTablePage({
     centreFrame: appearance.centreFrame,
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
+    suitGroups: appearance.suitGroups,
   };
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
@@ -297,6 +298,47 @@ export default async function PlayTablePage({
       label: "Confirm bids",
       value: confirmBids ? "On" : "Off",
       href: settingsHref({ confirm: confirmBids ? undefined : "1" }),
+    },
+    // How a tap resolves, and how a finished trick clears. Both persist per
+    // user like the appearance rows below rather than riding a search param:
+    // they are preferences about how you PLAY, so they should follow you to
+    // the next board and the next device without being in the URL. Each row
+    // cycles its own values — one row per question, as decided.
+    {
+      label: "Playing a card",
+      value:
+        appearance.playMode === "off"
+          ? "One tap"
+          : appearance.playMode === "raise"
+            ? "Tap to lift, tap to play"
+            : "Tap for the suit",
+      action: patchAppearanceAction.bind(null, sessionId, {
+        playMode:
+          appearance.playMode === "off"
+            ? ("raise" as const)
+            : appearance.playMode === "raise"
+              ? ("suit" as const)
+              : ("off" as const),
+      }),
+    },
+    {
+      label: "After a trick",
+      value: appearance.trickPause === "tap" ? "Tap to continue" : appearance.trickPause,
+      action: patchAppearanceAction.bind(null, sessionId, {
+        trickPause:
+          appearance.trickPause === "tap"
+            ? ("1s" as const)
+            : appearance.trickPause === "1s"
+              ? ("2s" as const)
+              : appearance.trickPause === "2s"
+                ? ("3s" as const)
+                : ("tap" as const),
+      }),
+    },
+    {
+      label: "Group suits in hand",
+      value: appearance.suitGroups ? "On" : "Off",
+      action: patchAppearanceAction.bind(null, sessionId, { suitGroups: !appearance.suitGroups }),
     },
     // Appearance quick-toggles (skins design). Each persists per-user via a
     // bound server action; the menu stays open across the re-render. Gated on

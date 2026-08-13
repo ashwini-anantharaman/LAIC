@@ -214,7 +214,10 @@ const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 
  * construction, byte-identical to the pre-skin hard-coded constants above.
  */
 export type ResolvedAppearance = SkinTokens &
-  Pick<TableAppearance, "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius">;
+  Pick<
+    TableAppearance,
+    "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius" | "suitGroups"
+  >;
 
 const DEFAULT_LOOK: ResolvedAppearance = {
   ...resolveSkin("bbo"),
@@ -223,6 +226,9 @@ const DEFAULT_LOOK: ResolvedAppearance = {
   centreFrame: false,
   fanSpread: 56,
   fanRadius: 0,
+  // Off in the fallback look, which is the pre-skin table byte for byte; the
+  // owner's default (on) arrives with a real appearance from the store.
+  suitGroups: false,
 };
 
 /** The centre frame's gold surround (design token, wide/stacked only). */
@@ -704,7 +710,9 @@ export function PlayTable({
   const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW) => (
     <SeatHand
       cards={state.hands[seat]}
-      metrics={m}
+      // The seams are a property of the LOOK, so they ride the metrics bag
+      // rather than becoming a second prop every caller has to thread.
+      metrics={{ ...m, suitGaps: tok.suitGroups }}
       layout="row"
       fanSpread={tok.fanSpread}
       fanRadius={tok.fanRadius}

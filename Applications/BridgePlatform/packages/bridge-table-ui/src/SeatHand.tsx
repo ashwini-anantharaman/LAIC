@@ -26,6 +26,17 @@ export interface SeatHandMetrics {
   overlap?: number;
   /** Font weight for the rank AND the pip. Default 700/400 (the authored look). */
   weight?: number;
+  /**
+   * Draw a gap where one suit ends and the next begins (owner, 2026-08-12).
+   *
+   * The hand has ALWAYS been sorted by suit — this changes nothing about the
+   * order, only whether the seams are visible. Thirteen cards overlapping by
+   * `overlap` read as one continuous strip, so finding where the clubs start
+   * means reading every pip; a gap the width of the overlap turns the same row
+   * into four blocks the eye can count. Off by default so the authored look is
+   * unchanged for every caller that does not ask.
+   */
+  suitGaps?: boolean;
 }
 
 export interface SeatHandProps {
@@ -160,8 +171,16 @@ export function SeatHand({
               style={{
                 position: "relative", display: "block", width: m.w, height: m.h, flex: "none",
                 background: "#fff", border: "1px solid #6b6b6b",
-                borderRadius: i === 0 ? "3px 0 0 3px" : "0 3px 3px 0",
-                marginLeft: i === 0 ? 0 : -(m.overlap ?? 1), padding: 0,
+                // With seams every block has a first card, so the left round
+                // belongs to any card that opens one.
+                borderRadius:
+                  i === 0 || (m.suitGaps && card.suit !== hand[i - 1]!.suit) ? "3px" : "0 3px 3px 0",
+                // A new suit un-overlaps instead of tucking under its
+                // predecessor: the seam is exactly the overlap given back, so
+                // the row grows by three gaps and nothing is re-measured.
+                marginLeft:
+                  i === 0 ? 0 : m.suitGaps && card.suit !== hand[i - 1]!.suit ? 0 : -(m.overlap ?? 1),
+                padding: 0,
                 cursor: on ? "pointer" : "default",
                 // The re-centre offset and the playable lift, composed: the FLIP
                 // owns --btu-dx and React owns the lift, so neither overwrites

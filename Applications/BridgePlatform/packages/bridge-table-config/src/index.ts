@@ -49,6 +49,36 @@ export interface AppearanceOverrides {
   cardBackColor?: string;
 }
 
+/**
+ * How a tap on one of your cards is resolved (owner, 2026-08-12). ONE setting
+ * with three values, not three toggles: they are three answers to the same
+ * question, and a player who has chosen one has no use for another.
+ *
+ *  · `off`   — a tap plays the card.
+ *  · `raise` — a tap lifts it, a second tap plays it. The default: a finger on
+ *              a thirteen-card row is imprecise, and a mis-tap costs a trick.
+ *  · `suit`  — a tap replaces the hand with just the LEGAL cards of that suit,
+ *              which can then be drawn far larger; a second tap plays. Tapping
+ *              the felt puts the whole hand back.
+ */
+export type PlayMode = "off" | "raise" | "suit";
+
+/**
+ * What happens when the fourth card lands (owner, 2026-08-12, after BBO).
+ * `tap` is the default and waits for you — the trick sits there until you touch
+ * the felt, so a trick is never swept away before you have read it. The timed
+ * values are for watching rather than playing.
+ */
+export type TrickPause = "tap" | "1s" | "2s" | "3s";
+
+/** Milliseconds a finished trick holds, or null when it waits for a tap. */
+export const TRICK_PAUSE_MS: Record<TrickPause, number | null> = {
+  tap: null,
+  "1s": 1000,
+  "2s": 2000,
+  "3s": 3000,
+};
+
 /** A user's full table appearance choice — the persisted read model. */
 export interface TableAppearance {
   skin: SkinName;
@@ -57,6 +87,15 @@ export interface TableAppearance {
   centreFrame: boolean;
   fanSpread: number;
   fanRadius: number;
+  /** How a tap on your own card resolves. */
+  playMode: PlayMode;
+  /** How a completed trick clears. */
+  trickPause: TrickPause;
+  /**
+   * Draw a gap between the suits in a held hand. The order never changes — the
+   * hand has always been sorted, and this only makes the seams visible.
+   */
+  suitGroups: boolean;
   overrides: AppearanceOverrides;
 }
 
@@ -108,7 +147,14 @@ const OVERRIDE_KEYS: readonly (keyof AppearanceOverrides)[] = [
   "cardBackColor",
 ];
 
-/** The built-in appearance: bbo, row hands, grid pad, no frame, no overrides. */
+/**
+ * The built-in appearance: bbo, row hands, grid pad, no frame, no overrides.
+ *
+ * The interaction defaults are SAFE rather than fast (owner, 2026-08-12): a
+ * new player should not lose a card to a mis-tap on their first board, and an
+ * experienced one can turn the rails off in two taps. `playMode` therefore
+ * starts at `raise` and the trick waits for you.
+ */
 export const DEFAULT_APPEARANCE: TableAppearance = {
   skin: RAW.defaults.skin,
   handLayout: RAW.defaults.handLayout,
@@ -116,6 +162,9 @@ export const DEFAULT_APPEARANCE: TableAppearance = {
   centreFrame: RAW.defaults.centreFrame,
   fanSpread: RAW.defaults.fanSpread,
   fanRadius: RAW.defaults.fanRadius,
+  playMode: "raise",
+  trickPause: "tap",
+  suitGroups: true,
   overrides: {},
 };
 
@@ -204,6 +253,16 @@ export function normalizeAppearance(input: unknown): TableAppearance {
       typeof o.centreFrame === "boolean" ? o.centreFrame : DEFAULT_APPEARANCE.centreFrame,
     fanSpread: normalizeSpread(o.fanSpread),
     fanRadius: normalizeRadius(o.fanRadius),
+    playMode:
+      o.playMode === "off" || o.playMode === "raise" || o.playMode === "suit"
+        ? o.playMode
+        : DEFAULT_APPEARANCE.playMode,
+    trickPause:
+      o.trickPause === "tap" || o.trickPause === "1s" || o.trickPause === "2s" || o.trickPause === "3s"
+        ? o.trickPause
+        : DEFAULT_APPEARANCE.trickPause,
+    suitGroups:
+      typeof o.suitGroups === "boolean" ? o.suitGroups : DEFAULT_APPEARANCE.suitGroups,
     overrides: normalizeOverrides(o.overrides),
   };
 }
