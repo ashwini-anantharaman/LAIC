@@ -26,30 +26,22 @@ alter table bridge_challenges add column if not exists nexus_program_id text;
 alter table bridge_challenges add column if not exists program_organization_id text;
 alter table bridge_challenges add column if not exists scope_level text;
 
--- Backfill: every challenge created before this migration is attributed to ONE
--- club, by owner direction. There is nothing on the old rows to infer a club
--- from — no program, and invites can span clubs — so this is a decision, not a
--- derivation, and it is recorded here rather than run by hand so the ledger keeps
--- it to exactly one execution.
+-- NO BACKFILL HERE, deliberately.
 --
--- The guard is deliberate: the column is text, so an unreplaced placeholder would
--- otherwise be stored happily and attribute every challenge to a club that does
--- not exist. Failing loudly is the cheaper mistake, and apply.mjs runs each
--- migration in one transaction, so a raise leaves nothing behind.
-do $$
-declare
-  club_program_id text := 'REPLACE_WITH_CLUB_PROGRAM_ID';
-begin
-  if club_program_id = 'REPLACE_WITH_CLUB_PROGRAM_ID' then
-    raise exception
-      '0029 needs the club program id for the backfill. Replace the placeholder in this migration first.';
-  end if;
-
-  update bridge_challenges
-     set nexus_program_id = club_program_id,
-         scope_level = 'program'
-   where nexus_program_id is null;
-end $$;
+-- Which club owns the challenges that already exist is a human decision — there is
+-- nothing on those rows to derive it from (no program, and invites can span clubs) —
+-- and a schema change should not wait on it. Leaving them NULL is safe: NULL reads as
+-- unscoped, so they keep behaving exactly as they do today, visible to whoever was
+-- invited, while everything created from now on is scoped to its club.
+--
+-- Attribute them whenever you like, with this (see db/README or the plan):
+--
+--   update bridge_challenges
+--      set nexus_program_id = '<club program id>', scope_level = 'program'
+--    where nexus_program_id is null;
+--
+-- Resolving the club by name was the alternative and was rejected: this tree's
+-- migrations must apply to a bridge-only database, and `programs` is a Nexus table.
 
 -- The read path: a club's challenges, newest first — matching how the summary and
 -- the "latest challenge" resolver already order them.
