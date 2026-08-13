@@ -6,8 +6,17 @@
 // Bridge Bird's own clothes: a cream card on a dimmed table, Neco heading,
 // the app's pill buttons — green for the safe path, maroon for the
 // destructive one, a quiet text row to stay put.
+//
+// An IN-TREE overlay, deliberately NOT a react-native Modal (2026-08-13):
+// on the new architecture, dismissing a native Modal in the same commit
+// that unmounts the quit pull-out, mounts the discard cover and navigates
+// the WebView crashed the app outright on the phone — a native dismissal
+// race, invisible on web where Modal is just a div. The dialog rides over
+// a full-screen embed anyway, so a plain absolute-fill view (the same way
+// the discard cover already layers over the WebView) asks the identical
+// question with no native modal window to race.
 
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { Brand, Fonts, Radius } from "../constants/theme";
 
@@ -25,54 +34,56 @@ export function LeaveBoardDialog({
   /** Close the dialog and stay at the table. */
   onStay: () => void;
 }) {
+  if (!visible) return null;
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onStay}>
-      {/* Tapping the dim felt means "I didn't mean it" — same as Stay. */}
-      <Pressable style={styles.backdrop} onPress={onStay}>
-        {/* The card itself swallows its taps so a mis-aimed press on the
-            padding never dismisses the question. */}
-        <Pressable style={styles.card} onPress={() => {}}>
-          <Text style={styles.title}>Leave this board?</Text>
-          <Text style={styles.body}>
-            You haven't finished it. Save your progress and it will wait for you under Resume.
-          </Text>
+    // Tapping the dim felt means "I didn't mean it" — same as Stay.
+    <Pressable style={[StyleSheet.absoluteFill, styles.backdrop]} onPress={onStay}>
+      {/* The card itself swallows its taps so a mis-aimed press on the
+          padding never dismisses the question. */}
+      <Pressable style={styles.card} onPress={() => {}}>
+        <Text style={styles.title}>Leave this board?</Text>
+        <Text style={styles.body}>
+          You haven't finished it. Save your progress and it will wait for you under Resume.
+        </Text>
 
-          <View style={styles.buttons}>
-            <Pressable
-              onPress={onSave}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.button, styles.save, pressed && styles.pressed]}
-            >
-              <Text style={styles.buttonLabel}>Save for later</Text>
-            </Pressable>
-            <Pressable
-              onPress={onDiscard}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.button, styles.discard, pressed && styles.pressed]}
-            >
-              <Text style={styles.buttonLabel}>Discard board</Text>
-            </Pressable>
-            <Pressable
-              onPress={onStay}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.stay, pressed && styles.pressed]}
-            >
-              <Text style={styles.stayLabel}>Stay at the table</Text>
-            </Pressable>
-          </View>
-        </Pressable>
+        <View style={styles.buttons}>
+          <Pressable
+            onPress={onSave}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.button, styles.save, pressed && styles.pressed]}
+          >
+            <Text style={styles.buttonLabel}>Save for later</Text>
+          </Pressable>
+          <Pressable
+            onPress={onDiscard}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.button, styles.discard, pressed && styles.pressed]}
+          >
+            <Text style={styles.buttonLabel}>Discard board</Text>
+          </Pressable>
+          <Pressable
+            onPress={onStay}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.stay, pressed && styles.pressed]}
+          >
+            <Text style={styles.stayLabel}>Stay at the table</Text>
+          </Pressable>
+        </View>
       </Pressable>
-    </Modal>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   backdrop: {
-    flex: 1,
     backgroundColor: "rgba(42,5,6,0.5)", // the card-shadow maroon, as a scrim
     alignItems: "center",
     justifyContent: "center",
     padding: 26,
+    // Above the quit pull-out (30) and the back chip (20); the WebView is a
+    // plain sibling underneath, exactly as it is for the discard cover.
+    zIndex: 40,
+    elevation: 40,
   },
   card: {
     width: "100%",

@@ -2,6 +2,7 @@ import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
+import { boardDebug } from "./board-debug";
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
 import { leaveWithFade } from "./leave-veil";
@@ -247,6 +248,25 @@ export function BridgeEmbed({
     [escapeTo, leaveOnResults],
   );
 
+  const goBackNow = useCallback(() => {
+    boardDebug("goBackNow", { canGoBack: router.canGoBack() });
+    if (discardTimer.current) {
+      clearTimeout(discardTimer.current);
+      discardTimer.current = null;
+    }
+    // Leaving a table means the board lists just changed (finished, saved,
+    // discarded…) — start the summary refresh NOW so Resume and Play greet
+    // the return with fresh lists instead of a stale-while-revalidate beat.
+    if (token) refreshSummary(token, programId).catch(() => {});
+    // Leave under the veil: the felt (or the discard cover) fades to cream,
+    // and home fades in under it — never a one-frame cut off a WebView.
+    leaveWithFade(() => {
+      boardDebug("veil navigate: back/replace running");
+      if (router.canGoBack()) router.back();
+      else router.replace(backTo ?? "/home");
+    });
+  }, [backTo, token, programId]);
+
   const handleHostMessage = useCallback((data: unknown) => {
     const m = data as {
       type?: unknown;
@@ -266,25 +286,13 @@ export function BridgeEmbed({
       if (maybeEscape(m.href)) return;
       tableState.current = null;
       setAtTable(false);
+      // The discard's landing page reported in — the deletion went through;
+      // leave now instead of waiting out the failsafe (the native WebView
+      // learns this from its url change, the web iframe only from here).
+      if (m.href.includes("discarded=1") && discardTimer.current) goBackNow();
     }
-  }, [maybeEscape]);
+  }, [maybeEscape, goBackNow]);
 
-  const goBackNow = useCallback(() => {
-    if (discardTimer.current) {
-      clearTimeout(discardTimer.current);
-      discardTimer.current = null;
-    }
-    // Leaving a table means the board lists just changed (finished, saved,
-    // discarded…) — start the summary refresh NOW so Resume and Play greet
-    // the return with fresh lists instead of a stale-while-revalidate beat.
-    if (token) refreshSummary(token, programId).catch(() => {});
-    // Leave under the veil: the felt (or the discard cover) fades to cream,
-    // and home fades in under it — never a one-frame cut off a WebView.
-    leaveWithFade(() => {
-      if (router.canGoBack()) router.back();
-      else router.replace(backTo ?? "/home");
-    });
-  }, [backTo, token]);
 
   // While the discard runs, the WebView must stay MOUNTED (unmounting aborts
   // the deletion request) but must show NOTHING: its navigation passes
@@ -296,10 +304,17 @@ export function BridgeEmbed({
   const discardAndLeave = useCallback(() => {
     const t = tableState.current;
     const origin = originRef.current;
+    boardDebug("discardAndLeave", { t, origin });
     // Nothing to discard that we know of — just leave.
     if (!t || !origin) return goBackNow();
     setDiscarding(true);
-    discardTimer.current = setTimeout(goBackNow, 6000);
+    // 12s, not 6: a cold serverless discard (function boot + Nexus context
+    // round trips + the delete) can outlast 6s, and leaving early aborts the
+    // navigation — the board came back to Resume after a "discard".
+    discardTimer.current = setTimeout(() => {
+      boardDebug("discard failsafe fired");
+      goBackNow();
+    }, 12000);
     setUrl(`${origin}/m/table/${encodeURIComponent(t.sessionId)}/discard?_r=${Date.now()}`);
   }, [goBackNow]);
 
@@ -322,6 +337,7 @@ export function BridgeEmbed({
   // navigation instead of a WebView boot, which is this mode's whole point.
   useEffect(() => {
     if (!persistent) return;
+    boardDebug("park effect", { parked });
     if (parked) {
       setUrl("about:blank");
       tableState.current = null;
@@ -342,6 +358,7 @@ export function BridgeEmbed({
   // against loops. Only observable on native.
   const handleUrlChange = useCallback(
     (u: string) => {
+      boardDebug("urlChange", u);
       currentUrl.current = u;
       // A page the app refuses to show — leave for the native screen instead.
       if (maybeEscape(u)) return;
