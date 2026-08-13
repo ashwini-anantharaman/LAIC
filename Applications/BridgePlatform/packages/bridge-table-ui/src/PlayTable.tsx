@@ -104,11 +104,8 @@ const ARM_DELAY_MS = 300;
 const M_TRICK_H = Math.round(M_CARD.h * 1.3);
 const M_TRICK_CARD = { w: Math.round(M_TRICK_H / 1.4), h: M_TRICK_H };
 const M_TRICK_BOX = clusterBox(M_TRICK_CARD);
-/** The phone plate's floor. It still narrows with the hand it labels, but never
-    past what it has to SAY: at two cards left the hand is 104px wide and the
-    plate came out a stub reading "S du…", with the name and the dummy tag both
-    cut off. Wide enough for a badge, a name and a tag at the phone's type. */
-const M_PLATE_MIN = 260;
+/** How many cards a hand is dealt — what the plate is sized against. */
+const M_HAND_FULL = 13;
 
 // ---------------------------------------------------------------------------
 // Phone-tier band constants (Mobile Table.dc.html). The stack's content height
@@ -797,7 +794,7 @@ export function PlayTable({
     width: number | string,
     m: { height?: number; badge?: number; font?: number; tagFont?: number; weight?: number } = {},
   ) => (
-    <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} metrics={m} />
+    <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} onTurn={state.turn === seat && (inPlay || inAuction)} metrics={m} />
   );
 
   /** Seats mode shows each seat's WHOLE bid history — latest call bold. */
@@ -1290,7 +1287,34 @@ export function PlayTable({
     dummyIsStrip && sideSeat ? (
       <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 5px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
         <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
-        {visible[sideSeat] ? (
+        {!visible[sideSeat] ? (
+          /* BEFORE THE LEAD dummy is face down, and the rail used to be a name
+             over an empty column. The cards exist — they are simply not spread
+             yet, which is bridge law, not a layout state — so the rail shows
+             the BACKS. Same stack, same pitch, so nothing jumps when they turn
+             over on the lead. */
+          (() => {
+            const n = state.hands[sideSeat].length;
+            const w = DUMMY_RAIL_W - 18;
+            const h = Math.round(w * 0.42);
+            const pitch = n > 1 ? Math.min(h + 3, Math.max(16, Math.round(340 / n))) : h;
+            return (
+              <div style={{ position: "relative", width: w, height: pitch * Math.max(0, n - 1) + h, flex: "none" }}>
+                {Array.from({ length: n }, (_, i) => (
+                  <span
+                    key={i}
+                    style={{
+                      position: "absolute", left: 0, top: i * pitch, width: w, height: h,
+                      boxSizing: "border-box", background: tok.cardBack,
+                      border: "1px solid rgba(255,255,255,.55)", borderRadius: 4,
+                      boxShadow: "0 2px 4px rgba(0,0,0,.4)", zIndex: i + 1,
+                    }}
+                  />
+                ))}
+              </div>
+            );
+          })()
+        ) : (
           /* CARDS, not a list of ranks (owner, 2026-08-13). The rail used to
              print "♦ A" as text, which read as a scoreboard rather than a hand
              and left most of a tall strip empty; a leaning stack of real card
@@ -1328,7 +1352,7 @@ export function PlayTable({
               </div>
             );
           })()
-        ) : null}
+        )}
       </div>
     ) : null;
 
@@ -1382,10 +1406,22 @@ export function PlayTable({
 
   /** Your hand's rendered width on the phone: an overlapping row of faces, or
       the butted strip of backs (SeatHand's 1.5px separators + its 2px frame). */
-  const phoneHandN = Math.max(1, state.hands.S.length);
+  /**
+   * The plate's width, and it does NOT move (owner, 2026-08-13: "why does the
+   * nameplate shrink with the cards. it should be the same size").
+   *
+   * It used to span the hand's ACTUAL width, which narrows by a pitch on every
+   * card played — so the label under your hand crept inward all board and ended
+   * as a stub. A floor was added first and was the wrong shape of fix: it only
+   * moved where the shrinking stopped. The plate is sized against a FULL hand
+   * instead, so it is the same object on trick one and trick thirteen.
+   *
+   * Computed with the hand's own geometry rather than a literal, so a change to
+   * the card, the overlap or the seams keeps the two agreeing.
+   */
   const phoneHandW = visible.S
-    ? M_CARD.w + (phoneHandN - 1) * M_PITCH
-    : Math.round(M_CARD.backW * phoneHandN + 1.5 * (phoneHandN - 1)) + 4;
+    ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
+    : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
   // The stage is a fixed 720-wide column at the fixed-point scale; its content
@@ -1478,13 +1514,9 @@ export function PlayTable({
                 ? fanHand("S", M_CARD)
                 : cardRow("S", M_CARD)
               : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {/* The plate spans the hand it labels — the hand's ACTUAL rendered
-                width, which is the overlapping row's pitch face-up and a strip
-                of butted backs face-down (the old 390 was neither). It still
-                narrows as cards are played, but never below what it has to say:
-                at the end of a board the hand is one card wide. Bold name/tag:
-                the phone plate reads through the stage scale. */}
-            {plate("S", Math.max(M_PLATE_MIN, phoneHandW), { weight: 700 })}
+            {/* The plate spans a FULL hand, not the hand as it stands — see
+                phoneHandW. Bold name/tag: it reads through the stage scale. */}
+            {plate("S", phoneHandW, { weight: 700 })}
           </div>
         </div>
       </div>

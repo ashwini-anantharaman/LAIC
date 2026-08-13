@@ -226,34 +226,18 @@ function FaceCard({ card, box, seat, origin }: Readonly<{ card: Card; box: { w: 
   );
 }
 
-/** Which way the empty-slot arrow points: away from the centre, at its seat. */
-const ARROW: Record<Seat, string> = { N: "▲", E: "▶", S: "▼", W: "◀" };
 
-/** Whose turn it is, as an ARROW pointing at the seat rather than a bar that
-    only marked a position (owner, 2026-08-12). It sits in that seat's empty
-    slot, so it points outward from the centre at the player who owes a card. */
-function TurnArrow({ seat, box, onTurn }: Readonly<{ seat: Seat; box: { w: number; h: number }; onTurn: boolean }>) {
-  return (
-    <span
-      data-testid="turn-arrow"
-      data-seat={onTurn ? seat : undefined}
-      style={{
-        display: "flex",
-        width: box.w,
-        height: box.h,
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: Math.round(box.w * 0.42),
-        lineHeight: 1,
-        color: "rgba(255,255,255,.78)",
-        textShadow: "0 1px 3px rgba(0,0,0,.5)",
-        opacity: onTurn ? 1 : 0,
-        transition: "opacity 160ms ease",
-      }}
-    >
-      {ARROW[seat]}
-    </span>
-  );
+/**
+ * A seat that has not played yet: space, and nothing else.
+ *
+ * This slot used to hold an arrow pointing outward at the seat that owed a
+ * card. The owner turned it down on seeing it (2026-08-13) — at phone scale it
+ * was an 8px glyph that read as a stray mark, and it was a SECOND thing to
+ * decode about a seat. Whose turn it is now lights the object that already
+ * names that seat: their plate, or their badge on the felt's edge.
+ */
+function EmptySlot({ box }: Readonly<{ box: { w: number; h: number } }>) {
+  return <span style={{ display: "block", width: box.w, height: box.h }} />;
 }
 
 export function TrickArea({
@@ -312,7 +296,7 @@ export function TrickArea({
                   // re-render of the same card must not replay the animation.
                   <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} />
                 ) : (
-                  <TurnArrow seat={seat} box={card} onTurn={seat === turn} />
+                  <EmptySlot box={card} />
                 )}
               </div>
             );
@@ -349,7 +333,7 @@ export function TrickArea({
               {play ? (
                 <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={CARD} seat={seat} />
               ) : (
-                <TurnArrow seat={seat} box={CARD} onTurn={seat === turn} />
+                <EmptySlot box={CARD} />
               )}
             </div>
           );

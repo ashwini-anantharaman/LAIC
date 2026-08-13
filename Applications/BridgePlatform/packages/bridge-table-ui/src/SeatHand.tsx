@@ -103,22 +103,42 @@ export interface SeatHandProps {
 function useHandSlide(keys: readonly string[]) {
   const nodes = useRef(new Map<string, HTMLButtonElement | null>());
   const lastX = useRef(new Map<string, number>());
+  // WHICH CARDS, not how many times React rendered. This effect used to run on
+  // every commit, and the table re-renders freely while a slide is in flight —
+  // the optimistic board settles, the hand arms, the server's refresh lands. On
+  // each of those it re-measured a card that was PART WAY through its slide,
+  // took that animated position for the truth, and started a fresh slide from
+  // it. Thirteen cards each doing that a few times is the shake (owner,
+  // 2026-08-13: "all the cards shake for a split second").
+  const sig = keys.join(",");
   useLayoutEffect(() => {
     const reduce =
       typeof window !== "undefined" &&
       typeof window.matchMedia === "function" &&
       window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // Land any offset still in flight BEFORE measuring, so what we read is
+    // where the card actually belongs rather than where it happens to be.
+    // One write pass, then one read pass: the reflow is paid once.
     for (const key of keys) {
       const el = nodes.current.get(key);
       if (!el) continue;
-      const now = el.getBoundingClientRect().left;
+      el.style.transition = "none";
+      el.style.setProperty("--btu-dx", "0px");
+    }
+    for (const key of keys) {
+      const el = nodes.current.get(key);
+      if (!el) continue;
+      const r = el.getBoundingClientRect();
+      const now = r.left;
       const was = lastX.current.get(key);
       lastX.current.set(key, now);
-      if (was == null || Math.abs(was - now) < 0.5 || reduce) continue;
+      if (was == null || Math.abs(was - now) < 0.5 || reduce) {
+        el.style.transition = "";
+        continue;
+      }
       // rect/offset is the stage's cumulative scale; guard the degenerate case.
-      const k = el.offsetWidth > 0 ? el.getBoundingClientRect().width / el.offsetWidth : 1;
+      const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
       el.style.setProperty("--btu-dx", `${(was - now) / (k || 1)}px`);
-      el.style.transition = "none";
       void el.offsetWidth; // commit the start frame before re-enabling motion
       el.style.transition = "";
       el.style.setProperty("--btu-dx", "0px");
@@ -130,7 +150,8 @@ function useHandSlide(keys: readonly string[]) {
         nodes.current.delete(key);
       }
     }
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sig]);
   return nodes;
 }
 

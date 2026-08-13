@@ -29,6 +29,24 @@ async function openTableSession(page: Page): Promise<string> {
   return sid;
 }
 
+/**
+ * A FRESH board with a human South, for the interaction tests below.
+ *
+ * Deliberately not `openTableSession`: that one takes Quickplay OR a Resume
+ * link, whichever the DOM offers first, and a resumed board can be one where
+ * South is dummy or the play is nearly over — so a test that needs to play a
+ * card from South's hand failed about half the time on the resume. Dealing
+ * fresh always starts at the auction with South able to bid it out.
+ */
+async function freshHumanTable(page: Page): Promise<void> {
+  await page.goto("/bridge/table");
+  const quick = page.getByRole("button", { name: /Quickplay|Deal a fresh board/ }).first();
+  if (await quick.count()) await quick.click();
+  else await page.getByRole("link", { name: /^Resume / }).first().click();
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+}
+
 test.describe("mobile table v3 — phone tier", () => {
   test("coach panel, no toolbar overflow, and a reachable ⋯ popover", async ({ page }) => {
     await page.context().clearCookies();
@@ -589,14 +607,7 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
-    await page.goto("/bridge/table");
-    await page
-      .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
-      .or(page.getByRole("link", { name: /^Resume / }))
-      .first()
-      .click();
-    await page.waitForURL(/\/bridge\/table2?\/bs_/);
-    await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+    await freshHumanTable(page);
 
     // Playability is cursor:pointer + an armed handler, not an attribute.
     const armed = (q: string) =>
@@ -658,14 +669,7 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
-    await page.goto("/bridge/table");
-    await page
-      .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
-      .or(page.getByRole("link", { name: /^Resume / }))
-      .first()
-      .click();
-    await page.waitForURL(/\/bridge\/table2?\/bs_/);
-    await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+    await freshHumanTable(page);
 
     const leftmostArmed = (q: string) =>
       page
@@ -721,5 +725,57 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(Math.abs(first.x), "and sideways at the card, not the middle").toBeGreaterThan(40);
     expect(Math.abs(last.y), "and settles into its slot").toBeLessThan(6);
     expect(Math.abs(last.x), "and settles into its slot").toBeLessThan(6);
+  });
+
+  // The plate under your hand is ONE SIZE all board (owner, 2026-08-13, having
+  // raised it twice: "why does the nameplate shrink with the cards. it should be
+  // the same size"). It used to span the hand's actual width, so it crept inward
+  // by a pitch on every card played; a floor was tried first and only moved
+  // where the shrinking stopped, which is why this is pinned by width equality
+  // rather than by a minimum.
+  test("the seat plate is the same width all board", async ({ page }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await freshHumanTable(page);
+
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+    const plateW = () =>
+      page.evaluate(() => {
+        const el = document.querySelector(
+          '[data-testid="phone-stage"] [data-testid="seat-plate"][data-seat="S"]',
+        );
+        return el ? Math.round(el.getBoundingClientRect().width) : -1;
+      });
+
+    const widths: number[] = [];
+    for (let round = 0; round < 4; round++) {
+      let card: string | null = null;
+      for (let i = 0; i < 120 && !card; i++) {
+        card = await armed('button[aria-label^="Play "]');
+        if (card) break;
+        if (await armed('button[aria-label="Pass"]'))
+          await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(250);
+      }
+      if (!card) break;
+      widths.push(await plateW());
+      // `raise` is the default, so two taps.
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(150);
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(1400);
+    }
+    expect(widths.length, "several cards were played").toBeGreaterThan(2);
+    expect(widths.every((w) => w > 0), "the plate was found each time").toBe(true);
+    expect(new Set(widths).size, `one width all board, saw ${JSON.stringify(widths)}`).toBe(1);
   });
 });
