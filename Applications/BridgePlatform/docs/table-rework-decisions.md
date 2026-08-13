@@ -27,8 +27,14 @@ alternative they turned down, so it wants replacing rather than tuning.
 
 - **Last played on top.** z-order is play order, so the lead ends up furthest
   back. No lead marker.
-- **1.3× the hand card** (~73×104 against the hand's 96-tall card; cluster box
-  ~146×208). Band has ~565 units, compass ~192, so this fits.
+- **1.3× the hand card** — on HEIGHT. Shipped: card **89×125** against the
+  hand's 56×96, cluster box **191×250**. Band has ~565 units, so this fits.
+  - The width is NOT the hand's width scaled. A hand card is a tall 1:1.71
+    sliver because it is only ever seen as an index strip under its neighbour;
+    a trick card is seen whole and takes a real card's 1:1.4. Scaling the
+    hand's ratio gives ~73×104 — the first attempt, in which a two-glyph "10"
+    spanned nearly the full width and spilled out of the corner the layout
+    promises to keep clear. Do not "restore" those numbers.
   - REVERSES an earlier instruction ("the cards in the middle shouldn't be
     larger than the cards in the hands", 2026-08-11). Owner reversed it
     explicitly: "undo the change of making the cards in the trick area the same
