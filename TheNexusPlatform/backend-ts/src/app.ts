@@ -7,6 +7,7 @@ import { HttpError } from "./httpError";
 import { verifyToken } from "./auth";
 import { dbEnabled } from "./db/client";
 import { runWithRequestContext } from "./db/requestContext";
+import { friendsRouter } from "./routes/friends";
 import { gameRouter } from "./routes/game";
 import { hookRouter } from "./routes/hook";
 import { offeringsRouter } from "./routes/offerings";
@@ -106,6 +107,8 @@ export function createApp(): Hono {
   // see routes/publicContent.ts for what keeps that safe.
   app.route("/api/public", publicRouter);
   app.route("/api/platform", platformRouter);
+  // Friends are person-to-person, not club-scoped — its own router for that reason.
+  app.route("/api/friends", friendsRouter);
   app.route("/api/hook", hookRouter);
   app.route("/api/game", gameRouter);
   app.route("/api", offeringsRouter);

@@ -52,6 +52,17 @@ const NAMES = {
   "icon-menu.svg": "ICON_MENU",
   "icon-birdglyph.svg": "ICON_BIRD_GLYPH",
   "icon-pin.svg": "ICON_PIN",
+  // Friends (Figma 851:434). The bell is the notification glyph only — its
+  // count badge is a live number, so it is drawn as a view, not baked in here.
+  // Recovered as SOURCES: these three had been hand-added straight into the
+  // generated file, so the next regeneration silently dropped them.
+  "icon-activity-doc.svg": "ICON_ACTIVITY_DOC",
+  "icon-activity-add.svg": "ICON_ACTIVITY_ADD",
+  "icon-archive-box.svg": "ICON_ARCHIVE_BOX",
+  "icon-friends.svg": "ICON_FRIENDS",
+  "icon-friend-add.svg": "ICON_FRIEND_ADD",
+  "icon-bell.svg": "ICON_BELL",
+  "icon-search.svg": "ICON_SEARCH",
 };
 
 const TRUNK_FILL = "#421313";

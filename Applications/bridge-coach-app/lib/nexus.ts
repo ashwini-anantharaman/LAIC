@@ -21,7 +21,10 @@ export class NexusError extends Error {
   }
 }
 
-async function request<T>(
+// Exported so feature modules (lib/friends.ts) reuse the token handling, the
+// single refresh-and-retry, and the NexusError mapping rather than re-implementing
+// them per feature — which is how two call sites end up disagreeing about a 401.
+export async function request<T>(
   path: string,
   options: {
     method?: string;
