@@ -2115,11 +2115,26 @@ platformRouter.put("/learning/objects", async (c) => {
   const user = await getCurrentUser(c);
   const body = (await c.req.json()) as Row;
   const access = await resolvePlatformAccess(user, "learning", (body.program_id as string) ?? c.req.query("program_id") ?? null);
+  // Writing content requires content-author access, the same test its neighbours
+  // apply (/bridge-library above, /share below). This route had NO level check at
+  // all, so a `view`-level learner could upsert any object into the program — and
+  // because the repo's conflict clause rewrites owner_id from the payload, could
+  // also take authorship of someone else's work.
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
-  await graph.upsertLearningObject(access.orgId, body, access.programId);
+  const wrote = await graph.upsertLearningObject(access.orgId, body, access.programId);
+  if (!wrote) {
+    // The id exists, in this org or another, under a different program. Refusing is
+    // the point — see upsertLearningObject — but it must SAY so: answering {ok:true}
+    // on a write that matched no rows tells an author their work is saved when it
+    // is not. 409, not 404: the object is there, it is just not theirs to write.
+    throw new HttpError(409, "That object belongs to another program");
+  }
   return c.json({ ok: true });
 });
 

@@ -2846,10 +2846,46 @@ async function _setLearningObjectShared(
   });
 }
 
-/** Insert-or-update one learning object, always stamped to the caller's org. */
-export async function upsertLearningObject(orgId: string, r: Row, programId?: string | null): Promise<void> {
-  await asPrivileged(async (tx) => {
-    await tx.execute(sql`
+/**
+ * Insert-or-update one learning object, always stamped to the caller's org.
+ *
+ * Returns FALSE when nothing was written — the row exists but belongs to another
+ * org or another program. It used to return void, so a refused write reported
+ * success and the route answered `{ok:true}`: an author could be told "saved"
+ * while the update matched zero rows. That is how someone loses an afternoon.
+ *
+ * A row's program is STICKY. Content is club-scoped, so if this could re-stamp
+ * `program_id` then a club member opening a parent-program object and autosaving
+ * it would move that object into their club — out of the parent's library and out
+ * of every sibling club's. `coalesce(existing, excluded)` lets a NULL row be
+ * healed by its first stamp while making a *move* impossible.
+ *
+ * Ownership is likewise not rewritten on update. It was `owner_id =
+ * excluded.owner_id` from the client payload, so whoever saved last owned the
+ * object — which quietly breaks the Studio's "only content you created can be
+ * deleted" rule for the original author.
+ */
+export async function upsertLearningObject(
+  orgId: string,
+  r: Row,
+  programId?: string | null,
+): Promise<boolean> {
+  // An UNKNOWN scope narrows nothing: with no program resolved, fall back to the
+  // org guard alone, exactly as before. Only a caller that knows its program gets
+  // the program predicate.
+  //
+  // The NULL arm is load-bearing and was verified the hard way — with `is not
+  // distinct from` instead, a legacy row whose program_id is null matches nothing,
+  // so the `coalesce` healing below never fires AND every pre-program object
+  // becomes unsaveable: its author gets a 409 on content that works today. Here an
+  // unclaimed row may be adopted (it is invisible to every program-scoped read
+  // until it is, so nobody loses access), while a row that already belongs to a
+  // program matches only its own program and therefore can never be moved.
+  const programGuard = programId
+    ? sql`and (learning_objects.program_id is null or learning_objects.program_id = ${programId})`
+    : sql``;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
       insert into learning_objects
         (id, organization_id, program_id, type, title, owner_id, owner_name, status, scope,
          reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
@@ -2863,14 +2899,19 @@ export async function upsertLearningObject(orgId: string, r: Row, programId?: st
         ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
         coalesce(${r.created_at ?? null}::timestamptz, now()), now())
       on conflict (id) do update set
-        program_id = coalesce(excluded.program_id, learning_objects.program_id),
-        title = excluded.title, type = excluded.type, owner_id = excluded.owner_id,
-        owner_name = excluded.owner_name, status = excluded.status, scope = excluded.scope,
+        -- Sticky: an existing program always wins, a null one gets healed. Never a move.
+        program_id = coalesce(learning_objects.program_id, excluded.program_id),
+        title = excluded.title, type = excluded.type,
+        -- owner_id / owner_name deliberately absent: authorship is set once, on insert.
+        status = excluded.status, scope = excluded.scope,
         reuse_count = excluded.reuse_count, description = excluded.description,
         estimated_time = excluded.estimated_time, blocks = excluded.blocks,
         tags = excluded.tags, source_ids = excluded.source_ids,
         pipeline_draft = excluded.pipeline_draft, updated_at = now()
-      where learning_objects.organization_id = ${orgId}`);
+      where learning_objects.organization_id = ${orgId}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
   });
 }
 
