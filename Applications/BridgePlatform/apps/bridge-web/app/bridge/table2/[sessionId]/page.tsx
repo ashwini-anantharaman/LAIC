@@ -479,10 +479,18 @@ export default async function PlayTablePage({
     //
     // COACH OFF, EMBEDDED: with no panel below it, a top-anchored table reads
     // as a layout with something missing. The table gets a two-thirds box
-    // centred on the app's own cream (Brand.cream — the home screen's ground,
-    // the veils, the coach's paper) instead — the phone budget scales the
-    // felt to whatever box it is given, so this is composition, not
+    // centred on BLACK (owner direction 2026-08-13, after seeing the cream) —
+    // the felt floating in the dark, theatre-style. The phone budget scales
+    // the felt to whatever box it is given, so this is composition, not
     // squeezing.
+    //
+    // The style override: PlayTable's phone tier paints its own wrapper
+    // layers white, inline. The component belongs to another workbench right
+    // now, so the page blacks out exactly those three wrapper layers from
+    // the outside — !important beats an inline style, and the selectors stop
+    // above mobileStack, whose own felt and cards paint over everything
+    // deeper. Worst case, a structure change under this selector shows a
+    // white patch again; it can never break the table.
     <div
       style={
         embedded
@@ -490,7 +498,7 @@ export default async function PlayTablePage({
               maxWidth: 480,
               height: "100%",
               margin: "0 auto",
-              background: coachOff ? "#fff4d7" : "#fff",
+              background: coachOff ? "#000" : "#fff",
               ...(coachOff
                 ? { display: "flex", flexDirection: "column", justifyContent: "center" }
                 : {}),
@@ -498,7 +506,13 @@ export default async function PlayTablePage({
           : { height: "100%" }
       }
     >
-      <div style={embedded && coachOff ? { height: "68%" } : { height: "100%" }}>
+      {embedded && coachOff && (
+        <style>{`#coach-off-stage > div, #coach-off-stage > div > div, #coach-off-stage > div > div > div { background: #000 !important; }`}</style>
+      )}
+      <div
+        {...(embedded && coachOff ? { id: "coach-off-stage" } : {})}
+        style={embedded && coachOff ? { height: "68%" } : { height: "100%" }}
+      >
       <LivePlayTable
         sessionId={sessionId}
         // The table is shown a COMPLETE board once the auction was the board:
