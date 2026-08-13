@@ -20,10 +20,12 @@
 // screen" from the current route name. The event drives local React state,
 // so the re-render is the host's own.
 //
-// Parked, the page is sent to about:blank — the old board's timers die
-// exactly as an unmount killed them — and the browser stays warm. The board
-// inside is the platform's table2 exactly as before; BridgeEmbed carries all
-// its usual chrome (felt cover, quit pull-out, leave dialog, discard flow).
+// Parked, the host hides and the old page STAYS LOADED with its events
+// dropped — navigating a parked WebView to about:blank crashed the app
+// natively (2026-08-13), so nothing touches the page until the next board
+// replaces it wholesale. The board inside is the platform's table2 exactly
+// as before; BridgeEmbed carries all its usual chrome (felt cover, quit
+// pull-out, leave dialog, discard flow).
 
 import { useNavigationContainerRef } from "expo-router";
 import { useEffect, useReducer, useState } from "react";

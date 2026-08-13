@@ -105,8 +105,9 @@ export function BridgeEmbed({
    * so opening the next board is an in-place navigation of an already-booted
    * browser (warm process, cookies, HTTP + bytecode caches) instead of a
    * fresh WebView paying the whole boot again. `true` = no table screen is
-   * focused right now: the page is sent to about:blank — the old board's
-   * timers stop exactly as an unmount stopped them — and the host hides.
+   * focused right now: the host hides and the old page stays in place with
+   * its events dropped (blanking a parked WebView crashes natively — see
+   * the park effect); every unpark replaces it with a real navigation.
    */
   parked?: boolean;
 }) {
@@ -156,7 +157,12 @@ export function BridgeEmbed({
     const known = peekBridgeOrigin(token, programId);
     if (known) {
       originRef.current = known;
-      setUrl(`${known}${next}`);
+      // Persistent embeds park with the old page LEFT IN PLACE (blanking a
+      // parked WebView crashed the app natively — see the park effect). The
+      // buster makes every unpark a real navigation, even when the next
+      // board's URL matches the page still sitting in the parked WebView.
+      const sep = next.includes("?") ? "&" : "?";
+      setUrl(persistent ? `${known}${next}${sep}_r=${Date.now()}` : `${known}${next}`);
       return;
     }
     try {
@@ -330,30 +336,26 @@ export function BridgeEmbed({
   }, []);
 
   // ── Persistent mode's lifecycle (the table host) ───────────────────────────
-  // Parking sends the page to about:blank: the old board's timers die exactly
-  // as an unmount killed them, while the WebView itself — the booted browser,
-  // its cookies, its HTTP and bytecode caches — stays alive. Unparking loads
-  // the (possibly new) destination into that warm browser: an in-place
-  // navigation instead of a WebView boot, which is this mode's whole point.
+  // Parking LEAVES THE PAGE IN PLACE — hidden, untouchable, its events
+  // dropped (handleUrlChange) — while the WebView, the booted browser, its
+  // cookies and caches all stay alive. Unparking loads the next destination
+  // (cache-busted, so it is always a real navigation) into that warm
+  // browser: an in-place navigation instead of a WebView boot, which is
+  // this mode's whole point.
   //
-  // The blanking WAITS OUT the exit transition (2026-08-13). The phone's
-  // post-mortem strip showed the crash landing right here: park fired the
-  // instant the route popped, so the WebView's source changed while the
-  // screen-pop fade and the veil's reveal were both mid-flight — and that
-  // source-change-during-transition is what killed the app natively (a
-  // browser, with no native transitions, never reproduced it). Every other
-  // reset is safe immediately; only the WebView navigation defers until the
-  // motion has settled (pop fade + veil cover/settle/reveal ≈ 500ms).
-  const parkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The park does NOT blank the page (2026-08-13). It used to navigate to
+  // about:blank so the old board's timers died as an unmount would — and
+  // the phone's crash post-mortem pinned the app's death EXACTLY on that
+  // navigation ("park: about:blank applied" was the last breath, after the
+  // exit transition had already settled; real-URL navigations like the
+  // discard route sailed through the same WebView). Navigating a parked
+  // WebView to about:blank kills the app natively on the new architecture,
+  // so the old page simply stays — its one background actor (AutoAdvance)
+  // ships paused by default, and every unpark replaces it wholesale.
   useEffect(() => {
     if (!persistent) return;
     boardDebug("park effect", { parked });
     if (parked) {
-      parkTimer.current = setTimeout(() => {
-        parkTimer.current = null;
-        boardDebug("park: about:blank applied");
-        setUrl("about:blank");
-      }, 700);
       tableState.current = null;
       setAtTable(false);
       setBoardCover(false);
@@ -363,21 +365,9 @@ export function BridgeEmbed({
       setError(null);
       escaped.current = false;
     } else {
-      // Unparking before the deferred blank landed: cancel it — load() sets
-      // the real destination, and a late about:blank would clobber it.
-      if (parkTimer.current) {
-        clearTimeout(parkTimer.current);
-        parkTimer.current = null;
-      }
       escaped.current = false;
       load();
     }
-    return () => {
-      if (parkTimer.current) {
-        clearTimeout(parkTimer.current);
-        parkTimer.current = null;
-      }
-    };
   }, [persistent, parked, load]);
 
   // The embed session died (bounced to /welcome): re-launch once, guarded
