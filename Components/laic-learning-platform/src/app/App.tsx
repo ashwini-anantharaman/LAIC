@@ -124,7 +124,7 @@ import {
   signOutToNexus,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
-import { defaultScreenForCapabilities } from '../lib/roleAccess';
+import { canAccessScreen, defaultScreenForCapabilities } from '../lib/roleAccess';
 
 /**
  * What a save should do to version history.
@@ -506,7 +506,15 @@ function StudioApp() {
         // program overview. Fall back to the legacy area-perms nav.
         const nav = navItemsForPerms(perms, isAdmin);
         const memberLanding = caps?.length ? defaultScreenForCapabilities(caps) : (nav[0]?.id ?? DEFAULT_SCREEN[r]);
-        setCurrentScreen(isAdmin ? 'admin-overview' : memberLanding);
+        // A launch may name the screen it wants — the club app opens this straight
+        // into the creator from its own + button, and landing on the overview first
+        // would make that button feel like it did nothing. Honoured only when the
+        // person's own access actually exposes that screen, so a URL cannot be a way
+        // in: an unauthorised `screen` falls back to wherever they would have landed.
+        const wanted = bootParams.get('screen');
+        const allowed =
+          wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
+        setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
         if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring

@@ -2720,6 +2720,7 @@ async function _listLearningObjects(
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             program_id::text as program_id,
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
@@ -2765,7 +2766,7 @@ async function _listLearningObjectsMeta(
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, tags, source_ids,
+             description, estimated_time, tags, source_ids, program_id::text as program_id,
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects

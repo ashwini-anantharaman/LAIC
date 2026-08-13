@@ -31,7 +31,7 @@ import {
 import { useAuth } from "../../../lib/auth-context";
 import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
-import { getLearningObjects, primeLearningCache } from "../../../lib/learning";
+import { getLearningObjects, splitByOwner, primeLearningCache } from "../../../lib/learning";
 import { subscribeToLiveLearning } from "../../../lib/learning-live";
 import { LearningObject, NexusError } from "../../../lib/nexus";
 
@@ -112,7 +112,14 @@ export default function LearnScreen() {
         // tutorials, quizzes, flashcard sets and concept cards, and filtering to
         // one of them left most of the library invisible. The server already
         // orders by updated_at desc, so the newest content deals first.
-        setCards(await getLearningObjects(token, { refresh, ...(clubId ? { programId: clubId } : {}) }));
+        const all = await getLearningObjects(token, {
+          refresh,
+          ...(clubId ? { programId: clubId } : {}),
+        });
+        // The CURRICULUM half only. A club read returns club ∪ parent, and the
+        // club's own authored content belongs to the club's surfaces — putting it
+        // here would make one club's material everyone's reading list.
+        setCards(splitByOwner(all, clubId).curriculum);
       } catch (e) {
         // Show the SERVER'S own 403 reason. It distinguishes "this feature is not
         // enabled for the program" (a Features toggle on the club) from "your role
@@ -147,7 +154,9 @@ export default function LearnScreen() {
   useEffect(() => {
     if (!token) return;
     return subscribeToLiveLearning(token, (objects) => {
-      setCards(primeLearningCache(token, clubId ?? undefined, objects));
+      // Same split as the fetch above: a live push must not put club-authored
+      // content on the curriculum shelves that the initial load keeps off them.
+      setCards(splitByOwner(primeLearningCache(token, clubId ?? undefined, objects), clubId).curriculum);
     });
   }, [token, clubId]);
 

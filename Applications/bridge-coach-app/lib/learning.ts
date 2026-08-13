@@ -73,10 +73,88 @@ export function primeLearningCache(token: string, programId: string | undefined,
   return filtered;
 }
 
+/**
+ * Split a club read into its two halves.
+ *
+ * A club's list comes back as club ∪ parent, because a club sees the curriculum
+ * above it as well as its own work. The two are NOT interchangeable on screen:
+ *
+ *   • the Learn tab is the CURRICULUM — the shared library, the same for every
+ *     club, and it stays that way. Club-authored content appearing there would
+ *     mean one club's material silently became everyone's reading list.
+ *   • a club's OWN content belongs to the club's surfaces, where the person who
+ *     made it will look for it.
+ *
+ * Rows from a server that predates `program_id` have none, and count as
+ * curriculum — which is what they were before clubs could author anything.
+ */
+export function splitByOwner(
+  objects: LearningObject[],
+  clubProgramId: string | null | undefined,
+): { curriculum: LearningObject[]; club: LearningObject[] } {
+  if (!clubProgramId) return { curriculum: objects, club: [] };
+  const club: LearningObject[] = [];
+  const curriculum: LearningObject[] = [];
+  for (const o of objects) (o.program_id === clubProgramId ? club : curriculum).push(o);
+  return { curriculum, club };
+}
+
 export function getCachedObject(id: string): LearningObject | null {
   return cached?.objects.find((o) => o.id === id) ?? null;
 }
 
 export function clearLearningCache(): void {
   cached = null;
+}
+
+// ── May this person AUTHOR content for their club? ──────────────────────────
+// The app's own capabilities (`app.*`, from the club-app catalogue) say nothing
+// about the Content Studio, which has its own catalogue. So authoring is gated on
+// the LEARNING context — the same answer the Studio itself uses, which means the
+// console's Features toggles govern the app's + button and the Studio's screens
+// identically rather than by two rules that can disagree.
+
+import type { LearningContext } from "./nexus";
+import { fetchLearningContext } from "./nexus";
+
+/** Cached per token+club: capabilities are per club, and a club switch changes them. */
+let ctxCache: { key: string; value: LearningContext | null } | null = null;
+
+export async function getLearningContext(
+  token: string,
+  clubProgramId: string | null | undefined,
+): Promise<LearningContext | null> {
+  const key = `${token}::${clubProgramId ?? ""}`;
+  if (ctxCache?.key === key) return ctxCache.value;
+  let value: LearningContext | null = null;
+  try {
+    value = await fetchLearningContext(token, clubProgramId ?? undefined);
+  } catch {
+    // Unreachable or forbidden: no authoring offered, and no error surfaced — the
+    // + button simply does not grow a Tutorial entry. A failure here must not break
+    // the screen it sits on.
+    value = null;
+  }
+  ctxCache = { key, value };
+  return value;
+}
+
+export function clearLearningContext(): void {
+  ctxCache = null;
+}
+
+/**
+ * Can they create a learning object here?
+ *
+ * `capabilities` is the server's CLAMPED answer — role grants intersected with what
+ * the org provisioned to this club — so this needs no second opinion. An empty list
+ * means nothing was recorded and authoring is not offered: unlike a club-app gate,
+ * there is no coarse pre-capability behaviour to fall back to, because the app never
+ * offered authoring before.
+ */
+export function canAuthorLearning(ctx: LearningContext | null): boolean {
+  if (!ctx) return false;
+  if (ctx.is_admin) return true;
+  const caps = ctx.capabilities ?? [];
+  return caps.includes("learning.object.create") || caps.includes("learning.composition.create");
 }
