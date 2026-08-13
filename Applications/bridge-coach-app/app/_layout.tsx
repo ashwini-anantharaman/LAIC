@@ -16,6 +16,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AuthProvider, useAuth } from "../lib/auth-context";
 import { ClubProvider } from "../lib/club-context";
 import { LeaveVeilHost } from "../components/leave-veil";
+import { TableWebViewHost } from "../components/table-host";
 import { Brand, Colors } from "../constants/theme";
 
 /** Routes reachable without a session (landing, login, register). */
@@ -96,6 +97,10 @@ export default function RootLayout() {
                 animation: "fade",
               }}
             />
+            {/* THE persistent board WebView — booted once, then re-navigated
+                per board; the table screen just shows/parks it. Above the
+                stack while a board is on stage, under the exits' veil. */}
+            <TableWebViewHost />
           </ClubProvider>
         </AuthGate>
       </AuthProvider>
