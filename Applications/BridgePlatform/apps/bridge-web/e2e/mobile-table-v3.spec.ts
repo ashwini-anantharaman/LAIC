@@ -178,7 +178,7 @@ test.describe("mobile table v3 — phone tier", () => {
   // Reaching play deterministically: seat four robots (a "watch" board — a human
   // seat would stall stepping at its turn) and step via the session API until a
   // mid-trick moment whose dummy isn't South (declarer ≠ N).
-  test("play phase: trick cards are one size and the dummy strip shows a seat name", async ({
+  test("play phase: the trick is bigger than the hand, and the dummy strip shows a seat name", async ({
     page,
   }) => {
     await page.context().clearCookies();
@@ -274,7 +274,19 @@ test.describe("mobile table v3 — phone tier", () => {
           const b = el.getBoundingClientRect();
           // data-seat names the compass point the card was played from, so the
           // geometry below can be asserted per SEAT rather than by guesswork.
-          return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height };
+          // Is this card's INDEX actually unobstructed? Hit-test all four
+          // corners of the rank/pip block: a wide two-glyph "10" can have a
+          // readable middle and a covered edge, so the centre alone lies.
+          const idx = el.firstElementChild;
+          let readable = true;
+          if (idx) {
+            const r = idx.getBoundingClientRect();
+            readable = [
+              [r.left + 1, r.top + 1], [r.right - 1, r.top + 1],
+              [r.left + 1, r.bottom - 1], [r.right - 1, r.bottom - 1],
+            ].every(([x, y]) => el.contains(document.elementFromPoint(x, y)));
+          }
+          return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height, readable };
         });
         // A card in a HAND, to size the trick against. The dummy row and your
         // own hand draw the same M_CARD, so any one of them is the metric.
@@ -321,23 +333,35 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(Math.abs(c0.w - c1.w), "trick card widths equal").toBeLessThanOrEqual(0.6);
     expect(Math.abs(c0.h - c1.h), "trick card heights equal").toBeLessThanOrEqual(0.6);
 
-    // (1d) A trick card is the SAME CARD as one in a hand (owner, 2026-08-11).
-    // The cluster used to magnify to 2.4x, which put a 68x98 card in the middle
-    // of a table whose hands hold 28x65 ones — two decks on one felt. It is
-    // drawn at the hand's metrics now, and only ever scales DOWN to fit a
-    // squeezed band, never up.
+    // (1d) A trick card is BIGGER than a card in the hand — 1.3x on height
+    // (owner, 2026-08-12), reversing the 2026-08-11 rule that the two match.
+    // At hand size the played cards receded: the trick is the one thing every
+    // player is looking at, and it read as four more cards rather than as the
+    // trick. This is the ceiling too — it must never reach the 2.4x magnify
+    // that once put two visibly different decks on one felt.
     expect(tallShot.hand, "a hand card to size the trick against").not.toBeNull();
     const held = tallShot.hand!;
-    expect(c0.w, "a trick card is no wider than a card in the hand").toBeLessThanOrEqual(
-      held.w + 0.6,
-    );
-    expect(c0.h, "a trick card is no taller than a card in the hand").toBeLessThanOrEqual(
-      held.h + 0.6,
-    );
-    expect(
-      Math.abs(c0.w - held.w),
-      "and at the reference phone it MATCHES the hand",
-    ).toBeLessThanOrEqual(1);
+    expect(c0.h / held.h, "a trick card is ~1.3x a hand card's height").toBeGreaterThan(1.15);
+    expect(c0.h / held.h, "and not the 2.4x magnify that made it a second deck").toBeLessThan(1.6);
+    // The RATIO changes with the size and matters as much: a hand card is a
+    // tall 1:1.71 sliver because it is only ever seen as an index strip under
+    // its neighbour, while a trick card is seen whole and takes a real card's
+    // 1:1.4. Scaling the hand's ratio instead produced a card so narrow that a
+    // two-glyph "10" spilled out of the corner reserved to keep it readable.
+    expect(c0.w / c0.h, "a trick card has a real card's proportions").toBeGreaterThan(0.62);
+    expect(c0.w / c0.h, "not the hand's tall sliver").toBeLessThan(0.78);
+
+    // (1f) EVERY CARD SAYS WHAT IT IS. Paint order is play order now (owner,
+    // 2026-08-12), so any card can land over any other and the layout may not
+    // rely on knowing who covers whom. Each card carries its index on the edge
+    // facing away from the centre — N/W top-left, E top-right, S bottom-left —
+    // which is outside the cluster by construction. This asserts the property
+    // itself, on whatever the deal happened to put down, rather than a spacing
+    // ratio that stands in for it: the previous proxy passed while a real "10"
+    // was clipped, and would need rewriting on every geometry change.
+    for (const c of tallShot.cards) {
+      expect(c.readable, `${c.seat}'s rank and pip are not covered by a sibling`).toBe(true);
+    }
 
     // (1e) The board compacts VERTICALLY, never horizontally: the 720-wide stage
     // renders the full width of its region in play, exactly as in the auction.
@@ -361,7 +385,12 @@ test.describe("mobile table v3 — phone tier", () => {
     const pileH =
       Math.max(...tallShot.cards.map((c) => c.y + c.h)) -
       Math.min(...tallShot.cards.map((c) => c.y));
-    expect(pileW, "the compass is two cards wide").toBeLessThanOrEqual(2 * c0.w + 1);
+    // Two cards wide PLUS a seam. The seam (0.15 of a card) is what lets E keep
+    // its index on its outward edge clear of N's and S's bodies, now that paint
+    // order is play order and any card may land over any other.
+    expect(pileW, "the compass is two cards and a seam wide").toBeLessThanOrEqual(
+      2 * c0.w + 0.15 * c0.w + 2,
+    );
     expect(pileH, "and two cards tall").toBeLessThanOrEqual(2 * c0.h + 1);
     expect(
       pileW / tallShot.stage.w,
@@ -398,26 +427,29 @@ test.describe("mobile table v3 — phone tier", () => {
     });
 
     // The compass points themselves, for whichever pairs are down: the flanks
-    // sit half a card outside the N/S column and half a card below N — which
-    // puts their own midline on the seam the vertical pair makes, so each flank
-    // overlaps BOTH neighbours by half a card and the four close into one solid
-    // plus with nothing showing through the middle.
+    // sit half a card-and-seam outside the N/S column and half a card below N —
+    // which puts their own midline on the seam the vertical pair makes, so each
+    // flank overlaps BOTH neighbours and the four close into one solid plus with
+    // nothing showing through the middle. The horizontal offset is half of
+    // (card + seam), not half a card: the seam was added so E's outward index
+    // clears N and S once paint order became play order.
     const bySeat = Object.fromEntries(tallShot.cards.map((c) => [c.seat, c]));
     for (const flank of ["W", "E"] as const) {
       const f = bySeat[flank];
       if (!f) continue;
       if (bySeat.N) {
         expect(
-          Math.abs(Math.abs(f.x - bySeat.N.x) - c0.w / 2),
-          `${flank} flanks the column by half a card`,
+          Math.abs(Math.abs(f.x - bySeat.N.x) - (c0.w + 0.15 * c0.w) / 2),
+          `${flank} flanks the column by half a card and seam`,
         ).toBeLessThanOrEqual(1.5);
-        // The flanks start BELOW the top card's suit pip. Half a card down cut
-        // straight through it, so the leader's card showed a rank with no suit —
-        // the one thing a player reads the trick for. What is protected here is
-        // that property, not the old constant: the flank clears N's index, and
-        // still overlaps N enough to interlock rather than float free.
+        // The flank sits below N's top and above N's bottom — it STRADDLES the
+        // seam rather than sitting beside the column or under it. How far down
+        // is not asserted here: what actually matters is that no index gets
+        // covered, and that is checked directly below for every card on the
+        // felt rather than inferred from an offset ratio.
         const drop = f.y - bySeat.N.y;
-        expect(drop, `${flank} clears N's index`).toBeGreaterThanOrEqual(c0.h * 0.62);
+        expect(drop, `${flank} starts below N's top`).toBeGreaterThan(0);
+        expect(drop, `${flank} straddles the seam rather than clearing N`).toBeLessThan(c0.h);
         expect(drop, `${flank} still overlaps N`).toBeLessThan(c0.h);
       }
       if (bySeat.S) {

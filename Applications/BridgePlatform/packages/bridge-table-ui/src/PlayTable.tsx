@@ -93,13 +93,12 @@ const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
  *
  * The index is sized against the CARD, not against the hand's index, for the
  * same reason: the hand's rank fills its card because that is all you can see
- * of it, whereas on a whole card an index that deep looks like a printing error.
+ * of it, whereas on a whole card an index that deep looks like a printing
+ * error. The face derives its own indexes from the box (TrickArea's FaceCard),
+ * so the only metric handed over is the card itself.
  */
 const M_TRICK_H = Math.round(M_CARD.h * 1.3);
 const M_TRICK_CARD = { w: Math.round(M_TRICK_H / 1.4), h: M_TRICK_H };
-// Sized so the stacked block clears half a card: the flanks sit at h/2, and an
-// index taller than that is clipped by them at the top of N and the bottom of S.
-const M_TRICK_INDEX = { rank: Math.round(M_TRICK_H * 0.30), glyph: Math.round(M_TRICK_H * 0.22) };
 const M_TRICK_BOX = clusterBox(M_TRICK_CARD);
 /** The phone plate's floor. It still narrows with the hand it labels, but never
     past what it has to SAY: at two cards left the hand is 104px wide and the
@@ -814,7 +813,7 @@ export function PlayTable({
       interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
   const trickCluster = (k: number) => (
-    <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} card={M_TRICK_CARD} index={M_TRICK_INDEX} />
+    <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} card={M_TRICK_CARD} />
   );
 
   const resultCard = (

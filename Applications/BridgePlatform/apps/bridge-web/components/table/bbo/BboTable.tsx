@@ -347,8 +347,25 @@ export function BboTable({
   if (state.phase === "play" && trick && trick.plays.length < 5) {
     for (const p of trick.plays) trickCards[p.seat] = p.card;
   }
+  // A played card glides in from its hand's direction (owner, 2026-08-12) —
+  // same contract as the classic table's TrickArea, restated locally because
+  // this is a server component and cannot share the client motion stylesheet.
+  // Keyed on the card so only a NEW card animates; reduced-motion gets none.
   const trickArea = (
     <div className="relative" style={{ width: TRICK, height: TRICK }}>
+      <style>{`
+        @keyframes bbo-glide-N { from { opacity: .25; transform: translateY(-90px) scale(.95); } to { opacity: 1; transform: none; } }
+        @keyframes bbo-glide-S { from { opacity: .25; transform: translateY(90px) scale(.95); } to { opacity: 1; transform: none; } }
+        @keyframes bbo-glide-W { from { opacity: .25; transform: translateX(-110px) scale(.95); } to { opacity: 1; transform: none; } }
+        @keyframes bbo-glide-E { from { opacity: .25; transform: translateX(110px) scale(.95); } to { opacity: 1; transform: none; } }
+        .bbo-glide-N { animation: bbo-glide-N 300ms cubic-bezier(.22,.8,.3,1) both; }
+        .bbo-glide-S { animation: bbo-glide-S 300ms cubic-bezier(.22,.8,.3,1) both; }
+        .bbo-glide-W { animation: bbo-glide-W 300ms cubic-bezier(.22,.8,.3,1) both; }
+        .bbo-glide-E { animation: bbo-glide-E 300ms cubic-bezier(.22,.8,.3,1) both; }
+        @media (prefers-reduced-motion: reduce) {
+          .bbo-glide-N, .bbo-glide-S, .bbo-glide-W, .bbo-glide-E { animation: none; }
+        }
+      `}</style>
       {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
         const pos =
           seat === "N"
@@ -362,7 +379,9 @@ export function BboTable({
         return (
           <div key={seat} className={`absolute ${pos}`}>
             {card ? (
-              <Face card={card} w={CARD_SM} />
+              <span key={`${card.suit}${card.rank}`} className={`block bbo-glide-${seat}`}>
+                <Face card={card} w={CARD_SM} />
+              </span>
             ) : (
               <span
                 className={`block rounded-[4px] border border-dashed ${
