@@ -647,4 +647,79 @@ test.describe("mobile table v3 — phone tier", () => {
     await page.locator(sel).first().click();
     await expect(page.locator(sel)).toHaveCount(0, { timeout: 5000 });
   });
+
+  // The played card travels from WHERE IT SAT (owner, 2026-08-13: "make it
+  // glide from the position of the card in the hand to the middle, not just
+  // from the middle always"). The seat-direction keyframes could only start a
+  // card from a fixed vector, so every South card rose from the same spot.
+  // Playing the LEFTMOST playable card is what makes the horizontal component
+  // provable: a fixed-vector glide has no x at all.
+  test("a played card flies from its place in the hand, not from the middle", async ({ page }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await page.goto("/bridge/table");
+    await page
+      .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
+      .or(page.getByRole("link", { name: /^Resume / }))
+      .first()
+      .click();
+    await page.waitForURL(/\/bridge\/table2?\/bs_/);
+    await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+
+    const leftmostArmed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const live = [...document.querySelectorAll(sel)].filter(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          live.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+          return live.length ? live[0]!.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+
+    let card: string | null = null;
+    for (let i = 0; i < 200 && !card; i++) {
+      card = await leftmostArmed('button[aria-label^="Play "]');
+      if (card) break;
+      if (await leftmostArmed('button[aria-label="Pass"]'))
+        await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(250);
+    }
+    expect(card, "a playable card once the auction is out").toBeTruthy();
+
+    // Sample the trick card's transform every frame, from before it exists.
+    await page.evaluate(() => {
+      const w = window as unknown as { __t: string[] };
+      w.__t = [];
+      const t0 = performance.now();
+      const tick = () => {
+        const el = document.querySelector('[data-testid="trick-card"][data-seat="S"]');
+        if (el) w.__t.push(getComputedStyle(el).transform);
+        if (performance.now() - t0 < 6000) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    // Two taps, because `raise` is the default.
+    await page.locator(`button[aria-label="${card}"]`).first().click();
+    await page.waitForTimeout(120);
+    await page.locator(`button[aria-label="${card}"]`).first().click();
+    await page.waitForTimeout(900);
+
+    const frames = (await page.evaluate(() => (window as unknown as { __t: string[] }).__t))
+      .map((m) => /matrix\(([^)]+)\)/.exec(m)?.[1]?.split(",").map(Number))
+      .filter((a): a is number[] => !!a && a.length === 6)
+      .map((a) => ({ x: Math.round(a[4]!), y: Math.round(a[5]!) }));
+    expect(frames.length, "the card was sampled while it travelled").toBeGreaterThan(2);
+    const first = frames[0]!;
+    const last = frames[frames.length - 1]!;
+    // The hand sits BELOW the trick, so the start offset is positive in y; the
+    // leftmost card is well to the left of its slot, so x is large too. Both are
+    // in the element's own coordinates — the stage scale is divided out.
+    expect(first.y, "it starts down at the hand").toBeGreaterThan(40);
+    expect(Math.abs(first.x), "and sideways at the card, not the middle").toBeGreaterThan(40);
+    expect(Math.abs(last.y), "and settles into its slot").toBeLessThan(6);
+    expect(Math.abs(last.x), "and settles into its slot").toBeLessThan(6);
+  });
 });

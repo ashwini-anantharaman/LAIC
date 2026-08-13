@@ -7,9 +7,9 @@
 // leaf draws the four positions.
 
 import type { Card, Seat } from "@bridge/events";
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { RED, GLYPH, isRed, rankText } from "./tokens";
-import { GLIDE, TableMotion } from "./motion";
+import { FLY, GLIDE, TableMotion } from "./motion";
 
 export interface TrickPlay {
   seat: Seat;
@@ -29,6 +29,57 @@ export interface TrickAreaProps {
    * face draws its OWN indexes from this box — see TrickFace.
    */
   card?: { w: number; h: number };
+  /**
+   * Where this seat's newest card CAME FROM, in viewport pixels — the centre of
+   * the card as it sat in the hand, captured on the tap (owner, 2026-08-13:
+   * "make it glide from the position of the card in the hand to the middle, not
+   * just from the middle always").
+   *
+   * The seat-direction keyframes could only ever start a card from a fixed
+   * vector, so every South card rose from the same spot however far along the
+   * row it had been sitting. With an origin the card starts where your finger
+   * left it. Return null for a seat whose origin is unknowable — a robot's hand
+   * is face down, and it falls back to the keyframe glide.
+   */
+  originOf?: (seat: Seat) => { x: number; y: number } | null;
+}
+
+/**
+ * Travel a card from where it really was to where it now is (FLIP).
+ *
+ * Measured in VIEWPORT space, then divided by the element's own rendered scale:
+ * the whole phone stage is `transform: scale(~0.5)`, so a 30px journey on
+ * screen is 60px in the element's own coordinates and a raw viewport delta
+ * would land the card half way. The ratio comes off the element itself
+ * (`rect.width / offsetWidth`) so it stays correct at any tier without being
+ * told what the scale is — the same trick the hand's gap-closing slide uses.
+ */
+function useFlyFrom(origin: { x: number; y: number } | null | undefined, key: string) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !origin) return;
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const r = el.getBoundingClientRect();
+    const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    const dx = (origin.x - (r.left + r.width / 2)) / (k || 1);
+    const dy = (origin.y - (r.top + r.height / 2)) / (k || 1);
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.style.transition = "none";
+    el.style.opacity = "0.4";
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(.94)`;
+    void el.offsetWidth; // commit the start frame, then let the class animate
+    el.style.transition = "";
+    el.style.opacity = "1";
+    el.style.transform = "none";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return ref;
 }
 
 /**
@@ -122,7 +173,7 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
  * digits run ~0.56em each — and it is capped so the pair stays under half the
  * card's width and can never cross its diagonal twin.
  */
-function FaceCard({ card, box, seat }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat }>) {
+function FaceCard({ card, box, seat, origin }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null }>) {
   const rank = rankText(card.rank);
   const colour = isRed(card.suit) ? RED : "#000";
   const rankSize = Math.round(box.h * 0.26);
@@ -148,11 +199,15 @@ function FaceCard({ card, box, seat }: Readonly<{ card: Card; box: { w: number; 
       <span style={{ fontSize: glyphSize }}>{GLYPH[card.suit]}</span>
     </span>
   );
+  const flyRef = useFlyFrom(origin, `${card.suit}${card.rank}`);
   return (
     <span
+      ref={flyRef}
       data-testid="trick-card"
       data-seat={seat}
-      className={GLIDE[seat]}
+      // A measured origin animates the transform itself (btu-fly); without one
+      // the seat-direction keyframe is the best guess available.
+      className={origin ? FLY : GLIDE[seat]}
       style={{
         position: "relative",
         display: "block",
@@ -207,6 +262,7 @@ export function TrickArea({
   scale = 1,
   variant = "cross",
   card = CARD,
+  originOf,
 }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
@@ -254,7 +310,7 @@ export function TrickArea({
                 {play ? (
                   // Keyed on the card so a NEW card mounts (and glides in); a
                   // re-render of the same card must not replay the animation.
-                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} />
+                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} />
                 ) : (
                   <TurnArrow seat={seat} box={card} onTurn={seat === turn} />
                 )}

@@ -97,6 +97,10 @@ const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
  * error. The face derives its own indexes from the box (TrickArea's FaceCard),
  * so the only metric handed over is the card itself.
  */
+/** The beat before your hand arms — long enough that the played card is well
+    clear of it, short enough that it never feels like lag. */
+const ARM_DELAY_MS = 300;
+
 const M_TRICK_H = Math.round(M_CARD.h * 1.3);
 const M_TRICK_CARD = { w: Math.round(M_TRICK_H / 1.4), h: M_TRICK_H };
 const M_TRICK_BOX = clusterBox(M_TRICK_CARD);
@@ -471,6 +475,19 @@ export function PlayTable({
    */
   const [held, setHeld] = useState<string | null>(null);
   const [openSuit, setOpenSuit] = useState<Suit | null>(null);
+  /**
+   * Your cards do not arm the instant the turn arrives — they wait a beat
+   * (owner, 2026-08-13: "so that it looks planned and not on accident").
+   *
+   * The lift used to appear in the same frame the played card was still
+   * travelling, so twelve cards twitched upward while one was mid-flight and it
+   * read as a glitch. The delay is on the STATE, not the CSS: the lift shares
+   * `transform` with the hand's FLIP slide, so a transition-delay would have
+   * held the gap-closing slide back too. Gating playability also means no card
+   * can be tapped while the previous one is still moving, which is a second
+   * small mercy.
+   */
+  const [handArmed, setHandArmed] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   useEffect(() => {
     setArmed(null);
@@ -691,9 +708,33 @@ export function PlayTable({
 
   /** Per-card playability the play leaves share (the old inline `on`/`live`). */
   const canPlay = (seat: Seat) => (card: Card) =>
-    myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+    myTurn && inPlay && handArmed && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
 
   const cardId = (c: Card) => `${c.suit}${c.rank}`;
+
+  /**
+   * Where each seat's last played card was sitting when it was tapped.
+   *
+   * Captured HERE, in the handler, because this is the last moment the card
+   * still exists in the DOM: the play is optimistic, so by the time the trick
+   * renders the card has already left the hand. The lookup is by the aria-label
+   * the hand leaves on every card — a deal holds each card exactly once, so it
+   * cannot match the wrong one.
+   *
+   * Only the human's own taps have an origin. A robot's hand is face down and
+   * its cards have no position to fly from, so those seats stay null and fall
+   * back to the seat-direction glide.
+   */
+  const origins = useRef<Partial<Record<Seat, { x: number; y: number } | null>>>({});
+  const captureOrigin = (seat: Seat, card: Card) => {
+    if (typeof document === "undefined") return;
+    const el = document.querySelector(
+      `button[aria-label="Play ${rankText(card.rank)}${GLYPH[card.suit]}"]`,
+    );
+    const r = el?.getBoundingClientRect();
+    origins.current[seat] =
+      r && r.width > 0 ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+  };
 
   /**
    * What a tap on a playable card DOES — the one place the play modes live, so
@@ -705,15 +746,19 @@ export function PlayTable({
    * on screen is legal and a tap posts.
    */
   const tapCard = (seat: Seat, card: Card) => {
-    if (playMode === "off") return onPlay?.(seat, card);
+    const post = () => {
+      captureOrigin(seat, card);
+      onPlay?.(seat, card);
+    };
+    if (playMode === "off") return post();
     if (playMode === "suit" && openSuit == null) return setOpenSuit(card.suit);
     if (playMode === "suit") {
       setOpenSuit(null);
-      return onPlay?.(seat, card);
+      return post();
     }
     if (held === cardId(card)) {
       setHeld(null);
-      return onPlay?.(seat, card);
+      return post();
     }
     setHeld(cardId(card));
   };
@@ -729,6 +774,17 @@ export function PlayTable({
     setHeld(null);
     setOpenSuit(null);
   }, [state.turn, state.phase]);
+
+  // Re-armed on every turn change, so the beat lands once per card rather than
+  // once per board.
+  useEffect(() => {
+    if (!(myTurn && inPlay)) {
+      setHandArmed(false);
+      return;
+    }
+    const t = setTimeout(() => setHandArmed(true), ARM_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [myTurn, inPlay, state.turn, state.tricks.length]);
 
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
   const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
@@ -883,7 +939,14 @@ export function PlayTable({
       interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
   const trickCluster = (k: number) => (
-    <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} card={M_TRICK_CARD} />
+    <TrickArea
+      variant="cluster"
+      plays={currentPlays}
+      turn={state.turn}
+      scale={k}
+      card={M_TRICK_CARD}
+      originOf={(seat) => origins.current[seat] ?? null}
+    />
   );
 
   const resultCard = (
@@ -1225,24 +1288,82 @@ export function PlayTable({
    */
   const dummyRailEl =
     dummyIsStrip && sideSeat ? (
-      <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8, padding: "8px 6px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
+      <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 5px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
         <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
-        {visible[sideSeat]
-          ? dummySuitSpans(sideSeat).map((s) => (
-              <div key={s.suit} style={{ display: "flex", alignItems: "flex-start", gap: 3, fontSize: 24, fontWeight: 700, lineHeight: 1.12 }}>
-                <span style={{ flex: "none", color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
-                {/* A wrapping row of nowrap ranks: a long suit runs onto a
-                    second line without ever splitting a "10" down the middle. */}
-                <span style={{ display: "flex", flexWrap: "wrap", minWidth: 0, color: "#f2f6f4" }}>
-                  {s.ranks.map((r, i) => (
-                    <span key={`${r}-${i}`} style={{ whiteSpace: "nowrap" }}>{r}</span>
-                  ))}
-                </span>
+        {visible[sideSeat] ? (
+          /* CARDS, not a list of ranks (owner, 2026-08-13). The rail used to
+             print "♦ A" as text, which read as a scoreboard rather than a hand
+             and left most of a tall strip empty; a leaning stack of real card
+             shapes says "this is a hand" at a glance, and each card still shows
+             its own rank and pip. Overlapped so thirteen fit the band's height
+             — the pitch is derived from what is actually left, so a hand that
+             has been played down spreads out instead of clumping. */
+          (() => {
+            const cards = [...state.hands[sideSeat]].sort(
+              (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
+            );
+            const w = DUMMY_RAIL_W - 18;
+            const h = Math.round(w * 0.42);
+            // Fill the strip: the more cards are gone, the less they overlap.
+            const pitch = cards.length > 1 ? Math.min(h + 3, Math.max(16, Math.round(340 / cards.length))) : h;
+            return (
+              <div style={{ position: "relative", width: w, height: pitch * (cards.length - 1) + h, flex: "none" }}>
+                {cards.map((cd, i) => (
+                  <span
+                    key={`${cd.suit}${cd.rank}`}
+                    style={{
+                      position: "absolute", left: 0, top: i * pitch, width: w, height: h,
+                      boxSizing: "border-box", background: "#fff",
+                      border: "1px solid #6f6f6f", borderRadius: 4,
+                      boxShadow: "0 2px 4px rgba(0,0,0,.4)",
+                      display: "flex", alignItems: "center", gap: 4,
+                      paddingLeft: 6, zIndex: i + 1,
+                      color: isRed(cd.suit) ? RED : "#111",
+                    }}
+                  >
+                    <span style={{ fontSize: Math.round(h * 0.62), fontWeight: 800, lineHeight: 1 }}>{rankText(cd.rank)}</span>
+                    <span style={{ fontSize: Math.round(h * 0.54), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
+                  </span>
+                ))}
               </div>
-            ))
-          : null}
+            );
+          })()
+        ) : null}
       </div>
     ) : null;
+
+  /**
+   * A side opponent, as a small badge on the edge of the felt (owner,
+   * 2026-08-13: the play band "looks completely empty" at the sides).
+   *
+   * On the phone an opponent's hand is not drawn at all, so West and East had
+   * no presence whatsoever — the felt read as a table with two players at it.
+   * The badge is deliberately more than decoration: it carries the seat, the
+   * name, and how many cards that opponent still holds, which is a thing a
+   * player actually tracks and otherwise has to count tricks to know.
+   *
+   * It brightens on that seat's turn, so the two of them also answer "who is
+   * thinking?" — the same question the compass arrow answers, from the edge.
+   */
+  const sideAvatar = (seat: Seat) => {
+    const onTurn = inPlay && state.turn === seat;
+    return (
+      <div
+        key={seat}
+        data-testid="side-avatar"
+        data-seat={seat}
+        style={{ flex: "none", width: 62, alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, opacity: onTurn ? 1 : 0.62, transition: "opacity 240ms ease" }}
+      >
+        <span style={{ width: 42, height: 42, borderRadius: "50%", boxSizing: "border-box", background: onTurn ? SEAT_BADGE : "rgba(0,0,0,.28)", border: onTurn ? "2px solid #f0d78a" : "2px solid rgba(255,255,255,.28)", color: "#fff", fontSize: 21, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {seat}
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[seat]}</span>
+        <span style={{ fontSize: 12, color: "rgba(233,241,237,.75)", whiteSpace: "nowrap" }}>
+          {state.hands[seat].length} left
+        </span>
+      </div>
+    );
+  };
 
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
@@ -1306,6 +1427,10 @@ export function PlayTable({
             centres in what is left. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
           {dummyRailSide === "left" ? dummyRailEl : null}
+          {/* The badge stands in for a seat the phone cannot draw a hand for, so
+              it yields to the dummy rail on that side rather than crowding it,
+              and never appears for the seat whose cards are already on screen. */}
+          {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
           <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
             {/* FOUR reserved call rows, whatever the auction holds: the grid is
                 one fixed object from "You deal" to the last pass, and the fifth
@@ -1326,6 +1451,7 @@ export function PlayTable({
             {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
+          {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
           {dummyRailSide === "right" ? dummyRailEl : null}
         </div>
         {/* Column pad (cell sized from the leftover) OR the level tray — one on
