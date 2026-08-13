@@ -10,11 +10,11 @@ code — which is why they are written down here. The phone-tier e2e
 directly; a change that trips those assertions is contradicting a decision,
 not merely a test.
 
-KNOWN DIVERGENCE AS OF THIS WRITING: `motion.tsx` implements the played-card
-animation as a slide from the seat's direction (`btu-glide-*`, translateY
--150px for North). The owner was shown that option beside the measured flight
-and chose the FLIGHT — see "Motion" below. The slide is the cheaper
-alternative they turned down, so it wants replacing rather than tuning.
+NO DIVERGENCE. An earlier revision of this file said `motion.tsx`'s glide
+(`btu-glide-*`) contradicted the owner's choice and "wants replacing". IT DOES
+NOT — the owner reversed that decision the same day, on seeing it: "yes i want
+the glide my fault for telling you otherwise" (2026-08-12). The glide IS the
+design. Do not replace it with a measured flight.
 
 ## Scope and order
 
@@ -56,10 +56,17 @@ alternative they turned down, so it wants replacing rather than tuning.
 | trick sweep | 200 |
 | arrow moves | 160 |
 
-- **Card flight is a true FLIP** from the tapped card's real position. Must
-  unproject the stage's ~0.5 scale transform or the flight lands short.
-- **Robot cards fly out of their face-down fan** and flip face-up in transit —
-  same mechanism, the fan is already on screen.
+- **The played card GLIDES in from its seat's direction** (`btu-glide-N/S/E/W`
+  in `motion.tsx`) — owner, 2026-08-12, SUPERSEDING the measured-FLIP-flight
+  answer given earlier the same day. The flight was chosen from a description
+  and the glide from the running table, so this later answer is the informed
+  one. A true FLIP is not to be built.
+  - The row below prices the card at 180ms because it was written for the
+    flight; the glide ships at 300ms and has not been re-timed. Ask before
+    changing it — the owner has seen and approved it AT 300ms.
+- Robot cards glide from their seat's direction like any other. (The earlier
+  "fly out of their face-down fan" answer belonged to the flight, which is
+  gone; nothing in the glide needs the fan.)
 - **Trick end: sweep to the winner.** The four cards gather and slide off
   toward the winning seat. Direction IS the answer to "who won".
 - Kill the re-render flicker on card play.
