@@ -1310,76 +1310,85 @@ export function PlayTable({
    * the lead the rail is a name and nothing else: dummy spreads on the lead, and
    * that is bridge law, not a layout preference.
    */
+  /**
+   * The rail's stack geometry, from the band it has to fit in.
+   *
+   * The first version priced the pitch off a constant (340) and drew a
+   * card-shaped tile at 0.42 of the rail's width. Both were wrong at thirteen
+   * cards: the stack came to 362px in a ~303px band, so the bottom of the hand
+   * was simply cut off, and each card's index sat in the middle of a 50px tile
+   * of which only 26px showed — so every rank was sliced in half.
+   *
+   * The strip a covered card SHOWS is the pitch, so that is what the index has
+   * to fit in and what the whole hand has to be divided into. Solve it the
+   * other way round: n cards in the space available, plus a tail for the last
+   * one, which is the only card that shows a whole face.
+   */
+  const railStack = (n: number) => {
+    const w = DUMMY_RAIL_W - 16;
+    // The band, less the seat-name line and the rail's own padding. NO FLOOR:
+    // a floor is a promise to be at least this tall, which is the one promise a
+    // thing inside a squeezed band must not make. The first version floored
+    // both this and the pitch and duly overflowed a 111px rail by 20px.
+    const avail = Math.max(24, feltH - 40);
+    // How much of the LAST card shows beyond the strip — the only card with a
+    // whole face. It yields with everything else when the band is tight.
+    const TAIL = Math.max(6, Math.min(22, Math.round(avail * 0.12)));
+    // Solve for the strip, then the rest follows: n strips plus one tail must
+    // fit. The cap is in AUTHORED units and the stage renders at about half, so
+    // 46 is a card's worth of strip rather than a thin ribbon.
+    const pitch = n > 1 ? Math.max(4, Math.min(46, Math.floor((avail - TAIL) / n))) : 0;
+    const h = n > 1 ? pitch + TAIL : Math.min(Math.round(w * 0.42), avail);
+    return {
+      w, h, pitch,
+      total: pitch * Math.max(0, n - 1) + h,
+      font: Math.round(pitch * 0.74),
+      // Below this the rank is specks, not reading. The rail then says how many
+      // cards dummy holds and nothing more, which is honest — an unreadable
+      // index is worse than a plain stack of edges.
+      showIndex: pitch >= 13,
+    };
+  };
+
   const dummyRailEl =
     dummyIsStrip && sideSeat ? (
       <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 5px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
         <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
-        {!visible[sideSeat] ? (
-          /* BEFORE THE LEAD dummy is face down, and the rail used to be a name
-             over an empty column. The cards exist — they are simply not spread
-             yet, which is bridge law, not a layout state — so the rail shows
-             the BACKS. Same stack, same pitch, so nothing jumps when they turn
-             over on the lead. */
-          (() => {
-            const n = state.hands[sideSeat].length;
-            const w = DUMMY_RAIL_W - 18;
-            const h = Math.round(w * 0.42);
-            const pitch = n > 1 ? Math.min(h + 3, Math.max(16, Math.round(340 / n))) : h;
-            return (
-              <div style={{ position: "relative", width: w, height: pitch * Math.max(0, n - 1) + h, flex: "none" }}>
-                {Array.from({ length: n }, (_, i) => (
-                  <span
-                    key={i}
-                    style={{
-                      position: "absolute", left: 0, top: i * pitch, width: w, height: h,
-                      boxSizing: "border-box", background: tok.cardBack,
-                      border: "1px solid rgba(255,255,255,.55)", borderRadius: 4,
-                      boxShadow: "0 2px 4px rgba(0,0,0,.4)", zIndex: i + 1,
-                    }}
-                  />
-                ))}
-              </div>
-            );
-          })()
-        ) : (
-          /* CARDS, not a list of ranks (owner, 2026-08-13). The rail used to
-             print "♦ A" as text, which read as a scoreboard rather than a hand
-             and left most of a tall strip empty; a leaning stack of real card
-             shapes says "this is a hand" at a glance, and each card still shows
-             its own rank and pip. Overlapped so thirteen fit the band's height
-             — the pitch is derived from what is actually left, so a hand that
-             has been played down spreads out instead of clumping. */
-          (() => {
-            const cards = [...state.hands[sideSeat]].sort(
-              (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
-            );
-            const w = DUMMY_RAIL_W - 18;
-            const h = Math.round(w * 0.42);
-            // Fill the strip: the more cards are gone, the less they overlap.
-            const pitch = cards.length > 1 ? Math.min(h + 3, Math.max(16, Math.round(340 / cards.length))) : h;
-            return (
-              <div style={{ position: "relative", width: w, height: pitch * (cards.length - 1) + h, flex: "none" }}>
-                {cards.map((cd, i) => (
-                  <span
-                    key={`${cd.suit}${cd.rank}`}
-                    style={{
-                      position: "absolute", left: 0, top: i * pitch, width: w, height: h,
-                      boxSizing: "border-box", background: "#fff",
-                      border: "1px solid #6f6f6f", borderRadius: 4,
-                      boxShadow: "0 2px 4px rgba(0,0,0,.4)",
-                      display: "flex", alignItems: "center", gap: 4,
-                      paddingLeft: 6, zIndex: i + 1,
-                      color: isRed(cd.suit) ? RED : "#111",
-                    }}
-                  >
-                    <span style={{ fontSize: Math.round(h * 0.62), fontWeight: 800, lineHeight: 1 }}>{rankText(cd.rank)}</span>
-                    <span style={{ fontSize: Math.round(h * 0.54), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
-                  </span>
-                ))}
-              </div>
-            );
-          })()
-        )}
+        {(() => {
+          const shown = visible[sideSeat];
+          const cards = [...state.hands[sideSeat]].sort(
+            (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
+          );
+          const g = railStack(cards.length);
+          return (
+            <div style={{ position: "relative", width: g.w, height: g.total, flex: "none" }}>
+              {cards.map((cd, i) => (
+                <span
+                  key={`${cd.suit}${cd.rank}`}
+                  style={{
+                    position: "absolute", left: 0, top: i * g.pitch, width: g.w, height: g.h,
+                    boxSizing: "border-box",
+                    background: shown ? "#fff" : tok.cardBack,
+                    border: shown ? "1px solid #6f6f6f" : "1px solid rgba(255,255,255,.55)",
+                    borderRadius: 4, boxShadow: "0 1px 3px rgba(0,0,0,.45)", zIndex: i + 1,
+                    // The index lives in the STRIP that shows, pinned to the top
+                    // — anywhere else and its own neighbour covers it.
+                    display: shown && g.showIndex ? "flex" : "block",
+                    alignItems: "flex-start", gap: 5, padding: shown ? "2px 0 0 7px" : 0,
+                    color: isRed(cd.suit) ? RED : "#111",
+                  }}
+                >
+                  {shown && g.showIndex ? (
+                    <>
+                      <span style={{ fontSize: g.font, fontWeight: 800, lineHeight: 1 }}>{rankText(cd.rank)}</span>
+                      <span style={{ fontSize: Math.round(g.font * 0.92), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
+                    </>
+                  ) : null}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
       </div>
     ) : null;
 

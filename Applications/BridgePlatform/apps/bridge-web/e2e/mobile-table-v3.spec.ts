@@ -60,7 +60,11 @@ async function freshHumanTable(page: Page): Promise<void> {
  * `pick` matters for the flight test: the leftmost card is the one whose
  * horizontal origin is unmistakable.
  */
-async function playableCard(page: Page, pick: "any" | "leftmost" = "any"): Promise<string | null> {
+async function playableCard(
+  page: Page,
+  pick: "any" | "leftmost" = "any",
+  rounds = 40,
+): Promise<string | null> {
   const armed = (sel: string, leftmost: boolean) =>
     page
       .evaluate(
@@ -75,7 +79,7 @@ async function playableCard(page: Page, pick: "any" | "leftmost" = "any"): Promi
       )
       .catch(() => null);
 
-  for (let i = 0; i < 200; i++) {
+  for (let i = 0; i < rounds; i++) {
     const card = await armed('button[aria-label^="Play "]', pick === "leftmost");
     if (card) return card;
     if ((await page.locator('[data-testid="trick-card"]').count()) === 4) {
@@ -87,6 +91,24 @@ async function playableCard(page: Page, pick: "any" | "leftmost" = "any"): Promi
     await page.waitForTimeout(250);
   }
   return null;
+}
+
+/**
+ * A fresh board on which the human actually gets to play a card.
+ *
+ * `freshHumanTable` deals; it does not promise you a turn. Roughly a quarter of
+ * deals make South DUMMY, and a dummy whose partner is a robot never touches a
+ * card — so a test that dealt once and then polled just hung until it timed
+ * out. These tests passed on the luck of the shuffle until the trick hold made
+ * the stall long enough to notice.
+ */
+async function dealUntilPlayable(page: Page, pick: "any" | "leftmost" = "any"): Promise<string> {
+  for (let board = 0; board < 4; board++) {
+    await freshHumanTable(page);
+    const card = await playableCard(page, pick);
+    if (card) return card;
+  }
+  throw new Error("no deal in four gave South a card to play");
 }
 
 test.describe("mobile table v3 — phone tier", () => {
@@ -573,6 +595,29 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(stripText, "dummy strip starts with a seat name").toMatch(
       /^(North|East|South|West)/,
     );
+
+    // (3) AND THE HAND FITS IN IT. The rail draws dummy as a leaning stack of
+    // cards, and the stack was twice priced off a constant rather than off the
+    // band it lives in — 362px of cards in a ~303px rail, so the bottom of the
+    // hand was cut off and every rank was sliced by its own neighbour. The
+    // geometry is solved from the band now; this is the assertion that keeps it
+    // solved. Each card's index sits in the STRIP that shows, so a fitting
+    // stack is also a readable one.
+    const fit = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="dummy-strip"]')!;
+      const stack = rail.querySelector("div");
+      if (!stack) return null;
+      const cards = [...stack.children] as HTMLElement[];
+      const rb = rail.getBoundingClientRect();
+      const last = cards[cards.length - 1]!.getBoundingClientRect();
+      return { n: cards.length, spare: rb.bottom - last.bottom, railH: rb.height };
+    });
+    expect(fit, "the rail drew a stack of cards").not.toBeNull();
+    expect(fit!.n, "one tile per card in dummy's hand").toBeGreaterThan(0);
+    expect(
+      fit!.spare,
+      `the whole hand fits the rail (${fit!.n} cards in ${Math.round(fit!.railH)}px)`,
+    ).toBeGreaterThanOrEqual(-0.5);
   });
 
   // ?bars=off hides the edge toolbars so the felt can be judged, or embedded in
@@ -646,11 +691,10 @@ test.describe("mobile table v3 — phone tier", () => {
   // clicking one, so without this the default could invert and every test
   // would still pass.
   test("raise mode: a first tap lifts a card and never plays it", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
-    await freshHumanTable(page);
-
     // Playability is cursor:pointer + an armed handler, not an attribute.
     const armed = (q: string) =>
       page
@@ -662,8 +706,7 @@ test.describe("mobile table v3 — phone tier", () => {
         }, q)
         .catch(() => null);
 
-    const card = await playableCard(page);
-    expect(card, "a playable card once the auction is out").toBeTruthy();
+    const card = await dealUntilPlayable(page);
     const sel = `button[aria-label="${card}"]`;
     const before = await page.locator('button[aria-label^="Play "]').count();
 
@@ -701,24 +744,11 @@ test.describe("mobile table v3 — phone tier", () => {
   // Playing the LEFTMOST playable card is what makes the horizontal component
   // provable: a fixed-vector glide has no x at all.
   test("a played card flies from its place in the hand, not from the middle", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
-    await freshHumanTable(page);
-
-    const leftmostArmed = (q: string) =>
-      page
-        .evaluate((sel) => {
-          const live = [...document.querySelectorAll(sel)].filter(
-            (x) => getComputedStyle(x).cursor === "pointer",
-          );
-          live.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
-          return live.length ? live[0]!.getAttribute("aria-label") : null;
-        }, q)
-        .catch(() => null);
-
-    const card = await playableCard(page, "leftmost");
-    expect(card, "a playable card once the auction is out").toBeTruthy();
+    const card = await dealUntilPlayable(page, "leftmost");
 
     // Sample the trick card's transform every frame, from before it exists.
     await page.evaluate(() => {
@@ -762,10 +792,11 @@ test.describe("mobile table v3 — phone tier", () => {
   // where the shrinking stopped, which is why this is pinned by width equality
   // rather than by a minimum.
   test("the seat plate is the same width all board", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
-    await freshHumanTable(page);
+    await dealUntilPlayable(page); // a board on which South actually plays
 
     const armed = (q: string) =>
       page
@@ -806,6 +837,7 @@ test.describe("mobile table v3 — phone tier", () => {
   // is inert so the winner — who may be you — cannot lead to the next trick
   // before seeing who took this one.
   test("a finished trick waits for a tap, with the hand inert", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
     await page.context().clearCookies();
     await signInAs(page.context(), "user_reviewer_rhea");
     await page.setViewportSize(PHONE);
