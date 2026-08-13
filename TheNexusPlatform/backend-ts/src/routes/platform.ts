@@ -2025,6 +2025,10 @@ platformRouter.get("/learning/context", async (c) => {
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
     programId: access.programId,
+    // The CLUB, when the caller arrived through one — `programId` above is the
+    // connected PARENT, so without this no client can tell which club it is in.
+    // Mirrors nexus_club_program_id on the bridge context.
+    nexus_club_program_id: access.partnerProgramId ?? null,
     appId: await platformAppSlug(access.programId, "learning-platform", "learning_platform"),
     roles: prebuiltLearning ? [prebuiltLearning] : mapped.roles,
     permissions: [`learning:${access.level}`],
@@ -2052,9 +2056,13 @@ platformRouter.get("/learning/objects", async (c) => {
   // never pay that — fetch one object's content via GET /learning/objects/:id.
   // Program-scoped either way: each program is its own Content Studio instance.
   if (c.req.query("meta") === "1") {
-    return c.json(await graph.listLearningObjectsMeta(access.orgId, access.programId));
+    return c.json(
+      await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null),
+    );
   }
-  return c.json(await graph.listLearningObjects(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null),
+  );
 });
 
 // The bridge platform's program-instance library, for the LP's authoring

@@ -2666,7 +2666,26 @@ export async function upsertAppUserData(opts: {
  * returned; passing null keeps the legacy org-wide behavior (e.g. an org-level
  * admin with no program pinned).
  */
-export async function listLearningObjects(orgId: string, programId?: string | null): Promise<Row[]> {
+/**
+ * Which programs' content a caller may read.
+ *
+ * A club sees its OWN content plus the parent program's curriculum; a parent sees
+ * only its own. Both ids are needed, which is why this is not the
+ * `partnerProgramId ?? programId` idiom the bridge routes use for club-scoped DATA —
+ * there, one id answers; here, two do.
+ *
+ * NULL program_id stays INVISIBLE, deliberately. The challenge work made null
+ * fail-open because there was no column and every row was null; content is the
+ * opposite — these queries already filtered `program_id = X` strictly, so unstamped
+ * rows are invisible today and an `is null` arm would newly EXPOSE them.
+ */
+function _programScope(programId?: string | null, clubProgramId?: string | null) {
+  const ids = [...new Set([programId, clubProgramId].filter(Boolean) as string[])];
+  if (!ids.length) return sql``; // no program pinned → org-wide, as before
+  return sql`and program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`;
+}
+
+export async function listLearningObjects(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
   // Same optional group and the same fallback as the meta listing below. This
   // query used to omit collection_ids/collection_names/version_number/published_at
   // entirely, so an object round-tripped through Nexus came back with NO folder
@@ -2674,17 +2693,18 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
   // hydrated its library from the service-role path instead. Reader apps group the
   // Learn tab by collection_names, so losing them is not cosmetic.
   try {
-    return await _listLearningObjects(orgId, programId, true);
+    return await _listLearningObjects(orgId, programId, clubProgramId, true);
   } catch (e) {
     if (!_isUndefinedColumn(e)) throw e;
     console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
-    return _listLearningObjects(orgId, programId, false);
+    return _listLearningObjects(orgId, programId, clubProgramId, false);
   }
 }
 
 async function _listLearningObjects(
   orgId: string,
   programId: string | null | undefined,
+  clubProgramId: string | null | undefined,
   withCollections: boolean,
 ): Promise<Row[]> {
   const cols = withCollections
@@ -2693,26 +2713,18 @@ async function _listLearningObjects(
             version_number,
             published_at::text as published_at`
     : sql``;
+  // One query, not two near-identical ones: the pinned/unpinned pair had to be kept
+  // in step by hand, which is exactly where a program predicate drifts.
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(
-      programId
-        ? sql`
+    const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
-      where organization_id = ${orgId} and program_id = ${programId}
-      order by updated_at desc nulls last`
-        : sql`
-      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
-             created_at::text as created_at, updated_at::text as updated_at
-             ${cols}
-      from learning_objects
-      where organization_id = ${orgId}
-      order by updated_at desc nulls last`,
-    );
+      where organization_id = ${orgId} ${scope}
+      order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
 }
@@ -2720,23 +2732,24 @@ async function _listLearningObjects(
 /** Metadata-only listing: everything except the (potentially huge) content
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
-export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
+export async function listLearningObjectsMeta(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
   // collection_ids/collection_names arrive with 0003_object_collections.sql. A
   // deploy that lands before that migration must still serve the list, so the
   // richer query falls back to the original one on undefined_column rather than
   // 500ing the Learn tab.
   try {
-    return await _listLearningObjectsMeta(orgId, programId, true);
+    return await _listLearningObjectsMeta(orgId, programId, clubProgramId, true);
   } catch (e) {
     if (!_isUndefinedColumn(e)) throw e;
     console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
-    return _listLearningObjectsMeta(orgId, programId, false);
+    return _listLearningObjectsMeta(orgId, programId, clubProgramId, false);
   }
 }
 
 async function _listLearningObjectsMeta(
   orgId: string,
   programId: string | null | undefined,
+  clubProgramId: string | null | undefined,
   withCollections: boolean,
 ): Promise<Row[]> {
   // One optional group for every column added by 0003/0004. They land together in
@@ -2748,26 +2761,16 @@ async function _listLearningObjectsMeta(
             version_number,
             published_at::text as published_at`
     : sql``;
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(
-      programId
-        ? sql`
+    const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, tags, source_ids,
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
-      where organization_id = ${orgId} and program_id = ${programId}
-      order by updated_at desc nulls last`
-        : sql`
-      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, tags, source_ids,
-             created_at::text as created_at, updated_at::text as updated_at
-             ${cols}
-      from learning_objects
-      where organization_id = ${orgId}
-      order by updated_at desc nulls last`,
-    );
+      where organization_id = ${orgId} ${scope}
+      order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
 }
