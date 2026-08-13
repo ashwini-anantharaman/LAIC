@@ -9,6 +9,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useTrickHold } from "./trickHold";
 
 /** The step endpoint's honest failure shape (see the route). */
 interface StepFailure {
@@ -67,6 +68,11 @@ export function AutoAdvance({
 }>) {
   const router = useRouter();
   const [paused, setPaused] = useState(initialPaused);
+  // A finished trick is on the felt and has not been let go — stepping now
+  // would sweep it away, which is the one thing the hold exists to stop. The
+  // default context reads "not holding", so tables without the provider (the
+  // legacy page, the demo) are untouched.
+  const { holding } = useTrickHold();
   const [thinking, setThinking] = useState(false);
   const [benError, setBenError] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -98,12 +104,12 @@ export function AutoAdvance({
   };
 
   useEffect(() => {
-    if (!active || paused || inFlight.current) return;
+    if (!active || paused || holding || inFlight.current) return;
     const t = setTimeout(advance, beatMs);
     return () => clearTimeout(t);
     // advance is stable in effect terms: it closes over refs + router only.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, paused, seq, sessionId, beatMs, router]);
+  }, [active, paused, holding, seq, sessionId, beatMs, router]);
 
   const retry = () => {
     setBenError(null);

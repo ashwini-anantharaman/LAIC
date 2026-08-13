@@ -762,7 +762,10 @@ test.describe("mobile table v3 — phone tier", () => {
       for (let i = 0; i < 120 && !card; i++) {
         card = await armed('button[aria-label^="Play "]');
         if (card) break;
-        if (await armed('button[aria-label="Pass"]'))
+        // A finished trick holds the hand inert until it is let go.
+        if (await page.getByTestId("trick-waiting").count())
+          await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } }).catch(() => {});
+        else if (await armed('button[aria-label="Pass"]'))
           await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
         await page.waitForTimeout(250);
       }
@@ -777,5 +780,57 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(widths.length, "several cards were played").toBeGreaterThan(2);
     expect(widths.every((w) => w > 0), "the plate was found each time").toBe(true);
     expect(new Set(widths).size, `one width all board, saw ${JSON.stringify(widths)}`).toBe(1);
+  });
+
+  // A finished trick WAITS (decisions doc, "Trick pause"; default `tap`). Three
+  // properties, and the first two are what make it worth having: the trick is
+  // not swept by the beat that would otherwise step the robots on, and the hand
+  // is inert so the winner — who may be you — cannot lead to the next trick
+  // before seeing who took this one.
+  test("a finished trick waits for a tap, with the hand inert", async ({ page }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await freshHumanTable(page);
+
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+    const trickCards = () => page.locator('[data-testid="trick-card"]').count();
+
+    for (let round = 0; round < 14; round++) {
+      if ((await trickCards()) === 4) break;
+      let card: string | null = null;
+      for (let i = 0; i < 120 && !card; i++) {
+        if ((await trickCards()) === 4) break;
+        card = await armed('button[aria-label^="Play "]');
+        if (card) break;
+        if (await armed('button[aria-label="Pass"]'))
+          await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(250);
+      }
+      if ((await trickCards()) === 4 || !card) break;
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(150);
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(1200);
+    }
+    expect(await trickCards(), "a full trick on the felt").toBe(4);
+
+    // Well past the 750ms beat that would otherwise have stepped it on.
+    await page.waitForTimeout(4000);
+    expect(await trickCards(), "it waited instead of being swept").toBe(4);
+    await expect(page.getByTestId("trick-waiting"), "and it says so").toBeVisible();
+    expect(await armed('button[aria-label^="Play "]'), "the hand is inert while it waits").toBeNull();
+
+    // A tap anywhere gathers it.
+    await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => trickCards(), { timeout: 12000 }).toBeLessThan(4);
   });
 });

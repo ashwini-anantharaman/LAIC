@@ -524,6 +524,7 @@ export default async function PlayTablePage({
       controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
       railExtra={seatsPanel}
       playMode={appearance.playMode}
+      trickPause={appearance.trickPause}
       settings={canSettingsMenu ? settings : undefined}
       viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
       appearance={resolvedAppearance}

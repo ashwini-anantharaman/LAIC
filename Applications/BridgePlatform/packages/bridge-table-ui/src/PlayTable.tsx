@@ -328,6 +328,26 @@ export interface PlayTableProps {
    * component tester, the embed — keeps the behaviour it was written against.
    */
   playMode?: PlayMode;
+  /**
+   * The finished trick has been gathered — draw the centre EMPTY.
+   *
+   * The engine keeps a completed trick as the last one until a card is played
+   * into the next, which is right for the model and wrong for the felt: once
+   * you have let the trick go, the cards should be off the table, the way they
+   * are at a real one. This is display only, deliberately — the state the table
+   * REASONS with is untouched, so following suit is still judged against the
+   * trick that was actually led.
+   */
+  trickCleared?: boolean;
+  /**
+   * A finished trick is waiting on a TAP — say so.
+   *
+   * The default pause waits for the player, which is silent by nature: the
+   * table simply stops. Someone who has not been told will read that as the
+   * board having frozen, so the felt says what it wants. Only for the tap
+   * pause; a timed one needs no instruction because it resolves itself.
+   */
+  trickWaiting?: boolean;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -412,6 +432,8 @@ export function PlayTable({
   legalPlays = [],
   myTurn = false,
   playMode = "off",
+  trickCleared = false,
+  trickWaiting = false,
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -929,7 +951,8 @@ export function PlayTable({
     />
   );
 
-  const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  const currentPlays =
+    inPlay && !trickCleared ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
   /** The trick as real card faces; `k` scales the whole box. Wide keeps the
       262px compass that spreads to the corners; the phone gets a tight
@@ -1484,7 +1507,19 @@ export function PlayTable({
                 ))}
               </div>
             ) : null}
-            {inPlay ? trickCluster(trickK) : null}
+            {inPlay ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                {trickCluster(trickK)}
+                {trickWaiting ? (
+                  <span
+                    data-testid="trick-waiting"
+                    style={{ fontSize: 20, fontWeight: 700, color: "rgba(255,255,255,.82)", textShadow: "0 1px 3px rgba(0,0,0,.55)", whiteSpace: "nowrap" }}
+                  >
+                    tap to continue
+                  </span>
+                ) : null}
+              </div>
+            ) : null}
             {complete ? resultCard : null}
           </div>
           {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
