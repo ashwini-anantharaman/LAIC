@@ -1347,7 +1347,7 @@ export function PlayTable({
     return {
       w, h, pitch,
       total: pitch * Math.max(0, n - 1) + h,
-      font: Math.round(pitch * 0.74),
+      font: Math.round(pitch * 0.88),
       // Below this the rank is specks, not reading. The rail then says how many
       // cards dummy holds and nothing more, which is honest — an unreadable
       // index is worse than a plain stack of edges.
@@ -1378,15 +1378,23 @@ export function PlayTable({
                     borderRadius: 4, boxShadow: "0 1px 3px rgba(0,0,0,.45)", zIndex: i + 1,
                     // The index lives in the STRIP that shows, pinned to the top
                     // — anywhere else and its own neighbour covers it.
+                    // Rank at one end, pip at the OTHER. A card 120 wide and 45
+                    // tall cannot look like a card whatever is drawn on it —
+                    // thirteen of them in a column is a list, not a hand — so
+                    // the job is to make the list READ. Both marks pushed to the
+                    // edges spans the strip instead of leaving two thirds of
+                    // every card blank (owner, 2026-08-13), and it echoes the
+                    // two-corner index the trick cards carry.
                     display: shown && g.showIndex ? "flex" : "block",
-                    alignItems: "flex-start", gap: 5, padding: shown ? "2px 0 0 7px" : 0,
+                    alignItems: "center", justifyContent: "space-between",
+                    padding: shown ? `0 ${Math.max(5, Math.round(g.pitch * 0.16))}px` : 0,
                     color: isRed(cd.suit) ? RED : "#111",
                   }}
                 >
                   {shown && g.showIndex ? (
                     <>
                       <span style={{ fontSize: g.font, fontWeight: 800, lineHeight: 1 }}>{rankText(cd.rank)}</span>
-                      <span style={{ fontSize: Math.round(g.font * 0.92), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
+                      <span style={{ fontSize: Math.round(g.font * 0.95), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
                     </>
                   ) : null}
                 </span>
