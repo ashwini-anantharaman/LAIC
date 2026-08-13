@@ -183,6 +183,26 @@ export function groupsSorted(catalogue: CapabilityCatalogueDocument): CatalogueG
   return catalogue.groups.slice().sort((a, b) => a.order - b.order);
 }
 
+/**
+ * Capabilities a grant may narrow to specific existing objects. A capability
+ * qualifies when the catalogue says it supports resource constraints over an
+ * object resource type — `create` is excluded because there is no existing
+ * object to point at (its scoping is the content-type restriction instead).
+ */
+export function objectScopableCapabilities(catalogue: CapabilityCatalogueDocument): Capability[] {
+  return catalogue.capabilities.filter((c) => (
+    c.supportsResourceConstraints
+    && !c.id.endsWith('.create')
+    && (c.resourceTypes || []).some((rt) => rt.includes('object') || rt.includes('composition'))
+  ));
+}
+
+/** The short action word a scoped capability grants ("edit", "delete", …). */
+export function capabilityActionWord(capabilityId: string): string {
+  const last = capabilityId.split('.').pop() || capabilityId;
+  return last === 'read' ? 'browse' : last.replace(/_/g, ' ');
+}
+
 export function capabilitiesInGroup(catalogue: CapabilityCatalogueDocument, groupId: string): Capability[] {
   const group = catalogue.groups.find((g) => g.id === groupId);
   const byField = catalogue.capabilities.filter((c) => c.group === groupId);

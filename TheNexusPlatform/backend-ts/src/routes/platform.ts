@@ -2164,15 +2164,39 @@ const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
 // A learning role now binds fine-grained capability ids from the learning
 // catalogue (her capability-based model). The legacy per-area view/edit `perms`
 // stays for backward compatibility; capabilities are the new source of truth.
-const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}), capabilities: z.array(z.string()).optional() });
-const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional(), capabilities: z.array(z.string()).optional() });
+// A capability may additionally be narrowed to specific learning objects:
+// capability id → the object ids it applies to. Absent/empty means every object.
+const _learningObjectScopes = z.record(z.string(), z.array(z.string()));
+const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}), capabilities: z.array(z.string()).optional(), object_scopes: _learningObjectScopes.optional() });
+const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional(), capabilities: z.array(z.string()).optional(), object_scopes: _learningObjectScopes.optional() });
 const learningAssignSchema = z.object({ program_id: z.string(), email: z.string().email(), role_id: z.string().nullable() });
 
 /** Fold sanitized learning-catalogue capabilities into a role's perms blob
- *  (dropping unknown/reserved ids), mirroring the org/program role builders. */
-async function _learningPermsWithCaps(perms: Record<string, unknown>, capabilities: string[] | undefined): Promise<Record<string, unknown>> {
-  if (capabilities === undefined) return perms;
-  return { ...perms, capabilities: await catalogue.validGrantsAcross([{ providerId: "learning" }], capabilities) };
+ *  (dropping unknown/reserved ids), mirroring the org/program role builders.
+ *  Object scopes ride along beside them, pruned to the capabilities that
+ *  survived so a scope can never outlive the capability it narrows. */
+async function _learningPermsWithCaps(
+  perms: Record<string, unknown>,
+  capabilities: string[] | undefined,
+  objectScopes?: Record<string, string[]>,
+): Promise<Record<string, unknown>> {
+  if (capabilities === undefined && objectScopes === undefined) return perms;
+  const next = { ...perms };
+  if (capabilities !== undefined) {
+    next.capabilities = await catalogue.validGrantsAcross([{ providerId: "learning" }], capabilities);
+  }
+  if (objectScopes !== undefined) {
+    const granted = new Set((next.capabilities as string[] | undefined) ?? []);
+    const scopes: Record<string, string[]> = {};
+    for (const [capId, ids] of Object.entries(objectScopes)) {
+      if (!granted.has(capId)) continue;
+      const unique = [...new Set(ids.filter(Boolean))];
+      if (unique.length) scopes[capId] = unique;
+    }
+    if (Object.keys(scopes).length) next.objectScopes = scopes;
+    else delete next.objectScopes;
+  }
+  return next;
 }
 
 /** The capability ids a launch LEVEL implies, sourced from the learning
@@ -2227,7 +2251,7 @@ platformRouter.get("/learning/roles", async (c) => {
 platformRouter.post("/learning/roles", async (c) => {
   const req = parseBody(learningRoleCreateSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
-  const perms = await _learningPermsWithCaps(req.perms, req.capabilities);
+  const perms = await _learningPermsWithCaps(req.perms, req.capabilities, req.object_scopes);
   return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, perms));
 });
 
@@ -2238,10 +2262,10 @@ platformRouter.patch("/learning/roles/:id", async (c) => {
   // Merge capabilities into whatever perms are being written (or the existing
   // blob) so the area perms and capabilities don't clobber each other.
   let perms = body.perms as Record<string, unknown> | undefined;
-  if (body.capabilities !== undefined) {
+  if (body.capabilities !== undefined || body.object_scopes !== undefined) {
     const existing = await graph.getLearningRole(c.req.param("id")).catch(() => null);
     const base = (perms ?? (existing?.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-    perms = await _learningPermsWithCaps(base, body.capabilities);
+    perms = await _learningPermsWithCaps(base, body.capabilities, body.object_scopes);
   }
   const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms });
   if (!row) throw new HttpError(404, "Role not found");

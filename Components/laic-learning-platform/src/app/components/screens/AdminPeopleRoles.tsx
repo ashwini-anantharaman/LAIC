@@ -1,17 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Shield, Users, Lock, Plus, Award, Check, X, Eye, UserPlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PEOPLE } from '../../../lib/data';
-import type { Role } from '../../../lib/types';
+import { OBJECTS, PEOPLE } from '../../../lib/data';
+import type { LearningObject, Role } from '../../../lib/types';
+import { listObjects } from '../../../lib/supabase';
 import { PlatformAccessCatalogue } from './PlatformAccessCatalogue';
 import {
   type CapabilityCatalogueDocument,
+  capabilityActionWord,
   groupsSorted,
   loadCatalogue,
   initCatalogue,
+  objectScopableCapabilities,
 } from '../../../lib/accessControlCatalogue';
 import {
   type AccessPolicyDocument,
+  type ObjectScopeMap,
   type PolicyRole,
   catalogueSampleRoles,
   customPolicyRoles,
@@ -19,6 +23,7 @@ import {
   loadPolicy,
   initPolicy,
   roleCapabilityIds,
+  roleObjectScopes,
   upsertCustomPolicyRole,
 } from '../../../lib/accessPolicy';
 import { getToken, listLearningRoster, assignLearningRole, inviteLearningPerson, testAsPerson, type RosterPerson } from '../../../lib/nexus';
@@ -33,23 +38,170 @@ const ROLE_LABELS: Record<Role, string> = {
   'student': 'Student',
 };
 
+/* ─── which objects a granted capability applies to ───────────── */
+
+const OBJECT_TYPE_ICONS: Record<string, string> = {
+  course: '🗂', lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', quiz: '✅',
+  'flashcard-set': '🃏', 'concept-card': '💡', summary: '📋', reflection: '🪞',
+  scenario: '🎭', assignment: '📝', drill: '🔁', 'video-script': '🎬',
+};
+
+/** Enough of a learning object to pick it out of a list. */
+export interface ScopableObject {
+  id: string;
+  title: string;
+  type?: string;
+  status?: string;
+}
+
+function ObjectScopePanel({
+  capabilityLabel,
+  capabilityId,
+  objects,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  capabilityLabel: string;
+  capabilityId: string;
+  objects: ScopableObject[];
+  selected: string[];
+  onToggle: (objectId: string) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  const q = search.trim().toLowerCase();
+  const shown = q
+    ? objects.filter((o) => `${o.title} ${o.type || ''}`.toLowerCase().includes(q))
+    : objects;
+  const verb = capabilityActionWord(capabilityId);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-3 p-3 rounded-2xl"
+      style={{ background: 'rgba(29,78,216,0.05)', border: '1px solid rgba(29,78,216,0.2)' }}
+    >
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <p style={{ fontSize: 12.5, fontWeight: 600, color: '#1E3A8A' }}>
+          Which learning objects can this role {verb}? — leave empty for all
+        </p>
+        {selected.length > 0 && (
+          <button
+            type="button"
+            onClick={onClear}
+            className="shrink-0 px-2 py-0.5 rounded-full"
+            style={{ fontSize: 11.5, color: '#1D4ED8', background: 'rgba(29,78,216,0.1)' }}
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {objects.length === 0 ? (
+        <p style={{ fontSize: 12, color: '#6B7280' }}>
+          No learning objects in this program yet — this role can {verb} anything created later.
+        </p>
+      ) : (
+        <>
+          {objects.length > 8 && (
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder={`Search ${objects.length} learning objects…`}
+              className="w-full rounded-lg px-2.5 py-1.5 mb-2"
+              style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'white' }}
+            />
+          )}
+          <div className="flex flex-wrap gap-1.5 overflow-y-auto" style={{ maxHeight: 168 }}>
+            {shown.map((o) => {
+              const on = selected.includes(o.id);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => onToggle(o.id)}
+                  title={`${o.title}${o.type ? ` · ${o.type}` : ''}${o.status ? ` · ${o.status}` : ''}`}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full border transition-all max-w-full"
+                  style={{
+                    background: on ? 'rgba(29,78,216,0.12)' : 'rgba(255,255,255,0.8)',
+                    borderColor: on ? '#1D4ED8' : 'rgba(0,0,0,0.1)',
+                    color: on ? '#1E3A8A' : '#6B7280',
+                    fontSize: 12,
+                    fontWeight: on ? 600 : 400,
+                  }}
+                >
+                  {on ? <Check size={10} className="shrink-0" /> : <span>{OBJECT_TYPE_ICONS[o.type || ''] || '📄'}</span>}
+                  <span className="truncate">{o.title}</span>
+                </button>
+              );
+            })}
+            {shown.length === 0 && (
+              <p style={{ fontSize: 12, color: '#9AA3AF' }}>Nothing matches “{search.trim()}”.</p>
+            )}
+          </div>
+          <p style={{ fontSize: 11.5, color: '#6B7280', marginTop: 7 }}>
+            {selected.length === 0
+              ? `All ${objects.length} objects — “${capabilityLabel}” is unrestricted.`
+              : `${selected.length} of ${objects.length} objects selected.`}
+          </p>
+        </>
+      )}
+    </motion.div>
+  );
+}
+
 /* ─── role editor modal (catalogue capability chips) ──────────── */
+
+interface RoleEditorValue {
+  id?: string;
+  name: string;
+  desc: string;
+  permissions: string[];
+  restrictedTypes?: string[];
+  objectScopes?: ObjectScopeMap;
+}
 
 function RoleEditorModal({
   catalogue,
+  objects,
   initial,
   onSave,
   onClose,
 }: {
   catalogue: CapabilityCatalogueDocument;
-  initial: { id?: string; name: string; desc: string; permissions: string[]; restrictedTypes?: string[] } | null;
-  onSave: (role: { id?: string; name: string; desc: string; permissions: string[]; restrictedTypes?: string[] }) => void;
+  objects: ScopableObject[];
+  initial: RoleEditorValue | null;
+  onSave: (role: RoleEditorValue) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState(initial?.name || '');
   const [desc, setDesc] = useState(initial?.desc || '');
   const [perms, setPerms] = useState<Set<string>>(new Set(initial?.permissions || []));
   const [restricted, setRestricted] = useState<string[]>(initial?.restrictedTypes || []);
+  const [objectScopes, setObjectScopes] = useState<ObjectScopeMap>(initial?.objectScopes || {});
+
+  // Which granted capabilities may be narrowed to specific objects.
+  const scopableIds = useMemo(
+    () => new Set(objectScopableCapabilities(catalogue).map((c) => c.id)),
+    [catalogue],
+  );
+
+  const toggleObjectScope = (capabilityId: string, objectId: string) => setObjectScopes((prev) => {
+    const current = prev[capabilityId] || [];
+    const next = current.includes(objectId)
+      ? current.filter((id) => id !== objectId)
+      : [...current, objectId];
+    const out = { ...prev };
+    if (next.length) out[capabilityId] = next; else delete out[capabilityId];
+    return out;
+  });
+  const clearObjectScope = (capabilityId: string) => setObjectScopes((prev) => {
+    const out = { ...prev };
+    delete out[capabilityId];
+    return out;
+  });
 
   const toggle = (id: string) => setPerms((prev) => {
     const n = new Set(prev);
@@ -147,6 +299,19 @@ function RoleEditorModal({
                     );
                   })}
                 </div>
+                {groupCaps
+                  .filter((c) => perms.has(c.id) && scopableIds.has(c.id))
+                  .map((c) => (
+                    <ObjectScopePanel
+                      key={c.id}
+                      capabilityId={c.id}
+                      capabilityLabel={c.label}
+                      objects={objects}
+                      selected={objectScopes[c.id] || []}
+                      onToggle={(objectId) => toggleObjectScope(c.id, objectId)}
+                      onClear={() => clearObjectScope(c.id)}
+                    />
+                  ))}
                 {group.id === 'authoring' && hasCreate && (
                   <motion.div
                     initial={{ opacity: 0, y: -4 }}
@@ -191,12 +356,18 @@ function RoleEditorModal({
             type="button"
             onClick={() => {
               if (!name.trim()) return;
+              // Drop scopes whose capability was toggled back off before saving.
+              const scopes: ObjectScopeMap = {};
+              for (const [capId, ids] of Object.entries(objectScopes)) {
+                if (perms.has(capId) && ids.length) scopes[capId] = ids;
+              }
               onSave({
                 id: initial?.id,
                 name: name.trim(),
                 desc: desc.trim(),
                 permissions: [...perms],
                 restrictedTypes: restricted,
+                objectScopes: scopes,
               });
               onClose();
             }}
@@ -212,13 +383,14 @@ function RoleEditorModal({
   );
 }
 
-function roleToEditorInitial(r: PolicyRole) {
+function roleToEditorInitial(r: PolicyRole): RoleEditorValue {
   return {
     id: r.id,
     name: r.name,
     desc: r.description || '',
     permissions: roleCapabilityIds(r),
     restrictedTypes: r.restrictedResourceTypes || [],
+    objectScopes: roleObjectScopes(r),
   };
 }
 
@@ -231,6 +403,17 @@ function permChips(
     .filter(Boolean);
   const show = labels.slice(0, 5);
   return { show, more: labels.length - show.length };
+}
+
+function toScopable(o: LearningObject): ScopableObject {
+  return { id: o.id, title: o.title, type: o.type, status: o.status };
+}
+
+/** "Bidding Basics, Defence Quiz +2 more" — titles when we know them, else ids. */
+function objectScopeSummary(objects: ScopableObject[], ids: string[]): string {
+  const titles = ids.map((id) => objects.find((o) => o.id === id)?.title || id);
+  const head = titles.slice(0, 2).join(', ');
+  return titles.length > 2 ? `${head} +${titles.length - 2} more` : head;
 }
 
 /* ─── main ────────────────────────────────────────────────────── */
@@ -246,6 +429,20 @@ export function AdminPeopleRoles() {
   // Live roster (Nexus mode). null → not loaded / demo mode (fall back to PEOPLE).
   const [roster, setRoster] = useState<RosterPerson[] | null>(null);
   const nexusMode = !!getToken();
+
+  // The program's learning objects — what a role's edit/delete grant may be
+  // narrowed to. Live from Nexus; the seed library in the standalone demo.
+  const [objects, setObjects] = useState<ScopableObject[]>(
+    () => (nexusMode ? [] : OBJECTS.map(toScopable)),
+  );
+  useEffect(() => {
+    if (!nexusMode) return;
+    let live = true;
+    listObjects()
+      .then((list) => { if (live) setObjects(list.map(toScopable)); })
+      .catch(() => { /* the picker just stays empty */ });
+    return () => { live = false; };
+  }, [nexusMode]);
 
   const reloadRoster = React.useCallback(() => {
     if (!nexusMode) return;
@@ -302,6 +499,7 @@ export function AdminPeopleRoles() {
         desc: `Based on ${r.name}`,
         permissions: roleCapabilityIds(r),
         restrictedTypes: [],
+        objectScopes: roleObjectScopes(r),
       },
     });
   };
@@ -319,19 +517,14 @@ export function AdminPeopleRoles() {
     fireToast('Role deleted');
   };
 
-  const saveRole = async (role: {
-    id?: string;
-    name: string;
-    desc: string;
-    permissions: string[];
-    restrictedTypes?: string[];
-  }) => {
+  const saveRole = async (role: RoleEditorValue) => {
     const next = await upsertCustomPolicyRole({
       id: role.id,
       name: role.name,
       description: role.desc,
       capabilityIds: role.permissions,
       restrictedResourceTypes: role.restrictedTypes,
+      objectScopes: role.objectScopes,
     });
     setPolicy(next);
     fireToast('Role saved');
@@ -528,6 +721,11 @@ export function AdminPeopleRoles() {
                       ⌗ Can create: {r.restrictedResourceTypes!.join(', ')}
                     </p>
                   )}
+                  {Object.entries(roleObjectScopes(r)).map(([capId, ids]) => (
+                    <p key={capId} style={{ fontSize: 12, color: '#1D4ED8', marginBottom: 8 }}>
+                      ⌖ Can {capabilityActionWord(capId)}: {objectScopeSummary(objects, ids)}
+                    </p>
+                  ))}
                   <div className="flex gap-2">
                     <button type="button" onClick={() => openEdit(r)} className="flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium" style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}>✎ Edit</button>
                     <button type="button" onClick={() => deleteCustom(r.id)} className="flex items-center gap-1 px-3 py-1 rounded-full border text-xs font-medium" style={{ color: '#EA580C', borderColor: 'rgba(234,88,12,0.2)' }}>🗑 Delete</button>
@@ -655,6 +853,7 @@ export function AdminPeopleRoles() {
       {editorState.open && (
         <RoleEditorModal
           catalogue={catalogue}
+          objects={objects}
           initial={editorState.initial}
           onSave={saveRole}
           onClose={() => setEditorState({ open: false, initial: null })}

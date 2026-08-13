@@ -93,6 +93,62 @@ function emptyPolicy(catalogue?: CapabilityCatalogueDocument): AccessPolicyDocum
   };
 }
 
+/**
+ * Per-capability object scoping: capability id → the learning-object ids the
+ * grant is narrowed to. An absent key (or an empty list) means "every object",
+ * which is how an unscoped grant has always behaved.
+ */
+export type ObjectScopeMap = Record<string, string[]>;
+
+/** The resource type a scoped grant constrains — object-level ids live here. */
+export const SCOPED_RESOURCE_TYPE = 'learning_object';
+
+function cleanScopes(scopes: ObjectScopeMap | undefined, caps: Set<string>): ObjectScopeMap {
+  const out: ObjectScopeMap = {};
+  for (const [capId, ids] of Object.entries(scopes || {})) {
+    if (!caps.has(capId) || !Array.isArray(ids)) continue;
+    const unique = [...new Set(ids.filter((id) => typeof id === 'string' && id))];
+    if (unique.length) out[capId] = unique;
+  }
+  return out;
+}
+
+/**
+ * Split a capability set into grants: one unconstrained grant for the plain
+ * capabilities, plus a narrowed grant per capability that was scoped to
+ * specific objects. Keeping each scope on its own grant is what lets "edit
+ * these two objects" and "delete only that one" coexist on one role.
+ */
+export function grantsFor(capabilityIds: string[], scopes?: ObjectScopeMap): CapabilityGrant[] {
+  const caps = [...new Set(capabilityIds)];
+  const scoped = cleanScopes(scopes, new Set(caps));
+  const plain = caps.filter((id) => !scoped[id]);
+  const grants: CapabilityGrant[] = [{ platformInstanceId: LEARNING_INSTANCE_ID, capabilityIds: plain }];
+  for (const [capId, ids] of Object.entries(scoped)) {
+    grants.push({
+      platformInstanceId: LEARNING_INSTANCE_ID,
+      capabilityIds: [capId],
+      resourceConstraints: [{ resourceType: SCOPED_RESOURCE_TYPE, includeIds: ids }],
+    });
+  }
+  return grants;
+}
+
+/** Read a role's per-capability object scoping back out of its grants. */
+export function roleObjectScopes(role: PolicyRole): ObjectScopeMap {
+  const out: ObjectScopeMap = {};
+  for (const g of role.grants || []) {
+    const ids = (g.resourceConstraints || [])
+      .filter((c) => c.resourceType === SCOPED_RESOURCE_TYPE)
+      .flatMap((c) => c.includeIds || []);
+    if (!ids.length) continue;
+    for (const capId of g.capabilityIds || []) {
+      out[capId] = [...new Set([...(out[capId] || []), ...ids])];
+    }
+  }
+  return out;
+}
+
 function remapGrant(grant: CapabilityGrant, validCaps: Set<string>): CapabilityGrant {
   return {
     platformInstanceId:
@@ -123,14 +179,15 @@ let _policyCache: AccessPolicyDocument | null = null;
 
 /** A backend learning role → a custom PolicyRole (capabilities live in perms). */
 function backendRoleToPolicy(r: LearningRole, validCaps: Set<string>): PolicyRole {
-  const raw = (r.perms as { capabilities?: string[] } | undefined)?.capabilities;
+  const blob = r.perms as { capabilities?: string[]; objectScopes?: ObjectScopeMap } | undefined;
+  const raw = blob?.capabilities;
   const capabilityIds = (Array.isArray(raw) ? raw : []).filter((id) => validCaps.has(id));
   return {
     id: r.id,
     name: r.name,
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     origin: 'custom',
-    grants: [{ platformInstanceId: LEARNING_INSTANCE_ID, capabilityIds }],
+    grants: grantsFor(capabilityIds, blob?.objectScopes),
   };
 }
 
@@ -184,7 +241,9 @@ export function loadPolicy(): AccessPolicyDocument {
   return _policyCache;
 }
 
-export function savePolicy(policy: AccessPolicyDocument): void {
+/** Persist and return the stored document — callers hand the fresh reference to
+ *  React, which would skip the re-render if given back the one it already has. */
+export function savePolicy(policy: AccessPolicyDocument): AccessPolicyDocument {
   const next: AccessPolicyDocument = {
     ...policy,
     documentType: 'access_policy',
@@ -194,6 +253,7 @@ export function savePolicy(policy: AccessPolicyDocument): void {
   // Persist to localStorage only in demo mode (no Nexus session); with a session
   // the backend is the source of truth for custom roles.
   if (!getToken()) localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
 }
 
 /**
@@ -242,12 +302,15 @@ export async function upsertCustomPolicyRole(
     description?: string;
     capabilityIds: string[];
     restrictedResourceTypes?: string[];
+    /** capability id → learning-object ids that capability is narrowed to. */
+    objectScopes?: ObjectScopeMap;
   },
 ): Promise<AccessPolicyDocument> {
   const catalogue = loadCatalogue();
   const validCaps = new Set(catalogue.capabilities.map((c) => c.id));
   const name = input.name.trim() || 'Untitled role';
   const caps = input.capabilityIds.filter((c) => validCaps.has(c));
+  const objectScopes = cleanScopes(input.objectScopes, new Set(caps));
   const existing = loadPolicy();
   // Editing a catalogue-sample role via the custom editor forks a new custom role.
   const editingSample = input.id ? existing.roles.find((r) => r.id === input.id)?.origin === 'catalogue-sample' : false;
@@ -255,8 +318,8 @@ export async function upsertCustomPolicyRole(
 
   if (getToken()) {
     // Backend is the source of truth for custom roles.
-    if (targetId) await updateLearningRole(targetId, { name, capabilities: caps });
-    else await createLearningRole(name, {}, caps);
+    if (targetId) await updateLearningRole(targetId, { name, capabilities: caps, objectScopes });
+    else await createLearningRole(name, {}, caps, objectScopes);
     return initPolicy(); // refetch → cache
   }
 
@@ -267,14 +330,13 @@ export async function upsertCustomPolicyRole(
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     origin: 'custom',
     restrictedResourceTypes: input.restrictedResourceTypes || [],
-    grants: [{ platformInstanceId: LEARNING_INSTANCE_ID, capabilityIds: caps }],
+    grants: grantsFor(caps, objectScopes),
   };
-  const policy = existing;
-  const idx = policy.roles.findIndex((r) => r.id === id);
-  if (idx >= 0 && policy.roles[idx].origin === 'custom') policy.roles[idx] = role;
-  else policy.roles.push(role);
-  savePolicy(policy);
-  return policy;
+  const idx = existing.roles.findIndex((r) => r.id === id);
+  const roles = existing.roles.slice();
+  if (idx >= 0 && roles[idx].origin === 'custom') roles[idx] = role;
+  else roles.push(role);
+  return savePolicy({ ...existing, roles });
 }
 
 export async function deleteCustomPolicyRole(id: string): Promise<AccessPolicyDocument> {
@@ -283,9 +345,8 @@ export async function deleteCustomPolicyRole(id: string): Promise<AccessPolicyDo
     return initPolicy();
   }
   const policy = loadPolicy();
-  policy.roles = policy.roles.filter((r) => !(r.id === id && r.origin === 'custom'));
-  savePolicy(policy);
-  return policy;
+  const roles = policy.roles.filter((r) => !(r.id === id && r.origin === 'custom'));
+  return savePolicy({ ...policy, roles });
 }
 
 export function catalogueSampleRoles(policy?: AccessPolicyDocument): PolicyRole[] {
