@@ -4,11 +4,11 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, ShieldCheck, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, ShieldCheck, SlidersHorizontal, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
-import { NewPartnerDialog } from "@/nexus/routes/Programs";
+import { EditFeaturesDialog, NewPartnerDialog } from "@/nexus/routes/Programs";
 import {
   Dialog,
   DialogContent,
@@ -1291,6 +1291,8 @@ export function ProgramPartners() {
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [creating, setCreating] = useState(false);
+  /** The partner whose features are open for editing. */
+  const [editingFeatures, setEditingFeatures] = useState<Program | null>(null);
 
   const toggle = (id: string) =>
     setPicked((prev) => {
@@ -1395,6 +1397,17 @@ export function ProgramPartners() {
         }
       />
 
+      {/* A partner has no category — it is defined by the program it connects to — so
+          that section is suppressed rather than offering a control with no meaning. */}
+      <EditFeaturesDialog
+        program={editingFeatures}
+        onClose={() => setEditingFeatures(null)}
+        onDone={load}
+        allowedFeatureKeys={allowedFeatureKeys}
+        categories={[]}
+        hideCategories
+      />
+
       {programId ? (
         <NewPartnerDialog
           orgId={orgId ?? ""}
@@ -1467,6 +1480,21 @@ export function ProgramPartners() {
                     <button type="button" onClick={() => { void navigator.clipboard?.writeText(url); toast.success("Copied"); }} className="grid size-6 place-items-center rounded hover:bg-accent shrink-0"><Copy className="size-3.5" /></button>
                   </div>
                 ) : null}
+                {/* Provisioning was write-once: a partner's capabilities were set in the
+                    New-partner dialog and then unreachable, because partners are filtered
+                    off the Programs page where the Features action lives. Same button,
+                    same dialog, now on the card. */}
+                <div className="mt-2 flex items-center">
+                  <button
+                    type="button"
+                    className="inline-flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+                    onClick={() => setEditingFeatures(p)}
+                    title="Choose which features and capabilities this partner has"
+                  >
+                    <SlidersHorizontal className="size-3.5" />
+                    Features
+                  </button>
+                </div>
               </div>
             );
           })}

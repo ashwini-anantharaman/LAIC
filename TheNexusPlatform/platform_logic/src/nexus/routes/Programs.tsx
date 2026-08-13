@@ -1094,18 +1094,28 @@ export function NewPartnerDialog({
   );
 }
 
-function EditFeaturesDialog({
+export function EditFeaturesDialog({
   program,
   onClose,
   onDone,
   allowedFeatureKeys,
   categories,
+  hideCategories,
 }: {
   program: Program | null;
   onClose: () => void;
   onDone: () => void;
   allowedFeatureKeys: string[];
   categories: string[];
+  /**
+   * Suppress the category section — for a PARTNER, which has no category. A partner
+   * is defined by the program it connects to, so offering one would be a control with
+   * no meaning that could quietly set a field nothing reads.
+   *
+   * The features half is identical, which is why this reuses the dialog rather than
+   * growing a second one that would drift.
+   */
+  hideCategories?: boolean;
 }) {
   const [features, setFeatures] = useState<ProgramFeatures>({ ...DEFAULT_PROGRAM_FEATURES });
   const [featureAccess, setFeatureAccess] = useState<FeatureAccessMap>({});
@@ -1133,7 +1143,7 @@ function EditFeaturesDialog({
     setBusy(true);
     try {
       await updateProgramFeatures(program.id, features, platformsOpen, featureAccess);
-      if (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? [])) {
+      if (!hideCategories && (primary !== program.category || JSON.stringify(secondary) !== JSON.stringify(program.secondary_categories ?? []))) {
         await updateProgramCategories(program.id, {
           category: primary,
           secondary_categories: secondary.filter((c) => c !== primary),
@@ -1155,6 +1165,7 @@ function EditFeaturesDialog({
         <DialogHeader>
           <DialogTitle>Features · {program?.name}</DialogTitle>
         </DialogHeader>
+        {hideCategories ? null : (
         <div className="space-y-1.5">
           <Label>Primary category</Label>
           <Select value={primary} onValueChange={setPrimary}>
@@ -1193,6 +1204,8 @@ function EditFeaturesDialog({
             </div>
           ) : null}
         </div>
+        )}
+
         <div className="space-y-1.5">
           <Label>Features</Label>
           <p className="text-xs text-muted-foreground -mt-1">
