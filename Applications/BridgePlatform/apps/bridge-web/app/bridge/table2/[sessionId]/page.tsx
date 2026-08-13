@@ -479,8 +479,10 @@ export default async function PlayTablePage({
     //
     // COACH OFF, EMBEDDED: with no panel below it, a top-anchored table reads
     // as a layout with something missing. The table gets a two-thirds box
-    // centred in the white instead — the phone budget scales the felt to
-    // whatever box it is given, so this is composition, not squeezing.
+    // centred on the app's own cream (Brand.cream — the home screen's ground,
+    // the veils, the coach's paper) instead — the phone budget scales the
+    // felt to whatever box it is given, so this is composition, not
+    // squeezing.
     <div
       style={
         embedded
@@ -488,7 +490,7 @@ export default async function PlayTablePage({
               maxWidth: 480,
               height: "100%",
               margin: "0 auto",
-              background: "#fff",
+              background: coachOff ? "#fff4d7" : "#fff",
               ...(coachOff
                 ? { display: "flex", flexDirection: "column", justifyContent: "center" }
                 : {}),
