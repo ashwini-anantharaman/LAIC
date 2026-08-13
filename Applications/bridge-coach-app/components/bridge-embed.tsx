@@ -121,6 +121,9 @@ export function BridgeEmbed({
   const currentUrl = useRef<string | null>(null);
   const originRef = useRef<string | null>(null);
   const lastRelaunch = useRef(0);
+  // One boardGone retry per board open — reset when a board opens (unpark)
+  // and when a table actually reports in.
+  const boardGoneRetried = useRef(false);
 
   // The app-wide program unless a caller names its own — OR a club is selected
   // (owner direction 2026-08-10: club members hold the member surface, scoped
@@ -284,6 +287,7 @@ export function BridgeEmbed({
     if (m?.type === "bridge:table" && typeof m.sessionId === "string" && typeof m.phase === "string") {
       tableState.current = { sessionId: m.sessionId, phase: m.phase };
       setAtTable(true);
+      boardGoneRetried.current = false;
       // The table reported in — the felt is drawn; the loading cover fades.
       setBoardReady(true);
     }
@@ -373,6 +377,7 @@ export function BridgeEmbed({
       escaped.current = false;
     } else {
       escaped.current = false;
+      boardGoneRetried.current = false;
       load();
     }
   }, [persistent, parked, load]);
@@ -408,7 +413,17 @@ export function BridgeEmbed({
       }
       // The platform says this board no longer exists (opened from a list
       // that hadn't refreshed after a discard) — nothing to show; leave.
+      // ONE quiet retry first: a cold platform read has answered "gone"
+      // about live boards (first-tap bounce, 2026-08-13); a board that is
+      // truly gone answers the same twice and then we leave.
       if (u.includes("boardGone=1")) {
+        if (!boardGoneRetried.current) {
+          boardGoneRetried.current = true;
+          boardDebug("boardGone: retrying once");
+          load();
+          return;
+        }
+        boardDebug("boardGone: confirmed, leaving");
         goBackNow();
         return;
       }

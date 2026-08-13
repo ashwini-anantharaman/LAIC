@@ -114,6 +114,31 @@ const ROBOT_STRIPS: Record<Seat, string> = {
  * gone — an ordinary event (a discarded board tapped from a stale list); the
  * caller decides what "gone" renders as.
  */
+/** The one throw that truly means "this board does not exist" —
+ *  requireSession's own message. Everything else is infrastructure. */
+function isMissingSession(e: unknown): boolean {
+  return e instanceof Error && e.message.startsWith("No session ");
+}
+
+/** view(), where only a MISSING session reads as gone. A cold Postgres
+ *  connection timing out used to be swallowed as gone too, and the embed
+ *  answers "gone" by closing the board — live boards bounced to home on
+ *  their first open (2026-08-13). Transient failures get one quiet retry;
+ *  failing twice is a real error and throws as one. */
+async function viewOrGone(
+  sessionId: string,
+  retried = false,
+): Promise<{ ok: true; v: SessionView } | { ok: false }> {
+  try {
+    return { ok: true, v: await sessionService().view(sessionId) };
+  } catch (e) {
+    if (isMissingSession(e)) return { ok: false };
+    if (retried) throw e;
+    await new Promise((r) => setTimeout(r, 400));
+    return viewOrGone(sessionId, true);
+  }
+}
+
 export async function loadTableView(
   context: NexusBridgeContext,
   sessionId: string,
@@ -123,10 +148,7 @@ export async function loadTableView(
   // other — run together (sequential was ~260ms of the open, 2026-08-09).
   const [appearance, viewResult] = await Promise.all([
     getAppearance(context.nexusUserId),
-    sessionService()
-      .view(sessionId)
-      .then((v) => ({ ok: true as const, v }))
-      .catch(() => ({ ok: false as const })),
+    viewOrGone(sessionId),
   ]);
   if (!viewResult.ok) return { ok: false };
   const view = viewResult.v;
