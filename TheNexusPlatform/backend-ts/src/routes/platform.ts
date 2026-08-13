@@ -2228,13 +2228,15 @@ async function _learningAuthor(c: Context, pinned: string | null) {
 platformRouter.post("/learning/objects/publish", async (c) => {
   const body = (await c.req.json()) as { object?: Row; share?: boolean; program_id?: string };
   const row = (body.object ?? (body as unknown as Row)) as Row;
-  if (!row?.id || !row?.type) throw new HttpError(422, "id and type are required");
+  // AUTH FIRST, then shape. Validating ahead of the session let an unauthenticated
+  // caller tell a real route from a missing one by the error it got back.
   // program_id is only the launch PIN fed to access resolution — resolvePlatformAccess
   // verifies membership, and the id that gets WRITTEN comes from the resolved access.
   const { access, eff } = await _learningAuthor(
     c,
-    body.program_id ?? (row.program_id as string) ?? c.req.query("program_id") ?? null,
+    body.program_id ?? (row?.program_id as string) ?? c.req.query("program_id") ?? null,
   );
+  if (!row?.id || !row?.type) throw new HttpError(422, "id and type are required");
   const scope = _learningWriteScope(access);
   const share = body.share === true;
 
@@ -2265,11 +2267,11 @@ platformRouter.post("/learning/objects/publish", async (c) => {
 
 platformRouter.post("/learning/objects/unpublish", async (c) => {
   const body = (await c.req.json()) as { id?: string; program_id?: string };
-  if (!body.id) throw new HttpError(422, "id is required");
   const { access, eff } = await _learningAuthor(
     c,
     body.program_id ?? c.req.query("program_id") ?? null,
   );
+  if (!body.id) throw new HttpError(422, "id is required");
   const probe = await graph.probeLearningObject(access.orgId, body.id);
   _requireLearningCap(eff, "learning.publish.release", probe?.type);
   const ok = await graph.unpublishLearningObject(access.orgId, _learningWriteScope(access), body.id);
