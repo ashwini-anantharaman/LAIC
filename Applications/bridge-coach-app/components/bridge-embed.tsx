@@ -277,6 +277,39 @@ export function BridgeEmbed({
     });
   }, [backTo, token, programId]);
 
+  // "This board doesn't exist", from either channel (native url change, web
+  // location report). ONE quiet retry first — a cold platform read has
+  // answered "gone" about live boards (first-tap bounce, 2026-08-13) — and
+  // the retry WAITS a beat so it lands on a warmed function instead of
+  // re-hitting the same cold window. A board that is truly gone answers the
+  // same twice, and then we leave.
+  const boardGoneTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (boardGoneTimer.current) clearTimeout(boardGoneTimer.current);
+    },
+    [],
+  );
+  const boardGoneLeaving = useRef(false);
+  const handleBoardGone = useCallback(() => {
+    // One verdict per delivery, not per channel: the landing page reports
+    // over BOTH the url change and the location message on native — the
+    // duplicate must not burn the retry AND the give-up in one breath.
+    if (boardGoneTimer.current || boardGoneLeaving.current) return;
+    if (!boardGoneRetried.current) {
+      boardGoneRetried.current = true;
+      boardDebug("boardGone: retrying in 800ms");
+      boardGoneTimer.current = setTimeout(() => {
+        boardGoneTimer.current = null;
+        load();
+      }, 800);
+      return;
+    }
+    boardDebug("boardGone: confirmed, leaving");
+    boardGoneLeaving.current = true;
+    goBackNow();
+  }, [load, goBackNow]);
+
   const handleHostMessage = useCallback((data: unknown) => {
     const m = data as {
       type?: unknown;
@@ -301,8 +334,13 @@ export function BridgeEmbed({
       // leave now instead of waiting out the failsafe (the native WebView
       // learns this from its url change, the web iframe only from here).
       if (m.href.includes("discarded=1") && discardTimer.current) goBackNow();
+      // "Board gone" over the web channel — the native WebView learns it
+      // from its url change; the iframe ONLY reports it here. Without this
+      // the web build stranded the learner staring at the platform's home
+      // page inside the frame.
+      if (m.href.includes("boardGone=1")) handleBoardGone();
     }
-  }, [maybeEscape, goBackNow]);
+  }, [maybeEscape, goBackNow, handleBoardGone]);
 
 
   // While the discard runs, the WebView must stay MOUNTED (unmounting aborts
@@ -378,6 +416,7 @@ export function BridgeEmbed({
     } else {
       escaped.current = false;
       boardGoneRetried.current = false;
+      boardGoneLeaving.current = false;
       load();
     }
   }, [persistent, parked, load]);
@@ -413,18 +452,8 @@ export function BridgeEmbed({
       }
       // The platform says this board no longer exists (opened from a list
       // that hadn't refreshed after a discard) — nothing to show; leave.
-      // ONE quiet retry first: a cold platform read has answered "gone"
-      // about live boards (first-tap bounce, 2026-08-13); a board that is
-      // truly gone answers the same twice and then we leave.
       if (u.includes("boardGone=1")) {
-        if (!boardGoneRetried.current) {
-          boardGoneRetried.current = true;
-          boardDebug("boardGone: retrying once");
-          load();
-          return;
-        }
-        boardDebug("boardGone: confirmed, leaving");
-        goBackNow();
+        handleBoardGone();
         return;
       }
       if (u.includes("/welcome")) {
