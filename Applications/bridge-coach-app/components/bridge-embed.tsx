@@ -19,6 +19,7 @@ import {
   rememberBridgeOrigin,
   takeLaunch,
 } from "../lib/launch-cache";
+import { bridgeRequest } from "../lib/bridge-api";
 import { NexusError } from "../lib/nexus";
 import { refreshSummary } from "../lib/summary-cache";
 
@@ -309,20 +310,26 @@ export function BridgeEmbed({
 
   const discardAndLeave = useCallback(() => {
     const t = tableState.current;
-    const origin = originRef.current;
-    boardDebug("discardAndLeave", { t, origin });
+    boardDebug("discardAndLeave", { t });
     // Nothing to discard that we know of — just leave.
-    if (!t || !origin) return goBackNow();
-    setDiscarding(true);
-    // 12s, not 6: a cold serverless discard (function boot + Nexus context
-    // round trips + the delete) can outlast 6s, and leaving early aborts the
-    // navigation — the board came back to Resume after a "discard".
-    discardTimer.current = setTimeout(() => {
-      boardDebug("discard failsafe fired");
-      goBackNow();
-    }, 12000);
-    setUrl(`${origin}/m/table/${encodeURIComponent(t.sessionId)}/discard?_r=${Date.now()}`);
-  }, [goBackNow]);
+    if (!t || !token) return goBackNow();
+    // One tiny JSON call (the platform's own "twin" of the page discard),
+    // not a WebView navigation through two server-rendered pages — cold
+    // serverless made that take up to ten seconds, all of it spent staring
+    // at a spinner. Leave NOW; the deletion lands behind the exit, and the
+    // summary refreshes AGAIN when it does, so Resume never keeps the ghost.
+    bridgeRequest(`/api/bridge/sessions/${encodeURIComponent(t.sessionId)}/discard`, {
+      token,
+      programId,
+      method: "POST",
+    })
+      .then(() => {
+        boardDebug("discard confirmed");
+        refreshSummary(token, programId).catch(() => {});
+      })
+      .catch((e) => boardDebug("discard failed", String(e)));
+    goBackNow();
+  }, [goBackNow, token, programId]);
 
   // The question itself is the app's own dialog (LeaveBoardDialog) — one
   // themed component on every platform, never window.confirm or Alert.
