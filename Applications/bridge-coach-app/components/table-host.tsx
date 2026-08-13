@@ -11,19 +11,21 @@
 // How it works:
 //   · TableWebViewHost mounts once in the root layout, above the navigator,
 //     holding ONE BridgeEmbed with a stable key — its WebView never unmounts.
-//   · The table SCREEN is now a thin claim: on focus it shows the host with
-//     its board URL; on blur it parks it. Parking sends the page to
-//     about:blank (the old board's timers die exactly as an unmount killed
-//     them) and hides the host; the browser stays warm underneath.
-//   · Claims are ordered: pushing a second table screen (the Hands record
-//     over a board) claims the host before the first screen's blur lands, so
-//     a stale park can never hide the board the newer screen just showed.
+//   · The table SCREEN calls showBoard() with its board URL on focus.
+//   · Visibility is derived from THE ROUTE, not from screen callbacks: the
+//     host is shown exactly while the pathname is a /table screen. (The
+//     first cut parked on the screen's blur cleanup, which silently never
+//     fired on exits — reproduced 2026-08-12: the host stayed painted over
+//     Play with the discard spinner forever. The pathname cannot lie.)
+//   · Parked, the page is sent to about:blank — the old board's timers die
+//     exactly as an unmount killed them — and the browser stays warm.
 //
 // The board's implementation is untouched — this is hosting chrome only; the
 // page inside is the platform's table2 exactly as before, and BridgeEmbed
 // carries all its usual behavior (felt cover, quit pull-out, leave dialog,
 // discard flow, /welcome watchdog).
 
+import { usePathname } from "expo-router";
 import { useEffect, useReducer } from "react";
 import { StyleSheet, View } from "react-native";
 
@@ -35,34 +37,25 @@ interface BoardParams {
   next: string;
 }
 
-let claimSeq = 0;
-let state: { params: BoardParams | null; shown: boolean; claim: number } = {
-  params: null,
-  shown: false,
-  claim: 0,
-};
+let state: { params: BoardParams | null } = { params: null };
 const listeners = new Set<() => void>();
 const emit = () => listeners.forEach((l) => l());
 
-/** A table screen took the stage: show (and navigate) the persistent board.
- *  Returns the claim the caller must hand back to parkBoard on blur. */
-export function showBoard(params: BoardParams): number {
-  state = { params, shown: true, claim: ++claimSeq };
+/** A table screen took the stage: give the persistent board its URL. */
+export function showBoard(params: BoardParams): void {
+  if (state.params?.next === params.next) return;
+  state = { params };
   emit();
-  return state.claim;
 }
 
-/** The claiming screen left. Ignored if a newer screen claimed since —
- *  screen focus/blur ordering must never park the board mid-handover. */
-export function parkBoard(claim: number): void {
-  if (state.claim !== claim || !state.shown) return;
-  state = { ...state, shown: false };
-  emit();
-}
+/** The route prefix that means "a board owns the screen". */
+const TABLE_PATH = /^\/table(\/|$)/;
 
 export function TableWebViewHost() {
   const [, force] = useReducer((c: number) => c + 1, 0);
   const { token } = useAuth();
+  const pathname = usePathname();
+  const shown = !!state.params && !!token && TABLE_PATH.test(pathname ?? "");
 
   useEffect(() => {
     listeners.add(force);
@@ -75,7 +68,7 @@ export function TableWebViewHost() {
   // this one's booted page or its cookie-adjacent state.
   useEffect(() => {
     if (!token && state.params) {
-      state = { params: null, shown: false, claim: state.claim };
+      state = { params: null };
       emit();
     }
   }, [token]);
@@ -85,8 +78,8 @@ export function TableWebViewHost() {
 
   return (
     <View
-      style={[StyleSheet.absoluteFill, styles.host, !state.shown && styles.parked]}
-      pointerEvents={state.shown ? "auto" : "none"}
+      style={[StyleSheet.absoluteFill, styles.host, !shown && styles.parked]}
+      pointerEvents={shown ? "auto" : "none"}
     >
       <BridgeEmbed
         key="persistent-board"
@@ -99,7 +92,7 @@ export function TableWebViewHost() {
         confirmUnfinishedExit
         // The board and its coach own the whole screen.
         fullScreen
-        parked={!state.shown}
+        parked={!shown}
       />
     </View>
   );

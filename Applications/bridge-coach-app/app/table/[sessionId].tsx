@@ -2,7 +2,7 @@ import { Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback } from "react";
 import { StyleSheet } from "react-native";
 
-import { parkBoard, showBoard } from "../../components/table-host";
+import { showBoard } from "../../components/table-host";
 import { Screen } from "../../components/ui";
 
 /** One board at the table — opened by Resume, or from a list of unfinished
@@ -33,10 +33,12 @@ export default function TableScreen() {
   const query = params.toString();
   const next = `/bridge/table2/${encodeURIComponent(sessionId ?? "")}${query ? `?${query}` : ""}`;
 
+  // Hand the persistent host this board's URL. Visibility is NOT managed
+  // here — the host shows itself exactly while the route is a /table screen,
+  // so no exit path (back, replace, discard, deep link) can strand it shown.
   useFocusEffect(
     useCallback(() => {
-      const claim = showBoard({ next });
-      return () => parkBoard(claim);
+      showBoard({ next });
     }, [next]),
   );
 
