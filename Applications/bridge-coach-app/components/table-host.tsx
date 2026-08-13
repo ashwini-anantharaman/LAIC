@@ -31,7 +31,6 @@ import { useNavigationContainerRef } from "expo-router";
 import { useEffect, useReducer, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
-import { boardDebug } from "./board-debug";
 import { BridgeEmbed } from "./bridge-embed";
 import { useAuth } from "../lib/auth-context";
 
@@ -71,7 +70,6 @@ export function TableWebViewHost() {
   useEffect(() => {
     const read = () => {
       const route = navRef.getCurrentRoute() as { name?: string } | undefined;
-      boardDebug("host nav state", { route: route?.name, table: isTableRoute(route?.name) });
       setAtTableRoute(isTableRoute(route?.name));
     };
     read();

@@ -2,7 +2,6 @@ import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
-import { boardDebug } from "./board-debug";
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
 import { leaveWithFade } from "./leave-veil";
@@ -203,18 +202,9 @@ export function BridgeEmbed({
   // ── Leaving an unfinished board (confirmUnfinishedExit) ───────────────────
   // The table page reports { sessionId, phase } as they change (its
   // EmbedTableState component); the back arrow consults the LAST report.
-  // Discarding navigates the embed to the platform's discard route — the
-  // WebView's own cookies authenticate it — and leaves when the ?discarded=1
-  // landing reports in, or after a grace period so a slow network can't
-  // strand anyone at a dead table.
+  // Discarding fires the platform's JSON discard (one bearer call) and
+  // leaves immediately — the deletion lands behind the exit.
   const tableState = useRef<{ sessionId: string; phase: string } | null>(null);
-  const discardTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(
-    () => () => {
-      if (discardTimer.current) clearTimeout(discardTimer.current);
-    },
-    [],
-  );
 
   /**
    * A BOARD IS ALWAYS THE WHOLE SCREEN, whichever screen it opened from.
@@ -259,19 +249,13 @@ export function BridgeEmbed({
   );
 
   const goBackNow = useCallback(() => {
-    boardDebug("goBackNow", { canGoBack: router.canGoBack() });
-    if (discardTimer.current) {
-      clearTimeout(discardTimer.current);
-      discardTimer.current = null;
-    }
     // Leaving a table means the board lists just changed (finished, saved,
     // discarded…) — start the summary refresh NOW so Resume and Play greet
     // the return with fresh lists instead of a stale-while-revalidate beat.
     if (token) refreshSummary(token, programId).catch(() => {});
-    // Leave under the veil: the felt (or the discard cover) fades to cream,
-    // and home fades in under it — never a one-frame cut off a WebView.
+    // Leave under the veil: the felt fades to cream, and home fades in under
+    // it — never a one-frame cut off a WebView.
     leaveWithFade(() => {
-      boardDebug("veil navigate: back/replace running");
       if (router.canGoBack()) router.back();
       else router.replace(backTo ?? "/home");
     });
@@ -298,14 +282,12 @@ export function BridgeEmbed({
     if (boardGoneTimer.current || boardGoneLeaving.current) return;
     if (!boardGoneRetried.current) {
       boardGoneRetried.current = true;
-      boardDebug("boardGone: retrying in 800ms");
       boardGoneTimer.current = setTimeout(() => {
         boardGoneTimer.current = null;
         load();
       }, 800);
       return;
     }
-    boardDebug("boardGone: confirmed, leaving");
     boardGoneLeaving.current = true;
     goBackNow();
   }, [load, goBackNow]);
@@ -330,29 +312,17 @@ export function BridgeEmbed({
       if (maybeEscape(m.href)) return;
       tableState.current = null;
       setAtTable(false);
-      // The discard's landing page reported in — the deletion went through;
-      // leave now instead of waiting out the failsafe (the native WebView
-      // learns this from its url change, the web iframe only from here).
-      if (m.href.includes("discarded=1") && discardTimer.current) goBackNow();
       // "Board gone" over the web channel — the native WebView learns it
       // from its url change; the iframe ONLY reports it here. Without this
       // the web build stranded the learner staring at the platform's home
       // page inside the frame.
       if (m.href.includes("boardGone=1")) handleBoardGone();
     }
-  }, [maybeEscape, goBackNow, handleBoardGone]);
+  }, [maybeEscape, handleBoardGone]);
 
-
-  // While the discard runs, the WebView must stay MOUNTED (unmounting aborts
-  // the deletion request) but must show NOTHING: its navigation passes
-  // through the platform's landing page, and that flash of a foreign home
-  // screen is not part of leaving a board. A cream cover hides the whole
-  // beat; the screen unmounts before it would ever need lifting.
-  const [discarding, setDiscarding] = useState(false);
 
   const discardAndLeave = useCallback(() => {
     const t = tableState.current;
-    boardDebug("discardAndLeave", { t });
     // Nothing to discard that we know of — just leave.
     if (!t || !token) return goBackNow();
     // One tiny JSON call (the platform's own "twin" of the page discard),
@@ -365,11 +335,8 @@ export function BridgeEmbed({
       programId,
       method: "POST",
     })
-      .then(() => {
-        boardDebug("discard confirmed");
-        refreshSummary(token, programId).catch(() => {});
-      })
-      .catch((e) => boardDebug("discard failed", String(e)));
+      .then(() => refreshSummary(token, programId).catch(() => {}))
+      .catch(() => {});
     goBackNow();
   }, [goBackNow, token, programId]);
 
@@ -403,13 +370,11 @@ export function BridgeEmbed({
   // ships paused by default, and every unpark replaces it wholesale.
   useEffect(() => {
     if (!persistent) return;
-    boardDebug("park effect", { parked });
     if (parked) {
       tableState.current = null;
       setAtTable(false);
       setBoardCover(false);
       setBoardReady(false);
-      setDiscarding(false);
       setLeaveAsk(false);
       setError(null);
       escaped.current = false;
@@ -425,15 +390,13 @@ export function BridgeEmbed({
   // against loops. Only observable on native.
   const handleUrlChange = useCallback(
     (u: string) => {
-      // A parked board's trailing events (the old page winding down, the
-      // deferred about:blank landing) must not re-mark the table or trigger
-      // relaunches while the exit transition runs — drop them at the door.
+      // A parked board's trailing events (the old page winding down) must
+      // not re-mark the table or trigger relaunches while the exit
+      // transition runs — drop them at the door.
       if (persistent && parked) {
-        boardDebug("urlChange ignored (parked)", u.slice(0, 60));
         currentUrl.current = u;
         return;
       }
-      boardDebug("urlChange", u);
       currentUrl.current = u;
       // A page the app refuses to show — leave for the native screen instead.
       if (maybeEscape(u)) return;
@@ -444,11 +407,6 @@ export function BridgeEmbed({
       else {
         tableState.current = null;
         setAtTable(false);
-      }
-      // The discard's landing page — the deletion went through; leave now.
-      if (u.includes("discarded=1") && discardTimer.current) {
-        goBackNow();
-        return;
       }
       // The platform says this board no longer exists (opened from a list
       // that hadn't refreshed after a discard) — nothing to show; leave.
@@ -547,18 +505,13 @@ export function BridgeEmbed({
             onUrlChange={handleUrlChange}
             onHostMessage={handleHostMessage}
           />
-          {discarding && (
-            <View style={styles.discardCover}>
-              <ActivityIndicator color={Colors.text} />
-            </View>
-          )}
         </View>
       )}
 
       {/* The felt-green loading cover, over the whole screen until the table
           reports in (or an error takes the stage). The back chip below rides
           ABOVE it (zIndex 20 vs 10) — the exit is never covered. */}
-      {fullScreen && boardCover && !discarding && (
+      {fullScreen && boardCover && (
         <BoardLoading
           ready={boardReady || !!error}
           onGone={() => setBoardCover(false)}
@@ -573,7 +526,7 @@ export function BridgeEmbed({
           save-or-discard question — on an inferred full-screen board (an
           assignment's Continue, a Replay) leaving simply leaves, because
           discarding would delete the session an assignment row points at. */}
-      {immersive && !discarding && !boardCover && (
+      {immersive && !boardCover && (
         <QuitPullout
           onQuit={() => (confirmUnfinishedExit ? handleBack(goBackNow) : goBackNow())}
         />
@@ -617,12 +570,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screen,
   },
   embed: { flex: 1 },
-  discardCover: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: Brand.cream,
-    alignItems: "center",
-    justifyContent: "center",
-  },
   stateText: {
     fontSize: 15,
     color: Colors.textMuted,

@@ -14,7 +14,6 @@ import { useEffect, useRef, useState } from "react";
 import { Animated, Easing, StyleSheet } from "react-native";
 
 import { Brand } from "../constants/theme";
-import { boardDebug } from "./board-debug";
 
 const COVER_MS = 160;
 const REVEAL_MS = 280;
@@ -37,7 +36,6 @@ export function LeaveVeilHost() {
 
   useEffect(() => {
     host = (navigate: () => void) => {
-      boardDebug("veil: cover starting");
       setActive(true);
       opacity.setValue(0);
       Animated.timing(opacity, {
@@ -48,7 +46,6 @@ export function LeaveVeilHost() {
       }).start(() => {
         // Navigate only once fully covered — the outgoing screen never
         // half-vanishes, and whatever the router does happens out of sight.
-        boardDebug("veil: covered, navigating");
         navigate();
         setTimeout(() => {
           Animated.timing(opacity, {
@@ -56,10 +53,7 @@ export function LeaveVeilHost() {
             duration: REVEAL_MS,
             easing: Easing.out(Easing.quad),
             useNativeDriver: true,
-          }).start(({ finished }) => {
-            boardDebug("veil: reveal done", { finished });
-            if (finished) setActive(false);
-          });
+          }).start(({ finished }) => finished && setActive(false));
         }, SETTLE_MS);
       });
     };
