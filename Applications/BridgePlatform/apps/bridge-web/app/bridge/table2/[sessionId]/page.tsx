@@ -49,13 +49,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from, coach: coachParam } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -136,8 +136,13 @@ export default async function PlayTablePage({
   // controlOverrides govern the capability itself.
   const handsView = viewParam === "hands" && (canHandsView || (playedOut && !challenge));
 
-  // The coach panel is live again (owner, 2026-08-06): gated by table.coach.
-  const showCoach = canCoach;
+  // The coach panel is live again (owner, 2026-08-06): gated by table.coach —
+  // and the LEARNER can now switch it off for a sitting (?coach=off, a ☰ row
+  // like every other table toggle). Off means off: the whole panel goes, its
+  // expensive server-side build is skipped, and the table takes the stage
+  // alone, centred on white.
+  const coachOff = coachParam === "off";
+  const showCoach = canCoach && !coachOff;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
   // scaffold (think), computed from THIS learner's seat. Both are null for a
   // watcher — nobody's hand to reason from — and the panel then shows its honest
@@ -255,7 +260,7 @@ export default async function PlayTablePage({
   const confirmBids = confirm === "1";
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused };
+    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, coach: coachParam };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -285,6 +290,18 @@ export default async function PlayTablePage({
       value: confirmBids ? "On" : "Off",
       href: settingsHref({ confirm: confirmBids ? undefined : "1" }),
     },
+    // The coach's own switch. Only offered where the coach can exist at all
+    // (table.coach) — on a table that never carries one there is nothing to
+    // turn off.
+    ...(canCoach
+      ? [
+          {
+            label: "Coach panel",
+            value: coachOff ? "Off" : "On",
+            href: settingsHref({ coach: coachOff ? undefined : "off" }),
+          },
+        ]
+      : []),
     // Appearance quick-toggles (skins design). Each persists per-user via a
     // bound server action; the menu stays open across the re-render. Gated on
     // table.skin_settings.
@@ -459,11 +476,43 @@ export default async function PlayTablePage({
     // aspect AND width < 640), so capping the container at a phone width IS
     // the switch. On the desktop platform the cap comes off and the table
     // carries its full desktop view.
+    //
+    // COACH OFF, EMBEDDED: with no panel below it, a top-anchored table reads
+    // as a layout with something missing. The table gets a two-thirds box
+    // centred on BLACK (owner direction 2026-08-13, after seeing the cream) —
+    // the felt floating in the dark, theatre-style. The phone budget scales
+    // the felt to whatever box it is given, so this is composition, not
+    // squeezing.
+    //
+    // The style override: PlayTable's phone tier paints its own wrapper
+    // layers white, inline. The component belongs to another workbench right
+    // now, so the page blacks out exactly those three wrapper layers from
+    // the outside — !important beats an inline style, and the selectors stop
+    // above mobileStack, whose own felt and cards paint over everything
+    // deeper. Worst case, a structure change under this selector shows a
+    // white patch again; it can never break the table.
     <div
       style={
-        embedded ? { maxWidth: 480, height: "100%", margin: "0 auto" } : { height: "100%" }
+        embedded
+          ? {
+              maxWidth: 480,
+              height: "100%",
+              margin: "0 auto",
+              background: coachOff ? "#000" : "#fff",
+              ...(coachOff
+                ? { display: "flex", flexDirection: "column", justifyContent: "center" }
+                : {}),
+            }
+          : { height: "100%" }
       }
     >
+      {embedded && coachOff && (
+        <style>{`#coach-off-stage > div, #coach-off-stage > div > div, #coach-off-stage > div > div > div { background: #000 !important; }`}</style>
+      )}
+      <div
+        {...(embedded && coachOff ? { id: "coach-off-stage" } : {})}
+        style={embedded && coachOff ? { height: "68%" } : { height: "100%" }}
+      >
       <LivePlayTable
         sessionId={sessionId}
         // The table is shown a COMPLETE board once the auction was the board:
@@ -515,9 +564,13 @@ export default async function PlayTablePage({
         appearance={resolvedAppearance}
         showToolbars={showToolbars}
         showCoach={showCoach}
+        // Off means the BAND goes too — at zero share the table-ui renders no
+        // coach region at all, not a white placeholder band.
+        {...(coachOff ? { coachShare: 0 } : {})}
         coach={coachData}
         {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
       />
+      </div>
     </div>
   );
 
