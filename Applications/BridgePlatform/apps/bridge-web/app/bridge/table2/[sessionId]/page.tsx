@@ -523,6 +523,7 @@ export default async function PlayTablePage({
       controlsExtra={canStepControls ? controlsAt(1) : undefined}
       controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
       railExtra={seatsPanel}
+      playMode={appearance.playMode}
       settings={canSettingsMenu ? settings : undefined}
       viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
       appearance={resolvedAppearance}

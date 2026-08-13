@@ -31,7 +31,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { resolveSkin, type SkinTokens, type TableAppearance } from "@bridge/table-config";
+import { resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
@@ -315,6 +315,18 @@ export interface PlayTableProps {
   legalPlays?: readonly Card[];
   /** True when the human controls the seat on turn. */
   myTurn?: boolean;
+  /**
+   * How a tap on one of your own cards resolves (owner, 2026-08-12).
+   *
+   * `"off"` plays it. `"raise"` lifts it and wants a second tap on the SAME
+   * card — the default, because a finger on a thirteen-card row is imprecise
+   * and a mis-tap costs a trick. `"suit"` replaces the hand with the legal
+   * cards of the suit tapped, drawn larger, and plays on the second tap.
+   *
+   * Omitted, the table plays on one tap: every existing caller — the demo, the
+   * component tester, the embed — keeps the behaviour it was written against.
+   */
+  playMode?: PlayMode;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -398,6 +410,7 @@ export function PlayTable({
   legalCalls = [],
   legalPlays = [],
   myTurn = false,
+  playMode = "off",
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -451,6 +464,13 @@ export function PlayTable({
 
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
+  /**
+   * The card lifted and waiting for its second tap ("S14"), or the suit the
+   * hand has been narrowed to. Both are the same idea — a tap that has been
+   * READ but not yet acted on — so they share one slot and one escape.
+   */
+  const [held, setHeld] = useState<string | null>(null);
+  const [openSuit, setOpenSuit] = useState<Suit | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   useEffect(() => {
     setArmed(null);
@@ -673,6 +693,43 @@ export function PlayTable({
   const canPlay = (seat: Seat) => (card: Card) =>
     myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
 
+  const cardId = (c: Card) => `${c.suit}${c.rank}`;
+
+  /**
+   * What a tap on a playable card DOES — the one place the play modes live, so
+   * every leaf that shows a hand gets the same rule without knowing about it.
+   *
+   * `off` posts the card. `raise` posts only the card already lifted, and a tap
+   * on any other lifts that one instead — so no first tap can ever play. `suit`
+   * narrows the hand to the tapped card's suit first; once narrowed, everything
+   * on screen is legal and a tap posts.
+   */
+  const tapCard = (seat: Seat, card: Card) => {
+    if (playMode === "off") return onPlay?.(seat, card);
+    if (playMode === "suit" && openSuit == null) return setOpenSuit(card.suit);
+    if (playMode === "suit") {
+      setOpenSuit(null);
+      return onPlay?.(seat, card);
+    }
+    if (held === cardId(card)) {
+      setHeld(null);
+      return onPlay?.(seat, card);
+    }
+    setHeld(cardId(card));
+  };
+
+  /** Is this the card lifted and waiting for its second tap? */
+  const isHeld = (card: Card) => playMode === "raise" && held === cardId(card);
+
+  // A tap that has been read but not acted on belongs to THIS turn. When the
+  // turn moves — you played, or the board advanced under you — the lift and the
+  // narrowed suit are stale, and leaving them up would arm a card you never
+  // chose on the next trick.
+  useEffect(() => {
+    setHeld(null);
+    setOpenSuit(null);
+  }, [state.turn, state.phase]);
+
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
   const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
     <SeatHand cards={state.hands[seat]} hidden metrics={CARD_ROW} layout="row" fanSpread={tok.fanSpread} fanRadius={tok.fanRadius} backColor={tok.cardBack} backMetrics={m} />
@@ -718,7 +775,12 @@ export function PlayTable({
       fanRadius={tok.fanRadius}
       backColor={tok.cardBack}
       isPlayable={canPlay(seat)}
-      onPlay={(card) => onPlay?.(seat, card)}
+      isHeld={isHeld}
+      // In `suit` mode the hand IS the narrowed suit while one is open — the
+      // point of the mode is that the cards get bigger, which they cannot do
+      // while twelve others are still on the row.
+      only={openSuit && canPlay(seat) !== undefined ? openSuit : null}
+      onPlay={(card) => tapCard(seat, card)}
     />
   );
 
@@ -737,7 +799,7 @@ export function PlayTable({
       bare={m.bare}
       touch={!!m.touch && myTurn && inPlay && state.turn === seat}
       isPlayable={canPlay(seat)}
-      onPlay={(card) => onPlay?.(seat, card)}
+      onPlay={(card) => tapCard(seat, card)}
     />
   );
 
@@ -1216,7 +1278,16 @@ export function PlayTable({
   // strip went short. The stage is a fixed 720 and the scale alone decides how
   // wide it renders: the board compacts VERTICALLY, never horizontally.
   const mobileStack = (
-    <div data-testid="phone-stage" style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+    <div
+      data-testid="phone-stage"
+      // THE ESCAPE. A tap anywhere that is not a card puts a lifted card down
+      // and re-opens a narrowed hand (owner: "tap felt to cancel"). It sits on
+      // the stage rather than on the felt so the whole board is the target,
+      // and it fires on the way DOWN through the tree — a tap that lands on a
+      // card stops at the card's own handler, which runs first.
+      onClick={held != null || openSuit != null ? () => { setHeld(null); setOpenSuit(null); } : undefined}
+      style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
+    >
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
