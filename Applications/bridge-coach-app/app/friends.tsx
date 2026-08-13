@@ -182,7 +182,16 @@ export default function FriendsScreen() {
 
   return (
     <View style={styles.page}>
-      <BrandAppBar onBack={() => router.back()} showActions showMenu={false} />
+      {/* No wordmark: it renders "BridgeBird" in Fonts.display at Type.wordmark —
+          the same face and size as this screen's own title, at almost the same left
+          inset — so the two stack up and read as one title repeated rather than as
+          branding. The design has a single title here. */}
+      <BrandAppBar
+        onBack={() => router.back()}
+        showActions
+        showMenu={false}
+        showWordmark={false}
+      />
 
       <ScrollView
         contentContainerStyle={{
@@ -191,7 +200,9 @@ export default function FriendsScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.titleRow, { marginLeft: D.titleLeft * s }]}>
+        {/* The wordmark row used to supply the gap under the app bar; without it the
+            title would sit right against the chrome. */}
+        <View style={[styles.titleRow, { marginLeft: D.titleLeft * s, marginTop: 6 * s }]}>
           <Text style={[styles.title, { fontSize: Type.screenTitle * s }]}>Friends</Text>
         </View>
 
