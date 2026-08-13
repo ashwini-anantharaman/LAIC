@@ -2086,7 +2086,15 @@ platformRouter.get("/learning/objects/:object_id", async (c) => {
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
-  const row = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  // Scoped like the list: club ∪ parent. The embed chain survives this because the
+  // mobile launch carries the club id and the Studio sends it back on every by-id
+  // call, so a by-id fetch resolves to a SUPERSET of the list that offered the item.
+  const row = await graph.getLearningObject(
+    access.orgId,
+    c.req.param("object_id"),
+    access.programId,
+    access.partnerProgramId ?? null,
+  );
   if (!row) throw new HttpError(404, "Learning object not found");
   return c.json(row);
 });
@@ -2148,22 +2156,24 @@ platformRouter.put("/learning/objects", async (c) => {
  * The program a write is stamped with — ONE expression, so club ownership arrives
  * everywhere at once or nowhere.
  *
- * Still the parent, deliberately. Making it `access.partnerProgramId ?? access.programId`
- * is the whole of "content belongs to the club that made it", and it is a one-line
- * change — but it is a DATA MIGRATION wearing a code change's clothes, and it must
- * land with its backfill:
+ * The CLUB when the caller came through one, the program otherwise. Both writers go
+ * through here, which is what stops the same row ping-ponging between two program ids
+ * on alternate saves.
  *
- *   • every existing row was stamped from the Studio's `LEARNING_PROGRAM_ID` env var,
- *     so until they are re-attributed, flipping this makes a club member's autosave
- *     name a different program than the row carries, and the sticky guard in
- *     upsertLearningObject correctly refuses it — a 409 on content that works today;
- *   • both writers must flip together (this and PUT /learning/objects), or the same
- *     row ping-pongs between two program ids on every save.
+ * No backfill was owed. The diagnostic found every existing object stamped with a
+ * parent program (Bridge Program 16, Brain Bee 5) or nothing at all (14, none of them
+ * published) and NOT ONE owned by a club — so there is no attribution to undo, and
+ * parent-stamped content keeps flowing down to every connected club through the read
+ * arm.
  *
- * The diagnostic in the plan decides the backfill. Flip here, and at the PUT, then.
+ * The consequence that was signed off: a club member can no longer save edits to
+ * PARENT curriculum. The sticky guard in upsertLearningObject refuses it and the route
+ * answers 409, rather than the old behaviour of silently moving the object into their
+ * club. Someone authoring AS the parent (the usual Content Studio launch) is
+ * unaffected — their scope is the program, exactly as before.
  */
 function _learningWriteScope(access: ResolvedPlatformAccess): string | null {
-  return access.programId ?? null;
+  return access.partnerProgramId ?? access.programId ?? null;
 }
 
 /**

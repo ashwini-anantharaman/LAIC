@@ -2775,15 +2775,35 @@ async function _listLearningObjectsMeta(
   });
 }
 
-/** One learning object, full row — org-scoped like the list. */
-export async function getLearningObject(orgId: string, id: string): Promise<Row | null> {
+/**
+ * One learning object, full row — scoped like the list.
+ *
+ * This used to filter on org and id ALONE, so any authenticated member of the org
+ * could fetch any object of any program by id, `pipeline_draft` included — the
+ * in-progress authoring draft that even the public share route deliberately withholds.
+ * Once content is club-owned that is one club reading a sibling club's unpublished
+ * work, which is the sharpest edge in this area and one predicate to close.
+ *
+ * Out of scope returns null and the route 404s, indistinguishable from a missing id —
+ * the same rule the public route states, and the house 404-for-forbidden convention.
+ *
+ * Passing no program keeps the org-wide behaviour, which is what an org-level admin
+ * with nothing pinned relies on.
+ */
+export async function getLearningObject(
+  orgId: string,
+  id: string,
+  programId?: string | null,
+  clubProgramId?: string | null,
+): Promise<Row | null> {
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
-      where organization_id = ${orgId} and id = ${id}
+      where organization_id = ${orgId} and id = ${id} ${scope}
       limit 1`);
     return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
   });
