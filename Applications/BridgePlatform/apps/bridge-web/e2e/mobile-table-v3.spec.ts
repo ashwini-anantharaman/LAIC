@@ -579,4 +579,72 @@ test.describe("mobile table v3 — phone tier", () => {
       "the grid still reserves four rows once calls have arrived",
     ).toBe(223);
   });
+
+  // The safe default, and the reason the setting exists (decisions doc, "Play
+  // modes"): `raise` ships ON, so a tap LIFTS a card and only a second tap on
+  // the same card plays it. Nothing else in this suite plays a card by
+  // clicking one, so without this the default could invert and every test
+  // would still pass.
+  test("raise mode: a first tap lifts a card and never plays it", async ({ page }) => {
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await page.goto("/bridge/table");
+    await page
+      .getByRole("button", { name: /Quickplay|Deal a fresh board/ })
+      .or(page.getByRole("link", { name: /^Resume / }))
+      .first()
+      .click();
+    await page.waitForURL(/\/bridge\/table2?\/bs_/);
+    await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+
+    // Playability is cursor:pointer + an armed handler, not an attribute.
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+
+    let card: string | null = null;
+    for (let i = 0; i < 150 && !card; i++) {
+      card = await armed('button[aria-label^="Play "]');
+      if (card) break;
+      if (await armed('button[aria-label="Pass"]'))
+        await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+      await page.waitForTimeout(250);
+    }
+    expect(card, "a playable card once the auction is out").toBeTruthy();
+    const sel = `button[aria-label="${card}"]`;
+    const before = await page.locator('button[aria-label^="Play "]').count();
+
+    await page.locator(sel).first().click();
+    await page.waitForTimeout(400);
+    expect(await page.locator(sel).count(), "the card is still in the hand").toBeGreaterThan(0);
+    expect(
+      await page.locator('button[aria-label^="Play "]').count(),
+      "no card left any hand on the first tap",
+    ).toBe(before);
+    expect(
+      await page.locator(sel).first().getAttribute("data-held"),
+      "and it is marked as the card the next tap commits",
+    ).not.toBeNull();
+
+    // A tap anywhere that is not a card puts it back down.
+    await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+    expect(
+      await page.locator(sel).first().getAttribute("data-held"),
+      "a tap off the cards clears the lift",
+    ).toBeNull();
+
+    // Two taps on the same card play it.
+    await page.locator(sel).first().click();
+    await page.waitForTimeout(200);
+    await page.locator(sel).first().click();
+    await expect(page.locator(sel)).toHaveCount(0, { timeout: 5000 });
+  });
 });
