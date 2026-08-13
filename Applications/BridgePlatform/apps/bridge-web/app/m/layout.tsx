@@ -98,7 +98,13 @@ export default async function MobileLayout({
         }}
       >
         {children}
-        {embedded ? <EmbedLocationReporter /> : <TabBar allowedKeys={allowedKeys} />}
+        {/* The reporter mounts EVEN when the embedded cookie is absent: a
+            stale platform session loses that cookie, and a page that stops
+            reporting strands the host app with no signal to react to (the
+            learner stared at /m/home inside the board frame, 2026-08-13).
+            Standalone it posts to itself — harmless. */}
+        <EmbedLocationReporter />
+        {!embedded && <TabBar allowedKeys={allowedKeys} />}
       </div>
     </div>
   );

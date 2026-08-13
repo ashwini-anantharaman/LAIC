@@ -54,6 +54,7 @@ export function BridgeEmbed({
   escapeTo,
   leaveOnResults,
   parked,
+  discardOnGone = false,
 }: {
   title: string;
   next: string;
@@ -110,6 +111,15 @@ export function BridgeEmbed({
    * the park effect); every unpark replaces it with a real navigation.
    */
   parked?: boolean;
+  /**
+   * This board was dealt THIS moment and nobody has played it (New Play).
+   * quick-play creates the session BEFORE the table opens, so an open that
+   * bounces (board gone) would otherwise strand a ghost board in Resume —
+   * with this set, giving up on the bounce discards the session on the way
+   * out. Guarded by "the table never reported in": a board that was actually
+   * seen is never discarded by this path.
+   */
+  discardOnGone?: boolean;
 }) {
   const persistent = parked !== undefined;
   const { token } = useAuth();
@@ -123,6 +133,9 @@ export function BridgeEmbed({
   // One boardGone retry per board open — reset when a board opens (unpark)
   // and when a table actually reports in.
   const boardGoneRetried = useRef(false);
+  // Whether THIS board's table ever reported in (bridge:table) — the guard
+  // that keeps discardOnGone from ever deleting a board someone has seen.
+  const tableReported = useRef(false);
 
   // The app-wide program unless a caller names its own — OR a club is selected
   // (owner direction 2026-08-10: club members hold the member surface, scoped
@@ -284,15 +297,45 @@ export function BridgeEmbed({
       boardGoneRetried.current = true;
       boardGoneTimer.current = setTimeout(() => {
         boardGoneTimer.current = null;
+        // The retry is a FULL RE-HANDSHAKE, not a reload: "board gone" can
+        // also mean the platform cookie no longer matches this app session
+        // (another tab signed into the platform directly, 2026-08-13) — a
+        // direct reload would keep answering with the wrong account forever,
+        // while a fresh launch signs the right user back in and the board is
+        // simply there again.
+        forgetBridgeOrigin();
         load();
       }, 800);
       return;
     }
     boardGoneLeaving.current = true;
+    // A FRESHLY DEALT board that bounced was created seconds ago and never
+    // seen — leaving it behind is what filled Resume with ghost boards
+    // (owner report 2026-08-13). Discard it on the way out, best-effort: if
+    // the board truly doesn't exist the discard is a no-op 404, and a board
+    // whose table ever reported in is never touched by this path.
+    if (discardOnGone && !tableReported.current && token) {
+      const id = /\/bridge\/table2\/([^/?]+)/.exec(next)?.[1];
+      if (id) {
+        bridgeRequest(`/api/bridge/sessions/${encodeURIComponent(decodeURIComponent(id))}/discard`, {
+          token,
+          programId,
+          method: "POST",
+        })
+          .then(() => refreshSummary(token, programId).catch(() => {}))
+          .catch(() => {});
+      }
+    }
     goBackNow();
-  }, [load, goBackNow]);
+  }, [load, goBackNow, discardOnGone, token, programId, next]);
 
   const handleHostMessage = useCallback((data: unknown) => {
+    // Parked, the old page's trailing messages are noise — the same door
+    // handleUrlChange already closes. Without this, a parked page bouncing
+    // itself to /m/home?boardGone=1 (a discarded board's page refreshing
+    // under it) could run the retry-and-leave dance while the user is on a
+    // completely different screen.
+    if (persistent && parked) return;
     const m = data as {
       type?: unknown;
       sessionId?: unknown;
@@ -303,6 +346,7 @@ export function BridgeEmbed({
       tableState.current = { sessionId: m.sessionId, phase: m.phase };
       setAtTable(true);
       boardGoneRetried.current = false;
+      tableReported.current = true;
       // The table reported in — the felt is drawn; the loading cover fades.
       setBoardReady(true);
     }
@@ -318,7 +362,7 @@ export function BridgeEmbed({
       // page inside the frame.
       if (m.href.includes("boardGone=1")) handleBoardGone();
     }
-  }, [maybeEscape, handleBoardGone]);
+  }, [maybeEscape, handleBoardGone, persistent, parked]);
 
 
   const discardAndLeave = useCallback(() => {
@@ -372,8 +416,24 @@ export function BridgeEmbed({
     if (!persistent) return;
     if (parked) {
       tableState.current = null;
+      // A pending boardGone retry must die with the sitting: left armed, it
+      // fired AFTER the user had already left — navigating the parked
+      // webview and, worse, leaving boardGoneRetried spent so the next
+      // board's first hiccup skipped straight to the give-up.
+      if (boardGoneTimer.current) {
+        clearTimeout(boardGoneTimer.current);
+        boardGoneTimer.current = null;
+      }
       setAtTable(false);
-      setBoardCover(false);
+      // The cover goes UP at park, not down. Unparking flips the host visible
+      // on the render commit, but load() — which used to raise the cover —
+      // runs in an effect AFTER that frame paints, so the old parked page
+      // (which can be the platform's home: a discarded board's page bounces
+      // itself to /m/home when its session dies under it) flashed for the
+      // gap. A fresh cover mounted now is already painted when the host
+      // reappears, so the first visible frame is always felt. `held` (below)
+      // suspends the cover's failsafe while parked — parks outlast 12s.
+      setBoardCover(fullScreen);
       setBoardReady(false);
       setLeaveAsk(false);
       setError(null);
@@ -382,6 +442,7 @@ export function BridgeEmbed({
       escaped.current = false;
       boardGoneRetried.current = false;
       boardGoneLeaving.current = false;
+      tableReported.current = false;
       load();
     }
   }, [persistent, parked, load]);
@@ -414,18 +475,34 @@ export function BridgeEmbed({
         handleBoardGone();
         return;
       }
-      if (u.includes("/welcome")) {
+      // A PLATFORM HOME under the board frame is the same stranding as
+      // /welcome, one hop later: a session that exists but doesn't match
+      // (another tab signed into the platform directly) sails through
+      // /welcome's redirect and parks the learner on the platform's home
+      // page inside the table (2026-08-13). Persistent host only — the tab
+      // embeds show /m/home legitimately. boardGone=1 returned above.
+      const strandedHome = (() => {
+        if (!persistent) return false;
+        try {
+          const path = new URL(u, "http://x").pathname.replace(/\/+$/, "");
+          return path === "/bridge/home" || path === "/m/home";
+        } catch {
+          return false;
+        }
+      })();
+      if (u.includes("/welcome") || strandedHome) {
         if (Date.now() - lastRelaunch.current > 5000) {
           lastRelaunch.current = Date.now();
-          // The session on the remembered origin is dead — a direct load
-          // would just bounce here again, so force the full handshake.
+          // The session on the remembered origin is dead or mismatched — a
+          // direct load would just bounce here again, so force the full
+          // handshake.
           forgetBridgeOrigin();
           load();
         } else {
-          // The re-handshake ITSELF bounced back to the platform's sign-in.
-          // Whatever went wrong, a foreign welcome page must never be what
-          // the learner is left staring at — show the app's own error, whose
-          // "Try again" runs the handshake once more.
+          // The re-handshake ITSELF bounced back here. Whatever went wrong,
+          // a foreign page must never be what the learner is left staring
+          // at — show the app's own error, whose "Try again" runs the
+          // handshake once more.
           setUrl(null);
           setError("The table lost its connection. Try again.");
         }
@@ -514,6 +591,11 @@ export function BridgeEmbed({
       {fullScreen && boardCover && (
         <BoardLoading
           ready={boardReady || !!error}
+          // Parked, the cover is a curtain over the old page, not a loading
+          // screen: hold the failsafe (and the deal animation) until a real
+          // board load is underway, or a long park would fade it out and
+          // reopen the gap it exists to cover.
+          held={persistent && parked}
           onGone={() => setBoardCover(false)}
         />
       )}

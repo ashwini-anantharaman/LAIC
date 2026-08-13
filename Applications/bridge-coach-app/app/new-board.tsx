@@ -27,7 +27,10 @@ export default function NewBoardScreen() {
     if (!token) return;
     try {
       const { sessionId } = await quickPlay(token, programId);
-      router.replace(`/table/${sessionId}`);
+      // fresh=1: the session was created THIS moment and nobody has played
+      // it. If its open bounces (board gone), the table screen discards it on
+      // the way out instead of stranding a ghost board in Resume.
+      router.replace(`/table/${sessionId}?fresh=1`);
     } catch (e) {
       const noLineup = e instanceof BridgeApiError && e.message === "no_lineup";
       setError({

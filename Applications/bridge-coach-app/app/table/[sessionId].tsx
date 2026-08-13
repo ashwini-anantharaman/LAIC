@@ -21,10 +21,16 @@ import { Screen } from "../../components/ui";
  *  the platform page which journey this is (no "⟵ table" door on a record
  *  opened from history — owner decision 2026-08-07). */
 export default function TableScreen() {
-  const { sessionId, view, from } = useLocalSearchParams<{
+  const { sessionId, view, from, fresh } = useLocalSearchParams<{
     sessionId: string;
     view?: string;
     from?: string;
+    /** "1" = dealt THIS moment (New Play) and never played. A fresh board
+     *  whose open bounces (board gone) is discarded on the way out — quick-play
+     *  creates the session before the table opens, so a bounce would otherwise
+     *  strand a ghost board in Resume. App-side flag only; never sent to the
+     *  platform. */
+    fresh?: string;
   }>();
 
   const params = new URLSearchParams();
@@ -32,6 +38,7 @@ export default function TableScreen() {
   if (typeof from === "string" && from) params.set("from", from);
   const query = params.toString();
   const next = `/bridge/table2/${encodeURIComponent(sessionId ?? "")}${query ? `?${query}` : ""}`;
+  const discardOnGone = fresh === "1";
 
   // Hand the persistent host this board's URL (on focus, so a popped Hands
   // record re-asserts the board underneath). Visibility is NOT managed here:
@@ -40,8 +47,8 @@ export default function TableScreen() {
   // lifecycle to miss, no exit path that can strand it.
   useFocusEffect(
     useCallback(() => {
-      showBoard({ next });
-    }, [next]),
+      showBoard({ next, discardOnGone });
+    }, [next, discardOnGone]),
   );
 
   return (

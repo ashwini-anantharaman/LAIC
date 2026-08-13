@@ -207,8 +207,19 @@ function InlineView({
   onLoadEnd?: () => void;
   onError?: () => void;
 }) {
+  const frameRef = useRef<HTMLIFrameElement | null>(null);
+
   useEffect(() => {
     const listener = (e: MessageEvent) => {
+      // ONLY messages from OUR iframe. Several iframes are alive at once —
+      // the persistent table host plus every visited tab embed (web keeps
+      // blurred screens mounted) — and window "message" delivers every
+      // iframe's posts to every listener. Unfiltered, one page's
+      // boardGone=1 location report fanned out to EVERY mounted embed, and
+      // each ran its own retry-then-leave — serial router.back() yanks that
+      // read as the app randomly bouncing (2026-08-13). The pooled variant
+      // below always filtered by source; the inline one must too.
+      if (!frameRef.current || e.source !== frameRef.current.contentWindow) return;
       const data = e.data as { type?: string; href?: string } | null;
       if (data?.type === "bridge:location" && typeof data.href === "string") {
         onUrlChange?.(data.href);
@@ -221,6 +232,7 @@ function InlineView({
   }, [onUrlChange, onHostMessage]);
 
   return createElement("iframe", {
+    ref: frameRef,
     src: url,
     style: { flex: 1, width: "100%", height: "100%", border: 0 },
     onLoad: () => onLoadEnd?.(),

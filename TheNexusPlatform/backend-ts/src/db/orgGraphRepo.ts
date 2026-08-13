@@ -2437,11 +2437,20 @@ export async function getBridgeActivitySummary(
 /**
  * Boards this person started and hasn't finished — the coach app's "Resume".
  * Status and board name live in the session's jsonb record.
+ *
+ * ZERO-EVENT sessions are excluded (2026-08-13): quick-play creates the
+ * session BEFORE the table opens, so a board whose open bounced (the app's
+ * boardGone retreat) strands a row nobody ever saw — each one a ghost
+ * "resume" entry that crowds the real boards out of the capped list. No
+ * events means nothing has happened at the table (the deal itself is not an
+ * event; a board someone actually looked at has robot calls within a beat),
+ * so there is nothing to resume. A later real sitting writes events and the
+ * board appears here exactly as before.
  */
 export async function listBridgeInProgressSessions(
   programId: string | null,
   userId: string,
-  limit = 5,
+  limit = 10,
 ): Promise<Row[]> {
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
@@ -2451,6 +2460,7 @@ export async function listBridgeInProgressSessions(
       from bridge_kb_sessions
       where created_by = ${userId}
         and coalesce(record->>'status', 'in_progress') <> 'completed'
+        and jsonb_array_length(coalesce(record->'events', '[]'::jsonb)) > 0
         and (${programId}::text is null or nexus_program_id = ${programId})
       order by updated_at desc
       limit ${limit}

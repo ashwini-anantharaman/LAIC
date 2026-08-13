@@ -470,6 +470,33 @@ export function PlayTable({
     return () => ro.disconnect();
   }, []);
 
+  // The phone stage's ACTUAL laid-out height. The budget below stays the one
+  // authority on the SCALE (constants, never measured — the loop the band-
+  // constant header warns about), but the FOOTPRINT the stage leaves in the
+  // column is measured: the budget prices worst-case bands (a full-height hand
+  // row on a finished board whose cards are all gone, a tray that isn't
+  // there), and every pixel it over-reserves used to render as dead white
+  // between the table and the coach panel. Measuring the stage and bleeding
+  // the true difference hands ALL of it to the coach (owner direction
+  // 2026-08-13: the coach occupies any whitespace the table leaves — when the
+  // board ends and the table shrinks, the coach grows into that space).
+  // offsetHeight cannot feed back: it ignores the transform, and neither the
+  // negative margin nor the coach band below it changes the stage's own
+  // content height.
+  const [stageEl, setStageEl] = useState<HTMLDivElement | null>(null);
+  const [stageRealH, setStageRealH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    if (!stageEl) {
+      setStageRealH(null);
+      return;
+    }
+    const read = () => setStageRealH(stageEl.offsetHeight);
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(stageEl);
+    return () => ro.disconnect();
+  }, [stageEl]);
+
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
   const [pending, setPending] = useState<string | null>(null);
@@ -677,16 +704,21 @@ export function PlayTable({
   const scale = phone ? phoneFit.scale : genericScale;
   const stageW = phone ? MOBILE_W : Math.max(BASE.w, box.w / genericScale);
   const stageH = phone ? phoneFit.content : Math.max(BASE.h, box.h / genericScale);
-  // Rounding across four bands lands a few px either way; the stage bleeds its
-  // scaled-away height back so the region packs to exactly its share. The slack
-  // reserve bleeds with it: it is budget arithmetic, not paint — the bands are
-  // integer-authored and scale as ONE transform, so nothing ever draws in it,
-  // and leaving it in the footprint held the coach panel a dead white band
-  // below the plate (owner, 2026-08-11: the coach takes that space).
+  // The stage bleeds its scaled-away height back so the region packs to
+  // exactly what it renders and the coach panel below takes the rest. Once
+  // measured (stageRealH), the bleed is simply the scale's leftover on the
+  // TRUE content height — the slack reserve and any band the budget priced
+  // but the phase never drew (an empty hand row on a finished board) are not
+  // in the footprint at all, so they need no arithmetic. The pre-measure
+  // frame falls back to the budget's estimate: slack is budget-only there,
+  // so it bleeds too, exactly as before (owner, 2026-08-11: the coach takes
+  // that space).
   const stageBleed = phone
-    ? -Math.round(
-        phoneFit.content * (1 - phoneFit.scale) + slackFor(phoneFit.scale) * phoneFit.scale,
-      )
+    ? stageRealH != null
+      ? -Math.round(stageRealH * (1 - phoneFit.scale))
+      : -Math.round(
+          phoneFit.content * (1 - phoneFit.scale) + slackFor(phoneFit.scale) * phoneFit.scale,
+        )
     : 0;
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
@@ -1255,9 +1287,12 @@ export function PlayTable({
     : Math.round(M_CARD.backW * phoneHandN + 1.5 * (phoneHandN - 1)) + 4;
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
-  // The stage is a fixed 720-wide column at the fixed-point scale; its content
-  // height is the sum of the band constants (never measured), and it bleeds its
-  // scaled-away height back so the table packs to exactly its screen share.
+  // The stage is a fixed 720-wide column at the fixed-point scale. The SCALE
+  // is computed from the band constants (never measured — measurement would
+  // feed the scale, which feeds the touch floors, which feed the height back);
+  // the stage's HEIGHT is its content, measured only to size the footprint it
+  // leaves in the column, so whatever the budget over-reserved goes to the
+  // coach panel below instead of rendering as white under the toolbar.
   //
   // `flex: none` is load-bearing. The stage is a flex ITEM in the region below,
   // and a 720-wide item in a 366-wide box shrinks to its widest child unless it
@@ -1266,7 +1301,7 @@ export function PlayTable({
   // strip went short. The stage is a fixed 720 and the scale alone decides how
   // wide it renders: the board compacts VERTICALLY, never horizontally.
   const mobileStack = (
-    <div data-testid="phone-stage" style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+    <div ref={setStageEl} data-testid="phone-stage" style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
