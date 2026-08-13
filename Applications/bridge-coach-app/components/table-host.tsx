@@ -8,25 +8,25 @@
 // navigation of the already-booted browser (warm process, cookies, HTTP and
 // bytecode caches), which is most of what made opening a table slow.
 //
-// How it works:
-//   · TableWebViewHost mounts once in the root layout, above the navigator,
-//     holding ONE BridgeEmbed with a stable key — its WebView never unmounts.
-//   · The table SCREEN calls showBoard() with its board URL on focus.
-//   · Visibility is derived from THE ROUTE, not from screen callbacks: the
-//     host is shown exactly while the pathname is a /table screen. (The
-//     first cut parked on the screen's blur cleanup, which silently never
-//     fired on exits — reproduced 2026-08-12: the host stayed painted over
-//     Play with the discard spinner forever. The pathname cannot lie.)
-//   · Parked, the page is sent to about:blank — the old board's timers die
-//     exactly as an unmount killed them — and the browser stays warm.
+// VISIBILITY CONTRACT (fourth cut; the first three each failed in the field,
+// all verified end-to-end in a browser):
+//   · useFocusEffect blur cleanup — silently never fired on exit navigations;
+//   · usePathname — sometimes never delivered the route-change render;
+//   · useEffect unmount cleanup — never fires on web at all, because
+//     react-native-screens keeps blurred screens MOUNTED there.
+// The host now listens to the NAVIGATION CONTAINER'S own state events —
+// imperative, fired on every navigation commit, independent of any screen's
+// lifecycle or any hook's re-render timing — and derives "a board owns the
+// screen" from the current route name. The event drives local React state,
+// so the re-render is the host's own.
 //
-// The board's implementation is untouched — this is hosting chrome only; the
-// page inside is the platform's table2 exactly as before, and BridgeEmbed
-// carries all its usual behavior (felt cover, quit pull-out, leave dialog,
-// discard flow, /welcome watchdog).
+// Parked, the page is sent to about:blank — the old board's timers die
+// exactly as an unmount killed them — and the browser stays warm. The board
+// inside is the platform's table2 exactly as before; BridgeEmbed carries all
+// its usual chrome (felt cover, quit pull-out, leave dialog, discard flow).
 
-import { usePathname } from "expo-router";
-import { useEffect, useReducer } from "react";
+import { useNavigationContainerRef } from "expo-router";
+import { useEffect, useReducer, useState } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { BridgeEmbed } from "./bridge-embed";
@@ -48,14 +48,14 @@ export function showBoard(params: BoardParams): void {
   emit();
 }
 
-/** The route prefix that means "a board owns the screen". */
-const TABLE_PATH = /^\/table(\/|$)/;
+/** The expo-router route names that mean "a board owns the screen". */
+const isTableRoute = (name: string | undefined) => !!name && name.startsWith("table/");
 
 export function TableWebViewHost() {
   const [, force] = useReducer((c: number) => c + 1, 0);
   const { token } = useAuth();
-  const pathname = usePathname();
-  const shown = !!state.params && !!token && TABLE_PATH.test(pathname ?? "");
+  const navRef = useNavigationContainerRef();
+  const [atTableRoute, setAtTableRoute] = useState(false);
 
   useEffect(() => {
     listeners.add(force);
@@ -63,6 +63,17 @@ export function TableWebViewHost() {
       listeners.delete(force);
     };
   }, []);
+
+  // The one park/unpark signal: the container's own navigation commits.
+  useEffect(() => {
+    const read = () => {
+      const route = navRef.getCurrentRoute() as { name?: string } | undefined;
+      setAtTableRoute(isTableRoute(route?.name));
+    };
+    read();
+    const sub = navRef.addListener("state", read);
+    return sub;
+  }, [navRef]);
 
   // Sign-out drops the browser entirely: the next account must never inherit
   // this one's booted page or its cookie-adjacent state.
@@ -75,6 +86,8 @@ export function TableWebViewHost() {
 
   // Never opened a board this session — nothing to keep warm yet.
   if (!state.params || !token) return null;
+
+  const shown = atTableRoute;
 
   return (
     <View

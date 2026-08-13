@@ -33,9 +33,11 @@ export default function TableScreen() {
   const query = params.toString();
   const next = `/bridge/table2/${encodeURIComponent(sessionId ?? "")}${query ? `?${query}` : ""}`;
 
-  // Hand the persistent host this board's URL. Visibility is NOT managed
-  // here — the host shows itself exactly while the route is a /table screen,
-  // so no exit path (back, replace, discard, deep link) can strand it shown.
+  // Hand the persistent host this board's URL (on focus, so a popped Hands
+  // record re-asserts the board underneath). Visibility is NOT managed here:
+  // the host itself listens to the navigation container's state events and
+  // is shown exactly while the current route is a table screen — no screen
+  // lifecycle to miss, no exit path that can strand it.
   useFocusEffect(
     useCallback(() => {
       showBoard({ next });
