@@ -12,11 +12,15 @@
 // the lines/actions OUR CoachPanel draws. The panel stays a dumb shell.
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import type { Card, Seat } from "@bridge/events";
+import { useOptimistic, useState, useTransition } from "react";
+import type { ActionEvent, Call, Card, Seat } from "@bridge/events";
+import { applyEvent, type GameState } from "@bridge/engine";
 import { bidAction, playCardAction } from "@/app/bridge/table/actions";
 import NextLink from "next/link";
 import { PlayTable, TableHostProvider, type PlayTableProps } from "@bridge/table-ui";
+
+/** The board as <PlayTable/> wants it: the engine's state minus what it never draws. */
+type TableState = PlayTableProps["state"];
 import {
   AUCTION_ADVICE_PENDING,
   coachActions,
@@ -46,8 +50,49 @@ export function LivePlayTable({
   const [layer, setLayer] = useState<CoachLayer>("looking");
   const [advice, setAdvice] = useState<CoachAdvice>({ kind: "idle" });
 
-  const run = (fn: (fd: FormData) => Promise<void>, fields: Record<string, string>) =>
+  /**
+   * THE BOARD YOU SEE, WHICH IS AHEAD OF THE ONE THE SERVER HAS CONFIRMED.
+   *
+   * Every action here is a server action followed by `router.refresh()`, so
+   * until this existed a tap did nothing at all for one round trip and then the
+   * whole table changed at once: your card vanished from your hand, appeared in
+   * the middle, and the row re-centred, in the frame the new HTML landed. On a
+   * deployed table that gap is real latency, and it is the jitter — the table
+   * lurching a beat after you touch it (owner, 2026-08-12).
+   *
+   * The fix is not to animate that frame; it is to stop waiting for it. The
+   * engine's reducer is PURE and lives in a package the client already has, so
+   * the same function the server folds the event with runs here the moment you
+   * tap. The card leaves your hand and lands in the trick immediately — which
+   * is also what gives the hand's FLIP and the trick's deal-in something to
+   * animate — and the server's answer replaces this a round trip later, by
+   * which time it agrees, plus whatever the robots did next.
+   *
+   * React drops the optimistic value when the transition settles, so the server
+   * stays authoritative: a rejected play (a race with another actor, a stale
+   * board) corrects itself on the refresh rather than sticking.
+   */
+  const [view, apply] = useOptimistic(rest.state, (state: TableState, event: ActionEvent) =>
+    // The reducer is typed on the engine's GameState, which carries a
+    // `boardRef` that <PlayTable/>'s presentational prop type omits — the
+    // component draws a board, it does not need to know which board. The
+    // reducer only ever SPREADS that field through, so seeding it and handing
+    // the result back is lossless for every field the table actually reads
+    // (state's own value wins when the server did send one).
+    applyEvent({ boardRef: "", ...state } as GameState, event) as TableState,
+  );
+
+  /** Event metadata the reducer does not read — the server stamps the real ones. */
+  const localMeta = { seq: 0, ts: 0, boardRef: "" } as const;
+
+  const run = (
+    fn: (fd: FormData) => Promise<void>,
+    fields: Record<string, string>,
+    local?: ActionEvent,
+  ) =>
     start(async () => {
+      // Inside the transition, before the await: this is the frame the tap gets.
+      if (local) apply(local);
       const fd = new FormData();
       fd.set("sessionId", sessionId);
       for (const [k, v] of Object.entries(fields)) fd.set(k, v);
@@ -98,11 +143,22 @@ export function LivePlayTable({
     <PlayTable
       {...rest}
       {...coachProps}
+      state={view}
       // While a call/play is in flight the board is stale, so stop offering
-      // controls that would post a second action against it.
+      // controls that would post a second action against it. The optimistic
+      // board has already moved the turn on, which disarms the cards on its
+      // own; this also covers the auction and the gap before it commits.
       myTurn={rest.myTurn && !pending}
-      onCall={(call) => run(bidAction, { call })}
-      onPlay={(_seat: Seat, card: Card) => run(playCardAction, { suit: card.suit, rank: String(card.rank) })}
+      onCall={(call) =>
+        run(bidAction, { call }, { ...localMeta, category: "bid-event", seat: rest.mySeat!, call: call as Call, fallback: false })
+      }
+      onPlay={(seat: Seat, card: Card) =>
+        run(
+          playCardAction,
+          { suit: card.suit, rank: String(card.rank) },
+          { ...localMeta, category: "play-event", seat, card, fallback: false },
+        )
+      }
     />
     </TableHostProvider>
   );
