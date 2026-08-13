@@ -1,8 +1,17 @@
 -- Let the CLIENT app read published learning content directly, with Realtime.
 --
--- NOT APPLIED YET, and it should not be applied casually: this deliberately opens
--- a hole in the wall the rest of this pack builds. Read the whole file before
--- running it.
+-- INERT BY DEFAULT. Everything below is wrapped in an opt-in gate and does
+-- NOTHING unless someone deliberately turns it on (see THE GATE). Read the whole
+-- file before doing that.
+--
+-- WHY THE GATE EXISTS — the runner has NO LEDGER.
+-- `scripts/runMigrations.ts:38-50` globs every *.sql in every pack and replays it
+-- on EVERY `npm run migrate` (`sql.unsafe` per file, :64-72). There is no
+-- migrations table, no applied/pending distinction, no skip list. So a file
+-- committed here is not "pending" in any meaningful sense — it is ARMED, and the
+-- next person to run migrate for an unrelated reason applies it. This file's own
+-- header used to say "NOT APPLIED YET", which read as a decision still open when
+-- it was really a tripwire. Comments cannot stop a replay; the gate can.
 --
 -- WHAT THE PACK DOES TODAY
 -- 9000_nexus_hardening.sql revokes every learning_* table from PUBLIC and grants
@@ -37,72 +46,117 @@
 -- valid user JWT, and that JWT is what the org test reads. This is why the grant is
 -- to authenticated rather than anon, even though the client is configured with the
 -- anon key.
-
+--
+-- ── THE REASON THIS IS OFF, AND NOT MERELY UNAPPLIED ───────────────────────
+-- This policy has NO program_id term. It is org-wide by design, from a time when
+-- one org meant one library. Content is now CLUB-SCOPED: a club owns its content
+-- and additionally sees its parent's curriculum, enforced in the API's read path.
+-- The mobile app PREFERS this direct path and falls back to the API only when it
+-- returns nothing (`Applications/bridge-coach-app/lib/learning.ts:63-64`), and its
+-- query filters organization_id alone with no program filter
+-- (`lib/learning-live.ts:108-117`). So turning this on would let the WIDER path
+-- front-run the correctly-scoped one, and every signed-in member of the org would
+-- read every club's published content. That is not a hidden-content bug; it is a
+-- disclosure, which is why the gate is closed rather than the file deleted.
+--
+-- A structural limit worth knowing before anyone reopens this: RLS can see which
+-- clubs a person BELONGS TO, never which club they are currently looking at. So
+-- this path can be club-BOUNDED but never club-CORRECT — someone in two clubs
+-- would be permitted both clubs' rows and the per-club answer would have to be
+-- re-imposed client-side. Enabling it therefore needs a program arm added to the
+-- policy below AND the app's query and subscription filtered by program.
+--
+-- ── THE GATE ───────────────────────────────────────────────────────────────
+-- To enable, deliberately and durably:
+--
+--   alter database <your-db> set learning.enable_client_read = 'on';
+--
+-- …then run `npm run migrate`. To disable again, set it to 'off' and drop the
+-- policy and grant by hand — this file will not remove them for you, because a
+-- migration that silently revoked a live grant on replay would be its own outage.
+--
 -- ORDERING (checked, and load-bearing)
 -- 9000_nexus_hardening.sql runs AFTER this file — the pack replays in lexical
--- order on every `npm run migrate`, and 9000 > 0005 — and it does
--- `revoke all on table … from public`. That does NOT undo the grant below:
--- PUBLIC is a distinct pseudo-role, so revoking it leaves a role-specific grant to
--- `authenticated` in place. If 9000 is ever changed to revoke from `authenticated`
--- as well, this grant dies silently on the next migrate and the client app goes
--- empty with no error anywhere. Keep the two files in view of each other.
+-- order and 9000 > 0005 — and it does `revoke all on table … from public`. That
+-- does NOT undo the grant below: PUBLIC is a distinct pseudo-role, so revoking it
+-- leaves a role-specific grant to `authenticated` in place. If 9000 is ever changed
+-- to revoke from `authenticated` as well, this grant dies silently on the next
+-- migrate and the client app goes empty with no error anywhere. Keep the two files
+-- in view of each other.
 
--- ── Who is the caller, org-wise ─────────────────────────────────────────────
--- SECURITY DEFINER so it can read profiles, which the calling role cannot. It
--- takes NO arguments on purpose: there is no way to ask about anyone else.
-create or replace function learning_caller_in_org(org uuid)
-returns boolean
-language sql
-stable
-security definer
-set search_path = public
-as $$
-  select exists (
-    select 1 from profiles p
-    where p.organization_id = org
-      and (p.auth_user_id = auth.uid() or p.id = auth.uid())
-  );
-$$;
-
-revoke all on function learning_caller_in_org(uuid) from public;
-grant execute on function learning_caller_in_org(uuid) to authenticated;
-
--- ── Read access for signed-in clients ──────────────────────────────────────
-grant select on table learning_objects to authenticated;
-
-drop policy if exists learning_objects_client_read on learning_objects;
-create policy learning_objects_client_read on learning_objects
-  for select to authenticated
-  using (
-    -- PUBLISHED, by either signal. The stamp is the modern one, but content published
-    -- before published_at was written carries only status = 'published', and demanding
-    -- the stamp here would hide it from clients while the API still served it — two
-    -- read paths disagreeing about the same rows. Drafts have neither, so they stay
-    -- invisible, which is the point of the condition.
-    (published_at is not null or lower(coalesce(status, '')) = 'published')
-    and organization_id is not null
-    and learning_caller_in_org(organization_id)
-  );
-
--- ── Realtime ───────────────────────────────────────────────────────────────
--- Idempotent: adding a table already in the publication is an error, so check.
-do $$
+do $gate$
 begin
-  if not exists (
-    select 1 from pg_publication_tables
-    where pubname = 'supabase_realtime'
-      and schemaname = 'public'
-      and tablename = 'learning_objects'
-  ) then
-    execute 'alter publication supabase_realtime add table learning_objects';
+  if coalesce(current_setting('learning.enable_client_read', true), 'off')
+       not in ('on', 'true', '1') then
+    raise notice
+      '0005 skipped: client read is OFF (learning.enable_client_read). This file is inert by design — see its header.';
+    return;
   end if;
-exception
-  when undefined_object then
-    -- No supabase_realtime publication on this database (a plain Postgres used
-    -- for tests). Nothing to do; the grant and policy above still stand.
-    raise notice 'supabase_realtime publication not present — skipping Realtime';
-end $$;
 
--- Realtime sends only the primary key on updates unless the row is replicated in
--- full; consumers need the changed content, not just the id.
-alter table learning_objects replica identity full;
+  raise notice '0005: learning.enable_client_read is ON — granting client read + Realtime.';
+
+  -- ── Who is the caller, org-wise ─────────────────────────────────────────
+  -- SECURITY DEFINER so it can read profiles, which the calling role cannot. It
+  -- takes NO arguments on purpose: there is no way to ask about anyone else.
+  execute $ddl$
+    create or replace function learning_caller_in_org(org uuid)
+    returns boolean
+    language sql
+    stable
+    security definer
+    set search_path = public
+    as $fn$
+      select exists (
+        select 1 from profiles p
+        where p.organization_id = org
+          and (p.auth_user_id = auth.uid() or p.id = auth.uid())
+      );
+    $fn$;
+  $ddl$;
+
+  execute 'revoke all on function learning_caller_in_org(uuid) from public';
+  execute 'grant execute on function learning_caller_in_org(uuid) to authenticated';
+
+  -- ── Read access for signed-in clients ──────────────────────────────────
+  execute 'grant select on table learning_objects to authenticated';
+
+  execute 'drop policy if exists learning_objects_client_read on learning_objects';
+  execute $pol$
+    create policy learning_objects_client_read on learning_objects
+      for select to authenticated
+      using (
+        -- PUBLISHED, by either signal. The stamp is the modern one, but content
+        -- published before published_at was written carries only status =
+        -- 'published', and demanding the stamp here would hide it from clients
+        -- while the API still served it — two read paths disagreeing about the
+        -- same rows. Drafts have neither, so they stay invisible, which is the
+        -- point of the condition.
+        (published_at is not null or lower(coalesce(status, '')) = 'published')
+        and organization_id is not null
+        and learning_caller_in_org(organization_id)
+      );
+  $pol$;
+
+  -- ── Realtime ───────────────────────────────────────────────────────────
+  -- Idempotent: adding a table already in the publication is an error, so check.
+  begin
+    if not exists (
+      select 1 from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = 'learning_objects'
+    ) then
+      execute 'alter publication supabase_realtime add table learning_objects';
+    end if;
+  exception
+    when undefined_object then
+      -- No supabase_realtime publication on this database (a plain Postgres used
+      -- for tests). Nothing to do; the grant and policy above still stand.
+      raise notice 'supabase_realtime publication not present — skipping Realtime';
+  end;
+
+  -- Realtime sends only the primary key on updates unless the row is replicated in
+  -- full; consumers need the changed content, not just the id.
+  execute 'alter table learning_objects replica identity full';
+end
+$gate$;
