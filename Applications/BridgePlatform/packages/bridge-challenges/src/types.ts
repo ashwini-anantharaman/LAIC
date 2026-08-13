@@ -69,6 +69,50 @@ export interface Challenge {
   editorBadge: boolean;
   standingsVisibility: StandingsVisibility;
   createdAt: string;
+  /**
+   * WHICH CLUB OWNS THIS (0029). The Nexus program uuid of the club it was created
+   * in, and the whole of what keeps two clubs' challenges apart: a member of both
+   * has ONE nexusUserId, so invites alone cannot separate them.
+   *
+   * Undefined/null means UNSCOPED — visible to anyone invited, wherever they are,
+   * which is the cross-org case the spec's "platform-wide invites" described. The
+   * read path treats it as a wildcard, so a create that cannot resolve a program
+   * refuses instead of storing null.
+   *
+   * Optional because every challenge written before 0029 lacks it.
+   */
+  nexusProgramId?: string | null;
+  /**
+   * Whose kind of thing this is. Written as "program" today and NOT READ — it is
+   * here so individually-owned challenges need no migration later. Same vocabulary
+   * as library-core's ScopeLevel, mirrored rather than imported: this package does
+   * not otherwise depend on library-core, and a three-member string union is not
+   * worth a dependency edge.
+   */
+  scopeLevel?: ChallengeScopeLevel | null;
+}
+
+/** Mirrors `ScopeLevel` in packages/library-core/src/types.ts — keep them in step. */
+export type ChallengeScopeLevel = "user" | "program" | "org";
+
+/**
+ * May this challenge be seen from `scope`?
+ *
+ * ONE definition, because it is enforced twice: as SQL in the Postgres store and in
+ * `matchesChallenge` for the JSON dev store. Two hand-written copies of a
+ * visibility rule is how they drift, and only a live check catches the SQL arm.
+ *
+ * Unscoped challenges (no owner) pass everywhere — see `nexusProgramId`. A caller
+ * with no scope of its own sees everything, which is what the dev store and any
+ * unscoped internal read expect.
+ */
+export function challengeVisibleInScope(
+  challenge: Pick<Challenge, "nexusProgramId">,
+  scope: string | null | undefined,
+): boolean {
+  if (!scope) return true;
+  const owner = challenge.nexusProgramId;
+  return !owner || owner === scope;
 }
 
 /** True when boards/seats/control overrides may still be edited (spec §2). */

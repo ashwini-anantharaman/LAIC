@@ -22,7 +22,7 @@ import type {
   PlayStatus,
   StandingsVisibility,
 } from "./types";
-import { baselineId } from "./types";
+import { baselineId, challengeVisibleInScope } from "./types";
 
 // ── the one access rule (ADDENDUM A3) ───────────────────────────────────────
 
@@ -59,6 +59,14 @@ export interface ChallengeFilter {
   status?: ChallengeStatus;
   /** Restrict to a known id set — how "challenges I was invited to" is read. */
   challengeIds?: readonly string[];
+  /**
+   * The club asking (0029). Keeps a challenge to the club it was created in, which
+   * invites cannot do: a member of two clubs has one nexusUserId.
+   *
+   * Unscoped challenges pass any scope — see `challengeVisibleInScope`, which both
+   * this store and the SQL one derive from. Omitted means no scope restriction.
+   */
+  programId?: string | null;
 }
 
 export interface InviteFilter {
@@ -127,6 +135,9 @@ function matchesChallenge(c: Challenge, f?: ChallengeFilter): boolean {
   if (f.createdBy !== undefined && c.createdBy !== f.createdBy) return false;
   if (f.status !== undefined && c.status !== f.status) return false;
   if (f.challengeIds !== undefined && !f.challengeIds.includes(c.challengeId)) return false;
+  // The SAME predicate the Postgres store expresses in SQL — see
+  // challengeVisibleInScope. Do not restate the rule here.
+  if (!challengeVisibleInScope(c, f.programId)) return false;
   return true;
 }
 

@@ -21,6 +21,7 @@ import {
   type Challenge,
   type ChallengeBaseline,
   type ChallengeBoard,
+  challengeVisibleInScope,
   type ChallengeInvite,
   type ChallengePlay,
 } from "./index";
@@ -182,6 +183,51 @@ describe("baselineId", () => {
     expect(baselineId({ ...base, kind: "from_point", userId: "u1", ply: 8 })).not.toBe(
       baselineId({ ...base, kind: "from_point", userId: "u1", ply: 9 }),
     );
+  });
+});
+
+describe("club scope (0029)", () => {
+  const IN_CLUB: Challenge = { ...CH, challengeId: "ch_club", nexusProgramId: "club-a" };
+  const OTHER_CLUB: Challenge = { ...CH, challengeId: "ch_other", nexusProgramId: "club-b" };
+  // Pre-0029, and the deliberate cross-org case: no owner at all.
+  const UNSCOPED: Challenge = { ...CH, challengeId: "ch_legacy" };
+
+  it("keeps a club's challenges to that club", () => {
+    expect(challengeVisibleInScope(IN_CLUB, "club-a")).toBe(true);
+    expect(challengeVisibleInScope(OTHER_CLUB, "club-a")).toBe(false);
+  });
+
+  it("shows an unowned challenge everywhere — the cross-org door", () => {
+    expect(challengeVisibleInScope(UNSCOPED, "club-a")).toBe(true);
+    expect(challengeVisibleInScope(UNSCOPED, "club-b")).toBe(true);
+  });
+
+  it("restricts nothing when the caller has no scope", () => {
+    // What the JSON dev store and any internal read with no club in hand get.
+    expect(challengeVisibleInScope(OTHER_CLUB, null)).toBe(true);
+    expect(challengeVisibleInScope(OTHER_CLUB, undefined)).toBe(true);
+  });
+
+  it("filters a listing by scope, and never hides the unowned", async () => {
+    const store = new InMemoryChallengeStore();
+    await store.putChallenge(IN_CLUB);
+    await store.putChallenge(OTHER_CLUB);
+    await store.putChallenge(UNSCOPED);
+
+    const inA = await store.listChallenges({ programId: "club-a" });
+    expect(inA.map((c) => c.challengeId).sort()).toEqual(["ch_club", "ch_legacy"]);
+
+    // Omitting the scope is the pre-0029 behaviour: everything.
+    expect(await store.listChallenges({})).toHaveLength(3);
+  });
+
+  it("still ANDs with the invite id set", async () => {
+    const store = new InMemoryChallengeStore();
+    await store.putChallenge(IN_CLUB);
+    await store.putChallenge(UNSCOPED);
+    // Invited to the legacy one only: the club filter must not add the other back.
+    const rows = await store.listChallenges({ challengeIds: ["ch_legacy"], programId: "club-a" });
+    expect(rows.map((c) => c.challengeId)).toEqual(["ch_legacy"]);
   });
 });
 

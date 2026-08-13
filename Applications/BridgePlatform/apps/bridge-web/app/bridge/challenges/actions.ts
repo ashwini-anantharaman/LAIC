@@ -26,7 +26,7 @@ import { redirect } from "next/navigation";
 import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { challengeStore } from "@/lib/challenges";
+import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
 import { packFromDraft, validateDraft, type ChallengeDraft } from "./draft";
 import { listChallengePeople } from "./people";
 
@@ -83,6 +83,10 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
   // is what makes this additive with no migration owed.
   const format = challengeFormat(draft);
 
+  // 0029: the club this challenge belongs to. Refuses rather than storing a null
+  // owner, which the read path would treat as "visible in every club".
+  const ownerScope = requireChallengeOwnerScope(context);
+
   const challenge: Challenge = {
     challengeId,
     title: draft.title.trim(),
@@ -95,6 +99,8 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
     editorBadge: draft.editorBadge,
     standingsVisibility: draft.standingsVisibility,
     createdAt: now,
+    nexusProgramId: ownerScope,
+    scopeLevel: "program",
   };
   await store.putChallenge(challenge);
 

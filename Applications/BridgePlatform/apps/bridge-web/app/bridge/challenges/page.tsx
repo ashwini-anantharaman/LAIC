@@ -9,6 +9,7 @@ import {
   listChallengesForUser,
   listInvitesForUser,
   type ChallengeViewerAccess,
+  challengeOwnerScope,
 } from "@/lib/challenges";
 import { getBridgeContext } from "@/lib/nexus";
 
@@ -49,7 +50,8 @@ export default async function ChallengesPage({
 
   const userId = context.nexusUserId;
   const [challenges, invites] = await Promise.all([
-    listChallengesForUser(userId),
+    // Scoped to the club this page was opened from — see listChallengesForUser.
+    listChallengesForUser(userId, challengeOwnerScope(context)),
     listInvitesForUser(userId),
   ]);
   const inviteFor = new Map(invites.map((i) => [i.challengeId, i]));

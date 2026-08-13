@@ -29,8 +29,7 @@ import {
   listChallengeBoards,
   listChallengeInvites,
   listChallengePlays,
-  listChallengesForUser,
-} from "@/lib/challenges";
+  listChallengesForUser, challengeOwnerScope } from "@/lib/challenges";
 import { corsHeaders, corsOptions } from "@/lib/cors";
 import { getBridgeContext, getBridgeContextFromToken } from "@/lib/nexus";
 
@@ -221,7 +220,9 @@ export async function GET(request: NextRequest) {
     if (!(await canUse(context, "page.challenges"))) throw new AccessError("No access");
 
     const viewerId = context.nexusUserId;
-    const mine = await listChallengesForUser(viewerId);
+    // The club the app asked about (x-program-id) now FILTERS, where before it only
+    // resolved auth. Two clubs, two lists.
+    const mine = await listChallengesForUser(viewerId, challengeOwnerScope(context));
     const summaries = (
       await Promise.all(mine.map((c) => summarize(c.challengeId, viewerId)))
     ).filter((s): s is ChallengeSummary => s !== null);

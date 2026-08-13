@@ -26,6 +26,31 @@ function records<T>(rows: unknown[]): T[] {
   return rows.map((r) => (r as { record: T }).record);
 }
 
+/**
+ * A challenge row → a Challenge, with the SCALAR COLUMNS WINNING over the record.
+ *
+ * Same shape as the library store's mapper (library.ts). It matters for 0029: that
+ * migration backfills `nexus_program_id` on the column only, so reading the record
+ * verbatim would hand back `nexusProgramId: undefined` for exactly the rows it just
+ * scoped. Letting the column win means the migration needs no jsonb rewrite and the
+ * two can never disagree.
+ */
+function challengeRow(r: unknown): Challenge {
+  const row = r as {
+    record: Challenge;
+    nexus_program_id?: string | null;
+    scope_level?: string | null;
+  };
+  return {
+    ...row.record,
+    nexusProgramId: row.nexus_program_id ?? row.record.nexusProgramId ?? null,
+    scopeLevel: (row.scope_level as Challenge["scopeLevel"]) ?? row.record.scopeLevel ?? null,
+  };
+}
+
+/** The columns every challenge read needs: the record plus what 0029 added. */
+const CHALLENGE_COLS = "record, nexus_program_id, scope_level";
+
 export class PgChallengeStore implements ChallengeStore {
   constructor(private readonly db: SupabaseClient) {}
 
@@ -38,6 +63,12 @@ export class PgChallengeStore implements ChallengeStore {
           created_by: challenge.createdBy,
           status: challenge.status,
           scoring: challenge.scoring,
+          // 0029's scope, beside the record so it can be filtered in SQL. Every
+          // existing re-writer (archive, lock) spreads {...challenge}, so the owner
+          // survives — but a future writer that rebuilds a Challenge literal from
+          // parts would null it here. Carry these two through.
+          nexus_program_id: challenge.nexusProgramId ?? null,
+          scope_level: challenge.scopeLevel ?? null,
           record: challenge,
           created_at: challenge.createdAt,
         },
@@ -48,15 +79,18 @@ export class PgChallengeStore implements ChallengeStore {
   }
   async getChallenge(challengeId: string) {
     const rows = check(
-      await this.db.from("bridge_challenges").select("record").eq("challenge_id", challengeId),
+      await this.db
+        .from("bridge_challenges")
+        .select(CHALLENGE_COLS)
+        .eq("challenge_id", challengeId),
       "challenges.get",
     );
-    return rows.length ? ((rows[0] as any).record as Challenge) : null;
+    return rows.length ? challengeRow(rows[0]) : null;
   }
   async listChallenges(filter?: ChallengeFilter) {
     let query = this.db
       .from("bridge_challenges")
-      .select("record")
+      .select(CHALLENGE_COLS)
       .order("created_at", { ascending: false })
       .limit(200);
     if (filter?.createdBy !== undefined) query = query.eq("created_by", filter.createdBy);
@@ -66,7 +100,14 @@ export class PgChallengeStore implements ChallengeStore {
       if (!filter.challengeIds.length) return [];
       query = query.in("challenge_id", [...filter.challengeIds]);
     }
-    return records<Challenge>(check(await query, "challenges.list"));
+    if (filter?.programId) {
+      // challengeVisibleInScope in SQL: the club's own, plus the unscoped ones.
+      // Separate PostgREST filters AND together, so this narrows the id set above.
+      query = query.or(
+        `nexus_program_id.eq.${filter.programId},nexus_program_id.is.null`,
+      );
+    }
+    return check(await query, "challenges.list").map(challengeRow);
   }
 
   // ── boards ────────────────────────────────────────────────────────────────

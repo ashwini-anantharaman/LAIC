@@ -17,10 +17,13 @@ import {
   type ChallengeStore,
 } from "@bridge/challenges";
 import { JsonFileChallengeStore } from "@bridge/challenges/fileStore";
+import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { PgChallengeStore } from "@bridge/pg-stores";
 import { join } from "node:path";
 import { cache } from "react";
 import { dataDir, pgClient, storeBackend } from "./backend";
+import { nexusMode } from "./nexus";
+import { nexusClubProgramId, nexusProgramId } from "./nexusPeople";
 
 const globalCache = globalThis as unknown as { __bridgeChallengeStore?: ChallengeStore };
 
@@ -71,12 +74,69 @@ export const listInvitesForUser = cache(
 );
 
 /** The challenges a user was invited to (any invite status), newest first. */
-export const listChallengesForUser = cache(async (userId: string): Promise<Challenge[]> => {
-  const invites = await listInvitesForUser(userId);
-  if (!invites.length) return [];
-  const challengeIds = invites.map((i) => i.challengeId);
-  return safely("user challenges", () => challengeStore().listChallenges({ challengeIds }), []);
-});
+/**
+ * Which club owns a challenge — the one definition, used on both create paths and
+ * every read.
+ *
+ * The club comes from the CONTEXT, never from the `x-program-id` header directly:
+ * Nexus emits `nexus_club_program_id` only after resolvePlatformAccess has verified
+ * the caller's membership of that club, so the header cannot be used to plant a
+ * challenge in someone else's club.
+ *
+ * Falls back to the program for a non-club caller (a parent-program coach), whose
+ * challenges belong to that program.
+ */
+export function challengeOwnerScope(context: NexusBridgeContext): string | null {
+  return nexusClubProgramId(context) ?? nexusProgramId(context);
+}
+
+/**
+ * The owner a NEW challenge must carry, or an error.
+ *
+ * A null owner means "visible in every club" on the read side, so a create that
+ * cannot name a program must fail rather than quietly make a challenge that leaks
+ * everywhere and can only be found by inspecting the database. In stub mode there
+ * are no programs at all, and everything is unscoped by design — so the demand
+ * applies only to the http path.
+ */
+export function requireChallengeOwnerScope(context: NexusBridgeContext): string | null {
+  const scope = challengeOwnerScope(context);
+  if (!scope && nexusMode() === "http") {
+    throw new Error(
+      "No club could be resolved for this challenge. Open it from a club and try again.",
+    );
+  }
+  return scope;
+}
+
+/**
+ * The challenges a viewer can see FROM A CLUB.
+ *
+ * Two gates, and both are needed. The invite says this person may play it; the scope
+ * says this club is where it lives. Invites alone cannot separate two clubs, because
+ * a member of both has a single org-scoped nexusUserId — which is the whole bug this
+ * argument exists to fix.
+ *
+ * `scope` is POSITIONAL, not read from context inside: this is cache()d per request,
+ * so the argument is part of the memo key. Reading the context here would memoize one
+ * club's answer and hand it to the next caller.
+ *
+ * Passing null (or omitting it) restores the old behaviour — every challenge the
+ * viewer was invited to, unscoped. That is what the JSON dev store wants, and what an
+ * internal read with no club in hand should get.
+ */
+export const listChallengesForUser = cache(
+  async (userId: string, scope?: string | null): Promise<Challenge[]> => {
+    const invites = await listInvitesForUser(userId);
+    if (!invites.length) return [];
+    const challengeIds = invites.map((i) => i.challengeId);
+    return safely(
+      "user challenges",
+      () => challengeStore().listChallenges({ challengeIds, programId: scope ?? null }),
+      [],
+    );
+  },
+);
 
 export const listChallengePlays = cache(
   async (challengeId: string): Promise<ChallengePlay[]> =>

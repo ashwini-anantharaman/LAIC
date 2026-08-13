@@ -19,7 +19,7 @@
 
 import { redirect } from "next/navigation";
 import { requireFeature } from "@/lib/access";
-import { listChallengesForUser, listInvitesForUser } from "@/lib/challenges";
+import { listChallengesForUser, listInvitesForUser, challengeOwnerScope } from "@/lib/challenges";
 import { getBridgeContext } from "@/lib/nexus";
 
 const LIST = "/bridge/challenges";
@@ -31,7 +31,8 @@ export default async function LatestChallengePlayPage() {
 
   const userId = context.nexusUserId;
   const [challenges, invites] = await Promise.all([
-    listChallengesForUser(userId),
+    // Same club scope as the list: "latest" means latest IN THIS CLUB.
+    listChallengesForUser(userId, challengeOwnerScope(context)),
     listInvitesForUser(userId),
   ]);
 

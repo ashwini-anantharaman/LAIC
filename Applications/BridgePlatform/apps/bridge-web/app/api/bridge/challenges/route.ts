@@ -25,7 +25,7 @@ import { listChallengePeople } from "@/app/bridge/challenges/people";
 import { canCreateChallenge, canUse } from "@/lib/access";
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { challengeStore } from "@/lib/challenges";
+import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 
 const CORS = corsHeaders("POST");
@@ -59,6 +59,10 @@ export async function POST(request: NextRequest) {
     // is byte-identical to one created before the option existed.
     const format = challengeFormat(draft);
 
+    // 0029: the club this challenge belongs to. Refuses rather than storing a null
+    // owner, which the read path would treat as "visible in every club".
+    const ownerScope = requireChallengeOwnerScope(context);
+
     const challenge: Challenge = {
       challengeId,
       title: draft.title.trim(),
@@ -71,6 +75,8 @@ export async function POST(request: NextRequest) {
       editorBadge: draft.editorBadge,
       standingsVisibility: draft.standingsVisibility,
       createdAt: now,
+      nexusProgramId: ownerScope,
+      scopeLevel: "program",
     };
     await store.putChallenge(challenge);
 
