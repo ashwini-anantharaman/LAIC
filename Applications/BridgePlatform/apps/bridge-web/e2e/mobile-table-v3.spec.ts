@@ -281,10 +281,11 @@ test.describe("mobile table v3 — phone tier", () => {
           let readable = true;
           if (idx) {
             const r = idx.getBoundingClientRect();
-            readable = [
+            const corners: [number, number][] = [
               [r.left + 1, r.top + 1], [r.right - 1, r.top + 1],
               [r.left + 1, r.bottom - 1], [r.right - 1, r.bottom - 1],
-            ].every(([x, y]) => el.contains(document.elementFromPoint(x, y)));
+            ];
+            readable = corners.every(([x, y]) => el.contains(document.elementFromPoint(x, y)));
           }
           return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height, readable };
         });
