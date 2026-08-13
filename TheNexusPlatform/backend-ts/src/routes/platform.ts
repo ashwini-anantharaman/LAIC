@@ -2327,7 +2327,11 @@ async function _learningEffective(
 }> {
   const isAdmin = access.level === "admin";
   const customRole = !isAdmin && user.email
-    ? await graph.getLearningRoleForEmail(access.programId, user.email)
+    // Under the CLUB when there is one: the Studio has always SENT the club id when
+    // saving a role (it posts whatever program it was launched with), while this read
+    // looked under the parent — so a club's own roles were written where nothing read
+    // them. One footing, or per-club permissions cannot be expressed at all.
+    ? await graph.getLearningRoleForEmail(access.partnerProgramId ?? access.programId, user.email)
     : null;
 
   let capabilities: string[] = [];
@@ -2389,10 +2393,41 @@ function _learningCapsForLevel(doc: CapabilityCatalogueDocument, level: "admin" 
 }
 
 /** The caller must be a learning admin of the program. Returns the resolved access. */
+/**
+ * Does this person ADMINISTER the club they arrived through?
+ *
+ * Judged on their membership, not on `access.level` — a partner club's level is
+ * hardcoded to "edit" for everyone (platformAccess.ts), so no club member can ever
+ * reach admin through it. This is the same test the club app already uses to decide
+ * a structural tier, applied to the club rather than the parent, which is why it can
+ * grant a club authority over its own roles WITHOUT loosening that hardcoded level
+ * for anything else.
+ */
+function _clubStructuralTier(user: PlatformUser, access: ResolvedPlatformAccess): boolean {
+  if (!access.partnerProgramId || !access.orgId) return false;
+  return user.memberships.some(
+    (m) =>
+      m.org_id === access.orgId &&
+      ["owner", "administrator"].includes(m.role) &&
+      (!m.program_id || m.program_id === access.partnerProgramId),
+  );
+}
+
+/**
+ * The caller must administer the learning program — or the club they came through.
+ *
+ * Clubs were locked out entirely: every /learning/roles* route required
+ * `level === "admin"`, and a partner club is pinned to "edit", so a club
+ * administrator got 403 on their own club's roles. Per-club content permissions were
+ * therefore only ever configurable by the parent org, which is not what "one club =
+ * one program" is supposed to mean.
+ */
 async function _learningAdmin(c: Context, programId: string) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", programId);
-  if (access.level !== "admin") throw new HttpError(403, "Learning admin access required");
+  if (access.level !== "admin" && !_clubStructuralTier(user, access)) {
+    throw new HttpError(403, "Learning admin access required");
+  }
   return access;
 }
 
@@ -2422,14 +2457,26 @@ platformRouter.delete("/learning/catalogue", async (c) => {
 platformRouter.get("/learning/roles", async (c) => {
   const pid = c.req.query("program_id") ?? "";
   const access = await _learningAdmin(c, pid);
-  return c.json(await graph.listLearningRoles(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningRoles(access.orgId, access.partnerProgramId ?? access.programId),
+  );
 });
 
 platformRouter.post("/learning/roles", async (c) => {
   const req = parseBody(learningRoleCreateSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
   const perms = await _learningPermsWithCaps(req.perms, req.capabilities, req.type_scopes);
-  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, perms));
+  // Stored under the CLUB when there is one, matching where getLearningRoleForEmail
+  // now reads. Both sides move together or a club's roles are written where nothing
+  // looks for them.
+  return c.json(
+    await graph.createLearningRole(
+      access.orgId,
+      access.partnerProgramId ?? access.programId,
+      req.name,
+      perms,
+    ),
+  );
 });
 
 platformRouter.patch("/learning/roles/:id", async (c) => {
@@ -2459,13 +2506,21 @@ platformRouter.delete("/learning/roles/:id", async (c) => {
 platformRouter.get("/learning/roster", async (c) => {
   const pid = c.req.query("program_id") ?? "";
   const access = await _learningAdmin(c, pid);
-  return c.json(await graph.listLearningPeople(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningPeople(access.orgId, access.partnerProgramId ?? access.programId),
+  );
 });
 
 platformRouter.put("/learning/assign", async (c) => {
   const req = parseBody(learningAssignSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
-  await graph.setLearningRoleAssignment(access.orgId, access.programId, req.email, req.role_id);
+  // The club again: an assignment must live where the role and the lookup do.
+  await graph.setLearningRoleAssignment(
+    access.orgId,
+    access.partnerProgramId ?? access.programId,
+    req.email,
+    req.role_id,
+  );
   return c.json({ ok: true });
 });
 
