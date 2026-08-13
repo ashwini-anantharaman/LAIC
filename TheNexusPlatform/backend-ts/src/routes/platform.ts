@@ -2107,6 +2107,16 @@ platformRouter.put("/learning/objects", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
+  // Autosave is a write like any other: a role scoped to Tutorials must not be able to
+  // edit a Quiz by letting the editor's own save fire. Stored type wins over the
+  // payload's for an existing row, so a relabel cannot slip past the scope.
+  const eff = await _learningEffective(user, access);
+  const probe = await graph.probeLearningObject(access.orgId, String(body.id));
+  _requireLearningCap(
+    eff,
+    probe ? "learning.object.edit" : "learning.object.create",
+    (probe?.type ?? (body.type as string | null)) ?? null,
+  );
   const wrote = await graph.upsertLearningObject(access.orgId, body, _learningWriteScope(access));
   if (!wrote) {
     // The id exists, in this org or another, under a different program. Refusing is
@@ -2156,6 +2166,40 @@ function _learningWriteScope(access: ResolvedPlatformAccess): string | null {
   return access.programId ?? null;
 }
 
+/**
+ * May this caller use `capId` on content of this TYPE?
+ *
+ * Two independent questions, and they deserve different answers on the wire: "you
+ * cannot publish" and "you cannot publish QUIZZES" send an author to different
+ * places.
+ *
+ * Only FINE-GRAINED callers are gated. The sample templates are incomplete —
+ * `learning-content-developer` grants no `object.delete` and none of the
+ * `publish.*` ids — and every partner club member is pinned to level "edit", which
+ * maps to that template. So gating on capability alone would strip publishing and
+ * deleting from every club member the day it shipped. Level-derived callers stay
+ * governed by each route's coarse admin|edit guard, which is the same accommodation
+ * enforce.ts already makes for the same reason.
+ *
+ * An absent or empty type list means EVERY type — the pruning never stores an empty
+ * one, and absence has to keep meaning "unrestricted" here as everywhere else.
+ */
+function _requireLearningCap(
+  eff: { fineGrained: boolean; capabilities: string[]; typeScopes: Record<string, string[]> },
+  capId: string,
+  objectType: string | null | undefined,
+): void {
+  if (!eff.fineGrained) return;
+  if (!eff.capabilities.includes(capId)) {
+    throw new HttpError(403, `Missing capability: ${capId}`);
+  }
+  const types = eff.typeScopes[capId];
+  if (!types?.length) return;
+  if (!objectType || !types.includes(objectType)) {
+    throw new HttpError(403, `That role's ${capId} is limited to specific content types`);
+  }
+}
+
 async function _learningAuthor(c: Context, pinned: string | null) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", pinned);
@@ -2165,7 +2209,10 @@ async function _learningAuthor(c: Context, pinned: string | null) {
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
-  return { user, access };
+  // Resolved here so the coarse guard and the fine one are never out of step, and so
+  // no route can forget the org's provisioning ceiling (_learningEffective clamps).
+  const eff = await _learningEffective(user, access);
+  return { user, access, eff };
 }
 
 platformRouter.post("/learning/objects/publish", async (c) => {
@@ -2174,7 +2221,7 @@ platformRouter.post("/learning/objects/publish", async (c) => {
   if (!row?.id || !row?.type) throw new HttpError(422, "id and type are required");
   // program_id is only the launch PIN fed to access resolution — resolvePlatformAccess
   // verifies membership, and the id that gets WRITTEN comes from the resolved access.
-  const { access } = await _learningAuthor(
+  const { access, eff } = await _learningAuthor(
     c,
     body.program_id ?? (row.program_id as string) ?? c.req.query("program_id") ?? null,
   );
@@ -2186,6 +2233,17 @@ platformRouter.post("/learning/objects/publish", async (c) => {
   // only refresh the draft backup — never the reader-visible columns.
   const isPublish = Number.isFinite(Number(row.version_number));
   const probe = await graph.probeLearningObject(access.orgId, String(row.id));
+
+  // The type is the OBJECT's, and for an existing row the stored one wins: a payload
+  // may not relabel a quiz as a tutorial to slip past a type-scoped role.
+  const objectType = (probe?.type ?? (row.type as string | null)) ?? null;
+  _requireLearningCap(
+    eff,
+    probe ? "learning.object.edit" : "learning.object.create",
+    objectType,
+  );
+  if (isPublish) _requireLearningCap(eff, "learning.publish.release", objectType);
+  if (share) _requireLearningCap(eff, "learning.publish.audience", objectType);
   const wrote =
     !isPublish && !share && probe?.published
       ? await graph.backupLearningObjectDraft(access.orgId, scope, String(row.id), row)
@@ -2198,17 +2256,21 @@ platformRouter.post("/learning/objects/publish", async (c) => {
 platformRouter.post("/learning/objects/unpublish", async (c) => {
   const body = (await c.req.json()) as { id?: string; program_id?: string };
   if (!body.id) throw new HttpError(422, "id is required");
-  const { access } = await _learningAuthor(
+  const { access, eff } = await _learningAuthor(
     c,
     body.program_id ?? c.req.query("program_id") ?? null,
   );
+  const probe = await graph.probeLearningObject(access.orgId, body.id);
+  _requireLearningCap(eff, "learning.publish.release", probe?.type);
   const ok = await graph.unpublishLearningObject(access.orgId, _learningWriteScope(access), body.id);
   if (!ok) throw new HttpError(404, "Learning object not found");
   return c.json({ ok: true });
 });
 
 platformRouter.delete("/learning/objects/:object_id", async (c) => {
-  const { access } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const probe = await graph.probeLearningObject(access.orgId, c.req.param("object_id"));
+  _requireLearningCap(eff, "learning.object.delete", probe?.type);
   const ok = await graph.deleteLearningObject(
     access.orgId,
     _learningWriteScope(access),
