@@ -618,6 +618,20 @@ test.describe("mobile table v3 — phone tier", () => {
       fit!.spare,
       `the whole hand fits the rail (${fit!.n} cards in ${Math.round(fit!.railH)}px)`,
     ).toBeGreaterThanOrEqual(-0.5);
+
+    // (4) AND THE CARDS FIT ACROSS IT. The rail was narrowed to hand width back
+    // to the felt, and the type is sized from the STRIP — so a taller band makes
+    // the rank bigger without making the card wider. The widest thing a card has
+    // to say is a "10" at one end and a pip at the other; if that ever stops
+    // fitting it wraps or clips silently, which is why this is measured.
+    const across = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="dummy-strip"]')!;
+      const cards = [...rail.querySelectorAll("div > span")] as HTMLElement[];
+      return cards
+        .map((c) => c.scrollWidth - c.clientWidth)
+        .reduce((a, b) => Math.max(a, b), 0);
+    });
+    expect(across, "no card's rank and pip overflow its width").toBeLessThanOrEqual(0);
   });
 
   // ?bars=off hides the edge toolbars so the felt can be judged, or embedded in

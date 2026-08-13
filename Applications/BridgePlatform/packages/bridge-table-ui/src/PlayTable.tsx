@@ -128,12 +128,15 @@ const TOUCH = 44;
  */
 const DUMMY_LINE = 54;
 /**
- * The rail's width. Wide enough for a suit in bridge notation at the strip's old
- * rank type (♠ plus about six ranks before the line wraps) and for the seat name
- * to stay horizontal — at 136 of a 720 stage there is no need to rotate it —
- * and narrow enough that the trick compass keeps the middle of the felt.
+ * The dummy rail's width. Narrowed from 136 (owner, 2026-08-13): the rail is
+ * `flex: none` beside a `flex: 1` felt, so every unit taken off it is a unit
+ * the trick gets. 116 still clears the widest thing a card has to say — a "10"
+ * at one end and a pip at the other, with about 20 units still between them on
+ * the tightest card. The fit is asserted rather than eyeballed: the type is
+ * sized from the STRIP, so a taller band grows the rank without growing the
+ * card, and the widest rank is the two-glyph "10".
  */
-const DUMMY_RAIL_W = 136;
+const DUMMY_RAIL_W = 116;
 /** The hand band: the lift headroom the row is given (paddingTop), the card
     itself, the 3px gap and the seat plate — plus a few px of rounding reserve.
     Derived from M_CARD.h so shortening the card SHORTENS THE TABLE instead of
@@ -1387,7 +1390,7 @@ export function PlayTable({
                     // two-corner index the trick cards carry.
                     display: shown && g.showIndex ? "flex" : "block",
                     alignItems: "center", justifyContent: "space-between",
-                    padding: shown ? `0 ${Math.max(5, Math.round(g.pitch * 0.16))}px` : 0,
+                    padding: shown ? `0 ${Math.max(4, Math.round(g.pitch * 0.14))}px` : 0,
                     color: isRed(cd.suit) ? RED : "#111",
                   }}
                 >
