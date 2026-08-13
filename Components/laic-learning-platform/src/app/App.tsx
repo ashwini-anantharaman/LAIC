@@ -2,7 +2,14 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { deleteSharedObject, fetchSharedLibrary, publishLearningObject, unpublishLearningObject } from '../lib/api';
+// Publishing goes through Nexus (session-scoped) rather than the Content Studio's
+// own service-role server. Same bodies, same call sites — a different door.
+import {
+  deleteObjectEverywhere,
+  fetchLibraryRows,
+  publishObject,
+  unpublishObject,
+} from '../lib/supabase';
 
 /**
  * Back the library up to the shared store, coalesced per object.
@@ -19,7 +26,11 @@ function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
   if (pending) clearTimeout(pending);
   sharedSyncTimers.set(obj.id, setTimeout(() => {
     sharedSyncTimers.delete(obj.id);
-    publishLearningObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
+    // Standalone (no Nexus session) is draft-only: the local library is still the
+    // author's, it simply has nowhere shared to go. Skipping keeps the console clean
+    // rather than logging a refusal every 2.5s per edited object.
+    if (!supabaseEnabled()) return;
+    publishObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
       console.warn('[library] could not back up to the shared store:', err?.message || err);
     });
   }, SHARED_SYNC_DELAY_MS));
@@ -372,7 +383,7 @@ function StudioApp() {
     // survives a refresh, a cleared cache, or a different machine — this is
     // what replaced baking a snapshot into the build.
     try {
-      const shared = await fetchSharedLibrary();
+      const shared = await fetchLibraryRows();
       if (gen !== hydrateGenRef.current) return;
       if (Array.isArray(shared) && shared.length) {
         const claimed = shared.map((r) => ({ ...sharedRowToObject(r), ownerId: userId }));
@@ -824,7 +835,7 @@ function StudioApp() {
     };
 
     try {
-      await publishLearningObject(
+      await publishObject(
         objectToPublishRow(shipped, names, version.versionNumber),
       );
     } catch (err: any) {
@@ -855,7 +866,7 @@ function StudioApp() {
       sharedSyncTimers.delete(objectId);
     }
     try {
-      await unpublishLearningObject(objectId);
+      await unpublishObject(objectId);
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Could not reach the shared library.' };
     }
@@ -977,7 +988,7 @@ function StudioApp() {
       sharedSyncTimers.delete(objectId);
     }
     // Delete the durable copy too — otherwise the next hydrate rebuilds it.
-    deleteSharedObject(objectId).catch((err) => {
+    deleteObjectEverywhere(objectId).catch((err) => {
       console.warn('[library] could not delete from the shared store:', err?.message || err);
     });
     setEditingObjectId((cur) => (cur === objectId ? null : cur));

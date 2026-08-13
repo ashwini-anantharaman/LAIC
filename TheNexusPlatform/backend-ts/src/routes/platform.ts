@@ -2099,7 +2099,7 @@ platformRouter.put("/learning/objects", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
-  const wrote = await graph.upsertLearningObject(access.orgId, body, access.programId);
+  const wrote = await graph.upsertLearningObject(access.orgId, body, _learningWriteScope(access));
   if (!wrote) {
     // The id exists, in this org or another, under a different program. Refusing is
     // the point — see upsertLearningObject — but it must SAY so: answering {ok:true}
@@ -2107,6 +2107,106 @@ platformRouter.put("/learning/objects", async (c) => {
     // is not. 409, not 404: the object is there, it is just not theirs to write.
     throw new HttpError(409, "That object belongs to another program");
   }
+  return c.json({ ok: true });
+});
+
+// ── Publishing, with a session ──────────────────────────────────────────────
+// These replace the Content Studio's own /api/learning/* routes, which were
+// UNAUTHENTICATED and wrote with the service-role key, stamping org and program
+// from environment variables. Two consequences that made club-owned content
+// impossible: the publisher's identity never reached the row, and every object
+// landed in one env-configured program however it was authored.
+//
+// The body envelope is deliberately identical to the route being replaced
+// ({ object, share }), so the Studio's call sites move by changing which fetch
+// helper they use and nothing else.
+//
+// AUTHORITY here is the coarse content-author guard (admin|edit), the same one
+// /share applies. Per-capability and per-content-type enforcement (a role scoped to
+// Tutorials but not Quizzes) is the next pass and belongs in _learningEffective,
+// which already resolves typeScopes for it.
+
+/**
+ * The program a write is stamped with — ONE expression, so club ownership arrives
+ * everywhere at once or nowhere.
+ *
+ * Still the parent, deliberately. Making it `access.partnerProgramId ?? access.programId`
+ * is the whole of "content belongs to the club that made it", and it is a one-line
+ * change — but it is a DATA MIGRATION wearing a code change's clothes, and it must
+ * land with its backfill:
+ *
+ *   • every existing row was stamped from the Studio's `LEARNING_PROGRAM_ID` env var,
+ *     so until they are re-attributed, flipping this makes a club member's autosave
+ *     name a different program than the row carries, and the sticky guard in
+ *     upsertLearningObject correctly refuses it — a 409 on content that works today;
+ *   • both writers must flip together (this and PUT /learning/objects), or the same
+ *     row ping-pongs between two program ids on every save.
+ *
+ * The diagnostic in the plan decides the backfill. Flip here, and at the PUT, then.
+ */
+function _learningWriteScope(access: ResolvedPlatformAccess): string | null {
+  return access.programId ?? null;
+}
+
+async function _learningAuthor(c: Context, pinned: string | null) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", pinned);
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  return { user, access };
+}
+
+platformRouter.post("/learning/objects/publish", async (c) => {
+  const body = (await c.req.json()) as { object?: Row; share?: boolean; program_id?: string };
+  const row = (body.object ?? (body as unknown as Row)) as Row;
+  if (!row?.id || !row?.type) throw new HttpError(422, "id and type are required");
+  // program_id is only the launch PIN fed to access resolution — resolvePlatformAccess
+  // verifies membership, and the id that gets WRITTEN comes from the resolved access.
+  const { access } = await _learningAuthor(
+    c,
+    body.program_id ?? (row.program_id as string) ?? c.req.query("program_id") ?? null,
+  );
+  const scope = _learningWriteScope(access);
+  const share = body.share === true;
+
+  // The same mode decision the Studio's server made: a version number means this is
+  // a real publish; otherwise, if the object is already published, an autosave must
+  // only refresh the draft backup — never the reader-visible columns.
+  const isPublish = Number.isFinite(Number(row.version_number));
+  const probe = await graph.probeLearningObject(access.orgId, String(row.id));
+  const wrote =
+    !isPublish && !share && probe?.published
+      ? await graph.backupLearningObjectDraft(access.orgId, scope, String(row.id), row)
+      : await graph.publishLearningObject(access.orgId, scope, row, { publish: isPublish, share });
+
+  if (!wrote) throw new HttpError(409, "That object belongs to another program");
+  return c.json({ ok: true, id: row.id });
+});
+
+platformRouter.post("/learning/objects/unpublish", async (c) => {
+  const body = (await c.req.json()) as { id?: string; program_id?: string };
+  if (!body.id) throw new HttpError(422, "id is required");
+  const { access } = await _learningAuthor(
+    c,
+    body.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const ok = await graph.unpublishLearningObject(access.orgId, _learningWriteScope(access), body.id);
+  if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true });
+});
+
+platformRouter.delete("/learning/objects/:object_id", async (c) => {
+  const { access } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const ok = await graph.deleteLearningObject(
+    access.orgId,
+    _learningWriteScope(access),
+    c.req.param("object_id"),
+  );
+  if (!ok) throw new HttpError(404, "Learning object not found");
   return c.json({ ok: true });
 });
 

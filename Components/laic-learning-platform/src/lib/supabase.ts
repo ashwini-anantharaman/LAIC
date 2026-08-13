@@ -177,3 +177,67 @@ export async function fetchObject(id: string): Promise<LearningObject | null> {
   if (!res.ok) return null;
   return fromRow(await res.json());
 }
+
+// ── Publishing, through Nexus ───────────────────────────────────────────────
+// These four used to POST to the Content Studio's own server, which held the
+// service-role key and accepted anyone: no session, no caller identity, and the
+// owning org/program taken from environment variables. So content could not
+// belong to the club that made it, and anybody who could reach that server could
+// publish, unpublish or delete anything in the library.
+//
+// Same request bodies as before — only the door changed — so the call sites are
+// unchanged apart from which helper they import.
+//
+// Each one needs a Nexus session. Without one the Studio is DRAFT-ONLY: authoring
+// and local autosave still work, publishing does not, and `supabaseEnabled()` is
+// how the UI knows which to offer.
+
+/** Publish an object (and optionally make its /o/<id> link public). */
+export async function publishObject(
+  row: Record<string, unknown>,
+  share = false,
+): Promise<{ ok: boolean; id: string }> {
+  // Say WHY, once, here — rather than letting every caller surface a bare 401.
+  // Standalone is draft-only by design: without a session there is no way to know
+  // which club the content belongs to, and guessing is what the old service-role
+  // route did.
+  if (!supabaseEnabled()) throw new Error('Publishing needs a Nexus launch (open the Studio from Nexus)');
+  const res = await nexusFetch('/api/platform/learning/objects/publish', {
+    method: 'POST',
+    body: JSON.stringify({ object: row, share, program_id: getProgramId() }),
+  });
+  if (!res.ok) {
+    // 409 is the one worth naming: the object belongs to another program, which a
+    // generic "publish failed" would leave the author guessing about.
+    if (res.status === 409) throw new Error('That object belongs to another program');
+    throw new Error(`Publish failed (${res.status})`);
+  }
+  return res.json();
+}
+
+/** Withdraw an object from reader apps, keeping its content and draft backup. */
+export async function unpublishObject(id: string): Promise<boolean> {
+  const res = await nexusFetch('/api/platform/learning/objects/unpublish', {
+    method: 'POST',
+    body: JSON.stringify({ id, program_id: getProgramId() }),
+  });
+  return res.ok;
+}
+
+/** Remove an object from the shared store for good. */
+export async function deleteObjectEverywhere(id: string): Promise<boolean> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(id)}?program_id=${encodeURIComponent(getProgramId() ?? '')}`,
+    { method: 'DELETE' },
+  );
+  return res.ok;
+}
+
+/** The author's library as raw rows, for the hydrate path that maps them itself. */
+export async function fetchLibraryRows(): Promise<Record<string, unknown>[]> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects?program_id=${encodeURIComponent(getProgramId() ?? '')}`,
+  );
+  if (!res.ok) return [];
+  return res.json();
+}
