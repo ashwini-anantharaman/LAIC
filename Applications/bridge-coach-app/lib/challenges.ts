@@ -148,11 +148,19 @@ function mapRow(row: SummaryRow): ClubChallenge {
 }
 
 /**
- * The last fetch's rows by id — the info screen a tile pushes opens from here
- * without paying the summary round trip again. Module-level, like the chat
- * threads: it survives navigation, and a reload starts empty.
+ * The last fetch's rows — the info screen a tile pushes opens from here without
+ * paying the summary round trip again. Module-level, like the chat threads: it
+ * survives navigation, and a reload starts empty.
+ *
+ * Keyed by CLUB as well as id, matching lib/library.ts and lib/learning.ts. It used
+ * to be id-only, which was harmless while every club saw every challenge — now that
+ * a challenge belongs to one club (0029), an id-only cache would let a challenge
+ * fetched in one club render on the info screen while another is selected, quietly
+ * showing what the list has just stopped showing.
  */
 const lastFetched = new Map<string, ClubChallenge>();
+
+const cacheKey = (programId: string | null, id: string) => `${programId ?? ""}::${id}`;
 
 /**
  * The two challenges the Club tab pins, in order.
@@ -196,8 +204,8 @@ export function pickPinned(all: ClubChallenge[]): {
   return { latest, resume: resume && resume.id !== latest?.id ? resume : null };
 }
 
-export function getCachedChallenge(id: string): ClubChallenge | null {
-  return lastFetched.get(id) ?? null;
+export function getCachedChallenge(programId: string | null, id: string): ClubChallenge | null {
+  return lastFetched.get(cacheKey(programId, id)) ?? null;
 }
 
 /**
@@ -228,7 +236,7 @@ export async function fetchClubChallenges(
   }
   const json = (await response.json().catch(() => ({}))) as { challenges?: SummaryRow[] };
   const rows = (json.challenges ?? []).map(mapRow);
-  for (const row of rows) lastFetched.set(row.id, row);
+  for (const row of rows) lastFetched.set(cacheKey(programId, row.id), row);
   return rows;
 }
 
@@ -278,7 +286,7 @@ export async function setChallengeArchived(
   }
   const json = (await response.json().catch(() => ({}))) as { status?: "open" | "archived" };
   // The list is cached for the info screen; drop it so the next read is the truth.
-  lastFetched.delete(challengeId);
+  lastFetched.delete(cacheKey(programId, challengeId));
   return json.status ?? (archived ? "archived" : "open");
 }
 
@@ -323,7 +331,7 @@ export async function respondToChallengeInvite(
     inviteStatus?: "pending" | "accepted" | "declined" | "none";
   };
   const status = json.inviteStatus ?? "none";
-  const cached = lastFetched.get(challengeId);
-  if (cached) lastFetched.set(challengeId, { ...cached, inviteStatus: status });
+  const cached = lastFetched.get(cacheKey(programId, challengeId));
+  if (cached) lastFetched.set(cacheKey(programId, challengeId), { ...cached, inviteStatus: status });
   return status;
 }

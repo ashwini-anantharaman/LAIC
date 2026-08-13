@@ -120,6 +120,26 @@ export default function ChallengeNewScreen() {
     setInvited(next);
   };
 
+  /**
+   * Everyone currently in the club, or nobody.
+   *
+   * "Everyone" is computed from the list on screen rather than stored as a flag, so it
+   * cannot drift out of step with the individual ticks — unticking one person simply
+   * makes it false, which is what a reader expects from a checkbox that says everyone.
+   */
+  const everyoneIn = people !== null && people.length > 0 && people.every((p) => invited.has(p.userId));
+
+  const toggleEveryone = () => {
+    if (!people) return;
+    if (everyoneIn) {
+      setInvited(new Set());
+      // Moderator marks belonged to invitations that no longer exist.
+      setModerators(new Set());
+      return;
+    }
+    setInvited(new Set(people.map((p) => p.userId)));
+  };
+
   const toggleModerator = (userId: string) => {
     if (!invited.has(userId)) return;
     const next = new Set(moderators);
@@ -276,7 +296,30 @@ export default function ChallengeNewScreen() {
           ) : people.length === 0 ? (
             <Text style={styles.emptyBox}>Nobody else to invite in this club yet.</Text>
           ) : (
-            people.map((p) => {
+            <>
+              {/* A SNAPSHOT of today's members, not a standing rule — someone who joins
+                  the club tomorrow is not invited by this, and the wording says so
+                  rather than implying otherwise. */}
+              <Pressable
+                onPress={toggleEveryone}
+                style={({ pressed }) => [styles.personRow, pressed && styles.pressed]}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: everyoneIn }}
+                accessibilityLabel="Invite everyone in the club now"
+              >
+                <View style={[styles.checkbox, everyoneIn && styles.checkboxOn]}>
+                  {everyoneIn ? <Text style={styles.checkboxTick}>✓</Text> : null}
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={styles.personName} numberOfLines={1}>
+                    Everyone in the club now
+                  </Text>
+                  <Text style={styles.personHandle} numberOfLines={1}>
+                    {people.length} {people.length === 1 ? "member" : "members"}
+                  </Text>
+                </View>
+              </Pressable>
+              {people.map((p) => {
               const on = invited.has(p.userId);
               const mod = moderators.has(p.userId);
               return (
@@ -307,7 +350,8 @@ export default function ChallengeNewScreen() {
                   )}
                 </Pressable>
               );
-            })
+              })}
+            </>
           )}
 
           <Pressable

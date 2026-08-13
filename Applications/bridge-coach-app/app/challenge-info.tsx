@@ -63,7 +63,7 @@ export default function ChallengeInfoScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const [challenge, setChallenge] = useState<ClubChallenge | null>(() =>
-    id ? getCachedChallenge(id) : null,
+    id ? getCachedChallenge(clubId, id) : null,
   );
   const [error, setError] = useState<string | null>(null);
 
