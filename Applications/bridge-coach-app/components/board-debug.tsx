@@ -5,11 +5,16 @@
 // REMOVE once the discard bug is fixed.
 
 import * as SecureStore from "expo-secure-store";
+import * as Updates from "expo-updates";
 import { useEffect, useReducer } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
 const MAX_LINES = 10;
 const STORE_KEY = "board_debug_tail";
+
+/** Which published update this run actually is — every screenshot then
+ *  self-identifies, no more guessing whether the phone fetched the fix. */
+const BUILD = Updates.updateId ? `build ${Updates.updateId.slice(0, 8)}` : "build dev/embedded";
 
 const lines: string[] = [];
 let previousSession: string[] = [];
@@ -40,7 +45,9 @@ export function boardDebug(msg: string, extra?: unknown): void {
       suffix = " [unserializable]";
     }
   }
-  lines.push(`${stamp} ${msg}${suffix}`);
+  // Truncated: 10 lines must stay under SecureStore's 2KB iOS value limit,
+  // and urlChange lines carry whole launch URLs.
+  lines.push(`${stamp} ${msg}${suffix}`.slice(0, 160));
   if (lines.length > MAX_LINES) lines.shift();
   console.log(`[board-debug] ${msg}`, extra ?? "");
   // Fire-and-forget: a few hundred bytes per write, and every line flushed
@@ -62,6 +69,7 @@ export function BoardDebugOverlay() {
   if (lines.length === 0 && previousSession.length === 0) return null;
   return (
     <View style={styles.strip} pointerEvents="none">
+      <Text style={styles.marker}>{BUILD}</Text>
       {previousSession.length > 0 && (
         <>
           <Text style={styles.marker}>── BEFORE LAST EXIT ──</Text>
