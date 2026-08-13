@@ -42,6 +42,18 @@ export interface TrickAreaProps {
    * is face down, and it falls back to the keyframe glide.
    */
   originOf?: (seat: Seat) => { x: number; y: number } | null;
+  /**
+   * The seat whose card TOOK this trick — set only once the trick is complete
+   * and still on the felt.
+   *
+   * It replaced a "tap to continue" line under the compass (owner, 2026-08-13).
+   * That line was clipped by the band it sat in, and it only ever said what the
+   * player would work out by tapping anyway. The winning card lifting says the
+   * same thing — the trick is over, nothing is waiting on the robots — and also
+   * answers the question a player actually has at that moment, which is who got
+   * it. No vertical space: the lift happens inside the compass box.
+   */
+  winner?: Seat | null;
 }
 
 /**
@@ -173,7 +185,7 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
  * digits run ~0.56em each — and it is capped so the pair stays under half the
  * card's width and can never cross its diagonal twin.
  */
-function FaceCard({ card, box, seat, origin }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null }>) {
+function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean }>) {
   const rank = rankText(card.rank);
   const colour = isRed(card.suit) ? RED : "#000";
   const rankSize = Math.round(box.h * 0.26);
@@ -214,10 +226,15 @@ function FaceCard({ card, box, seat, origin }: Readonly<{ card: Card; box: { w: 
         width: box.w,
         height: box.h,
         background: "#fff",
-        border: "1px solid #737373",
+        border: won ? "2px solid #e8c76a" : "1px solid #737373",
         borderRadius: 4,
-        boxShadow: "0 3px 7px rgba(0,0,0,.45)",
+        // The winner rides above the pile with a warm ring; everything else
+        // keeps the plain drop shadow it always had.
+        boxShadow: won
+          ? "0 0 0 3px rgba(232,199,106,.45), 0 8px 16px rgba(0,0,0,.5)"
+          : "0 3px 7px rgba(0,0,0,.45)",
         boxSizing: "border-box",
+        transition: "box-shadow 200ms ease, border-color 200ms ease",
       }}
     >
       {index({ left: inX, top: inY }, false)}
@@ -247,6 +264,7 @@ export function TrickArea({
   variant = "cross",
   card = CARD,
   originOf,
+  winner = null,
 }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
@@ -290,11 +308,26 @@ export function TrickArea({
             // it does on a table and in BBO (owner, 2026-08-12). An empty slot
             // sits under every card so the arrow never rides over one.
             return (
-              <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, zIndex: play ? order + 2 : 1 }}>
+              // THE LIFT RIDES THE WRAPPER, not the card. A card that glided in
+              // keeps its keyframe animation with `fill: both`, and a filling
+              // animation's transform beats an inline one — so a lift written
+              // on the card itself was silently eaten for every seat except the
+              // one whose card flew (a transition, not an animation). Measured:
+              // the winner took its gold ring and stayed flat. The wrapper has
+              // no animation, so it can move.
+              <div
+                key={seat}
+                style={{
+                  position: "absolute", left: pos.left, top: pos.top,
+                  zIndex: winner === seat ? 9 : play ? order + 2 : 1,
+                  transform: winner === seat ? "translateY(-7px) scale(1.06)" : undefined,
+                  transition: "transform 200ms ease",
+                }}
+              >
                 {play ? (
                   // Keyed on the card so a NEW card mounts (and glides in); a
                   // re-render of the same card must not replay the animation.
-                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} />
+                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} />
                 ) : (
                   <EmptySlot box={card} />
                 )}

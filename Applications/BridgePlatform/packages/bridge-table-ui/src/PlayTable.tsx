@@ -340,14 +340,17 @@ export interface PlayTableProps {
    */
   trickCleared?: boolean;
   /**
-   * A finished trick is waiting on a TAP — say so.
+   * Who took the trick now on the felt — display only, and supplied by the
+   * HOST rather than read off the state.
    *
-   * The default pause waits for the player, which is silent by nature: the
-   * table simply stops. Someone who has not been told will read that as the
-   * board having frozen, so the felt says what it wants. Only for the tap
-   * pause; a timed one needs no instruction because it resolves itself.
+   * `GameState` carries a `winner` on a completed trick, but the session store
+   * does not persist it: a trick the robots finished arrives with the field
+   * absent, so a table that trusted it lit the winner only when the human
+   * happened to play the fourth card. Working it out here would mean a copy of
+   * trick law in a presentational package, which is exactly the copy that
+   * drifts — so the host, which already has the engine, works it out.
    */
-  trickWaiting?: boolean;
+  trickWinner?: Seat | null;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -433,7 +436,7 @@ export function PlayTable({
   myTurn = false,
   playMode = "off",
   trickCleared = false,
-  trickWaiting = false,
+  trickWinner = null,
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -966,6 +969,7 @@ export function PlayTable({
       scale={k}
       card={M_TRICK_CARD}
       originOf={(seat) => origins.current[seat] ?? null}
+      winner={currentPlays.length === 4 ? trickWinner : null}
     />
   );
 
@@ -1507,19 +1511,7 @@ export function PlayTable({
                 ))}
               </div>
             ) : null}
-            {inPlay ? (
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                {trickCluster(trickK)}
-                {trickWaiting ? (
-                  <span
-                    data-testid="trick-waiting"
-                    style={{ fontSize: 20, fontWeight: 700, color: "rgba(255,255,255,.82)", textShadow: "0 1px 3px rgba(0,0,0,.55)", whiteSpace: "nowrap" }}
-                  >
-                    tap to continue
-                  </span>
-                ) : null}
-              </div>
-            ) : null}
+            {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
           {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}

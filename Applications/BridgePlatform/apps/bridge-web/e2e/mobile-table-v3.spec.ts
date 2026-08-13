@@ -47,6 +47,48 @@ async function freshHumanTable(page: Page): Promise<void> {
   await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
 }
 
+/**
+ * The label of a card you may play right now, once the table is willing.
+ *
+ * Three things can stand between "the board is up" and "a card is live", and a
+ * test that only knows about one of them hangs on the others: the auction may
+ * still be running, a finished trick may be HELD (the hand is inert until it is
+ * let go — that is the point of the hold), and the robots may simply be mid
+ * think. Playability is `cursor: pointer` plus an armed handler rather than an
+ * attribute, so it has to be read off the computed style.
+ *
+ * `pick` matters for the flight test: the leftmost card is the one whose
+ * horizontal origin is unmistakable.
+ */
+async function playableCard(page: Page, pick: "any" | "leftmost" = "any"): Promise<string | null> {
+  const armed = (sel: string, leftmost: boolean) =>
+    page
+      .evaluate(
+        ({ sel: q, leftmost: lm }) => {
+          const live = [...document.querySelectorAll(q)].filter(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          if (lm) live.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+          return live.length ? live[0]!.getAttribute("aria-label") : null;
+        },
+        { sel, leftmost },
+      )
+      .catch(() => null);
+
+  for (let i = 0; i < 200; i++) {
+    const card = await armed('button[aria-label^="Play "]', pick === "leftmost");
+    if (card) return card;
+    if ((await page.locator('[data-testid="trick-card"]').count()) === 4) {
+      // A held trick: let it go so play can continue.
+      await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } }).catch(() => {});
+    } else if (await armed('button[aria-label="Pass"]', false)) {
+      await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+    }
+    await page.waitForTimeout(250);
+  }
+  return null;
+}
+
 test.describe("mobile table v3 — phone tier", () => {
   test("coach panel, no toolbar overflow, and a reachable ⋯ popover", async ({ page }) => {
     await page.context().clearCookies();
@@ -620,14 +662,7 @@ test.describe("mobile table v3 — phone tier", () => {
         }, q)
         .catch(() => null);
 
-    let card: string | null = null;
-    for (let i = 0; i < 150 && !card; i++) {
-      card = await armed('button[aria-label^="Play "]');
-      if (card) break;
-      if (await armed('button[aria-label="Pass"]'))
-        await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
-      await page.waitForTimeout(250);
-    }
+    const card = await playableCard(page);
     expect(card, "a playable card once the auction is out").toBeTruthy();
     const sel = `button[aria-label="${card}"]`;
     const before = await page.locator('button[aria-label^="Play "]').count();
@@ -682,14 +717,7 @@ test.describe("mobile table v3 — phone tier", () => {
         }, q)
         .catch(() => null);
 
-    let card: string | null = null;
-    for (let i = 0; i < 200 && !card; i++) {
-      card = await leftmostArmed('button[aria-label^="Play "]');
-      if (card) break;
-      if (await leftmostArmed('button[aria-label="Pass"]'))
-        await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
-      await page.waitForTimeout(250);
-    }
+    const card = await playableCard(page, "leftmost");
     expect(card, "a playable card once the auction is out").toBeTruthy();
 
     // Sample the trick card's transform every frame, from before it exists.
@@ -758,17 +786,7 @@ test.describe("mobile table v3 — phone tier", () => {
 
     const widths: number[] = [];
     for (let round = 0; round < 4; round++) {
-      let card: string | null = null;
-      for (let i = 0; i < 120 && !card; i++) {
-        card = await armed('button[aria-label^="Play "]');
-        if (card) break;
-        // A finished trick holds the hand inert until it is let go.
-        if (await page.getByTestId("trick-waiting").count())
-          await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } }).catch(() => {});
-        else if (await armed('button[aria-label="Pass"]'))
-          await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
-        await page.waitForTimeout(250);
-      }
+      const card = await playableCard(page);
       if (!card) break;
       widths.push(await plateW());
       // `raise` is the default, so two taps.
@@ -826,7 +844,24 @@ test.describe("mobile table v3 — phone tier", () => {
     // Well past the 750ms beat that would otherwise have stepped it on.
     await page.waitForTimeout(4000);
     expect(await trickCards(), "it waited instead of being swept").toBe(4);
-    await expect(page.getByTestId("trick-waiting"), "and it says so").toBeVisible();
+    // The pause is legible without a caption: the card that took the trick
+    // lifts and rings. It also answers who won, which a caption never did.
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid="trick-card"]')].filter((e) => {
+          // The lift is on the WRAPPER, not the card: a card that glided in
+          // keeps a filling keyframe animation, and that beats an inline
+          // transform. And a card that has finished travelling sits at the
+          // IDENTITY matrix, which is not "none" — so test for the lift itself
+          // rather than for having any transform, or every card counts.
+          const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(e.parentElement!).transform);
+          if (!m) return false;
+          const n = m[1]!.split(",").map(Number);
+          return Math.abs(n[0]! - 1) > 0.01 || Math.abs(n[5]!) > 1;
+        }).length,
+      ),
+      "exactly one card — the winner — is lifted",
+    ).toBe(1);
     expect(await armed('button[aria-label^="Play "]'), "the hand is inert while it waits").toBeNull();
 
     // A tap anywhere gathers it.

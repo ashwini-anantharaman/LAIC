@@ -13,8 +13,8 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useOptimistic, useState, useTransition } from "react";
-import type { ActionEvent, Call, Card, Seat } from "@bridge/events";
-import { applyEvent, type GameState } from "@bridge/engine";
+import type { ActionEvent, Call, Card, Seat, Suit } from "@bridge/events";
+import { applyEvent, trickWinner, type GameState } from "@bridge/engine";
 import { TRICK_PAUSE_MS, type TrickPause } from "@bridge/table-config";
 import { TrickHoldProvider } from "../trickHold";
 import { bidAction, playCardAction } from "@/app/bridge/table/actions";
@@ -150,6 +150,15 @@ export function LivePlayTable({
   const waitsForTap = seated && holdMs == null;
   const holding = trickDone && released !== trickKey;
   const release = useMemo(() => () => setReleased(trickKey), [trickKey]);
+  /**
+   * Who took it — computed with the ENGINE's own trick law, not read off the
+   * state. `winner` is set when a trick completes but the session store does
+   * not persist it, so a trick the robots finished arrives without one.
+   */
+  const wonBy =
+    trickDone && lastTrick
+      ? trickWinner(lastTrick as Parameters<typeof trickWinner>[0], (view.contract?.strain ?? "N") as Suit | "N")
+      : null;
 
   // The timed pause, and the watcher's. Cleared if the trick moves on first.
   useEffect(() => {
@@ -191,7 +200,7 @@ export function LivePlayTable({
       // Let go = gathered. The centre empties the moment you release it rather
       // than lingering until the next card happens to be played.
       trickCleared={trickDone && !holding}
-      trickWaiting={holding && waitsForTap}
+      trickWinner={wonBy}
       // While a call/play is in flight the board is stale, so stop offering
       // controls that would post a second action against it. The optimistic
       // board has already moved the turn on, which disarms the cards on its
