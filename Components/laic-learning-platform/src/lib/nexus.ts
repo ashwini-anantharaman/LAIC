@@ -33,7 +33,7 @@ const MOBILE_KEY = "laic_nexus_mobile";
 export interface LearningRole {
   id: string;
   name: string;
-  /** Legacy per-area view/edit flags plus the `capabilities` and `objectScopes`
+  /** Legacy per-area view/edit flags plus the `capabilities` and `typeScopes`
    *  the capability model writes alongside them. */
   perms: Record<string, unknown>;
 }
@@ -225,20 +225,20 @@ export async function createLearningRole(
   name: string,
   perms: Record<string, 'view' | 'edit'>,
   capabilities?: string[],
-  objectScopes?: Record<string, string[]>,
+  typeScopes?: Record<string, string[]>,
 ): Promise<LearningRole> {
   const res = await nexusFetch('/api/platform/learning/roles', {
     method: 'POST',
-    body: JSON.stringify({ program_id: pid(), name, perms, capabilities, object_scopes: objectScopes }),
+    body: JSON.stringify({ program_id: pid(), name, perms, capabilities, type_scopes: typeScopes }),
   });
   if (!res.ok) throw new Error(`Create role failed (${res.status})`);
   return (await res.json()) as LearningRole;
 }
-export async function updateLearningRole(id: string, patch: { name?: string; perms?: Record<string, 'view' | 'edit'>; capabilities?: string[]; objectScopes?: Record<string, string[]> }): Promise<void> {
-  const { objectScopes, ...rest } = patch;
+export async function updateLearningRole(id: string, patch: { name?: string; perms?: Record<string, 'view' | 'edit'>; capabilities?: string[]; typeScopes?: Record<string, string[]> }): Promise<void> {
+  const { typeScopes, ...rest } = patch;
   const res = await nexusFetch(`/api/platform/learning/roles/${id}?program_id=${encodeURIComponent(pid())}`, {
     method: 'PATCH',
-    body: JSON.stringify({ ...rest, object_scopes: objectScopes }),
+    body: JSON.stringify({ ...rest, type_scopes: typeScopes }),
   });
   if (!res.ok) throw new Error(`Update role failed (${res.status})`);
 }
