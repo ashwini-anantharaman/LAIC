@@ -6,6 +6,7 @@ import { ContentWebView } from "../components/content-webview";
 import { PrimaryButton, Screen, ScreenHeader } from "../components/ui";
 import { Colors, Fonts, Spacing } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { NexusError } from "../lib/nexus";
 import { useSelectedClubId } from "../lib/club-context";
 import { LEARNING_PLATFORM_URL, PROGRAM_ID } from "../lib/config";
 import { takeLaunch } from "../lib/launch-cache";
@@ -54,8 +55,20 @@ export default function StudioScreen() {
         embed: "1",
       });
       setUrl(`${base}?${params.toString()}`);
-    } catch {
-      setError("Couldn't open the Content Studio. Check that it's running.");
+    } catch (e) {
+      // Surface the SERVER's reason. Minting a learning launch is refused when the
+      // club (or its org) does not have the Learning Platform enabled, and it says
+      // which — "check that it's running" sent people looking at the wrong thing
+      // entirely for what is a Features toggle in the console.
+      setError(
+        e instanceof NexusError && e.status === 403
+          ? e.message
+          : e instanceof NexusError && e.status === 0
+            ? "Couldn't reach the server. Check your connection."
+            : e instanceof NexusError
+              ? `${e.message} (${e.status})`
+              : "Couldn't open the Content Studio.",
+      );
     }
   }, [token, clubId]);
 

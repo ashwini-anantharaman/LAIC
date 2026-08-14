@@ -120,6 +120,8 @@ import { applyEmbedSkin } from './embedSkin';
 import {
   consumeLaunchFromUrl,
   fetchLearningContext,
+  lastLearningContextFailure,
+  type LearningContextFailure,
   contextToRole,
   signOutToNexus,
 } from '../lib/nexus';
@@ -328,7 +330,7 @@ function StudioApp() {
    * someone sent here by the app should be told to reopen it rather than be handed a
    * demo identity that quietly authors as the wrong person.
    */
-  const [launchFailed, setLaunchFailed] = useState(false);
+  const [launchFailed, setLaunchFailed] = useState<LearningContextFailure | null>(null);
 
   const activeUserIdRef = useRef(activeUserId);
   const createdObjectsRef = useRef(createdObjects);
@@ -571,7 +573,7 @@ function StudioApp() {
       // that is wrong in ways that look like bugs somewhere else: the wrong name, the
       // wrong program, and content saved as the wrong person.
       if (arrivedWithLaunchToken) {
-        setLaunchFailed(true);
+        setLaunchFailed(lastLearningContextFailure() ?? { reason: 'no-session' });
         setBooting(false);
         return;
       }
@@ -1127,11 +1129,20 @@ function StudioApp() {
             </div>
           ) : launchFailed ? (
             <div className="grid min-h-screen place-items-center px-6">
-              <div className="text-center" style={{ maxWidth: 340 }}>
-                <p style={{ fontSize: 17, fontWeight: 700, color: '#1f1f1f' }}>Couldn’t sign you in</p>
+              <div className="text-center" style={{ maxWidth: 360 }}>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#1f1f1f' }}>
+                  {launchFailed.reason === 'refused' ? 'No access to author here' : 'Couldn’t sign you in'}
+                </p>
                 <p style={{ fontSize: 13.5, color: 'rgba(31,31,31,0.65)', marginTop: 6, lineHeight: 1.5 }}>
-                  This link works once. Close this and open it again from the app, which mints a
-                  fresh one.
+                  {launchFailed.reason === 'refused'
+                    // The server's own words: it names the exact toggle that is off —
+                    // the club's Learning feature, its parent program's, or the org's
+                    // learning module — which a generic message would send someone
+                    // hunting for.
+                    ? (launchFailed.detail ?? `The server refused this (${launchFailed.status ?? '403'}).`)
+                    : launchFailed.reason === 'unreachable'
+                      ? 'Could not reach the server. Check the connection and try again from the app.'
+                      : 'This link works once. Close this and open it again from the app, which mints a fresh one.'}
                 </p>
               </div>
             </div>
