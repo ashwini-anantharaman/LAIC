@@ -29,6 +29,11 @@ const SHELVES: { kind: LibraryKind; label: string; hint: string; reserved?: bool
   { kind: "table", label: "Tables", hint: "a saved seat lineup" },
   { kind: "play", label: "Deals", hint: "board + calls + cards, as recorded" },
   { kind: "drill", label: "Drills", hint: "bidding regression checks, run per knowledge base" },
+  {
+    kind: "challenge",
+    label: "Challenges",
+    hint: "boards, format and scoring — saved so the same contest can be set again",
+  },
   { kind: "puzzle", label: "Puzzles", hint: "reserved", reserved: true },
 ];
 
@@ -171,7 +176,21 @@ export default async function LibraryPage({
                   {e.name}
                 </Link>
                 <p className="mt-0.5 text-xs text-neutral-500">
-                  {e.kind === "table"
+                  {/* A saved challenge is its BOARDS — the thing that took work
+                      to build — so the line says how many, and what playing
+                      them means. Without it the row is a title and a date, and
+                      you cannot tell two saved challenges apart. */}
+                  {e.kind === "challenge"
+                    ? [
+                        `${e.challengeBoards?.length ?? 0} board${
+                          (e.challengeBoards?.length ?? 0) === 1 ? "" : "s"
+                        }`,
+                        e.challengeFormat === "bidding-only" ? "bidding only" : null,
+                        e.challengeScoring,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")
+                    : e.kind === "table"
                     ? `lineup · ${Object.values(e.seats ?? {})
                         .map((s) => s.label)
                         .join(", ")}`

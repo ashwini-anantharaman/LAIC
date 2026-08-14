@@ -467,3 +467,29 @@ test.describe("challenges", () => {
     expect(await overflowPx(page)).toBeLessThanOrEqual(1);
   });
 });
+
+// A challenge you MADE can be kept — its boards, format and scoring saved to
+// the library so the same contest can be set again (owner, 2026-08-14). The
+// boards are the substance: a challenge without its pack is a title, so this
+// asserts the count survives the round trip rather than only the name.
+test("save a challenge to the library, boards and all", async ({ page }) => {
+  test.setTimeout(150_000);
+  await switchUser(page.context(), "user_orgadmin_olivia");
+  const title = "E2E keep-me challenge";
+  await createChallenge(page, { title, boards: 2 });
+
+  const save = page
+    .locator("form")
+    .filter({ has: page.getByRole("button", { name: "Save to library" }) })
+    .first()
+    .getByRole("button", { name: "Save to library" });
+  await expect(save, "the creator is offered the save").toBeVisible();
+  await save.click();
+
+  await page.waitForURL(/\/bridge\/library\?kind=challenge/);
+  await expect(page.getByText(title).first()).toBeVisible();
+  await expect(
+    page.getByText(/2 boards/).first(),
+    "the boards came with it, not just the title",
+  ).toBeVisible();
+});

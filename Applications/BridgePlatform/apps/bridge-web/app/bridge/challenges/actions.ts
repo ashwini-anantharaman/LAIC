@@ -27,6 +27,8 @@ import { requireFeature } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { challengeStore } from "@/lib/challenges";
+import { libraryStore } from "@/lib/sessions";
+import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { packFromDraft, validateDraft, type ChallengeDraft } from "./draft";
 import { listChallengePeople } from "./people";
 
@@ -243,4 +245,82 @@ export async function inviteAction(formData: FormData): Promise<void> {
   const target = returnTo.startsWith("/bridge/challenges") ? returnTo : LIST;
   revalidatePath(target);
   redirect(target);
+}
+
+/**
+ * Save a challenge to the library, so the same contest can be set again.
+ *
+ * WHAT IS SAVED IS THE DEFINITION, NOT THE RESULT. A challenge's standings
+ * belong to the people who played it and are already on its own page; what has
+ * no home anywhere else is the thing that took work to build — the boards, and
+ * the format and scoring that decide what playing them means. That is what a
+ * saved challenge has to carry to be worth saving.
+ *
+ * The boards are COPIED, not referenced. A library entry outlives the record it
+ * came from: challenges are deleted, edited before they lock, and re-packed,
+ * and an entry that pointed at one would quietly become a title with nothing
+ * behind it. `sourceChallengeId` records where it came from without depending
+ * on it still being there.
+ */
+export async function saveChallengeToLibraryAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await requireFeature(context, "table.save_library");
+  const challengeId = String(formData.get("challengeId"));
+
+  const store = challengeStore();
+  const challenge = await store.getChallenge(challengeId);
+  if (!challenge) redirect(`${LIST}?error=${encodeURIComponent("That challenge is gone.")}`);
+  const boards = await store.listBoards(challengeId);
+  if (boards.length === 0)
+    redirect(
+      `${LIST}/${challengeId}?error=${encodeURIComponent(
+        "Nothing to save yet — this challenge has no boards.",
+      )}`,
+    );
+
+  const name = String(formData.get("name") ?? "").trim() || challenge.title;
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  const entry = {
+    entryId: newId("le"),
+    kind: "challenge" as const,
+    name,
+    ...(notes && { notes }),
+    tags: [] as string[],
+    origin: "authored" as const,
+    createdBy: context.nexusUserId,
+    createdAt: new Date().toISOString(),
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    scopeLevel: authoredScope(context),
+    sourceChallengeId: challengeId,
+    challengeFormat: challengeFormat(challenge),
+    challengeScoring: challenge.scoring,
+    challengeBoards: boards
+      .slice()
+      .sort((a, b) => a.boardNo - b.boardNo)
+      .map((b) => ({
+        boardNo: b.boardNo,
+        pack: b.pack,
+        dealer: b.dealer,
+        vul: b.vul,
+        humanSeat: b.humanSeat,
+      })),
+  };
+
+  try {
+    await libraryStore().putEntry(entry);
+  } catch {
+    redirect(
+      `${LIST}/${challengeId}?error=${encodeURIComponent(
+        "Couldn't save — the library isn't provisioned on this backend yet.",
+      )}`,
+    );
+  }
+  await audit(context, "profile.create", "kb_library", entry.entryId, {
+    challengeId,
+    kind: "challenge",
+    boards: entry.challengeBoards.length,
+  });
+  redirect(`/bridge/library?kind=challenge&saved=challenge`);
 }

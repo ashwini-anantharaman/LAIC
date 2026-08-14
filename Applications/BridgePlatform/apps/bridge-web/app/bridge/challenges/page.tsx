@@ -1,4 +1,5 @@
 import { isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
+import { saveChallengeToLibraryAction } from "./actions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { respondInviteAction } from "./actions";
@@ -141,7 +142,11 @@ export default async function ChallengesPage({
       {playing.length > 0 && (
         <Section title="Yours" count={playing.length} hint="In progress.">
           {playing.map((row) => (
-            <PlayCard key={row.challenge.challengeId} row={row} />
+            <PlayCard
+              key={row.challenge.challengeId}
+              row={row}
+              mine={row.challenge.createdBy === userId}
+            />
           ))}
         </Section>
       )}
@@ -149,7 +154,11 @@ export default async function ChallengesPage({
       {finished.length > 0 && (
         <Section title="Finished" count={finished.length}>
           {finished.map((row) => (
-            <PlayCard key={row.challenge.challengeId} row={row} />
+            <PlayCard
+              key={row.challenge.challengeId}
+              row={row}
+              mine={row.challenge.createdBy === userId}
+            />
           ))}
         </Section>
       )}
@@ -282,7 +291,30 @@ function InviteCard({ row }: Readonly<{ row: Row }>) {
  * An accepted challenge. Tapping it starts or resumes the next unplayed board;
  * once every board is played it opens the results instead.
  */
-function PlayCard({ row }: Readonly<{ row: Row }>) {
+/**
+ * A challenge you made, and the one thing you can do with it that its own page
+ * cannot: keep it.
+ *
+ * It sits BESIDE the card rather than inside it, because the card is one big
+ * <Link> — a form nested in an anchor is invalid, and a button inside a link is
+ * a click the user cannot aim. Only the creator sees it: saving is about
+ * keeping something you built, and a participant did not build it.
+ */
+function SaveToLibrary({ challengeId }: Readonly<{ challengeId: string }>) {
+  return (
+    <form action={saveChallengeToLibraryAction} className="mt-1.5 flex justify-end">
+      <input type="hidden" name="challengeId" value={challengeId} />
+      <button
+        type="submit"
+        className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-600 transition-colors hover:border-emerald-400 hover:text-emerald-800"
+      >
+        Save to library
+      </button>
+    </form>
+  );
+}
+
+function PlayCard({ row, mine }: Readonly<{ row: Row; mine: boolean }>) {
   const { challenge, access } = row;
   const done = access.viewerFinished || challenge.status === "archived";
   const href = done
@@ -297,13 +329,16 @@ function PlayCard({ row }: Readonly<{ row: Row }>) {
       : `Resume · board ${access.nextBoardNo ?? access.totalBoards} of ${access.totalBoards}`;
 
   return (
-    <Link
-      href={href}
-      className="block rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-emerald-400"
-    >
-      <CardFacts row={row} />
-      <Progress access={access} />
-      <p className="mt-2 text-sm font-semibold text-emerald-800">{cta} →</p>
-    </Link>
+    <div>
+      <Link
+        href={href}
+        className="block rounded-xl border border-neutral-200 bg-white p-4 transition-colors hover:border-emerald-400"
+      >
+        <CardFacts row={row} />
+        <Progress access={access} />
+        <p className="mt-2 text-sm font-semibold text-emerald-800">{cta} →</p>
+      </Link>
+      {mine && <SaveToLibrary challengeId={challenge.challengeId} />}
+    </div>
   );
 }
