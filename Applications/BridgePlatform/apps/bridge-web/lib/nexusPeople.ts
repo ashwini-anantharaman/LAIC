@@ -4,10 +4,9 @@
  * views), but who-holds-what is Nexus data: the same answer drives org-portal
  * logins, test-as, and /bridge/context. http mode only.
  */
-import { cookies } from "next/headers";
 import { cachedNexusGet, invalidateNexusReads } from "./nexusCache";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
-import { NEXUS_TOKEN_COOKIE } from "./nexusToken";
+import { requestAccessToken } from "./nexus";
 
 export interface BridgePerson {
   email: string | null;
@@ -39,11 +38,27 @@ export function nexusClubProgramId(context: NexusBridgeContext): string | null {
   return ext.nexus_club_program_id ?? null;
 }
 
+/**
+ * Call Nexus AS THE CALLER.
+ *
+ * This read the launch cookie DIRECTLY, which meant it only ever worked inside the
+ * embed. The native app has no cookie jar to share and sends its Nexus session as a
+ * bearer instead, so every Nexus-backed read failed on the app's path — and because
+ * those reads are wrapped in `.catch(() => [])`, it failed SILENTLY: an empty roster
+ * reads as "nobody here" rather than as an error, which is how a club's invite list
+ * could quietly become unusable after the directory stopped falling back to the
+ * parent's roster.
+ *
+ * `requestAccessToken` already answers "who is calling" for both carriers, with the
+ * header winning, so this defers to it rather than keeping a second opinion about
+ * credentials that can drift from the first.
+ */
 export async function nexusFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const baseUrl = process.env.NEXUS_API_BASE_URL;
   if (!baseUrl) throw new Error("People & Roles requires NEXUS_API_BASE_URL (http mode)");
-  const cookieStore = await cookies();
-  const token = cookieStore.get(NEXUS_TOKEN_COOKIE)?.value;
+  // requestAccessToken already answers "who is calling" for BOTH carriers, with the
+  // header winning — so this needs no opinion of its own beyond an explicit override.
+  const token = await requestAccessToken();
   if (!token) throw new Error("Not signed in through Nexus");
   return fetch(`${baseUrl.replace(/\/$/, "")}${path}`, {
     ...init,
@@ -81,6 +96,8 @@ export interface NexusProgramMember {
 }
 
 export async function listNexusProgramMembers(programId: string): Promise<NexusProgramMember[]> {
+  // Cached by program, not by caller: a program's members are the same answer
+  // whoever asks, and the authorisation happens on the Nexus side per request.
   return cachedNexusGet(`members:${programId}`, async () => {
     const res = await nexusFetch(`/api/programs/${encodeURIComponent(programId)}/members`);
     if (!res.ok) throw new Error(`Nexus members request failed: ${res.status}`);
@@ -149,4 +166,29 @@ export async function removeBridgePerson(programId: string, email: string): Prom
     throw new Error(err?.detail ?? `Nexus removal failed: ${res.status}`);
   }
   invalidateNexusReads(`people:${programId}`);
+}
+
+/**
+ * The caller's accepted FRIENDS, as ids an invite can address.
+ *
+ * A private table is invited from this list rather than from a club roster, which is
+ * the whole point of it: a friend may be in another club, or in none. It is also what
+ * keeps the create path honest once the club's create right no longer gates it —
+ * "anyone may set up a private table" is safe precisely because the people they can
+ * invite are the people who already agreed to be their friend.
+ *
+ * Not cached: a friendship accepted a moment ago should be invitable now, and this is
+ * one small request on a screen the person opened deliberately.
+ */
+export interface NexusFriend {
+  profileId: string;
+  name: string;
+  username: string | null;
+}
+
+export async function listNexusFriends(): Promise<NexusFriend[]> {
+  const res = await nexusFetch("/api/friends");
+  if (!res.ok) throw new Error(`Nexus friends request failed: ${res.status}`);
+  const json = (await res.json()) as { friends?: NexusFriend[] };
+  return json.friends ?? [];
 }
