@@ -25,6 +25,7 @@ export function ObjectVersionsModal({
     lockObjectVersion,
     deleteObjectVersion,
     openReaderVersion,
+    nexusClubName,
   } = useApp();
   const confirm = useConfirm();
   const [notes, setNotes] = useState('');
@@ -102,11 +103,16 @@ export function ObjectVersionsModal({
   const onPublish = async (v: Version) => {
     setError(null);
     const live = versions.find((x) => x.publishedAt && x.id !== v.id);
+    // Name the DESTINATION. "the shared library" is true and tells an author nothing;
+    // whether this lands in one club's Activities or in the curriculum every club
+    // reads is the only thing they actually need to know before pressing it.
+    const destination = nexusClubName
+      ? `It will appear in ${nexusClubName}’s Activities — and not in Learn.`
+      : 'It will appear in Learn, for every club that reads this program.';
     const ok = await confirm({
       title: `Publish v${v.versionNumber}?`,
       description:
-        `v${v.versionNumber} of “${object.title}” goes to the shared library, where the`
-        + ' apps that read it will show this version.'
+        `v${v.versionNumber} of “${object.title}” goes live. ${destination}`
         + (live ? ` v${live.versionNumber} is live now and will be replaced.` : '')
         + ' Later edits stay private until you publish again.',
       confirmLabel: `Publish v${v.versionNumber}`,

@@ -165,6 +165,8 @@ export interface AppState {
   stopRolePreview: () => void;
   /** Identity from the Nexus launch (null in standalone demo mode). */
   nexusProgramName: string | null;
+  /** The club this session authors for, or null when it is not a club launch. */
+  nexusClubName: string | null;
   nexusUserName: string | null;
   nexusUserRole: string | null;
   readerObjectId: string | null;
@@ -308,6 +310,14 @@ function StudioApp() {
   const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
+  /**
+   * The CLUB this session is authoring for, when the launch came from one.
+   *
+   * It exists to answer the question an author actually has — "where does this go?" —
+   * which `nexusProgramName` cannot: for a club launch that is the connected PARENT,
+   * so showing it would name the wrong place with total confidence.
+   */
+  const [nexusClubName, setNexusClubName] = useState<string | null>(null);
   const [nexusUserName, setNexusUserName] = useState<string | null>(null);
   const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
   /** Gate first paint until we know whether this is a Nexus launch. */
@@ -497,6 +507,7 @@ function StudioApp() {
         setLearningPerms(perms);
         setLearningCapabilities(caps);
         setNexusProgramName(ctx.program_name ?? null);
+        setNexusClubName(ctx.nexus_club_program_name ?? null);
         setNexusUserName(ctx.displayName ?? null);
         setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
         setActiveUserId(uid);
@@ -1063,7 +1074,7 @@ function StudioApp() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
     previewName, startRolePreview, stopRolePreview,
-    nexusProgramName, nexusUserName, nexusUserRole,
+    nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
     saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,

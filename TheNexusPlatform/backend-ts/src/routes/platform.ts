@@ -2029,6 +2029,8 @@ platformRouter.get("/learning/context", async (c) => {
     // connected PARENT, so without this no client can tell which club it is in.
     // Mirrors nexus_club_program_id on the bridge context.
     nexus_club_program_id: access.partnerProgramId ?? null,
+    /** …and its NAME, so the Studio can say which club publishing will feed. */
+    nexus_club_program_name: access.partnerProgramName ?? null,
     appId: await platformAppSlug(access.programId, "learning-platform", "learning_platform"),
     roles: prebuiltLearning ? [prebuiltLearning] : mapped.roles,
     permissions: [`learning:${access.level}`],

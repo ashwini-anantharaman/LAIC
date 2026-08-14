@@ -23,6 +23,7 @@ import { StatusBar } from "expo-status-bar";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -421,27 +422,49 @@ export default function ClubScreen() {
    */
 // The club's own authored content, and whether this person may add more. Both
   // are per club, so both re-resolve on a club switch.
-  useEffect(() => {
-    if (!token || !club?.id) {
-      setCanAuthor(false);
-      setClubContent([]);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
+  const loadClubContent = useCallback(
+    async (opts: { refresh?: boolean } = {}) => {
+      if (!token || !club?.id) {
+        setCanAuthor(false);
+        setClubContent([]);
+        return;
+      }
       const [ctx, objects] = await Promise.all([
         getLearningContext(token, club.id),
-        getLearningObjects(token, { programId: club.id }).catch(() => []),
+        // `refresh` matters: the module cache is one slot shared with the Learn tab,
+        // so without it a list warmed seconds ago by that tab is reused verbatim —
+        // and the whole point of coming back here is to see something new.
+        getLearningObjects(token, { programId: club.id, ...opts }).catch(() => []),
       ]);
-      if (cancelled) return;
       setCanAuthor(canAuthorLearning(ctx));
       // Only the club's half: the parent's curriculum belongs to the Learn tab.
       setClubContent(splitByOwner(objects, club.id).club);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, club?.id]);
+    },
+    [token, club?.id],
+  );
+
+  /**
+   * Re-read on every focus, and on returning to the foreground.
+   *
+   * Authoring happens on ANOTHER screen — the Content Studio, through the + — and
+   * publishing there is precisely the moment this list becomes wrong. Without this the
+   * effect only ran on a club switch or a token change, so a card someone had just
+   * published did not appear until they restarted the app, which reads as "publishing
+   * did nothing". The Learn tab already refreshes on both; this is the same treatment
+   * for the surface the + actually feeds.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      void loadClubContent({ refresh: true });
+    }, [loadClubContent]),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void loadClubContent({ refresh: true });
+    });
+    return () => sub.remove();
+  }, [loadClubContent]);
 
   const activities: Activity[] = [
     {

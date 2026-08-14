@@ -48,6 +48,11 @@ export interface LearningContext {
   accessLevel: string;
   displayName?: string | null;
   program_name?: string | null;
+  /** The CLUB the caller launched from, when they came through one. `program_name`
+   *  above is the connected PARENT — the right label for the data instance, and the
+   *  wrong one for telling an author which club their work will feed. */
+  nexus_club_program_id?: string | null;
+  nexus_club_program_name?: string | null;
   role_name?: string | null;
   is_admin?: boolean;
   /** The caller's effective learning-catalogue capability ids (screen gating). */
