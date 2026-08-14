@@ -19,6 +19,7 @@ import type { NexusBridgeContext } from "@laic/learner-contracts";
 import { cache } from "react";
 import { getMyLearners, getProgramCoaches, nexusMode } from "@/lib/nexus";
 import {
+  listNexusFriends,
   listNexusProgramMembers,
   nexusClubProgramId,
   nexusProgramId,
@@ -105,4 +106,29 @@ export function selfPerson(context: NexusBridgeContext): ChallengePerson {
     name: context.displayName ?? stubDisplayName(context.nexusUserId) ?? context.nexusUserId,
     handle: "creator",
   };
+}
+
+/**
+ * Everyone a PRIVATE TABLE may invite: the caller's accepted friends.
+ *
+ * A separate directory from the club one rather than an addition to it. A club
+ * challenge must not be able to reach outside the club, and a private table must not
+ * be limited to it — merging the two would mean whichever call site forgot to say
+ * which it wanted got the wrong answer silently.
+ *
+ * In stub mode there is no Nexus and no friendship, so the stub users stand in;
+ * otherwise a private table could not be exercised locally at all.
+ */
+export async function listFriendPeople(
+  context: NexusBridgeContext,
+): Promise<ChallengePerson[]> {
+  if (nexusMode() === "stub") return listChallengePeople(context);
+  const friends = await listNexusFriends().catch(() => []);
+  return friends
+    .filter((f) => f.profileId && f.profileId !== context.nexusUserId)
+    .map((f) => ({
+      userId: f.profileId,
+      name: f.name,
+      ...(f.username ? { handle: `@${f.username}` } : {}),
+    }));
 }

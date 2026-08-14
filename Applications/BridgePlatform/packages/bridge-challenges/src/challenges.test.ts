@@ -217,6 +217,54 @@ describe("club scope (0029)", () => {
     expect(challengeVisibleInScope(PERSONAL, null)).toBe(true);
   });
 
+  it("deleting takes every record kind with it, not just the challenge", async () => {
+    // The six tables have no foreign keys between them, so nothing cascades: a delete
+    // that removed only the challenge row would leave five kinds of orphan keyed to an
+    // id nothing resolves. This is the test that notices when a seventh kind is added
+    // and forgotten.
+    const store = new InMemoryChallengeStore();
+    const id = CH.challengeId;
+    await store.putChallenge(CH);
+    await store.putBoard(BOARD);
+    await store.putInvite({
+      challengeId: id,
+      userId: "user_a",
+      userName: "A",
+      status: "accepted",
+      moderator: false,
+      invitedBy: CH.createdBy,
+      invitedAt: CH.createdAt,
+    });
+    await store.putPlay({
+      challengeId: id,
+      boardNo: BOARD.boardNo,
+      userId: "user_a",
+      sessionId: "sess_1",
+      status: "in-progress",
+      startedAt: CH.createdAt,
+    });
+
+    // A SECOND challenge, untouched — a delete that took the whole table with it
+    // would still pass every assertion about the first one.
+    const other: Challenge = { ...CH, challengeId: "ch_other_keep" };
+    await store.putChallenge(other);
+
+    await store.deleteChallenge(id);
+
+    expect(await store.getChallenge(id)).toBeNull();
+    expect(await store.listBoards(id)).toEqual([]);
+    expect(await store.listInvites({ challengeId: id })).toEqual([]);
+    expect(await store.listPlays({ challengeId: id })).toEqual([]);
+    expect(await store.listBaselines(id)).toEqual([]);
+    expect(await store.countDecisions(id)).toBe(0);
+    expect(await store.getChallenge("ch_other_keep")).not.toBeNull();
+  });
+
+  it("deleting something already gone is not an error", async () => {
+    const store = new InMemoryChallengeStore();
+    await expect(store.deleteChallenge("ch_never_existed")).resolves.toBeUndefined();
+  });
+
   it("restricts nothing when the caller has no scope", () => {
     // What the JSON dev store and any internal read with no club in hand get.
     expect(challengeVisibleInScope(OTHER_CLUB, null)).toBe(true);

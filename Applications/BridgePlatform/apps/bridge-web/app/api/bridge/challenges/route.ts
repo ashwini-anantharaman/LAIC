@@ -21,7 +21,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { packFromDraft, validateDraft, type ChallengeDraft } from "@/app/bridge/challenges/draft";
-import { listChallengePeople } from "@/app/bridge/challenges/people";
+import { listChallengePeople, listFriendPeople } from "@/app/bridge/challenges/people";
 import { canCreateChallenge, canUse } from "@/lib/access";
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
@@ -38,11 +38,21 @@ export async function POST(request: NextRequest) {
     if (!(await canUse(context, "page.challenges"))) throw new AccessError("No access");
     // The two-catalogue rule (platform allows, the club's role gates) lives
     // in canCreateChallenge — the same gate the wizard page runs.
-    if (!(await canCreateChallenge(context))) throw new AccessError("No create access");
-
     const draft = (await request.json().catch(() => null)) as ChallengeDraft | null;
     if (!draft) {
       return NextResponse.json({ error: "No draft." }, { status: 400, headers: CORS });
+    }
+    const personal = draft.personal === true;
+    // A PRIVATE TABLE is not a club activity, so the club's create right does not
+    // govern it. Owner direction: playing a few boards with your own friends should
+    // not depend on whether your club lets its members run club challenges.
+    //
+    // What makes that safe is not a weaker check, it is a narrower reach: a private
+    // table can only invite people who have already accepted this person as a friend
+    // (see the directory below), so removing the gate grants no new access to anyone
+    // else's club, roster or content. Everything else still needs create access.
+    if (!personal && !(await canCreateChallenge(context))) {
+      throw new AccessError("No create access");
     }
     const errors = validateDraft(draft);
     if (errors.length) {
@@ -65,7 +75,6 @@ export async function POST(request: NextRequest) {
     // A PRIVATE TABLE is the deliberate exception: it belongs to its creator rather
     // than a club, so it is stored unowned and marked scope_level "user", which
     // keeps it off every club's list while remaining visible to whoever was invited.
-    const personal = draft.personal === true;
     const ownerScope = personal ? null : requireChallengeOwnerScope(context);
 
     const challenge: Challenge = {
@@ -107,9 +116,15 @@ export async function POST(request: NextRequest) {
       await store.putBoard(record);
     }
 
-    // Invite only people this creator can actually see — plus the creator.
+    // Invite only people this creator can actually reach — plus the creator. For a
+    // private table that is their FRIENDS; for a club challenge, the club. Both are
+    // resolved server-side from the caller's own identity, so the draft cannot name
+    // somebody it has no business naming: "never invite blind" holds either way.
+    //
     const directory = new Map(
-      (await listChallengePeople(context)).map((p) => [p.userId, p] as const),
+      (personal ? await listFriendPeople(context) : await listChallengePeople(context)).map(
+        (p) => [p.userId, p] as const,
+      ),
     );
     const creatorRow: ChallengeInvite = {
       challengeId,

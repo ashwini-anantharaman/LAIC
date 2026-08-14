@@ -62,6 +62,9 @@ export type ClubChallenge = {
   archived: boolean;
   /** The creator, or someone invited AS a moderator — who may retire it. */
   moderator: boolean;
+  /** Only the CREATOR may delete: archiving is reversible and a club needs it,
+   *  deleting is not and it destroys everyone else's results too. */
+  isCreator: boolean;
   /** When THIS viewer last played a board here; null if never. What makes
    *  "resume what you were last playing" honest — see pickPinned. */
   lastPlayedAt: string | null;
@@ -81,6 +84,7 @@ type SummaryRow = {
     finished?: boolean;
     resultsUnlocked?: boolean;
     moderator?: boolean;
+    isCreator?: boolean;
     lastPlayedAt?: string | null;
   };
   leaderboard:
@@ -132,6 +136,7 @@ function mapRow(row: SummaryRow): ClubChallenge {
     // whose request would be refused.
     archived: row.status === "archived",
     moderator: row.viewer?.moderator ?? false,
+    isCreator: row.viewer?.isCreator ?? false,
     lastPlayedAt: row.viewer?.lastPlayedAt ?? null,
     standings: (row.leaderboard ?? []).map((r) => ({
       rank: r.rank,
@@ -205,7 +210,12 @@ export function pickPinned(all: ClubChallenge[]): {
 }
 
 export function getCachedChallenge(programId: string | null, id: string): ClubChallenge | null {
-  return lastFetched.get(cacheKey(programId, id)) ?? null;
+  // A PRIVATE TABLE is cached under no club, because it belongs to none. Falling back
+  // to that key means a screen holding a club can still find one without having to
+  // know which kind of challenge it is about to show.
+  return (
+    lastFetched.get(cacheKey(programId, id)) ?? lastFetched.get(cacheKey(null, id)) ?? null
+  );
 }
 
 /**
@@ -366,4 +376,49 @@ export async function respondToChallengeInvite(
   const cached = lastFetched.get(cacheKey(programId, challengeId));
   if (cached) lastFetched.set(cacheKey(programId, challengeId), { ...cached, inviteStatus: status });
   return status;
+}
+
+/**
+ * Erase a challenge, or a private table, for good.
+ *
+ * Distinct from archiving and not a stronger version of it: archiving keeps every
+ * board and result readable, which is what something people played deserves. This is
+ * for the mistake and the unused table, where a tombstone in the list is worse than
+ * nothing. Only the creator may — the platform enforces that, not this.
+ *
+ * The prompt belongs to the CALLER, because only the caller knows what the person is
+ * looking at when they tap it. Nothing here asks.
+ */
+export async function deleteChallenge(
+  token: string,
+  programId: string | null,
+  challengeId: string,
+): Promise<void> {
+  const base = bridgeApiBase();
+  if (!base) throw new ChallengesError(0, "No bridge platform configured.");
+
+  let response: Response;
+  try {
+    response = await fetch(`${base}/api/bridge/challenges/${encodeURIComponent(challengeId)}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(programId ? { "x-program-id": programId } : {}),
+      },
+    });
+  } catch {
+    throw new ChallengesError(0, "Cannot reach the bridge platform.");
+  }
+  if (!response.ok) {
+    if (response.status === 404) {
+      // The route answers 404 for "not yours to delete" as well as "no such route" —
+      // the house rule everywhere in this API. Say the likelier one.
+      throw new ChallengesError(404, "Only the person who created it can delete it.");
+    }
+    throw new ChallengesError(response.status, `Couldn't delete that (${response.status})`);
+  }
+  // Both keys: a private table is cached under no club, a club's challenge under its
+  // club, and this one function deletes either.
+  lastFetched.delete(cacheKey(programId, challengeId));
+  lastFetched.delete(cacheKey(null, challengeId));
 }

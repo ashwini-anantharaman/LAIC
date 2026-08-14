@@ -29,12 +29,13 @@ import { BackChevron, BrandChrome } from "../components/brand-chrome";
 import { leaveWithFade } from "../components/leave-veil";
 import { TabLoading } from "../components/tab-loading";
 import { ChallengeTile } from "../components/challenge-tile";
-import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
+import { Brand, Colors, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import {
   fetchClubChallenges,
   getCachedChallenge,
   respondToChallengeInvite,
+  deleteChallenge,
   setChallengeArchived,
   type ClubChallenge,
   describeChallengesError,
@@ -71,14 +72,21 @@ export default function ChallengeInfoScreen() {
   useEffect(() => {
     if (challenge || !token || !id) return;
     let cancelled = false;
-    fetchClubChallenges(token, clubId)
-      .then((rows) => {
-        if (cancelled) return;
-        const found = rows.find((r) => r.id === id);
-        if (found) setChallenge(found);
-        else setError("This challenge is no longer available.");
-      })
-      .catch((e) => !cancelled && setError(describeChallengesError(e)));
+    // Two reads, because a challenge is either a club's or a PRIVATE TABLE's and this
+    // screen shows both. The club list deliberately excludes private tables — that is
+    // what keeps them off every club's screens — so looking only there made a table
+    // you had just created report itself as "no longer available".
+    (async () => {
+      const club = await fetchClubChallenges(token, clubId);
+      let found = club.find((r) => r.id === id);
+      if (!found) {
+        const personal = await fetchClubChallenges(token, clubId, { personal: true });
+        found = personal.find((r) => r.id === id);
+      }
+      if (cancelled) return;
+      if (found) setChallenge(found);
+      else setError("This challenge is no longer available.");
+    })().catch((e) => !cancelled && setError(describeChallengesError(e)));
     return () => {
       cancelled = true;
     };
@@ -116,6 +124,44 @@ export default function ChallengeInfoScreen() {
    * Confirms first: archiving changes what everyone invited sees, so it is not a
    * one-tap act. Reversible, and the button says which way it will go.
    */
+  /**
+   * Erase it, for good.
+   *
+   * Deliberately separate from Archive rather than a harsher setting of it. Archive is
+   * the right answer for something people played — results stay readable and it comes
+   * back. Delete is for the mistake and the unused private table, where a retired
+   * tombstone in the list is worse than nothing at all.
+   *
+   * CREATOR ONLY, which is narrower than archiving on purpose: this destroys other
+   * people's plays as well as your own, so a moderator who wants it gone archives it,
+   * and the person who made it can erase it.
+   *
+   * The prompt names what is permanent and how much of it there is — "and its 4
+   * boards" is the difference between a warning and a warning someone reads.
+   */
+  const [deleting, setDeleting] = useState(false);
+  const removeForGood = () => {
+    if (!token || !challenge || deleting) return;
+    const played = challenge.standings.length;
+    confirmDestructive(
+      "Delete permanently?",
+      `“${challenge.name}” and its ${challenge.boards} board${challenge.boards === 1 ? "" : "s"} will be erased` +
+        (played > 0 ? `, along with everyone's results` : "") +
+        `. This cannot be undone — archive it instead if you only want to retire it.`,
+      "Delete",
+      () => {
+        setDeleting(true);
+        deleteChallenge(token, clubId, challenge.id)
+          // Nothing to return to on this screen once its subject is gone.
+          .then(() => router.back())
+          .catch((e) =>
+            notify("Couldn't delete that", e instanceof Error ? e.message : "Please try again."),
+          )
+          .finally(() => setDeleting(false));
+      },
+    );
+  };
+
   const [archiving, setArchiving] = useState(false);
   const toggleArchive = () => {
     if (!token || !challenge || archiving) return;
@@ -245,6 +291,29 @@ export default function ChallengeInfoScreen() {
                       : challenge.archived
                         ? "Reopen challenge"
                         : "Archive challenge"}
+                  </Text>
+                </Pressable>
+              ) : null}
+
+              {/* Creator only — the platform refuses everyone else, so offering it
+                  more widely would only produce a button that fails. */}
+              {challenge.isCreator ? (
+                <Pressable
+                  onPress={removeForGood}
+                  disabled={deleting}
+                  accessibilityRole="button"
+                  accessibilityLabel="Delete challenge permanently"
+                  style={({ pressed }) => [
+                    styles.archiveRow,
+                    { marginTop: 10 * s },
+                    (pressed || deleting) && styles.pressed,
+                  ]}
+                >
+                  <Ionicons name="trash-outline" size={15 * s} color={Colors.danger} />
+                  <Text
+                    style={[styles.archiveText, { fontSize: 13 * s, color: Colors.danger }]}
+                  >
+                    {deleting ? "Deleting…" : "Delete permanently"}
                   </Text>
                 </Pressable>
               ) : null}

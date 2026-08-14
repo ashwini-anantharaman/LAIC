@@ -121,6 +121,24 @@ export interface ChallengeStore {
   ): Promise<BenDecision | null>;
   /** BEN call volume for one challenge — the §10 cost check. */
   countDecisions(challengeId: string): Promise<number>;
+
+  /**
+   * Erase a challenge and everything written under it: boards, invites, plays,
+   * baselines and BEN decisions.
+   *
+   * DISTINCT FROM ARCHIVING, deliberately, and not a stronger version of it.
+   * Archiving retires a challenge while keeping every result readable — which is
+   * what you want for something people played. This is for the other case: a
+   * challenge made by mistake, or a private table nobody used, where leaving a
+   * tombstone in the list is the wrong answer. There is no undo, which is why the
+   * only caller prompts first.
+   *
+   * The six record kinds have no foreign keys between them (0027), so nothing
+   * cascades on its own: a delete that removed only the challenge row would leave
+   * five tables of orphans keyed to an id nothing resolves. Implementations must
+   * remove all of them.
+   */
+  deleteChallenge(challengeId: string): Promise<void>;
 }
 
 export interface ChallengeStoreData {
@@ -293,5 +311,20 @@ export class InMemoryChallengeStore implements ChallengeStore {
   }
   async countDecisions(challengeId: string) {
     return this.data.decisions.filter((d) => d.challengeId === challengeId).length;
+  }
+
+  // Every kind, in one pass. Listed explicitly rather than looped over the data's
+  // keys so adding a seventh record kind is a type error here rather than a silent
+  // orphan later.
+  async deleteChallenge(challengeId: string) {
+    const keep = <T extends { challengeId: string }>(rows: T[]) =>
+      rows.filter((r) => r.challengeId !== challengeId);
+    this.data.challenges = this.data.challenges.filter((c) => c.challengeId !== challengeId);
+    this.data.boards = keep(this.data.boards);
+    this.data.invites = keep(this.data.invites);
+    this.data.plays = keep(this.data.plays);
+    this.data.baselines = keep(this.data.baselines);
+    this.data.decisions = keep(this.data.decisions);
+    this.persist();
   }
 }

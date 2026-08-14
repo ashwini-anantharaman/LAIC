@@ -66,6 +66,14 @@ interface ChallengeSummary {
     totalBoards: number;
     finished: boolean;
     moderator: boolean;
+    /**
+     * Did THIS viewer create it? Separate from `moderator`, because the two grant
+     * different things: a moderator may archive (reversible, and someone running a
+     * club needs it), only the creator may DELETE (permanent, and it destroys other
+     * people's results too). Without this the app would have to offer Delete to
+     * every moderator and let the platform refuse most of them.
+     */
+    isCreator: boolean;
     resultsUnlocked: boolean;
     /**
      * When THIS viewer last touched a board here — the latest completedAt, or
@@ -200,6 +208,7 @@ async function summarize(
       totalBoards: access.totalBoards,
       finished: access.viewerFinished,
       moderator: access.viewerIsModerator,
+      isCreator: challenge.createdBy === viewerId,
       resultsUnlocked: mayViewResults,
       lastPlayedAt,
     },
