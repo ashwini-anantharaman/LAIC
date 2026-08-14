@@ -234,20 +234,16 @@ export function SeatHand({
               style={{
                 position: "relative", display: "block", width: wide ?? m.w, height: m.h, flex: "none",
                 background: "#fff",
-                // SUIT GROUPING IS A DIVIDER NOW, not a gap. The gap was the
-                // overlap handed back, and there is no overlap left to hand
-                // back — the cards butt so the hand can span the stage. A
-                // heavier edge where one suit ends says the same thing and
-                // costs no width at all.
-                border: up
-                  ? "2px solid #b8860b"
-                  : m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit
-                    ? "1px solid #6b6b6b"
-                    : "1px solid #6b6b6b",
-                borderLeftWidth:
-                  m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit ? 3 : 1,
+                // SUIT GROUPING IS A COLOUR, AT THE SAME WIDTH. It was a gap
+                // once (the overlap handed back) and then a 3px edge, and both
+                // made the spaces between cards UNEQUAL — the 3px one in a dark
+                // green that read as felt showing through (owner, 2026-08-14).
+                // Every seam in the row is now exactly 1px; a suit boundary is
+                // only DARKER. Nothing moves, nothing varies in width, and the
+                // boundary is still findable.
+                border: up ? "2px solid #b8860b" : "1px solid #6b6b6b",
                 borderLeftColor:
-                  m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit ? "#1f2a24" : "#6b6b6b",
+                  m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit ? "#23231f" : "#6b6b6b",
                 borderRadius: i === 0 ? "3px 0 0 3px" : i === hand.length - 1 ? "0 3px 3px 0" : 0,
                 marginLeft: i === 0 || wide ? 0 : -(m.overlap ?? 1),
                 padding: 0,
