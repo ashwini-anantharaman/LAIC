@@ -79,7 +79,12 @@ const MOBILE_W = 720;
  * Every band that quotes HAND_H follows this automatically.
  */
 const M_CARD: SeatHandMetrics & { backW: number } = {
-  w: 56, h: 88, rank: 34, glyph: 33, inset: 5, overlap: 8, weight: 800, backW: 52,
+  // 55 wide and NO overlap: thirteen of them come to 715 of the 720 stage, so
+  // the hand reaches both edges and every card is whole (owner, 2026-08-14 —
+  // "remove any gaps ... make them stretch the whole width"). The 8px overlap
+  // it replaces existed to fit a 56-wide card thirteen times over, and cost a
+  // 32px margin at each end plus a sliver off every card but the last.
+  w: 55, h: 88, rank: 34, glyph: 33, inset: 5, overlap: 0, weight: 800, backW: 52,
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
@@ -884,12 +889,12 @@ export function PlayTable({
   };
 
   /** A fanned row of face cards (N/S wide; dummy + your hand on mobile). */
-  const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW) => (
+  const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW, liftDir: 1 | -1 = -1) => (
     <SeatHand
       cards={state.hands[seat]}
       // The seams are a property of the LOOK, so they ride the metrics bag
       // rather than becoming a second prop every caller has to thread.
-      metrics={{ ...m, suitGaps: tok.suitGroups, lift: CARD_LIFT_PX[tok.cardLift] }}
+      metrics={{ ...m, suitGaps: tok.suitGroups, lift: CARD_LIFT_PX[tok.cardLift], liftDir }}
       layout="row"
       fanSpread={tok.fanSpread}
       fanRadius={tok.fanRadius}
@@ -1594,7 +1599,7 @@ export function PlayTable({
         {visible[sideSeat]
           ? fanLayout
             ? fanHand(sideSeat, M_CARD)
-            : cardRow(sideSeat, M_CARD)
+            : cardRow(sideSeat, M_CARD, 1)
           : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
