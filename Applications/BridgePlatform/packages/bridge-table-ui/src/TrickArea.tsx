@@ -9,7 +9,7 @@
 import type { Card, Seat } from "@bridge/events";
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { RED, GLYPH, isRed, rankText } from "./tokens";
-import { FLY, GLIDE, TableMotion } from "./motion";
+import { FLY, GATHER, GLIDE, TableMotion } from "./motion";
 
 export interface TrickPlay {
   seat: Seat;
@@ -54,6 +54,14 @@ export interface TrickAreaProps {
    * it. No vertical space: the lift happens inside the compass box.
    */
   winner?: Seat | null;
+  /**
+   * The trick is being GATHERED — every card leaves towards the winner.
+   *
+   * The host keeps the plays on screen for exactly the animation's length; this
+   * only decides what they do while they are there. It overrides the arrival
+   * animation, because a card cannot be gliding in and sweeping out at once.
+   */
+  gathering?: boolean;
 }
 
 /**
@@ -185,7 +193,7 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
  * digits run ~0.56em each — and it is capped so the pair stays under half the
  * card's width and can never cross its diagonal twin.
  */
-function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean }>) {
+function FaceCard({ card, box, seat, origin, won, gather }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean; gather?: Seat | null }>) {
   const rank = rankText(card.rank);
   const colour = isRed(card.suit) ? RED : "#000";
   // Up from 0.26/0.19 (owner, 2026-08-13). The ceiling is not taste: the flanks
@@ -223,7 +231,7 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
       data-seat={seat}
       // A measured origin animates the transform itself (btu-fly); without one
       // the seat-direction keyframe is the best guess available.
-      className={origin ? FLY : GLIDE[seat]}
+      className={gather ? GATHER[gather] : origin ? FLY : GLIDE[seat]}
       style={{
         position: "relative",
         display: "block",
@@ -273,6 +281,7 @@ export function TrickArea({
   card = CARD,
   originOf,
   winner = null,
+  gathering = false,
 }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
@@ -335,7 +344,7 @@ export function TrickArea({
                 {play ? (
                   // Keyed on the card so a NEW card mounts (and glides in); a
                   // re-render of the same card must not replay the animation.
-                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} />
+                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} gather={gathering ? winner : null} />
                 ) : (
                   <EmptySlot box={card} />
                 )}

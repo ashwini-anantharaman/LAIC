@@ -41,17 +41,38 @@ const CSS = `
 .btu-glide-E { animation: btu-glide-E 440ms cubic-bezier(.22,.8,.3,1) both; }
 /* A card whose ORIGIN was measured travels from the hand rather than from its
    seat's direction: the offset is applied with motion off, then released. */
+/* The trick being gathered: every card leaves TOWARDS the seat that won it, so
+   the sweep itself says who took the trick. */
+@keyframes btu-gather-N { to { opacity: 0; transform: translateY(-130px) scale(.86); } }
+@keyframes btu-gather-S { to { opacity: 0; transform: translateY(130px) scale(.86); } }
+@keyframes btu-gather-W { to { opacity: 0; transform: translateX(-150px) scale(.86); } }
+@keyframes btu-gather-E { to { opacity: 0; transform: translateX(150px) scale(.86); } }
+.btu-gather-N { animation: btu-gather-N 240ms cubic-bezier(.4,0,.7,.3) both; }
+.btu-gather-S { animation: btu-gather-S 240ms cubic-bezier(.4,0,.7,.3) both; }
+.btu-gather-W { animation: btu-gather-W 240ms cubic-bezier(.4,0,.7,.3) both; }
+.btu-gather-E { animation: btu-gather-E 240ms cubic-bezier(.4,0,.7,.3) both; }
 .btu-fly { transition: transform 440ms cubic-bezier(.22,.8,.3,1), opacity 240ms linear; }
 @media (prefers-reduced-motion: reduce) {
   .btu-lift { transition: none; }
   .btu-glide-N, .btu-glide-S, .btu-glide-W, .btu-glide-E { animation: none; }
   .btu-fly { transition: none; }
+  .btu-gather-N, .btu-gather-S, .btu-gather-W, .btu-gather-E { animation: none; opacity: 0; }
 }
 `;
 
 /** Class on a hand card: its playable lift eases instead of snapping. */
 export const LIFT = "btu-lift";
 /** Class on a card entering the trick: it glides in from its seat's hand. */
+/** Class on every card of a trick being gathered, chosen by the WINNER's seat. */
+export const GATHER: Record<"N" | "E" | "S" | "W", string> = {
+  N: "btu-gather-N",
+  E: "btu-gather-E",
+  S: "btu-gather-S",
+  W: "btu-gather-W",
+};
+/** How long the gather runs — the host holds the cards for exactly this long. */
+export const GATHER_MS = 240;
+
 export const FLY = "btu-fly";
 /** How long a card takes to reach the trick — shared by the CSS and the FLIP. */
 export const FLY_MS = 440;

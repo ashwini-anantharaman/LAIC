@@ -201,6 +201,10 @@ export function LivePlayTable({
       // than lingering until the next card happens to be played.
       trickCleared={trickDone && !holding}
       trickWinner={wonBy}
+      // The sweep needs a winner to travel towards, so `wonBy` stays set while
+      // the cards are leaving — it is computed from the trick, which is still
+      // the last one until a card is played into the next.
+      trickGathering={trickDone && !holding}
       // While a call/play is in flight the board is stale, so stop offering
       // controls that would post a second action against it. The optimistic
       // board has already moved the turn on, which disarms the cards on its

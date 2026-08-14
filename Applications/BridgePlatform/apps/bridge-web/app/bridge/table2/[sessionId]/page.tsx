@@ -65,6 +65,7 @@ export default async function PlayTablePage({
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
     suitGroups: appearance.suitGroups,
+    cardLift: appearance.cardLift,
   };
   const { sessionId } = await params;
   const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error } = await searchParams;
@@ -333,6 +334,23 @@ export default async function PlayTablePage({
               : appearance.trickPause === "2s"
                 ? ("3s" as const)
                 : ("tap" as const),
+      }),
+    },
+    {
+      label: "Card lift",
+      value:
+        appearance.cardLift === "off"
+          ? "Off"
+          : appearance.cardLift === "subtle"
+            ? "Subtle"
+            : "Pronounced",
+      action: patchAppearanceAction.bind(null, sessionId, {
+        cardLift:
+          appearance.cardLift === "off"
+            ? ("subtle" as const)
+            : appearance.cardLift === "subtle"
+              ? ("pronounced" as const)
+              : ("off" as const),
       }),
     },
     {

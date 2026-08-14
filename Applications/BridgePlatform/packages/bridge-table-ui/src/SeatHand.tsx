@@ -37,6 +37,13 @@ export interface SeatHandMetrics {
    * unchanged for every caller that does not ask.
    */
   suitGaps?: boolean;
+  /**
+   * How far a playable card rises, and how far the HELD one goes beyond it
+   * (CARD_LIFT_PX). The lift is how the hand says "this one is legal"; how much
+   * of it a player wants is taste, so it is a setting rather than a constant.
+   * Omitted, the authored 6/16 stands.
+   */
+  lift?: { playable: number; held: number };
 }
 
 export interface SeatHandProps {
@@ -238,7 +245,9 @@ export function SeatHand({
                 // the other mid-slide.
                 // Three heights, not two: flat, playable, and the one card a
                 // second tap will commit.
-                transform: `translateX(var(--btu-dx, 0px)) translateY(${up ? -16 : on ? -6 : 0}px)`,
+                transform: `translateX(var(--btu-dx, 0px)) translateY(${
+                  up ? -(m.lift?.held ?? 16) : on ? -(m.lift?.playable ?? 6) : 0
+                }px)`,
                 // A lifted card rises ABOVE its neighbours: overlapped cards
                 // paint in hand order, so without this the next card clips the
                 // one the thumb is about to press.

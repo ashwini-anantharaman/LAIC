@@ -31,7 +31,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
+import { CARD_LIFT_PX, resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
@@ -42,6 +42,7 @@ import { AuctionBox, auctionRowsBoxH, type AuctionBoxSizing } from "./AuctionBox
 import { TrickArea, clusterBox } from "./TrickArea";
 import { ResultCard, type ResultCardAction } from "./ResultCard";
 import { SeatsPopup } from "./SeatsPopup";
+import { GATHER_MS } from "./motion";
 import { CoachPanel, type CoachLine, type CoachAction } from "./CoachPanel";
 import {
   RED, GOLD, GREY, SEAT_BADGE, GLYPH, STRAINS, ORDER, PARTNER, DISPLAY,
@@ -226,7 +227,13 @@ const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 
 export type ResolvedAppearance = SkinTokens &
   Pick<
     TableAppearance,
-    "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius" | "suitGroups"
+    | "handLayout"
+    | "bidPad"
+    | "centreFrame"
+    | "fanSpread"
+    | "fanRadius"
+    | "suitGroups"
+    | "cardLift"
   >;
 
 const DEFAULT_LOOK: ResolvedAppearance = {
@@ -239,6 +246,7 @@ const DEFAULT_LOOK: ResolvedAppearance = {
   // Off in the fallback look, which is the pre-skin table byte for byte; the
   // owner's default (on) arrives with a real appearance from the store.
   suitGroups: false,
+  cardLift: "subtle",
 };
 
 /** The centre frame's gold surround (design token, wide/stacked only). */
@@ -360,6 +368,8 @@ export interface PlayTableProps {
    * drifts — so the host, which already has the engine, works it out.
    */
   trickWinner?: Seat | null;
+  /** The finished trick is being swept towards its winner. */
+  trickGathering?: boolean;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -446,6 +456,7 @@ export function PlayTable({
   playMode = "off",
   trickCleared = false,
   trickWinner = null,
+  trickGathering = false,
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -716,8 +727,20 @@ export function PlayTable({
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
   // the suit panel brightens for the acting seat and the dummy.
+  /**
+   * GOLD MEANS "IT IS THIS SEAT'S GO", not "this seat is you" (owner,
+   * 2026-08-13: the player's yellow bar "shouldn't always be on").
+   *
+   * It used to mean both, so your own plate was gold from the first card to the
+   * last and the one moment it should have shouted — your turn — looked exactly
+   * like every other. What still marks your seat is what it SAYS: the host
+   * names it "you", where the others carry a player name, and its identity
+   * strip is the human teal rather than a robot colour. The gold and the glow
+   * are freed to mean the turn, and every seat wears them in its own turn —
+   * including dummy, which had no plate to wear them on at all.
+   */
   const plateBgFor = (seat: Seat) =>
-    seats[seat].human ? GOLD : !complete && seat === state.turn ? "#e8e8c8" : GREY;
+    !complete && seat === state.turn ? GOLD : GREY;
   const panelBgFor = (seat: Seat) =>
     seat === dummy || (!complete && seat === state.turn) ? "#fff" : "#b3b3b3";
 
@@ -866,7 +889,7 @@ export function PlayTable({
       cards={state.hands[seat]}
       // The seams are a property of the LOOK, so they ride the metrics bag
       // rather than becoming a second prop every caller has to thread.
-      metrics={{ ...m, suitGaps: tok.suitGroups }}
+      metrics={{ ...m, suitGaps: tok.suitGroups, lift: CARD_LIFT_PX[tok.cardLift] }}
       layout="row"
       fanSpread={tok.fanSpread}
       fanRadius={tok.fanRadius}
@@ -973,8 +996,24 @@ export function PlayTable({
     />
   );
 
-  const currentPlays =
-    inPlay && !trickCleared ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  /**
+   * The trick stays on screen while it is being GATHERED (owner, 2026-08-13:
+   * tapping should look smooth, and "the top cards shift a little" when it did
+   * not). Clearing used to delete the four cards in one frame — and because the
+   * winner's lift is keyed off a full trick, the winning card also dropped back
+   * flat in that same frame, which is the shift. Holding the plays for the
+   * animation's length keeps the lift steady and lets all four leave together.
+   */
+  const trickPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  const gathering = trickCleared && trickPlays.length === 4;
+  const [sweeping, setSweeping] = useState(false);
+  useEffect(() => {
+    if (!gathering) return setSweeping(false);
+    setSweeping(true);
+    const t = setTimeout(() => setSweeping(false), GATHER_MS);
+    return () => clearTimeout(t);
+  }, [gathering]);
+  const currentPlays = !trickCleared || sweeping ? trickPlays : [];
 
   /** The trick as real card faces; `k` scales the whole box. Wide keeps the
       262px compass that spreads to the corners; the phone gets a tight
@@ -989,6 +1028,7 @@ export function PlayTable({
       card={M_TRICK_CARD}
       originOf={(seat) => origins.current[seat] ?? null}
       winner={currentPlays.length === 4 ? trickWinner : null}
+      gathering={trickGathering && sweeping}
     />
   );
 
@@ -1110,7 +1150,10 @@ export function PlayTable({
       aria-label="Pass"
       style={bidBtnStyle(w, h, boxLive ? "#116710" : "#a7b8a2", "#0c4b0b", boxLive, font)}
     >
-      Pass
+      {/* "P" on the button, "Pass" to a screen reader (the aria-label above).
+          The word is the widest thing in this row and the row is the widest
+          thing in the tray. */}
+      P
     </button>
   );
 
@@ -1225,7 +1268,9 @@ export function PlayTable({
               aria-label="Pass"
               style={trayCell({ border: "1px solid #0c4b0b", background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 28, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 })}
             >
-              Pass
+              {/* "P" on the phone's tray too — the aria-label above still says
+                  Pass, so nothing is lost to a screen reader. */}
+              P
             </button>
             {[1, 2, 3, 4, 5, 6, 7].map((l) => {
               const any = STRAINS.some((st) => legalSet.has(`${l}${st}`));
@@ -1453,6 +1498,25 @@ export function PlayTable({
             </div>
           );
         })()}
+        {/* DUMMY'S BAR, lit on dummy's turn (owner, 2026-08-13: during the
+            dummy's turn "nothing's highlighted"). Declarer plays dummy's cards,
+            so dummy genuinely takes turns — and it was the one seat on the felt
+            with nothing to show it. A bar under the hand rather than a plate:
+            the rail is labelled with the SEAT name deliberately, never the
+            player's, and a plate would have brought a player name with it. */}
+        <span
+          data-testid="dummy-turn-bar"
+          data-on-turn={!complete && state.turn === sideSeat ? "" : undefined}
+          style={{
+            flex: "none", width: "100%", height: 7, borderRadius: 4, marginTop: "auto",
+            background: !complete && state.turn === sideSeat ? GOLD : "rgba(255,255,255,.16)",
+            boxShadow:
+              !complete && state.turn === sideSeat
+                ? "0 0 8px 2px rgba(255,214,92,.55)"
+                : "none",
+            transition: "background 200ms ease, box-shadow 200ms ease",
+          }}
+        />
       </div>
     ) : null;
 
@@ -1586,7 +1650,35 @@ export function PlayTable({
                 row scrolls the first off the top. A grid that grew with the
                 auction moved the felt under the reader on every call. maxH is
                 the safety net for a band squeezed below even that. */}
-            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS }) : null}
+            {/* WHO IS AT THE TABLE, during the auction (owner, 2026-08-13).
+                Names only — no badges, no card fans: the calls are already in
+                the grid below, so the one thing the auction does not say is who
+                is making them. A robot's name and a person's read differently,
+                which is the whole point of showing them. */}
+            {inAuction && auctionDisplay === "box" ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                {/* Three names across a 390px phone, so each one is capped and
+                    ellipsised rather than allowed to push the others off the
+                    edge — a house player's name runs to "House · Full booklet"
+                    and three of those do not fit at any type size worth
+                    reading. The seat letter is never truncated: it is the part
+                    that says WHICH seat, and it is one character. */}
+                <div style={{ display: "flex", gap: 10, maxWidth: "100%", fontSize: 16, fontWeight: 700, color: "rgba(233,241,237,.92)" }}>
+                  {(["W", "N", "E"] as Seat[]).map((sq) => (
+                    <span
+                      key={sq}
+                      style={{ display: "flex", gap: 4, minWidth: 0, opacity: state.turn === sq ? 1 : 0.55 }}
+                    >
+                      <span style={{ flex: "none", color: "#f0d78a" }}>{sq}</span>
+                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {seats[sq].name}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+                {auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS })}
+              </div>
+            ) : null}
             {inAuction && auctionDisplay === "seats" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
                 {(["N", "E", "S", "W"] as Seat[]).map((s) => (
