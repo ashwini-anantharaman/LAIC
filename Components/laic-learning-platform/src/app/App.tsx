@@ -322,6 +322,13 @@ function StudioApp() {
   const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
   /** Gate first paint until we know whether this is a Nexus launch. */
   const [booting, setBooting] = useState(true);
+  /**
+   * A launch arrived and could not be signed in. Held separately from "not logged in"
+   * because the honest answer differs: a visitor should see the sign-in page, whereas
+   * someone sent here by the app should be told to reopen it rather than be handed a
+   * demo identity that quietly authors as the wrong person.
+   */
+  const [launchFailed, setLaunchFailed] = useState(false);
 
   const activeUserIdRef = useRef(activeUserId);
   const createdObjectsRef = useRef(createdObjects);
@@ -483,6 +490,9 @@ function StudioApp() {
         // come from in here (its native WebView injects the same sheet).
         applyEmbedSkin();
       }
+      // Read BEFORE the exchange: consumeLaunchFromUrl strips the query either way, so
+      // afterwards there is no way to tell a launch that failed from a plain visit.
+      const arrivedWithLaunchToken = !!bootParams.get('launch_token');
       await consumeLaunchFromUrl();
       // Embed boot renders exactly one object — fetch just that object (not
       // the whole org library), in parallel with the context read.
@@ -549,6 +559,19 @@ function StudioApp() {
         } else {
           void hydrateForUser(uid);
         }
+        setBooting(false);
+        return;
+      }
+      // A LAUNCHED session that failed must NOT become somebody else.
+      //
+      // This used to fall straight through to the demo session below, so a launch whose
+      // token had already been spent — they are single-use, and the query is stripped
+      // after the first exchange, so any reload of the host's WebView qualifies — came
+      // up as a hard-coded demo user with the full desktop sidebar. Everything after
+      // that is wrong in ways that look like bugs somewhere else: the wrong name, the
+      // wrong program, and content saved as the wrong person.
+      if (arrivedWithLaunchToken) {
+        setLaunchFailed(true);
         setBooting(false);
         return;
       }
@@ -1101,6 +1124,16 @@ function StudioApp() {
           {booting ? (
             <div className="grid min-h-screen place-items-center text-slate-600">
               <div className="text-sm">Loading…</div>
+            </div>
+          ) : launchFailed ? (
+            <div className="grid min-h-screen place-items-center px-6">
+              <div className="text-center" style={{ maxWidth: 340 }}>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#1f1f1f' }}>Couldn’t sign you in</p>
+                <p style={{ fontSize: 13.5, color: 'rgba(31,31,31,0.65)', marginTop: 6, lineHeight: 1.5 }}>
+                  This link works once. Close this and open it again from the app, which mints a
+                  fresh one.
+                </p>
+              </div>
             </div>
           ) : !isLoggedIn ? (
             <LoginPortal />

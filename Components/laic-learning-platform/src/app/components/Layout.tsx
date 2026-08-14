@@ -54,6 +54,7 @@ import { CDHome } from './screens/CDHome';
 import { CDCreate } from './screens/CDCreate';
 import { CDSources } from './screens/CDSources';
 import { ObjectLibrary } from './screens/ObjectLibrary';
+import { ClubCompose } from './screens/ClubCompose';
 import { TemplateLibrary } from './screens/TemplateLibrary';
 import { MySubmissions } from './screens/MySubmissions';
 import { VersionsPublishing } from './screens/VersionsPublishing';
@@ -90,6 +91,10 @@ function ScreenRouter() {
     case 'cd-submissions': return <MySubmissions />;
     case 'cd-versions': return <VersionsPublishing />;
     case 'cd-analytics': return <AuthorAnalytics />;
+    // Reached only from the club app's + (?screen=club-compose&embed=1). Deliberately
+    // NOT in the navigation catalogue: a sidebar entry would be a second way in, with
+    // different expectations about where the content lands.
+    case 'club-compose': return <ClubCompose />;
     case 'cd-creator':
       return creatorObjectType === 'tutorial-v2'
         ? <ObjectCreatorTutorialV2 />

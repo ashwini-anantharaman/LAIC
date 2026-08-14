@@ -12,23 +12,22 @@ import { takeLaunch } from "../lib/launch-cache";
 import { clearLearningCache } from "../lib/learning";
 
 /**
- * Author content for THIS CLUB, in the Content Studio's own creator.
+ * Add content to THIS CLUB — the Studio's club compose screen, and nothing else.
  *
- * The sibling route (learn-object/[id]) opens the Studio's READER on one object,
- * embedded and skinned so it does not read as a browser. This one is the opposite
- * case and is deliberately NOT embedded: authoring needs the Studio's own
- * navigation, its sidebar and its wizard, and stripping that chrome would leave a
- * creator with no way to move between steps.
+ * This first opened the whole Content Studio with `ui=mobile`, on the reasoning that
+ * authoring needs navigation. That was wrong twice: `ui=mobile` keeps every tab and
+ * merely turns the sidebar into a drawer, so it arrived as a full desktop Studio with
+ * thirteen object types and no obvious way forward — and authoring does not need that
+ * navigation, because the club flow is one screen. `embed=1` renders that screen alone.
  *
- * WHICH CLUB is the whole point. The launch is minted for the selected club, so
- * the Studio signs in as that club and everything published lands stamped with it
- * — which is what keeps one club's material out of another's, and out of the
- * shared curriculum. Launching as the app-wide program instead would file the work
- * under the parent, where every club would see it.
+ * WHICH CLUB is the whole point. The launch is minted for the selected club, so the
+ * Studio signs in as that club and everything published lands stamped with it — which
+ * is what keeps one club's material out of another's, and out of the shared curriculum.
+ * Launching as the app-wide program instead would file the work under the parent, where
+ * every club would see it.
  *
- * `screen=cd-creator` asks the Studio to open its creator rather than its
- * overview. The Studio honours that only when the person's own access exposes that
- * screen, so this is a convenience, never a way in.
+ * `screen=club-compose` is honoured only when the person's own access exposes that
+ * screen, so it is a convenience, never a way in.
  */
 export default function StudioScreen() {
   const { token } = useAuth();
@@ -46,10 +45,13 @@ export default function StudioScreen() {
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
         program_id: clubId ?? PROGRAM_ID,
-        screen: "cd-creator",
-        // The Studio's mobile shell: its own layout adapted for a phone. Not the
-        // `embed` flag, which strips the navigation authoring depends on.
-        ui: "mobile",
+        // The club's own compose screen: four types, one Publish, nothing else.
+        screen: "club-compose",
+        // `embed=1`, NOT `ui=mobile`. Mobile keeps every tab and only turns the
+        // sidebar into a drawer — which is what made this open as a full desktop
+        // Studio with no obvious way forward. Embed renders the screen alone, and
+        // applies the app's own cream-and-Neco skin while it is at it.
+        embed: "1",
       });
       setUrl(`${base}?${params.toString()}`);
     } catch {
@@ -66,6 +68,18 @@ export default function StudioScreen() {
   // and the Learn tab re-read rather than showing the list from before the visit.
   useEffect(() => {
     return () => clearLearningCache();
+  }, []);
+
+  /**
+   * The Studio tells us when it has published, and then we are done here.
+   *
+   * Popping back is what makes the card appear: the club tab re-reads its content on
+   * focus, so returning IS the refresh. Same bridge the reader uses to hand a board to
+   * the app — one message type per thing the web side can ask for.
+   */
+  const onHostMessage = useCallback((data: unknown) => {
+    const msg = data as { type?: string } | null;
+    if (msg?.type === "lp:published") router.back();
   }, []);
 
   return (
@@ -86,11 +100,10 @@ export default function StudioScreen() {
         </View>
       )}
 
-      {/* No injectedCSS here, unlike the reader. The reader is skinned to the app's
-          own faces because a learner should not feel they left it; the Studio is a
-          tool its authors already know, and restyling it would make its controls
-          harder to recognise, not easier. */}
-      {url && <ContentWebView url={url} />}
+      {/* No injectedCSS: `embed=1` already applies the Studio's own BirdBridge skin —
+          the app's cream ground and its two faces — so injecting a second sheet on top
+          would be two things fighting over the same colours. */}
+      {url && <ContentWebView url={url} onHostMessage={onHostMessage} />}
     </Screen>
   );
 }
