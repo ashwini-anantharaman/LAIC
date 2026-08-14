@@ -1465,8 +1465,14 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
     // motion sets transition:none): settle to the crisp flat face regardless.
     setTimeout(() => finish(to), 650);
   };
+  // IN-FLOW, not absolute (2026-08-14: "the text here is overflowing"). A
+  // face pinned inset:0 could never size its card, so a two-line title or a
+  // long fact spilled past the 54px footprint. The face now sizes the card
+  // — minHeight keeps the small ones even, and the grid row grows for the
+  // tall ones instead of clipping them.
   const face: React.CSSProperties = {
-    position: "absolute", inset: 0, borderRadius: 9,
+    position: "relative", width: "100%", minHeight: 54, boxSizing: "border-box",
+    borderRadius: 9,
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
@@ -1503,7 +1509,8 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
   const back = card.detail ? (
     <span
       style={{
-        ...face, overflowY: "auto",
+        // No scroll region any more: the card grows to hold the whole fact.
+        ...face,
         background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
       }}
     >
@@ -1526,9 +1533,11 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
             : card.value
       }
       style={{
-        // The button owns the footprint so the grid rows stay even while
-        // any face is showing.
+        // The CONTENT owns the footprint now: the visible face renders
+        // in-flow, so the button — and with it the grid row — grows to hold
+        // whatever the face says, and nothing clips.
         position: "relative", minHeight: 54,
+        display: "flex", flexDirection: "column",
         ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
         cursor: canFlip ? "pointer" : "default", textAlign: "inherit",
@@ -1540,16 +1549,22 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
           className="coach-flip"
           onTransitionEnd={() => finish(target)}
           style={{
-            position: "absolute", inset: 0, transformStyle: "preserve-3d",
+            position: "relative", flex: 1, transformStyle: "preserve-3d",
             transform: rotated ? "rotateY(180deg)" : "rotateY(0deg)",
           }}
         >
-          <span style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
+          {/* An invisible IN-FLOW copy of the landing face holds the
+              footprint while the stage's real faces sit absolute above it —
+              so the card is already the right size when the turn settles. */}
+          <span aria-hidden style={{ visibility: "hidden", display: "block" }}>
+            {faceFor(target)}
+          </span>
+          <span style={{ position: "absolute", inset: 0, display: "flex", backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
             {faceFor(stage)}
           </span>
           <span
             style={{
-              position: "absolute", inset: 0, transform: "rotateY(180deg)",
+              position: "absolute", inset: 0, display: "flex", transform: "rotateY(180deg)",
               backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
             }}
           >
@@ -1557,8 +1572,9 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
           </span>
         </span>
       ) : (
-        // At rest: one face, no transforms — this is where the crispness lives.
-        <span style={{ position: "absolute", inset: 0 }}>{faceFor(stage)}</span>
+        // At rest: one face, in flow, no transforms — this is where the
+        // crispness lives, and where the card takes its size from its text.
+        <span style={{ flex: 1, display: "flex" }}>{faceFor(stage)}</span>
       )}
     </button>
   );
