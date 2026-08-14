@@ -1209,7 +1209,14 @@ export function PlayTable({
    * rendering the strains only when armed grew the tray on the first tap and
    * shoved every control under it down. The buttons must not move mid-bid.
    */
-  const TRAY_R1 = "1.75fr repeat(7,1fr)";
+  /**
+   * P · 1–7 · OK. The OK cell is ALWAYS reserved, empty until a call is staged
+   * — this file's own rule is that the buttons must not move mid-bid, and a
+   * cell that appears on the first tap would shove all seven levels left.
+   * "P" gave back the 1.75fr the word "Pass" needed, which is most of what OK
+   * now occupies.
+   */
+  const TRAY_R1 = "1fr repeat(7,1fr) 1.5fr";
   // Doubles get their two cells only when a double is legal — and legality is
   // fixed for the whole of your turn, so this can never move a button MID-bid.
   // Reserving them unconditionally left a quarter of the strain row permanently
@@ -1253,13 +1260,12 @@ export function PlayTable({
   });
 
   const bidBoxNarrow = (
-    <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
-      {pending ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: TRAY_ROWS * touchH + 5 }}>
-          
-          {confirmButtons(touchH, 26)}
-        </div>
-      ) : (
+    // INSET, not edge to edge (owner, 2026-08-14: the panel should be more
+    // compact horizontally). It used to span the full stage because it was the
+    // only thing in its band; a bid pad that reaches both screen edges reads as
+    // a keyboard rather than as part of the table.
+    <div data-testid="bid-tray" style={{ width: "100%", maxWidth: 600, alignSelf: "center", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+      {
         <>
           <div style={{ display: "grid", gridTemplateColumns: TRAY_R1, gap: 5 }}>
             <button
@@ -1287,13 +1293,28 @@ export function PlayTable({
                 </button>
               );
             })}
+            {/* OK, in the panel — where BBO puts it and where the owner asked
+                for it (2026-08-14). The slot is always here so the levels never
+                shift; it only carries a button once a call is staged. */}
+            {pending ? (
+              <button
+                type="button"
+                onClick={confirmPending}
+                aria-label={`Bid ${callText(pending)}`}
+                style={trayCell({ background: GOLD, color: "#2a2a10", fontSize: 24, fontWeight: 800, letterSpacing: ".06em", cursor: "pointer", border: "1px solid #b9992b" })}
+              >
+                OK
+              </button>
+            ) : (
+              <span />
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: TRAY_R2, gap: 5 }}>
             {strainSlots}
             {doubleSlots}
           </div>
         </>
-      )}
+      }
     </div>
   );
 
@@ -1396,7 +1417,7 @@ export function PlayTable({
 
   /** Both flanks of the centre band reserve this, so the felt stays centred. */
   const SIDE_AVATAR_W = 62;
-  const bandSideW = dummyIsStrip && sideSeat ? DUMMY_RAIL_W : inPlay ? SIDE_AVATAR_W : 0;
+  const bandSideW = dummyIsStrip && sideSeat ? DUMMY_RAIL_W : inPlay || inAuction ? SIDE_AVATAR_W : 0;
 
   /**
    * The dummy rail: a vertical strip beside the centre band rather than a band
@@ -1546,8 +1567,18 @@ export function PlayTable({
           {seat}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[seat]}</span>
+        {/* The card count is only worth saying once cards are being played —
+            during the auction every seat holds thirteen, so it was three
+            identical numbers telling you nothing. In the auction the badge
+            carries that seat's LAST CALL instead, which is the thing you are
+            actually tracking then. */}
         <span style={{ fontSize: 12, color: "rgba(233,241,237,.75)", whiteSpace: "nowrap" }}>
-          {state.hands[seat].length} left
+          {inPlay
+            ? `${state.hands[seat].length} left`
+            : (() => {
+                const mine = state.auction.filter((a) => a.seat === seat);
+                return mine.length ? callText(mine[mine.length - 1]!.call) : "—";
+              })()}
         </span>
       </div>
     );
@@ -1640,7 +1671,7 @@ export function PlayTable({
             {/* The badge stands in for a seat the phone cannot draw a hand for,
                 so it yields to the dummy rail on that side rather than crowding
                 it, and never appears for a seat already on screen. */}
-            {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
           </div>
           <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", // A hairline, not a picture frame (owner, 2026-08-13): it marks where the
                 // felt is, and at 3px it competed with the cards inside it.
@@ -1657,25 +1688,15 @@ export function PlayTable({
                 which is the whole point of showing them. */}
             {inAuction && auctionDisplay === "box" ? (
               <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                {/* Three names across a 390px phone, so each one is capped and
-                    ellipsised rather than allowed to push the others off the
-                    edge — a house player's name runs to "House · Full booklet"
-                    and three of those do not fit at any type size worth
-                    reading. The seat letter is never truncated: it is the part
-                    that says WHICH seat, and it is one character. */}
-                <div style={{ display: "flex", gap: 10, maxWidth: "100%", fontSize: 16, fontWeight: 700, color: "rgba(233,241,237,.92)" }}>
-                  {(["W", "N", "E"] as Seat[]).map((sq) => (
-                    <span
-                      key={sq}
-                      style={{ display: "flex", gap: 4, minWidth: 0, opacity: state.turn === sq ? 1 : 0.55 }}
-                    >
-                      <span style={{ flex: "none", color: "#f0d78a" }}>{sq}</span>
-                      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {seats[sq].name}
-                      </span>
-                    </span>
-                  ))}
-                </div>
+                {/* NORTH GETS A NAMEPLATE, the same plate every other seat
+                    wears, so it lights on North's turn like the rest of them
+                    (owner, 2026-08-14). West and East are badges on the band's
+                    flanks — the play phase already puts them there, and using
+                    the same two components in both phases means the auction
+                    teaches the table you play on. This replaces a row of three
+                    names, which said the same thing in a form that had to be
+                    ellipsised to fit and could not show whose turn it was. */}
+                {plate("N", 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
                 {auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS })}
               </div>
             ) : null}
@@ -1693,7 +1714,7 @@ export function PlayTable({
             {complete ? resultCard : null}
           </div>
           <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-end" }}>
-            {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
             {dummyRailSide === "right" ? dummyRailEl : null}
           </div>
         </div>
