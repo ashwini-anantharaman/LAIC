@@ -91,12 +91,22 @@ export default function PlayScreen() {
 
   const inProgress = summary?.in_progress ?? [];
 
-  function resume() {
-    if (inProgress.length === 0) return;
-    if (inProgress.length === 1) {
+  async function resume() {
+    if (!token || inProgress.length === 0) return;
+    // Decide from FRESH data: the cached summary can be a beat old right
+    // after a save (the refresh races the tap), and deciding from the stale
+    // list opened the wrong board. refreshSummary shares the in-flight focus
+    // refresh, so this usually resolves instantly.
+    const fresh = await refreshSummary(token, clubId ?? undefined).catch(() => null);
+    const list = fresh?.in_progress ?? inProgress;
+    if (fresh) setSummary(fresh);
+    if (list.length === 0) return;
+    // ONE unfinished board opens straight at the table; several open the
+    // picker (owner direction 2026-08-13: never auto-pick among many).
+    if (list.length === 1) {
       router.push({
         pathname: "/table/[sessionId]",
-        params: { sessionId: inProgress[0]!.session_id },
+        params: { sessionId: list[0]!.session_id },
       });
     } else {
       router.push("/resume");
@@ -106,7 +116,15 @@ export default function PlayScreen() {
   const colPitch = (ACTION_CARD.width + ACTION_CARD.columnGap) * s;
   const rowPitch = (ACTION_CARD.height + ACTION_CARD.rowGap) * s;
 
-  const cards = [
+  const cards: {
+    key: string;
+    label: string;
+    icon: string;
+    suit: string;
+    onPress: () => void;
+    disabled: boolean;
+    badge?: number;
+  }[] = [
     {
       key: "new",
       label: "New Play",
@@ -124,6 +142,8 @@ export default function PlayScreen() {
       // Nothing to resume — dim it rather than opening an empty picker. Only
       // once the summary has loaded, so it doesn't flicker on arrival.
       disabled: summary != null && inProgress.length === 0,
+      // How many boards are waiting behind the card — the badge on its corner.
+      badge: inProgress.length,
     },
     {
       key: "private",
@@ -174,6 +194,7 @@ export default function PlayScreen() {
                 suit={c.suit}
                 onPress={c.onPress}
                 scale={s}
+                {...(c.badge != null ? { badge: c.badge } : {})}
               />
             </View>
           ))}

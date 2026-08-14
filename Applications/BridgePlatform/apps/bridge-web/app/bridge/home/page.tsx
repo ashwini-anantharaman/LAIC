@@ -1,5 +1,6 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
+import { EmbedLocationReporter } from "@/components/mobile/EmbedLocationReporter";
 import { requireFeature } from "@/lib/access";
 import { getBridgeContext, isFellowDemo } from "@/lib/nexus";
 
@@ -20,6 +21,11 @@ export default async function HomePage() {
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-16">
+      {/* A stale embedded session can strand the host app's board frame on
+          THIS page (welcome redirects here when a context exists but the
+          board's program doesn't match). The reporter lets the app notice
+          and re-launch; standalone it posts to itself — harmless. */}
+      <EmbedLocationReporter />
       <p className="text-xs uppercase tracking-[0.3em] text-neutral-400">
         Bridge Platform
       </p>

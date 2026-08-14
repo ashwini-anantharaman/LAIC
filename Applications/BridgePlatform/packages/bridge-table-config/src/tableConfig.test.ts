@@ -88,6 +88,9 @@ describe("normalizeAppearance", () => {
     expect(a).not.toHaveProperty("extra");
   });
   it("keeps valid values", () => {
+    // Every field at a NON-default value, so "keeps" is actually being tested:
+    // a normalizer that silently substituted its own defaults would pass an
+    // input that already matched them.
     const a = normalizeAppearance({
       skin: "noir",
       handLayout: "fan",
@@ -95,6 +98,9 @@ describe("normalizeAppearance", () => {
       centreFrame: true,
       fanSpread: 100,
       fanRadius: 400,
+      playMode: "suit",
+      trickPause: "2s",
+      suitGroups: false,
       overrides: { feltColor: "#0d707c" },
     });
     expect(a).toEqual({
@@ -104,8 +110,20 @@ describe("normalizeAppearance", () => {
       centreFrame: true,
       fanSpread: 100,
       fanRadius: 400,
+      playMode: "suit",
+      trickPause: "2s",
+      suitGroups: false,
       overrides: { feltColor: "#0d707c" },
     });
+  });
+  it("falls back to the SAFE interaction defaults on junk", () => {
+    // The defaults are deliberate (owner, 2026-08-12): a new player should not
+    // lose a card to a mis-tap, so a corrupt stored value must degrade towards
+    // the rails, never away from them.
+    const a = normalizeAppearance({ playMode: "yolo", trickPause: 5, suitGroups: "yes" });
+    expect(a.playMode).toBe("raise");
+    expect(a.trickPause).toBe("tap");
+    expect(a.suitGroups).toBe(true);
   });
   it("clamps fanSpread into range and snaps to the step", () => {
     expect(normalizeAppearance({ fanSpread: 5 }).fanSpread).toBe(FAN_LIMITS.spread.min);

@@ -40,10 +40,12 @@
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import type { BoardTakeaway } from "@/lib/coach/takeaway";
 import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
 import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
-import { CoachHints, CoachTell } from "./CoachHintsTell";
+import { BenWhatIf, CoachHints, CoachTell } from "./CoachHintsTell";
+import { CoachTakeaway } from "./CoachTakeaway";
 import { useCoachPrefetch } from "./coachPrefetch";
 
 // ── the BirdBridge palette (owner direction 2026-08-06: the coach wears the
@@ -199,6 +201,23 @@ export interface CoachLookingEvent {
   verb?: string;
   /** The card or call itself — "A♠", "1♦" — drawn as a small card face. */
   token?: string;
+  /**
+   * The takeaway's judgment of this call, once the board is over — a small
+   * corner mark on the bidding diagram's token. Only the learner's own calls
+   * ever carry one, and only where the system had an agreement.
+   */
+  verdict?: "correct" | "acceptable" | "incorrect";
+  /** For a call: its index into the auction — `ben-tell?at=` addressing. */
+  auctionIndex?: number;
+  /** For a play: trick number and position — `ben-tell?play=` addressing. */
+  trickIndex?: number;
+  playIndex?: number;
+  /**
+   * The decision was the learner's to make — their own card, or dummy's
+   * while they declared. Gates the "what if" affordance; the server enforces
+   * the same rule, this only keeps dead buttons off the rows.
+   */
+  mine?: boolean;
 }
 
 /** One section of the board's history — the auction, or one trick. */
@@ -254,6 +273,12 @@ export interface CoachPanelData {
    * no seat, nothing to ask from.
    */
   ask?: { sessionId: string; active: boolean; phase: "auction" | "play" | "other" };
+  /**
+   * The end-of-board takeaway — present exactly when the board is over AND
+   * the system judged at least one of the learner's calls. Its presence is
+   * what flips the NOW screen from forward-facing to the review card.
+   */
+  takeaway?: BoardTakeaway;
   /** The coach's primary affordances — the buttons the learner pulls on. */
   prompts?: ReactNode;
   /** Secondary host controls. */
@@ -534,56 +559,15 @@ export function CoachSheet({
   presence: CoachPresence;
   onClose: () => void;
 }>) {
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  // The context card's event rows: an accordion, one open at a time. Reading
-  // two meanings side by side is not a real use, and one-at-a-time keeps a
-  // 10-call auction from unfolding into a wall.
-  const [openEvent, setOpenEvent] = useState<string | null>(null);
-  // The ask surface, same discipline: one open at a time. Separate from the
-  // meaning accordion — reading what a call means while asking about it is a
-  // real use, so the two don't close each other.
-  const [openAsk, setOpenAsk] = useState<string | null>(null);
-  // Which history sections the learner has toggled. Anything untouched falls
-  // back to the data's own default — the current section open, the past
-  // collapsed — so a NEW trick arrives open without wiping the learner's
-  // choices about the old ones.
-  const [groupToggles, setGroupToggles] = useState<Record<string, boolean>>({});
-  const groupOpen = (g: CoachEventGroup) => groupToggles[g.id] ?? Boolean(g.current);
-  // The auction renders as a bidding diagram, and one call at a time is
-  // selected: its meaning and its ask box show below the grid.
-  const [selectedCall, setSelectedCall] = useState<string | null>(null);
-  // Start writing the hints and the play advice the moment the decision is
-  // the learner's — the screens that show them then open onto answers, not
-  // spinners (owner direction 2026-08-11). Keyed per CARD, not per trick:
-  // each play is its own decision with its own answers.
-  useCoachPrefetch(data.ask, decisionEpoch(data));
-  // FOUR SCREENS (owner direction 2026-08-11, folding the earlier five).
-  // "Now" is the default and faces forward: the position, the think-it-through
-  // scaffold, the chat. "Hints" is the ladder — five hints for the current
-  // decision, opened one at a time. "Tell" is the answers side by side: the
-  // coach's card and what BEN would do. "History" faces back and holds both
-  // records — the bidding diagram and every trick — as two collapsible
-  // sections, so the past is one tab, not two.
-  const [view, setView] = useState<"now" | "hints" | "tell" | "history">("now");
-  // Which history sections (the auction, the play) the learner has toggled.
-  // Untouched, each falls back to where the board is: the play opens once a
-  // card has been led, the auction opens while the bidding is the story.
-  const [historyToggles, setHistoryToggles] = useState<Record<string, boolean>>({});
-
+  // The screen selector lives with the HOST, not the shared body — the dock
+  // carries the same tabs in its own header row (owner direction 2026-08-13).
+  const [view, setView] = useState<CoachView>("now");
   // Escape closes it, like every other overlay at this table.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
-  const notes = data.notes ?? [];
-  const corrections = notes.filter((n) => (n.tone ?? "correction") === "correction").reverse();
-  const approvals = notes.filter((n) => n.tone === "affirmation");
-  const status = notes.filter((n) => n.tone === "status");
-  // Silent means silent: the sheet still opens so the setting is reachable, but
-  // it carries nothing the coach would have volunteered.
-  const showNotes = presence === "guided";
 
   return (
     <>
@@ -642,19 +626,15 @@ export function CoachSheet({
               <span style={{ display: "block", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>
                 {data.title ?? "Coach"}
               </span>
-              {/* Which mode the coach is in — named, not just described, since
-                  the chip on the felt is what changes it now. */}
-              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(255,244,215,.85)" }}>
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: data.busy || presence !== "silent" ? GOLD : "rgba(255,255,255,.45)" }} />
-                {data.busy ? (
-                  "Working it out…"
-                ) : (
-                  <span>
-                    <b style={{ color: "#fff" }}>{PRESENCE[presence].label}</b>
-                    {` · ${PRESENCE[presence].sub}`}
-                  </span>
-                )}
-              </span>
+              {/* The mode line is gone (owner direction 2026-08-13: "remove
+                  the text") — the header names the coach and nothing else.
+                  Only actual work still earns a line under the name. */}
+              {data.busy && (
+                <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "rgba(255,244,215,.85)" }}>
+                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: GOLD }} />
+                  Working it out…
+                </span>
+              )}
             </span>
             {/* A PLACEHOLDER, ON PURPOSE (owner decision 2026-08-05): the mode
                 moved out to the chip on the felt, and nothing else lives in
@@ -688,71 +668,200 @@ export function CoachSheet({
           </div>
         </div>
 
-        {/* ── the four screens, each wearing its icon (owner direction
-            2026-08-11): a speech bubble carrying an eye (what's in front of
-            you), a bulb (a nudge), a check (the answer), and a clock (the
-            board's past — the auction and the play, folded into one History
-            tab). The row still scrolls sideways rather than shrinking the
-            pills below a thumb. ── */}
+        {/* the tabs, under the header band — the dock lays these same
+            buttons into its own header row instead */}
         <div
           style={{
             flex: "none", display: "flex", gap: 6, padding: "10px 14px 0",
             overflowX: "auto", scrollbarWidth: "none",
           }}
         >
-          {(
-            [
-              ["now", "Now"],
-              ["hints", "Hints"],
-              ["tell", "Tell"],
-              ["history", "History"],
-            ] as const
-          ).map(([v, label]) => {
-            const on = view === v;
-            return (
-              <button
-                key={v}
-                type="button"
-                aria-pressed={on}
-                aria-label={label}
-                title={label}
-                onClick={() => setView(v)}
-                style={{
-                  flex: "none", minHeight: 30, padding: "3px 12px", borderRadius: 15,
-                  background: on ? FELT_MID : "transparent",
-                  borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
-                  color: on ? "#fff" : "#8a8071",
-                  fontFamily: "inherit", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}
-              >
-                <TabGlyph kind={v} />
-              </button>
-            );
-          })}
+          <CoachTabRow view={view} onView={setView} />
         </div>
+        <CoachScreens data={data} presence={presence} view={view} onView={setView} />
+      </div>
+    </>
+  );
+}
 
+/** The four screens, by name. */
+type CoachView = "now" | "hints" | "tell" | "history";
+
+/**
+ * The four tabs, as bare buttons — each host lays them into its own row:
+ * the sheet under its felt header band, the dock IN its header row, on the
+ * same level as the coach's chip and the expand button (owner direction
+ * 2026-08-13). FOUR SCREENS (owner direction 2026-08-11, folding the
+ * earlier five): "Now" faces forward — the position and the chat. "Hints"
+ * is the choices and the ladder. "Tell" is the answers side by side.
+ * "History" faces back and holds both records as one tab.
+ */
+function CoachTabRow({
+  view,
+  onView,
+}: Readonly<{ view: CoachView; onView: (v: CoachView) => void }>) {
+  return (
+    <>
+      {(
+        [
+          ["now", "Game State"],
+          ["hints", "Hints"],
+          ["tell", "Tell"],
+          ["history", "History"],
+        ] as const
+      ).map(([v, label]) => {
+        const on = view === v;
+        return (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={on}
+            aria-label={label}
+            title={label}
+            onClick={() => onView(v)}
+            style={{
+              flex: "none", minHeight: 40, padding: "4px 9px 3px", borderRadius: 11,
+              background: on ? FELT_MID : "transparent",
+              borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
+              color: on ? "#fff" : "#8a8071",
+              fontFamily: "inherit", cursor: "pointer",
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: 1,
+            }}
+          >
+            <TabGlyph kind={v} />
+            {/* the icon's name, spelled out under it (owner direction
+                2026-08-13) — same ink as the glyph, so the pair reads as
+                one control */}
+            <span
+              style={{
+                fontSize: 8, fontWeight: 700, letterSpacing: ".03em",
+                lineHeight: 1.1, whiteSpace: "nowrap",
+              }}
+            >
+              {label}
+            </span>
+          </button>
+        );
+      })}
+    </>
+  );
+}
+
+/**
+ * The four screens' content pane — the coach's whole body below the tabs,
+ * shared by the expanded sheet and the collapsed dock (owner direction
+ * 2026-08-13: the dock shows each screen whole, so the collapsed panel
+ * hides nothing — expanding only buys reading room). Owns every per-view
+ * state except the selector itself, which lives with the host's tab row.
+ */
+function CoachScreens({
+  data,
+  presence,
+  view,
+  onView,
+}: Readonly<{
+  data: CoachPanelData;
+  presence: CoachPresence;
+  view: CoachView;
+  /** For the screens that jump elsewhere — the takeaway's "show me that call". */
+  onView: (v: CoachView) => void;
+}>) {
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  // The context card's event rows: an accordion, one open at a time. Reading
+  // two meanings side by side is not a real use, and one-at-a-time keeps a
+  // 10-call auction from unfolding into a wall.
+  const [openEvent, setOpenEvent] = useState<string | null>(null);
+  // The ask surface, same discipline: one open at a time. Separate from the
+  // meaning accordion — reading what a call means while asking about it is a
+  // real use, so the two don't close each other.
+  const [openAsk, setOpenAsk] = useState<string | null>(null);
+  // The "what if" surface on a played card, once the board is over — one at
+  // a time, like the ask boxes. Its own state: an open what-if is a running
+  // (and cached) simulation, and toggling a meaning shouldn't collapse it.
+  const [openWhatIf, setOpenWhatIf] = useState<string | null>(null);
+  // Which history sections the learner has toggled. Anything untouched falls
+  // back to the data's own default — the current section open, the past
+  // collapsed — so a NEW trick arrives open without wiping the learner's
+  // choices about the old ones.
+  const [groupToggles, setGroupToggles] = useState<Record<string, boolean>>({});
+  const groupOpen = (g: CoachEventGroup) => groupToggles[g.id] ?? Boolean(g.current);
+  // The auction renders as a bidding diagram, and one call at a time is
+  // selected: its meaning and its ask box show below the grid.
+  const [selectedCall, setSelectedCall] = useState<string | null>(null);
+  // Start writing the hints and the play advice the moment the decision is
+  // the learner's — the screens that show them then open onto answers, not
+  // spinners (owner direction 2026-08-11). Keyed per CARD, not per trick:
+  // each play is its own decision with its own answers.
+  useCoachPrefetch(data.ask, decisionEpoch(data));
+  // Which history sections (the auction, the play) the learner has toggled.
+  // Untouched, each falls back to where the board is: the play opens once a
+  // card has been led, the auction opens while the bidding is the story.
+  const [historyToggles, setHistoryToggles] = useState<Record<string, boolean>>({});
+
+  const notes = data.notes ?? [];
+  const corrections = notes.filter((n) => (n.tone ?? "correction") === "correction").reverse();
+  const approvals = notes.filter((n) => n.tone === "affirmation");
+  const status = notes.filter((n) => n.tone === "status");
+  // Silent means silent: the panel still shows so the setting is reachable, but
+  // it carries nothing the coach would have volunteered.
+  const showNotes = presence === "guided";
+
+  return (
+    <>
         <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "13px 14px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-          {/* ── NOW: the default screen, shared with the table's coach band ── */}
-          {view === "now" && <CoachNow data={data} />}
-
-          {/* ── HINTS: five hints for this decision, opened one at a time.
-              Keyed per decision (every card, every call) so each play deals
-              a fresh, unopened ladder. ── */}
-          {view === "hints" &&
-            (data.ask ? (
-              <CoachHints
-                key={decisionEpoch(data)}
-                sessionId={data.ask.sessionId}
-                epoch={decisionEpoch(data)}
-                active={data.ask.active}
-              />
+          {/* ── NOW: the default screen, shared with the table's coach band.
+              Once the board is over, "now" IS reflection (owner decision
+              2026-08-13): the takeaway card takes the screen, the chat stays
+              below it, and the tab row stays at four. ── */}
+          {view === "now" &&
+            (data.takeaway ? (
+              <>
+                <CoachTakeaway
+                  takeaway={data.takeaway}
+                  sessionId={data.ask?.sessionId}
+                  onShowCall={(eventId) => {
+                    setSelectedCall(eventId);
+                    setHistoryToggles((prev) => ({ ...prev, auction: true }));
+                    onView("history");
+                  }}
+                />
+                {data.ask && (
+                  <div>
+                    <Label>Ask the coach</Label>
+                    <CoachChat key="board-over" sessionId={data.ask.sessionId} />
+                  </div>
+                )}
+              </>
             ) : (
-              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
-                Hints are for a player with a decision in front of them — take a seat to use
-                them.
-              </p>
+              <CoachNow data={data} />
             ))}
+
+          {/* ── HINTS: the realistic choices first (owner direction
+              2026-08-13, moved here from Now — the menu of options belongs
+              beside the ladder that narrows them), then five hints for this
+              decision, opened one at a time. Keyed per decision (every card,
+              every call) so each play deals a fresh, unopened ladder. ── */}
+          {view === "hints" && (
+            <>
+              {data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
+                <ThinkCard aid={data.aid} />
+              )}
+              {data.ask ? (
+                <CoachHints
+                  key={decisionEpoch(data)}
+                  sessionId={data.ask.sessionId}
+                  epoch={decisionEpoch(data)}
+                  active={data.ask.active}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                  Hints are for a player with a decision in front of them — take a seat to use
+                  them.
+                </p>
+              )}
+            </>
+          )}
 
           {/* ── TELL: the answers, side by side — the coach's card and BEN's ── */}
           {view === "tell" &&
@@ -883,6 +992,36 @@ export function CoachSheet({
                                             ),
                                           }
                                         : {})}
+                                      {...(data.ask &&
+                                      data.ask.phase === "other" &&
+                                      ev.mine &&
+                                      ev.trickIndex !== undefined &&
+                                      ev.playIndex !== undefined
+                                        ? {
+                                            // The "what if" (owner direction
+                                            // 2026-08-13): BEN's read of this
+                                            // card's spot, once the board is
+                                            // over. Only decisions that were
+                                            // the learner's own wear the pill;
+                                            // the server enforces the same
+                                            // gates.
+                                            askOpen: openWhatIf === ev.id,
+                                            onToggleAsk: () =>
+                                              setOpenWhatIf(openWhatIf === ev.id ? null : ev.id),
+                                            askLabel: "What if",
+                                            ask: (
+                                              <div style={{ margin: "2px 0 9px 29px" }}>
+                                                <BenWhatIf
+                                                  sessionId={data.ask.sessionId}
+                                                  query={`play=${ev.trickIndex}-${ev.playIndex}`}
+                                                  kind="card"
+                                                  {...(ev.token ? { actual: ev.token } : {})}
+                                                  auto
+                                                />
+                                              </div>
+                                            ),
+                                          }
+                                        : {})}
                                     />
                                   ))}
                               </div>
@@ -966,7 +1105,6 @@ export function CoachSheet({
             <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>{data.actions}</div>
           )}
         </div>
-      </div>
     </>
   );
 }
@@ -1138,17 +1276,12 @@ function decisionEpoch(data: CoachPanelData): string {
 }
 
 /**
- * The Now screen's content — the position, the scaffold, the advice before
- * the card is played, the chat. Exported standalone because it is also the
- * DEFAULT SCREEN of the new table's coach band (owner direction 2026-08-05):
- * the band shows this, and the full original sheet is one expand away.
- *
- * CONDENSED in the band (owner direction 2026-08-06): the collapsed dock
- * carries only the position, the advice and the chat — the think-it-through
- * scaffold ("What you can work out" / "Your realistic choices") is reading
- * material, and reading material belongs to the expanded sheet.
+ * The Now screen's content — the position and the chat. Exported standalone
+ * for hosts that want just this screen; the dock no longer condenses it
+ * (owner direction 2026-08-13: the collapsed panel shows each tab whole,
+ * through the same CoachScreens the sheet uses).
  */
-export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPanelData; condensed?: boolean }>) {
+export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
   // A new trick is a new conversation. The chat and the advice answer hold
   // their exchanges in component state, so they are keyed by where the board
   // is (the current history section): the next trick remounts them empty
@@ -1158,23 +1291,20 @@ export function CoachNow({ data, condensed = false }: Readonly<{ data: CoachPane
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {/* THE GAME STATE (owner direction 2026-08-10): "What I'm looking at"
           and "What you can work out" merged into one section of small flip
-          cards — a glanceable value on the front, the full fact on the back.
-          Condensed (the dock) keeps only the position's own facts; the
-          worked-out cards are reading material and reading material belongs
-          to the sheet (owner direction 2026-08-06, unchanged by the merge). */}
+          cards — sealed to a title first, the value one tap in, the full
+          fact behind it. */}
       {(data.looking || !!data.facts?.length) && (
         <GameState
           looking={data.looking}
           facts={data.facts ?? []}
-          known={condensed ? [] : (data.aid?.knownCards ?? [])}
+          known={data.aid?.knownCards ?? []}
           epoch={epoch}
         />
       )}
 
-      {/* the realistic choices, shown without being asked — sheet only */}
-      {!condensed && data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
-        <ThinkCard aid={data.aid} />
-      )}
+      {/* NO CHOICES HERE (owner direction 2026-08-13): "Your realistic
+          choices" moved to the HINTS screen, above the ladder — the menu of
+          options belongs beside the hints that narrow them. */}
 
       {/* NO ADVICE HERE (owner direction 2026-08-11). "What should I play?"
           left the Now screen for TELL, where the answer now shows itself —
@@ -1204,19 +1334,20 @@ export function CoachPrefetch({ data }: Readonly<{ data: CoachPanelData }>) {
 }
 
 /**
- * The original coach, inside the NEW table's reserved coach band (owner
- * direction 2026-08-05: "the panel displays the default screen; an icon
- * expands the entire original coach panel"). Inline it shows CoachNow; the
- * expand button opens the full original CoachSheet — the felt header, the
- * Now/History tabs, the bidding diagram, every trick, the per-event Q&A —
- * as an overlay above the whole table.
+ * The original coach, inside the NEW table's reserved coach band. The dock
+ * now carries the sheet's own four tab icons and shows each screen WHOLE
+ * (owner direction 2026-08-13: "show as much content as possible of each
+ * tab in the default panel") — collapsed mode hides nothing. The expand
+ * button stays: it opens the full-height CoachSheet as an overlay above
+ * the whole table, same content with more room to read it.
+ *
+ * The dock never unmounts while the table is up, so the CoachScreens inside
+ * it is the one reliable place the decision's hints and advice get
+ * prefetched — the sheet's own copy only helps while the sheet is open.
  */
 export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
   const [open, setOpen] = useState(false);
-  // The dock never unmounts while the table is up, which makes it the one
-  // reliable place to start writing this decision's hints and advice — the
-  // sheet's own prefetch only helps while the sheet is open.
-  useCoachPrefetch(data.ask, decisionEpoch(data));
+  const [view, setView] = useState<CoachView>("now");
   return (
     // The dock IS the panel (owner direction 2026-08-05: "the entire default
     // screen occupies the entire coach panel"): the shell hands over the whole
@@ -1243,7 +1374,17 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
         <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14.5, fontWeight: 700, color: INK }}>
           Coach
         </span>
-        <span style={{ flex: 1 }} />
+        {/* the tabs ride the header itself (owner direction 2026-08-13:
+            same level as the coach's chip and the expand button) */}
+        <div
+          style={{
+            flex: 1, minWidth: 0, display: "flex", alignItems: "center",
+            justifyContent: "center", gap: 5,
+            overflowX: "auto", scrollbarWidth: "none",
+          }}
+        >
+          <CoachTabRow view={view} onView={setView} />
+        </div>
         <button
           type="button"
           aria-label="Open the full coach"
@@ -1259,9 +1400,7 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
           ⤢
         </button>
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "3px 12px 14px" }}>
-        <CoachNow data={data} condensed />
-      </div>
+      <CoachScreens data={data} presence="request" view={view} onView={setView} />
       {open && (
         <div style={{ position: "fixed", inset: 0, zIndex: 900 }}>
           <CoachSheet data={data} presence="request" onClose={() => setOpen(false)} />
@@ -1274,37 +1413,76 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
 /* ── the Game State — the position as flip cards ─────────────────────────────
    "What I'm looking at" and "What you can work out" used to be two prose
    blocks; the owner asked for one section (2026-08-10) with the information
-   dissected into small two-sided cards. The front is glanceable — a value and
-   a two-word title; tapping flips it to the full fact. The same discipline as
-   the sections it replaces: every card is arithmetic or a definition, all
-   cards are styled identically, and nothing on either face recommends. */
+   dissected into small cards. THREE FACES NOW (owner direction 2026-08-13):
+   the card starts SEALED — its title alone ("HCP"), like an unopened letter —
+   the first tap opens it to the value ("4 HCP"), and taps after that turn it
+   between the value and the full fact. Working the number out before peeking
+   is the exercise. The same discipline as the sections it replaces: every
+   card is arithmetic or a definition, all cards are styled identically, and
+   nothing on any face recommends. */
 
-/** What every card shows: front value + title, back sentence. */
+/** What every card shows: a sealed title, the value behind it, the fact behind that. */
 type StateCard = { title: string; value: string; detail?: string };
 
+/** The three faces, in opening order. */
+type FlipStage = "sealed" | "value" | "detail";
+
 function FlipCard({ card }: Readonly<{ card: StateCard }>) {
-  const [flipped, setFlipped] = useState(false);
+  // A card with no title has nothing to seal with — it starts open.
+  const [stage, setStage] = useState<FlipStage>(card.title ? "sealed" : "value");
   // The 3D stage exists ONLY while the card is turning. A face that sits under
   // perspective/preserve-3d/backface-visibility lives on a composited layer,
   // where the text is a rasterized texture — visibly blurry at this size. At
   // rest the visible face renders flat, with no transform anywhere, so the
   // glyphs come off the ordinary crisp text path.
   const [turning, setTurning] = useState(false);
-  const canFlip = Boolean(card.detail);
+  // The face this turn lands on; null at rest. Every turn animates 0→180 with
+  // the outgoing face in front and the incoming behind, then settles flat.
+  const [target, setTarget] = useState<FlipStage | null>(null);
+  const [rotated, setRotated] = useState(false);
+
+  // A letter, once opened, stays open: sealed leads to the value, and from
+  // there taps toggle value ↔ fact. No detail means nothing past the value.
+  const next: FlipStage | null =
+    stage === "sealed" ? "value" : card.detail ? (stage === "value" ? "detail" : "value") : null;
+  const canFlip = next !== null;
+
+  const finish = (to: FlipStage) => {
+    setStage(to);
+    setTarget(null);
+    setTurning(false);
+    setRotated(false);
+  };
   const flip = () => {
+    if (!next || turning) return;
+    const to = next;
+    setTarget(to);
     setTurning(true);
     // Two frames so the stage PAINTS at the old angle first — flipping state in
     // the same frame it mounts would jump straight to the target, unanimated.
-    requestAnimationFrame(() => requestAnimationFrame(() => setFlipped((f) => !f)));
+    requestAnimationFrame(() => requestAnimationFrame(() => setRotated(true)));
     // Backstop for environments where transitionend never fires (reduced
     // motion sets transition:none): settle to the crisp flat face regardless.
-    setTimeout(() => setTurning(false), 650);
+    setTimeout(() => finish(to), 650);
   };
   const face: React.CSSProperties = {
     position: "absolute", inset: 0, borderRadius: 9,
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
+  const sealed = (
+    <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: INK, lineHeight: 1.25 }}>
+        {card.title}
+      </span>
+      <span style={{ marginTop: 2, fontSize: 7.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#b3a789" }}>
+        tap to open
+      </span>
+      <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
+        ✉
+      </span>
+    </span>
+  );
   const front = (
     <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
       <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
@@ -1315,14 +1493,14 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
           {card.title}
         </span>
       )}
-      {canFlip && (
+      {card.detail && (
         <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
           ⟳
         </span>
       )}
     </span>
   );
-  const back = canFlip ? (
+  const back = card.detail ? (
     <span
       style={{
         ...face, overflowY: "auto",
@@ -1330,19 +1508,26 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
       }}
     >
       <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
-        <RedSuits>{card.detail!}</RedSuits>
+        <RedSuits>{card.detail}</RedSuits>
       </span>
     </span>
   ) : null;
+  const faceFor = (s: FlipStage) => (s === "sealed" ? sealed : s === "value" ? front : back);
   return (
     <button
       type="button"
       onClick={canFlip ? flip : undefined}
-      aria-pressed={flipped}
-      aria-label={card.detail ? `${card.title || card.value} — tap to flip` : card.value}
+      aria-pressed={stage !== "sealed"}
+      aria-label={
+        stage === "sealed"
+          ? `${card.title} — tap to open`
+          : card.detail
+            ? `${card.title || card.value} — tap to flip`
+            : card.value
+      }
       style={{
         // The button owns the footprint so the grid rows stay even while
-        // either face is showing.
+        // any face is showing.
         position: "relative", minHeight: 54,
         ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
@@ -1350,32 +1535,30 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
         fontFamily: "inherit",
       }}
     >
-      {turning ? (
+      {turning && target ? (
         <span
           className="coach-flip"
-          onTransitionEnd={() => setTurning(false)}
+          onTransitionEnd={() => finish(target)}
           style={{
             position: "absolute", inset: 0, transformStyle: "preserve-3d",
-            transform: flipped ? "rotateY(180deg)" : "rotateY(0deg)",
+            transform: rotated ? "rotateY(180deg)" : "rotateY(0deg)",
           }}
         >
           <span style={{ position: "absolute", inset: 0, backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden" }}>
-            {front}
+            {faceFor(stage)}
           </span>
-          {back && (
-            <span
-              style={{
-                position: "absolute", inset: 0, transform: "rotateY(180deg)",
-                backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
-              }}
-            >
-              {back}
-            </span>
-          )}
+          <span
+            style={{
+              position: "absolute", inset: 0, transform: "rotateY(180deg)",
+              backfaceVisibility: "hidden", WebkitBackfaceVisibility: "hidden",
+            }}
+          >
+            {faceFor(target)}
+          </span>
         </span>
       ) : (
         // At rest: one face, no transforms — this is where the crispness lives.
-        <span style={{ position: "absolute", inset: 0 }}>{flipped && back ? back : front}</span>
+        <span style={{ position: "absolute", inset: 0 }}>{faceFor(stage)}</span>
       )}
     </button>
   );
@@ -1424,13 +1607,14 @@ function GameState({
 }
 
 /**
- * The realistic choices, shown on the NOW view without being asked — this is
- * what the "Help me think" button used to answer with, promoted to the
- * default screen's centrepiece. (Its "what you can work out" half now lives
- * in the Game State card above.) Candidates render in given order and are
- * styled identically, same as CoachPrompts' block: any visual difference
- * between them reads as a recommendation, and the point of the scaffold is
- * that it does not answer.
+ * The realistic choices, shown at the top of the HINTS screen (owner
+ * direction 2026-08-13, moved off Now) — this is what the "Help me think"
+ * button used to answer with, now sitting above the ladder that narrows the
+ * options it lists. (Its "what you can work out" half lives in the Game
+ * State card on Now.) Candidates render in given order and are styled
+ * identically, same as CoachPrompts' block: any visual difference between
+ * them reads as a recommendation, and the point of the scaffold is that it
+ * does not answer.
  */
 function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
   return (
@@ -1475,6 +1659,13 @@ function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
 
 const SEAT_ROTATION = ["N", "E", "S", "W"];
 
+/** The takeaway verdict's corner mark, as the bidding diagram wears it. */
+const TOKEN_MARK: Record<NonNullable<CoachLookingEvent["verdict"]>, { mark: string; bg: string }> = {
+  correct: { mark: "✓", bg: FELT_MID },
+  acceptable: { mark: "≈", bg: "#9c5a12" },
+  incorrect: { mark: "✗", bg: "#b91c1c" },
+};
+
 /** One call as a token: bids as card faces, Pass/Dbl/Rdbl as coloured chips. */
 function CallToken({
   event, selected, onSelect,
@@ -1482,13 +1673,15 @@ function CallToken({
   const isBid = Boolean(event.token);
   const text = event.token ?? (event.verb === "passed" ? "Pass" : event.verb === "doubled" ? "Dbl" : "Rdbl");
   const red = /[♥♦]/.test(text);
+  const mark = event.verdict ? TOKEN_MARK[event.verdict] : null;
   return (
     <button
       type="button"
       aria-pressed={selected}
-      aria-label={event.label}
+      aria-label={event.label + (event.verdict ? ` — ${event.verdict}` : "")}
       onClick={onSelect}
       style={{
+        position: "relative",
         width: "100%", minHeight: 28, padding: "3px 2px",
         background: isBid ? "#fff" : event.verb === "passed" ? FELT_MID : "#b91c1c",
         borderWidth: 1, borderStyle: "solid",
@@ -1503,6 +1696,19 @@ function CallToken({
       }}
     >
       {text}
+      {mark && (
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", top: -5, right: -5,
+            width: 14, height: 14, borderRadius: "50%",
+            background: mark.bg, color: "#fff",
+            fontSize: 9, fontWeight: 700, lineHeight: "14px", textAlign: "center",
+          }}
+        >
+          {mark.mark}
+        </span>
+      )}
     </button>
   );
 }
@@ -1513,8 +1719,10 @@ function AuctionDiagram({
   events: readonly CoachLookingEvent[];
   selectedId: string | null;
   onSelect: (id: string | null) => void;
-  /** Present means the selected call's meaning panel carries a question box. */
-  ask?: { sessionId: string };
+  /** Present means the selected call's meaning panel carries a question box —
+   *  and, once the auction is over, the "what if" ask on the learner's own
+   *  calls. `phase` is where the board is now, gating that second surface. */
+  ask?: { sessionId: string; phase?: "auction" | "play" | "other" };
 }>) {
   // The first call is the dealer's, so the column order falls out of the data.
   const dealer = events[0]?.seat ?? "N";
@@ -1598,6 +1806,29 @@ function AuctionDiagram({
               "Your system notes don't cover this call."
             )}
           </p>
+          {/* The "what if": BEN's read of the same spot, on the learner's own
+              calls once the auction is over (asked live it could still steer
+              the decision in front of them — the server enforces the same
+              gate). A button first: selecting a call is for reading its
+              meaning, and a model run shouldn't ride along uninvited. */}
+          {ask && ask.phase !== "auction" && selected.who === "You" && selected.auctionIndex !== undefined && (
+            <div style={{ margin: "0 0 8px" }}>
+              <BenWhatIf
+                key={selected.id}
+                sessionId={ask.sessionId}
+                query={`at=${selected.auctionIndex}`}
+                kind="call"
+                actual={
+                  selected.token ??
+                  (selected.verb === "doubled"
+                    ? "Double"
+                    : selected.verb === "redoubled"
+                      ? "Redouble"
+                      : "Pass")
+                }
+              />
+            </div>
+          )}
           {ask && (
             <CoachEventAsk
               key={selected.id}
@@ -1643,7 +1874,7 @@ function TokenChip({ token }: Readonly<{ token: string }>) {
  * on the felt — so "which of these was me" needs no reading at all.
  */
 function EventRow({
-  event, open, onToggle, askOpen = false, onToggleAsk, ask,
+  event, open, onToggle, askOpen = false, onToggleAsk, ask, askLabel = "Ask",
 }: Readonly<{
   event: CoachLookingEvent;
   open: boolean;
@@ -1652,6 +1883,8 @@ function EventRow({
   onToggleAsk?: () => void;
   /** The interaction surface, rendered when askOpen. */
   ask?: ReactNode;
+  /** What the pill says — "Ask" for the question box, "What if" for BEN. */
+  askLabel?: string;
 }>) {
   const expandable = Boolean(event.detail);
   const isYou = event.who === "You";
@@ -1735,7 +1968,7 @@ function EventRow({
           <button
             type="button"
             aria-expanded={askOpen}
-            aria-label={`Ask about ${event.label}`}
+            aria-label={`${askLabel} — ${event.label}`}
             onClick={onToggleAsk}
             style={{
               flex: "none", minHeight: 26, padding: "3px 11px",
@@ -1745,7 +1978,7 @@ function EventRow({
               fontSize: 11, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
             }}
           >
-            Ask
+            {askLabel}
           </button>
         )}
       </div>

@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { WhatShouldIPlay } from "./CoachEventAsk";
-import { fetchBenTell, fetchHints, type BenTell } from "./coachPrefetch";
+import { fetchBenTell, fetchBenWhatIf, fetchHints, type BenTell } from "./coachPrefetch";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -304,6 +304,192 @@ export function CoachHints({
               Try again
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   WHAT IF — BEN's read of a decision already taken (the History screen)
+   ════════════════════════════════════════════════════════════════════════════ */
+
+type WhatIfState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "done"; tell: BenTell }
+  | { kind: "empty"; reason: string };
+
+/**
+ * "What would BEN have done here?" for a PAST decision — a call once the
+ * auction is over, a card once the board is. Renders inside a History row
+ * (auto: the tap that opened the row was the consent) or under the bidding
+ * diagram's meaning panel (a button first — selecting a call is for reading
+ * its meaning, and a simulation shouldn't ride along uninvited).
+ *
+ * The answer is BEN's alone and is labelled as such — same badge, same
+ * caveat as the TELL screen, so the two surfaces can't read as two coaches.
+ */
+export function BenWhatIf({
+  sessionId,
+  query,
+  kind,
+  actual,
+  auto = false,
+}: Readonly<{
+  sessionId: string;
+  /** ben-tell's addressing for the spot — "at=3" for a call, "play=6-1" for a card. */
+  query: string;
+  kind: "call" | "card";
+  /** What was actually done there — "2♦", "8♥", "Pass" — for the agree/differ line. */
+  actual?: string;
+  /** Fetch on mount instead of waiting for the button. */
+  auto?: boolean;
+}>) {
+  const [state, setState] = useState<WhatIfState>(auto ? { kind: "loading" } : { kind: "idle" });
+
+  const load = useCallback(async () => {
+    setState({ kind: "loading" });
+    try {
+      const r = await fetchBenWhatIf(sessionId, query);
+      setState(r.tell ? { kind: "done", tell: r.tell } : { kind: "empty", reason: r.reason ?? "no answer" });
+    } catch {
+      setState({ kind: "empty", reason: "unreachable" });
+    }
+  }, [sessionId, query]);
+
+  useEffect(() => {
+    if (auto) void load();
+  }, [auto, load]);
+
+  const verb = kind === "call" ? "bid" : "play";
+
+  if (state.kind === "idle") {
+    return (
+      <button
+        type="button"
+        onClick={() => void load()}
+        style={{
+          minHeight: 28, padding: "4px 12px",
+          background: "transparent", borderWidth: 1, borderStyle: "solid",
+          borderColor: BEN_BLUE, borderRadius: 14, color: BEN_BLUE,
+          fontSize: 11.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
+        }}
+      >
+        What would BEN have done?
+      </button>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3",
+        borderRadius: 9, padding: "8px 10px",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5 }}>
+        <span
+          style={{
+            display: "inline-block", height: 16, padding: "0 5px",
+            background: BEN_BLUE, borderRadius: 3, color: "#fff",
+            fontSize: 9.5, fontWeight: 700, lineHeight: "16px",
+          }}
+        >
+          BEN
+        </span>
+        <span
+          style={{
+            fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+            textTransform: "uppercase", color: FELT_DEEP,
+          }}
+        >
+          What if
+        </span>
+      </div>
+
+      {state.kind === "loading" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          {kind === "card"
+            ? "BEN is replaying the position — this can take up to a minute…"
+            : "BEN is thinking — a few seconds…"}
+        </p>
+      )}
+      {state.kind === "empty" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          {state.reason === "board still live"
+            ? "BEN replays a spot only once the board is over."
+            : "BEN has no answer for this one right now."}
+        </p>
+      )}
+      {state.kind === "done" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
+              BEN would have {query === "play=0-0" ? "led" : verb}
+            </span>
+            <span
+              style={{
+                ...CARD_STYLE,
+                color: /[♥♦]/.test(state.tell.action) ? "#c00" : "#000",
+              }}
+            >
+              <RedSuits>{state.tell.action}</RedSuits>
+            </span>
+            {typeof state.tell.score === "number" && (
+              <span style={{ fontSize: 11, color: FAINT, fontVariantNumeric: "tabular-nums" }}>
+                score {state.tell.score.toFixed(2)}
+              </span>
+            )}
+            {actual && (
+              <span style={{ fontSize: 12, color: actual === state.tell.action ? FELT_MID : MUTED }}>
+                {actual === state.tell.action ? (
+                  <b>— the same choice you made.</b>
+                ) : (
+                  <>
+                    — you chose <b><RedSuits>{actual}</RedSuits></b>.
+                  </>
+                )}
+              </span>
+            )}
+          </div>
+          {state.tell.because && (
+            <p style={{ ...SAYS, fontSize: 13, color: INK }}>
+              <RedSuits>{state.tell.because}</RedSuits>
+            </p>
+          )}
+          {state.tell.alternatives.length > 0 && (
+            <div>
+              <div
+                style={{
+                  fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
+                  textTransform: "uppercase", color: FAINT, margin: "3px 0 4px",
+                }}
+              >
+                It also weighed
+              </div>
+              <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 3 }}>
+                {state.tell.alternatives.map((alt) => (
+                  <li
+                    key={alt.action}
+                    style={{ display: "flex", alignItems: "baseline", gap: 7, fontSize: 12.5, lineHeight: 1.45 }}
+                  >
+                    <span style={{ flex: "none", minWidth: 40, fontWeight: 700, color: INK }}>
+                      <RedSuits>{alt.action}</RedSuits>
+                    </span>
+                    <span style={{ color: FAINT }}>
+                      {typeof alt.score === "number" ? `score ${alt.score.toFixed(2)}` : ""}
+                      {alt.because ? `${typeof alt.score === "number" ? " — " : ""}${alt.because}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p style={{ margin: 0, fontSize: 11, lineHeight: 1.45, color: FAINT }}>
+            BEN is a neural player, not your system — a different choice is worth thinking
+            about, not automatically better.
+          </p>
         </div>
       )}
     </div>

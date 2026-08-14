@@ -29,6 +29,88 @@ async function openTableSession(page: Page): Promise<string> {
   return sid;
 }
 
+/**
+ * A FRESH board with a human South, for the interaction tests below.
+ *
+ * Deliberately not `openTableSession`: that one takes Quickplay OR a Resume
+ * link, whichever the DOM offers first, and a resumed board can be one where
+ * South is dummy or the play is nearly over — so a test that needs to play a
+ * card from South's hand failed about half the time on the resume. Dealing
+ * fresh always starts at the auction with South able to bid it out.
+ */
+async function freshHumanTable(page: Page): Promise<void> {
+  await page.goto("/bridge/table");
+  const quick = page.getByRole("button", { name: /Quickplay|Deal a fresh board/ }).first();
+  if (await quick.count()) await quick.click();
+  else await page.getByRole("link", { name: /^Resume / }).first().click();
+  await page.waitForURL(/\/bridge\/table2?\/bs_/);
+  await page.goto(`/bridge/table2/${/bs_[a-z0-9]+/.exec(page.url())![0]}`);
+}
+
+/**
+ * The label of a card you may play right now, once the table is willing.
+ *
+ * Three things can stand between "the board is up" and "a card is live", and a
+ * test that only knows about one of them hangs on the others: the auction may
+ * still be running, a finished trick may be HELD (the hand is inert until it is
+ * let go — that is the point of the hold), and the robots may simply be mid
+ * think. Playability is `cursor: pointer` plus an armed handler rather than an
+ * attribute, so it has to be read off the computed style.
+ *
+ * `pick` matters for the flight test: the leftmost card is the one whose
+ * horizontal origin is unmistakable.
+ */
+async function playableCard(
+  page: Page,
+  pick: "any" | "leftmost" = "any",
+  rounds = 40,
+): Promise<string | null> {
+  const armed = (sel: string, leftmost: boolean) =>
+    page
+      .evaluate(
+        ({ sel: q, leftmost: lm }) => {
+          const live = [...document.querySelectorAll(q)].filter(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          if (lm) live.sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left);
+          return live.length ? live[0]!.getAttribute("aria-label") : null;
+        },
+        { sel, leftmost },
+      )
+      .catch(() => null);
+
+  for (let i = 0; i < rounds; i++) {
+    const card = await armed('button[aria-label^="Play "]', pick === "leftmost");
+    if (card) return card;
+    if ((await page.locator('[data-testid="trick-card"]').count()) === 4) {
+      // A held trick: let it go so play can continue.
+      await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } }).catch(() => {});
+    } else if (await armed('button[aria-label="Pass"]', false)) {
+      await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+    }
+    await page.waitForTimeout(250);
+  }
+  return null;
+}
+
+/**
+ * A fresh board on which the human actually gets to play a card.
+ *
+ * `freshHumanTable` deals; it does not promise you a turn. Roughly a quarter of
+ * deals make South DUMMY, and a dummy whose partner is a robot never touches a
+ * card — so a test that dealt once and then polled just hung until it timed
+ * out. These tests passed on the luck of the shuffle until the trick hold made
+ * the stall long enough to notice.
+ */
+async function dealUntilPlayable(page: Page, pick: "any" | "leftmost" = "any"): Promise<string> {
+  for (let board = 0; board < 4; board++) {
+    await freshHumanTable(page);
+    const card = await playableCard(page, pick);
+    if (card) return card;
+  }
+  throw new Error("no deal in four gave South a card to play");
+}
+
 test.describe("mobile table v3 — phone tier", () => {
   test("coach panel, no toolbar overflow, and a reachable ⋯ popover", async ({ page }) => {
     await page.context().clearCookies();
@@ -178,7 +260,7 @@ test.describe("mobile table v3 — phone tier", () => {
   // Reaching play deterministically: seat four robots (a "watch" board — a human
   // seat would stall stepping at its turn) and step via the session API until a
   // mid-trick moment whose dummy isn't South (declarer ≠ N).
-  test("play phase: trick cards are one size and the dummy strip shows a seat name", async ({
+  test("play phase: the trick is bigger than the hand, and the dummy strip shows a seat name", async ({
     page,
   }) => {
     await page.context().clearCookies();
@@ -274,7 +356,20 @@ test.describe("mobile table v3 — phone tier", () => {
           const b = el.getBoundingClientRect();
           // data-seat names the compass point the card was played from, so the
           // geometry below can be asserted per SEAT rather than by guesswork.
-          return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height };
+          // Is this card's INDEX actually unobstructed? Hit-test all four
+          // corners of the rank/pip block: a wide two-glyph "10" can have a
+          // readable middle and a covered edge, so the centre alone lies.
+          const idx = el.firstElementChild;
+          let readable = true;
+          if (idx) {
+            const r = idx.getBoundingClientRect();
+            const corners: [number, number][] = [
+              [r.left + 1, r.top + 1], [r.right - 1, r.top + 1],
+              [r.left + 1, r.bottom - 1], [r.right - 1, r.bottom - 1],
+            ];
+            readable = corners.every(([x, y]) => el.contains(document.elementFromPoint(x, y)));
+          }
+          return { seat: el.getAttribute("data-seat") ?? "?", x: b.x, y: b.y, w: b.width, h: b.height, readable };
         });
         // A card in a HAND, to size the trick against. The dummy row and your
         // own hand draw the same M_CARD, so any one of them is the metric.
@@ -321,23 +416,35 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(Math.abs(c0.w - c1.w), "trick card widths equal").toBeLessThanOrEqual(0.6);
     expect(Math.abs(c0.h - c1.h), "trick card heights equal").toBeLessThanOrEqual(0.6);
 
-    // (1d) A trick card is the SAME CARD as one in a hand (owner, 2026-08-11).
-    // The cluster used to magnify to 2.4x, which put a 68x98 card in the middle
-    // of a table whose hands hold 28x65 ones — two decks on one felt. It is
-    // drawn at the hand's metrics now, and only ever scales DOWN to fit a
-    // squeezed band, never up.
+    // (1d) A trick card is BIGGER than a card in the hand — 1.3x on height
+    // (owner, 2026-08-12), reversing the 2026-08-11 rule that the two match.
+    // At hand size the played cards receded: the trick is the one thing every
+    // player is looking at, and it read as four more cards rather than as the
+    // trick. This is the ceiling too — it must never reach the 2.4x magnify
+    // that once put two visibly different decks on one felt.
     expect(tallShot.hand, "a hand card to size the trick against").not.toBeNull();
     const held = tallShot.hand!;
-    expect(c0.w, "a trick card is no wider than a card in the hand").toBeLessThanOrEqual(
-      held.w + 0.6,
-    );
-    expect(c0.h, "a trick card is no taller than a card in the hand").toBeLessThanOrEqual(
-      held.h + 0.6,
-    );
-    expect(
-      Math.abs(c0.w - held.w),
-      "and at the reference phone it MATCHES the hand",
-    ).toBeLessThanOrEqual(1);
+    expect(c0.h / held.h, "a trick card is ~1.3x a hand card's height").toBeGreaterThan(1.15);
+    expect(c0.h / held.h, "and not the 2.4x magnify that made it a second deck").toBeLessThan(1.6);
+    // The RATIO changes with the size and matters as much: a hand card is a
+    // tall 1:1.71 sliver because it is only ever seen as an index strip under
+    // its neighbour, while a trick card is seen whole and takes a real card's
+    // 1:1.4. Scaling the hand's ratio instead produced a card so narrow that a
+    // two-glyph "10" spilled out of the corner reserved to keep it readable.
+    expect(c0.w / c0.h, "a trick card has a real card's proportions").toBeGreaterThan(0.62);
+    expect(c0.w / c0.h, "not the hand's tall sliver").toBeLessThan(0.78);
+
+    // (1f) EVERY CARD SAYS WHAT IT IS. Paint order is play order now (owner,
+    // 2026-08-12), so any card can land over any other and the layout may not
+    // rely on knowing who covers whom. Each card carries its index on the edge
+    // facing away from the centre — N/W top-left, E top-right, S bottom-left —
+    // which is outside the cluster by construction. This asserts the property
+    // itself, on whatever the deal happened to put down, rather than a spacing
+    // ratio that stands in for it: the previous proxy passed while a real "10"
+    // was clipped, and would need rewriting on every geometry change.
+    for (const c of tallShot.cards) {
+      expect(c.readable, `${c.seat}'s rank and pip are not covered by a sibling`).toBe(true);
+    }
 
     // (1e) The board compacts VERTICALLY, never horizontally: the 720-wide stage
     // renders the full width of its region in play, exactly as in the auction.
@@ -361,7 +468,12 @@ test.describe("mobile table v3 — phone tier", () => {
     const pileH =
       Math.max(...tallShot.cards.map((c) => c.y + c.h)) -
       Math.min(...tallShot.cards.map((c) => c.y));
-    expect(pileW, "the compass is two cards wide").toBeLessThanOrEqual(2 * c0.w + 1);
+    // Two cards wide PLUS a seam. The seam (0.15 of a card) is what lets E keep
+    // its index on its outward edge clear of N's and S's bodies, now that paint
+    // order is play order and any card may land over any other.
+    expect(pileW, "the compass is two cards and a seam wide").toBeLessThanOrEqual(
+      2 * c0.w + 0.15 * c0.w + 2,
+    );
     expect(pileH, "and two cards tall").toBeLessThanOrEqual(2 * c0.h + 1);
     expect(
       pileW / tallShot.stage.w,
@@ -398,26 +510,29 @@ test.describe("mobile table v3 — phone tier", () => {
     });
 
     // The compass points themselves, for whichever pairs are down: the flanks
-    // sit half a card outside the N/S column and half a card below N — which
-    // puts their own midline on the seam the vertical pair makes, so each flank
-    // overlaps BOTH neighbours by half a card and the four close into one solid
-    // plus with nothing showing through the middle.
+    // sit half a card-and-seam outside the N/S column and half a card below N —
+    // which puts their own midline on the seam the vertical pair makes, so each
+    // flank overlaps BOTH neighbours and the four close into one solid plus with
+    // nothing showing through the middle. The horizontal offset is half of
+    // (card + seam), not half a card: the seam was added so E's outward index
+    // clears N and S once paint order became play order.
     const bySeat = Object.fromEntries(tallShot.cards.map((c) => [c.seat, c]));
     for (const flank of ["W", "E"] as const) {
       const f = bySeat[flank];
       if (!f) continue;
       if (bySeat.N) {
         expect(
-          Math.abs(Math.abs(f.x - bySeat.N.x) - c0.w / 2),
-          `${flank} flanks the column by half a card`,
+          Math.abs(Math.abs(f.x - bySeat.N.x) - (c0.w + 0.15 * c0.w) / 2),
+          `${flank} flanks the column by half a card and seam`,
         ).toBeLessThanOrEqual(1.5);
-        // The flanks start BELOW the top card's suit pip. Half a card down cut
-        // straight through it, so the leader's card showed a rank with no suit —
-        // the one thing a player reads the trick for. What is protected here is
-        // that property, not the old constant: the flank clears N's index, and
-        // still overlaps N enough to interlock rather than float free.
+        // The flank sits below N's top and above N's bottom — it STRADDLES the
+        // seam rather than sitting beside the column or under it. How far down
+        // is not asserted here: what actually matters is that no index gets
+        // covered, and that is checked directly below for every card on the
+        // felt rather than inferred from an offset ratio.
         const drop = f.y - bySeat.N.y;
-        expect(drop, `${flank} clears N's index`).toBeGreaterThanOrEqual(c0.h * 0.62);
+        expect(drop, `${flank} starts below N's top`).toBeGreaterThan(0);
+        expect(drop, `${flank} straddles the seam rather than clearing N`).toBeLessThan(c0.h);
         expect(drop, `${flank} still overlaps N`).toBeLessThan(c0.h);
       }
       if (bySeat.S) {
@@ -480,6 +595,43 @@ test.describe("mobile table v3 — phone tier", () => {
     expect(stripText, "dummy strip starts with a seat name").toMatch(
       /^(North|East|South|West)/,
     );
+
+    // (3) AND THE HAND FITS IN IT. The rail draws dummy as a leaning stack of
+    // cards, and the stack was twice priced off a constant rather than off the
+    // band it lives in — 362px of cards in a ~303px rail, so the bottom of the
+    // hand was cut off and every rank was sliced by its own neighbour. The
+    // geometry is solved from the band now; this is the assertion that keeps it
+    // solved. Each card's index sits in the STRIP that shows, so a fitting
+    // stack is also a readable one.
+    const fit = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="dummy-strip"]')!;
+      const stack = rail.querySelector("div");
+      if (!stack) return null;
+      const cards = [...stack.children] as HTMLElement[];
+      const rb = rail.getBoundingClientRect();
+      const last = cards[cards.length - 1]!.getBoundingClientRect();
+      return { n: cards.length, spare: rb.bottom - last.bottom, railH: rb.height };
+    });
+    expect(fit, "the rail drew a stack of cards").not.toBeNull();
+    expect(fit!.n, "one tile per card in dummy's hand").toBeGreaterThan(0);
+    expect(
+      fit!.spare,
+      `the whole hand fits the rail (${fit!.n} cards in ${Math.round(fit!.railH)}px)`,
+    ).toBeGreaterThanOrEqual(-0.5);
+
+    // (4) AND THE CARDS FIT ACROSS IT. The rail was narrowed to hand width back
+    // to the felt, and the type is sized from the STRIP — so a taller band makes
+    // the rank bigger without making the card wider. The widest thing a card has
+    // to say is a "10" at one end and a pip at the other; if that ever stops
+    // fitting it wraps or clips silently, which is why this is measured.
+    const across = await page.evaluate(() => {
+      const rail = document.querySelector('[data-testid="dummy-strip"]')!;
+      const cards = [...rail.querySelectorAll("div > span")] as HTMLElement[];
+      return cards
+        .map((c) => c.scrollWidth - c.clientWidth)
+        .reduce((a, b) => Math.max(a, b), 0);
+    });
+    expect(across, "no card's rank and pip overflow its width").toBeLessThanOrEqual(0);
   });
 
   // ?bars=off hides the edge toolbars so the felt can be judged, or embedded in
@@ -545,5 +697,221 @@ test.describe("mobile table v3 — phone tier", () => {
       await page.getByTestId("auction-rows").evaluate((el) => el.clientHeight),
       "the grid still reserves four rows once calls have arrived",
     ).toBe(223);
+  });
+
+  // The safe default, and the reason the setting exists (decisions doc, "Play
+  // modes"): `raise` ships ON, so a tap LIFTS a card and only a second tap on
+  // the same card plays it. Nothing else in this suite plays a card by
+  // clicking one, so without this the default could invert and every test
+  // would still pass.
+  test("raise mode: a first tap lifts a card and never plays it", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    // Playability is cursor:pointer + an armed handler, not an attribute.
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+
+    const card = await dealUntilPlayable(page);
+    const sel = `button[aria-label="${card}"]`;
+    const before = await page.locator('button[aria-label^="Play "]').count();
+
+    await page.locator(sel).first().click();
+    await page.waitForTimeout(400);
+    expect(await page.locator(sel).count(), "the card is still in the hand").toBeGreaterThan(0);
+    expect(
+      await page.locator('button[aria-label^="Play "]').count(),
+      "no card left any hand on the first tap",
+    ).toBe(before);
+    expect(
+      await page.locator(sel).first().getAttribute("data-held"),
+      "and it is marked as the card the next tap commits",
+    ).not.toBeNull();
+
+    // A tap anywhere that is not a card puts it back down.
+    await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+    expect(
+      await page.locator(sel).first().getAttribute("data-held"),
+      "a tap off the cards clears the lift",
+    ).toBeNull();
+
+    // Two taps on the same card play it.
+    await page.locator(sel).first().click();
+    await page.waitForTimeout(200);
+    await page.locator(sel).first().click();
+    await expect(page.locator(sel)).toHaveCount(0, { timeout: 5000 });
+  });
+
+  // The played card travels from WHERE IT SAT (owner, 2026-08-13: "make it
+  // glide from the position of the card in the hand to the middle, not just
+  // from the middle always"). The seat-direction keyframes could only start a
+  // card from a fixed vector, so every South card rose from the same spot.
+  // Playing the LEFTMOST playable card is what makes the horizontal component
+  // provable: a fixed-vector glide has no x at all.
+  test("a played card flies from its place in the hand, not from the middle", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    const card = await dealUntilPlayable(page, "leftmost");
+
+    // Sample the trick card's transform every frame, from before it exists.
+    await page.evaluate(() => {
+      const w = window as unknown as { __t: string[] };
+      w.__t = [];
+      const t0 = performance.now();
+      const tick = () => {
+        const el = document.querySelector('[data-testid="trick-card"][data-seat="S"]');
+        if (el) w.__t.push(getComputedStyle(el).transform);
+        if (performance.now() - t0 < 6000) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
+
+    // Two taps, because `raise` is the default.
+    await page.locator(`button[aria-label="${card}"]`).first().click();
+    await page.waitForTimeout(120);
+    await page.locator(`button[aria-label="${card}"]`).first().click();
+    await page.waitForTimeout(900);
+
+    const frames = (await page.evaluate(() => (window as unknown as { __t: string[] }).__t))
+      .map((m) => /matrix\(([^)]+)\)/.exec(m)?.[1]?.split(",").map(Number))
+      .filter((a): a is number[] => !!a && a.length === 6)
+      .map((a) => ({ x: Math.round(a[4]!), y: Math.round(a[5]!) }));
+    expect(frames.length, "the card was sampled while it travelled").toBeGreaterThan(2);
+    const first = frames[0]!;
+    const last = frames[frames.length - 1]!;
+    // The hand sits BELOW the trick, so the start offset is positive in y; the
+    // leftmost card is well to the left of its slot, so x is large too. Both are
+    // in the element's own coordinates — the stage scale is divided out.
+    expect(first.y, "it starts down at the hand").toBeGreaterThan(40);
+    expect(Math.abs(first.x), "and sideways at the card, not the middle").toBeGreaterThan(40);
+    expect(Math.abs(last.y), "and settles into its slot").toBeLessThan(6);
+    expect(Math.abs(last.x), "and settles into its slot").toBeLessThan(6);
+  });
+
+  // The plate under your hand is ONE SIZE all board (owner, 2026-08-13, having
+  // raised it twice: "why does the nameplate shrink with the cards. it should be
+  // the same size"). It used to span the hand's actual width, so it crept inward
+  // by a pitch on every card played; a floor was tried first and only moved
+  // where the shrinking stopped, which is why this is pinned by width equality
+  // rather than by a minimum.
+  test("the seat plate is the same width all board", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await dealUntilPlayable(page); // a board on which South actually plays
+
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+    const plateW = () =>
+      page.evaluate(() => {
+        const el = document.querySelector(
+          '[data-testid="phone-stage"] [data-testid="seat-plate"][data-seat="S"]',
+        );
+        return el ? Math.round(el.getBoundingClientRect().width) : -1;
+      });
+
+    const widths: number[] = [];
+    for (let round = 0; round < 4; round++) {
+      const card = await playableCard(page);
+      if (!card) break;
+      widths.push(await plateW());
+      // `raise` is the default, so two taps.
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(150);
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(1400);
+    }
+    expect(widths.length, "several cards were played").toBeGreaterThan(2);
+    expect(widths.every((w) => w > 0), "the plate was found each time").toBe(true);
+    expect(new Set(widths).size, `one width all board, saw ${JSON.stringify(widths)}`).toBe(1);
+  });
+
+  // A finished trick WAITS (decisions doc, "Trick pause"; default `tap`). Three
+  // properties, and the first two are what make it worth having: the trick is
+  // not swept by the beat that would otherwise step the robots on, and the hand
+  // is inert so the winner — who may be you — cannot lead to the next trick
+  // before seeing who took this one.
+  test("a finished trick waits for a tap, with the hand inert", async ({ page }) => {
+    test.setTimeout(150_000); // may deal several boards to find South a turn
+    await page.context().clearCookies();
+    await signInAs(page.context(), "user_reviewer_rhea");
+    await page.setViewportSize(PHONE);
+    await freshHumanTable(page);
+
+    const armed = (q: string) =>
+      page
+        .evaluate((sel) => {
+          const b = [...document.querySelectorAll(sel)].find(
+            (x) => getComputedStyle(x).cursor === "pointer",
+          );
+          return b ? b.getAttribute("aria-label") : null;
+        }, q)
+        .catch(() => null);
+    const trickCards = () => page.locator('[data-testid="trick-card"]').count();
+
+    for (let round = 0; round < 14; round++) {
+      if ((await trickCards()) === 4) break;
+      let card: string | null = null;
+      for (let i = 0; i < 120 && !card; i++) {
+        if ((await trickCards()) === 4) break;
+        card = await armed('button[aria-label^="Play "]');
+        if (card) break;
+        if (await armed('button[aria-label="Pass"]'))
+          await page.locator('button[aria-label="Pass"]').first().click({ timeout: 2000 }).catch(() => {});
+        await page.waitForTimeout(250);
+      }
+      if ((await trickCards()) === 4 || !card) break;
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(150);
+      await page.locator(`button[aria-label="${card}"]`).first().click();
+      await page.waitForTimeout(1200);
+    }
+    expect(await trickCards(), "a full trick on the felt").toBe(4);
+
+    // Well past the 750ms beat that would otherwise have stepped it on.
+    await page.waitForTimeout(4000);
+    expect(await trickCards(), "it waited instead of being swept").toBe(4);
+    // The pause is legible without a caption: the card that took the trick
+    // lifts and rings. It also answers who won, which a caption never did.
+    expect(
+      await page.evaluate(() =>
+        [...document.querySelectorAll('[data-testid="trick-card"]')].filter((e) => {
+          // The lift is on the WRAPPER, not the card: a card that glided in
+          // keeps a filling keyframe animation, and that beats an inline
+          // transform. And a card that has finished travelling sits at the
+          // IDENTITY matrix, which is not "none" — so test for the lift itself
+          // rather than for having any transform, or every card counts.
+          const m = /matrix\(([^)]+)\)/.exec(getComputedStyle(e.parentElement!).transform);
+          if (!m) return false;
+          const n = m[1]!.split(",").map(Number);
+          return Math.abs(n[0]! - 1) > 0.01 || Math.abs(n[5]!) > 1;
+        }).length,
+      ),
+      "exactly one card — the winner — is lifted",
+    ).toBe(1);
+    expect(await armed('button[aria-label^="Play "]'), "the hand is inert while it waits").toBeNull();
+
+    // A tap anywhere gathers it.
+    await page.getByTestId("phone-stage").click({ position: { x: 5, y: 5 } });
+    await expect.poll(() => trickCards(), { timeout: 12000 }).toBeLessThan(4);
   });
 });

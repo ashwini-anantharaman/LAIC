@@ -30,11 +30,18 @@ const FAILSAFE_MS = 12_000;
 
 export function BoardLoading({
   ready,
+  held = false,
   onGone,
   label = "Taking your seat…",
 }: {
   /** The board underneath is drawn — start the fade. */
   ready: boolean;
+  /**
+   * A curtain, not a loading screen: the parked table host keeps this over
+   * the old page so unparking never flashes it. While held the failsafe is
+   * suspended (a park has no 12-second budget) and the deal animation rests.
+   */
+  held?: boolean;
   /** The fade finished — the parent may unmount the cover. */
   onGone: () => void;
   label?: string;
@@ -45,8 +52,10 @@ export function BoardLoading({
   const onGoneRef = useRef(onGone);
   onGoneRef.current = onGone;
 
-  // Three card backs bobbing in a staggered deal rhythm.
+  // Three card backs bobbing in a staggered deal rhythm — resting while held
+  // (an invisible parked curtain should not animate for the whole park).
   useEffect(() => {
+    if (held) return;
     const loops = bobs.map((v, i) =>
       Animated.loop(
         Animated.sequence([
@@ -69,7 +78,7 @@ export function BoardLoading({
     );
     loops.forEach((l) => l.start());
     return () => loops.forEach((l) => l.stop());
-  }, [bobs]);
+  }, [bobs, held]);
 
   useEffect(() => {
     const fadeOut = () => {
@@ -86,12 +95,20 @@ export function BoardLoading({
       fadeOut();
       return;
     }
+    // Held: no failsafe. The curtain must outlast an arbitrarily long park;
+    // the clock starts (or restarts) when the hold lifts and a load begins.
+    if (held) return;
     const failsafe = setTimeout(fadeOut, FAILSAFE_MS);
     return () => clearTimeout(failsafe);
-  }, [ready, opacity]);
+  }, [ready, held, opacity]);
 
   return (
-    <Animated.View style={[styles.cover, { opacity }]} pointerEvents={ready ? "none" : "auto"}>
+    // Held, the curtain must be touch-INERT as well as invisible: the parked
+    // host is pointerEvents:none, but on react-native-web a child's "auto"
+    // re-enables itself THROUGH that (CSS pointer-events semantics), and an
+    // invisible full-screen shield over the app froze every tap after the
+    // first quit. It only blocks touches while a real board load is underway.
+    <Animated.View style={[styles.cover, { opacity }]} pointerEvents={ready || held ? "none" : "auto"}>
       <Animated.View style={styles.fan}>
         {bobs.map((v, i) => (
           <Animated.View

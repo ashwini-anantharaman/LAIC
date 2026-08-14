@@ -25,6 +25,7 @@ import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { loadTableView } from "@/lib/tableView";
 import { lookingAt } from "@/lib/coach/looking";
+import { boardTakeaway } from "@/lib/coach/takeaway";
 import { thinkAid } from "@/lib/coach/think";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import type { CoachData } from "@/components/table/play/coachContent";
@@ -49,13 +50,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; confirm?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, confirm, view: viewParam, paused, saved, error, from, coach: coachParam } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -115,6 +116,7 @@ export default async function PlayTablePage({
     centreFrame: appearance.centreFrame,
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
+    suitGroups: appearance.suitGroups,
   };
 
   const canSeatsPanel = control["table.seats_panel"];
@@ -183,26 +185,55 @@ export default async function PlayTablePage({
   // auction as a bidding diagram with each call's replayed meaning, every
   // trick kept, and per-event Q&A. Meanings are replayed from the compiled KB
   // exactly as the old page did — index-aligned with the auction, a lookup.
-  const coachMeanings = showCoach
-    ? bidMeaningReader({ compiled: await sessionService().compiledFor(record) }).forAuction({
+  const coachCompiled = showCoach ? await sessionService().compiledFor(record) : null;
+  const coachHands = {
+    N: originalHand(state, "N"),
+    E: originalHand(state, "E"),
+    S: originalHand(state, "S"),
+    W: originalHand(state, "W"),
+  };
+  const coachMeanings = coachCompiled
+    ? bidMeaningReader({ compiled: coachCompiled }).forAuction({
         boardRef: record.board.name,
         dealer: record.board.dealer,
         vul: state.vul,
-        hands: {
-          N: originalHand(state, "N"),
-          E: originalHand(state, "E"),
-          S: originalHand(state, "S"),
-          W: originalHand(state, "W"),
-        },
+        hands: coachHands,
         auction: state.auction,
       })
     : [];
+
+  // THE END-OF-BOARD TAKEAWAY (owner decision 2026-08-13): once the board is
+  // over, the coach's NOW screen becomes the review — a verdict chip per
+  // learner call (the partnership's own system judging), the moment that
+  // mattered with the solver's cost lines, and one line to remember. Null
+  // whenever the system was silent on every call the learner made — a coach
+  // with nothing to say says nothing, and the screen stays as it was.
+  const takeaway =
+    coachCompiled && boardOver && mySeat
+      ? await boardTakeaway({
+          record,
+          vul: state.vul,
+          dealtHands: coachHands,
+          learnerSeat: mySeat,
+          compiled: coachCompiled,
+        })
+      : null;
+  // The takeaway's verdicts, folded onto the history's auction rows the same
+  // way the meanings are — by auction index, a lookup.
+  const verdictAt = new Map((takeaway?.chips ?? []).map((c) => [c.auctionIndex, c.verdict]));
+
   const coachGroups = coachLooking?.eventGroups.map((g) => ({
     ...g,
     events: g.events.map((e) => {
       const m =
         e.kind === "call" && e.auctionIndex !== undefined ? coachMeanings[e.auctionIndex] : undefined;
-      return m ? { ...e, detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : e;
+      const v =
+        e.kind === "call" && e.auctionIndex !== undefined ? verdictAt.get(e.auctionIndex) : undefined;
+      return {
+        ...e,
+        ...(m ? { detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : {}),
+        ...(v ? { verdict: v } : {}),
+      };
     }),
   }));
   const quanCoach: CoachPanelData | undefined = showCoach
@@ -211,6 +242,7 @@ export default async function PlayTablePage({
         ...(coachLooking ? { looking: coachLooking.looking, facts: coachLooking.facts } : {}),
         ...(coachGroups?.length ? { eventGroups: coachGroups } : {}),
         ...(coachAid ? { aid: coachAid } : {}),
+        ...(takeaway ? { takeaway } : {}),
         ...(mySeat
           ? {
               ask: {
@@ -257,10 +289,9 @@ export default async function PlayTablePage({
   // changed — the app's convention for table toggles. `paused` is kept so a
   // settings change doesn't remount AutoAdvance and surprise-pause the table.
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
-  const confirmBids = confirm === "1";
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, confirm, view: viewParam, paused, coach: coachParam };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -285,10 +316,48 @@ export default async function PlayTablePage({
       value: speed === "fast" ? "Fast" : speed === "slow" ? "Slow" : "Normal",
       href: settingsHref({ speed: speed === "slow" ? "fast" : speed === "fast" ? undefined : "slow" }),
     },
+    // No "Confirm bids" row (owner direction 2026-08-13): a tap on a call IS
+    // the call — the staged-confirm machinery in @bridge/table-ui sits unused.
+    // How a tap resolves, and how a finished trick clears. Both persist per
+    // user like the appearance rows below rather than riding a search param:
+    // they are preferences about how you PLAY, so they should follow you to
+    // the next board and the next device without being in the URL. Each row
+    // cycles its own values — one row per question, as decided.
     {
-      label: "Confirm bids",
-      value: confirmBids ? "On" : "Off",
-      href: settingsHref({ confirm: confirmBids ? undefined : "1" }),
+      label: "Playing a card",
+      value:
+        appearance.playMode === "off"
+          ? "One tap"
+          : appearance.playMode === "raise"
+            ? "Tap to lift, tap to play"
+            : "Tap for the suit",
+      action: patchAppearanceAction.bind(null, sessionId, {
+        playMode:
+          appearance.playMode === "off"
+            ? ("raise" as const)
+            : appearance.playMode === "raise"
+              ? ("suit" as const)
+              : ("off" as const),
+      }),
+    },
+    {
+      label: "After a trick",
+      value: appearance.trickPause === "tap" ? "Tap to continue" : appearance.trickPause,
+      action: patchAppearanceAction.bind(null, sessionId, {
+        trickPause:
+          appearance.trickPause === "tap"
+            ? ("1s" as const)
+            : appearance.trickPause === "1s"
+              ? ("2s" as const)
+              : appearance.trickPause === "2s"
+                ? ("3s" as const)
+                : ("tap" as const),
+      }),
+    },
+    {
+      label: "Group suits in hand",
+      value: appearance.suitGroups ? "On" : "Off",
+      action: patchAppearanceAction.bind(null, sessionId, { suitGroups: !appearance.suitGroups }),
     },
     // The coach's own switch. Only offered where the coach can exist at all
     // (table.coach) — on a table that never carries one there is nothing to
@@ -540,7 +609,6 @@ export default async function PlayTablePage({
         // a cream beat, then the phone tier directly.
         bootNeutral={embedded}
         auctionDisplay={bboAuction === "seats" ? "seats" : "box"}
-        confirmBids={confirmBids}
         resultLine={resultLine}
         resultScore={resultScore}
         resultDetail={resultDetail}
@@ -555,6 +623,11 @@ export default async function PlayTablePage({
         controlsExtra={canStepControls ? controlsAt(1) : undefined}
         controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
         railExtra={seatsPanel}
+        // How a tap plays a card, and how a finished trick clears — the two
+        // play preferences origin/main's table reads (persisted per user via
+        // the ☰ rows above).
+        playMode={appearance.playMode}
+        trickPause={appearance.trickPause}
         settings={canSettingsMenu ? settings : undefined}
         viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
         // Inside the coach app the felt runs edge to edge: no info bar (the
