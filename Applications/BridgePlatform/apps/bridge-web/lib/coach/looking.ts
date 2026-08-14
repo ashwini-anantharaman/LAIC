@@ -55,6 +55,19 @@ export interface LookingEvent {
    * attaches the meaning it already computed for the bidding grid.
    */
   auctionIndex?: number;
+  /**
+   * For a play: where the card sits — trick number and position within it.
+   * The address `ben-tell?play=` wants, same role as auctionIndex above.
+   */
+  trickIndex?: number;
+  playIndex?: number;
+  /**
+   * The decision behind this card was the LEARNER'S — their own card (unless
+   * they were dummy, whose cards declarer chose), or dummy's card while they
+   * were declaring. What gates the "what if" ask: BEN reasoning from any
+   * other seat reads a hand the learner never controlled.
+   */
+  mine?: boolean;
 }
 
 /**
@@ -152,6 +165,47 @@ export function lookingAt(
       };
     });
 
+  // Every played trick as a group — shared by the live play and the finished
+  // board, because the history must not vanish when the last card lands.
+  const trickGroups = (): LookingEventGroup[] => {
+    const declarer = state.contract?.declarer;
+    const dummy = declarer ? partnerOf(declarer) : null;
+    const groups: LookingEventGroup[] = [];
+    state.tricks.forEach((t, ti) => {
+      if (!t.plays.length) return;
+      groups.push({
+        id: `trick-${ti}`,
+        // An unfinished trick can only be the last one; every completed trick
+        // keeps its number and its outcome.
+        title: t.winner ? `Trick ${ti + 1}` : "This trick",
+        ...(t.winner ? { note: `won by ${relative(t.winner, seat)}` } : {}),
+        events: t.plays.map((p, i) => {
+          const who = Relative(p.seat, seat);
+          const verb = i === 0 ? "led" : "played";
+          const token = cardLabel(p.card);
+          // Whose DECISION the card was: the learner's own card (unless they
+          // were dummy — declarer chose those), or dummy's card while the
+          // learner declared.
+          const mine =
+            (p.seat === seat && seat !== dummy) || (seat === declarer && p.seat === dummy);
+          return {
+            id: `play-${ti}-${i}`,
+            label: `${who} ${verb} the ${token}`,
+            kind: "play" as const,
+            seat: p.seat,
+            who,
+            verb,
+            token,
+            trickIndex: ti,
+            playIndex: i,
+            ...(mine ? { mine } : {}),
+          };
+        }),
+      });
+    });
+    return groups;
+  };
+
   // The shape's flip side spells the glyphs out in words, so the back can be
   // read by someone who hasn't internalized the symbols yet.
   const shapeDetail = `${SUITS
@@ -166,8 +220,11 @@ export function lookingAt(
       looking: auctionSentence(state.auction, seat, state.turn),
       facts: [
         { label: "HCP", value: String(points), detail: HCP_DETAIL },
-        { label: "", value: shape, detail: shapeDetail },
-        { label: "", value: kind, ...(KIND_DETAIL[kind] ? { detail: KIND_DETAIL[kind] } : {}) },
+        // Titled ON PURPOSE (owner direction 2026-08-13): a titled card
+        // starts sealed — count your own suits before peeking. The system
+        // card below stays untitled and open: identity, not an exercise.
+        { label: "Distribution", value: shape, detail: shapeDetail },
+        { label: "Shape", value: kind, ...(KIND_DETAIL[kind] ? { detail: KIND_DETAIL[kind] } : {}) },
         ...(system
           ? [{ label: "", value: system, detail: "The bidding system this table plays." }]
           : []),
@@ -221,30 +278,7 @@ export function lookingAt(
     if (state.auction.length) {
       groups.push({ id: "auction", title: "The auction", events: callEvents() });
     }
-    state.tricks.forEach((t, ti) => {
-      if (!t.plays.length) return;
-      groups.push({
-        id: `trick-${ti}`,
-        // An unfinished trick can only be the last one; every completed trick
-        // keeps its number and its outcome.
-        title: t.winner ? `Trick ${ti + 1}` : "This trick",
-        ...(t.winner ? { note: `won by ${relative(t.winner, seat)}` } : {}),
-        events: t.plays.map((p, i) => {
-          const who = Relative(p.seat, seat);
-          const verb = i === 0 ? "led" : "played";
-          const token = cardLabel(p.card);
-          return {
-            id: `play-${ti}-${i}`,
-            label: `${who} ${verb} the ${token}`,
-            kind: "play" as const,
-            seat: p.seat,
-            who,
-            verb,
-            token,
-          };
-        }),
-      });
-    });
+    groups.push(...trickGroups());
     // Where the board is right now — a just-finished trick stays current (and
     // open in the panel) until the next lead, exactly when you'd ask about it.
     if (groups.length) groups[groups.length - 1]!.current = true;
@@ -265,16 +299,24 @@ export function lookingAt(
     };
   }
 
-  // Between boards, or a board that is finished.
+  // Between boards, or a board that is finished. The RECORD stays: a finished
+  // board keeps its whole history — the auction and every trick — because
+  // review is exactly when the History screen gets read (and asked: the
+  // "what if" affordance lives on these rows once the board is over).
   return {
     looking: state.contract
       ? `The board is done — ${state.contract.level}${state.contract.strain === "N" ? "NT" : GLYPH[state.contract.strain]} by ${SEAT_NAME[state.contract.declarer]}.`
       : "Nothing in play yet.",
     facts: [
       { label: "HCP dealt", value: String(points), detail: HCP_DETAIL },
-      { label: "", value: shape, detail: shapeDetail },
+      { label: "Distribution", value: shape, detail: shapeDetail },
     ],
-    eventGroups: [],
+    eventGroups: [
+      ...(state.auction.length
+        ? [{ id: "auction", title: "The auction", events: callEvents() }]
+        : []),
+      ...trickGroups(),
+    ],
   };
 }
 

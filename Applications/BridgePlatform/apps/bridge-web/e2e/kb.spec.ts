@@ -795,19 +795,15 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
   await expect(page.getByText("Table settings")).toHaveCount(0);
 
-  // Confirm bids: with confirm=1, a human call is STAGED — Cancel discards,
-  // Confirm lands it. The board runs on its own until it's our turn.
+  // No confirm step any more (owner direction 2026-08-13): the page ignores
+  // any stale ?confirm=1 and a call lands the moment it is tapped — the
+  // staged "Confirm your call" bar must never appear.
   await page.goto(`/bridge/table2/${sid}?confirm=1`);
   const pass = page.getByRole("button", { name: "Pass", exact: true });
   await expect(async () => {
     expect(await pass.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   }).toPass({ timeout: 30_000 });
   await pass.click();
-  await expect(page.getByText(/Confirm your call/)).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
-  await pass.click();
-  await page.getByRole("button", { name: /Confirm Pass/ }).click();
   await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
 
   // PHONE tier (Mobile Table design): one vertical stack, and NO West/East

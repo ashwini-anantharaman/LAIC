@@ -18,6 +18,7 @@ import { AccessError, apiError, requireContext } from "@/lib/api";
 import { originalHand } from "@/lib/benSeat";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import { lookingAt } from "@/lib/coach/looking";
+import { boardTakeaway } from "@/lib/coach/takeaway";
 import { thinkAid } from "@/lib/coach/think";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { sessionService } from "@/lib/sessions";
@@ -50,26 +51,50 @@ export async function GET(
 
     // Bid meanings, replayed from the compiled KB — folded into the history
     // rows exactly as the page folds them.
-    const meanings = looking
-      ? bidMeaningReader({ compiled: await sessionService().compiledFor(record) }).forAuction({
+    const compiled = looking ? await sessionService().compiledFor(record) : null;
+    const hands = {
+      N: originalHand(state, "N"),
+      E: originalHand(state, "E"),
+      S: originalHand(state, "S"),
+      W: originalHand(state, "W"),
+    };
+    const meanings = compiled
+      ? bidMeaningReader({ compiled }).forAuction({
           boardRef: record.board.name,
           dealer: record.board.dealer,
           vul: state.vul,
-          hands: {
-            N: originalHand(state, "N"),
-            E: originalHand(state, "E"),
-            S: originalHand(state, "S"),
-            W: originalHand(state, "W"),
-          },
+          hands,
           auction: state.auction,
         })
       : [];
+
+    // The end-of-board takeaway, exactly as the page computes it (owner
+    // decision 2026-08-13) — the app's dock renders the ORIGINAL coach, so
+    // its payload carries everything the web sheet's does.
+    const takeaway =
+      compiled && v.boardOver && v.mySeat
+        ? await boardTakeaway({
+            record,
+            vul: state.vul,
+            dealtHands: hands,
+            learnerSeat: v.mySeat,
+            compiled,
+          })
+        : null;
+    const verdictAt = new Map((takeaway?.chips ?? []).map((c) => [c.auctionIndex, c.verdict]));
+
     const eventGroups = (looking?.eventGroups ?? []).map((g) => ({
       ...g,
       events: g.events.map((e) => {
         const m =
           e.kind === "call" && e.auctionIndex !== undefined ? meanings[e.auctionIndex] : undefined;
-        return m ? { ...e, detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : e;
+        const verdict =
+          e.kind === "call" && e.auctionIndex !== undefined ? verdictAt.get(e.auctionIndex) : undefined;
+        return {
+          ...e,
+          ...(m ? { detail: `${m.label}${m.shows ? ` — ${m.shows}` : ""}` } : {}),
+          ...(verdict ? { verdict } : {}),
+        };
       }),
     }));
 
@@ -92,6 +117,7 @@ export async function GET(
         ...(looking ? { looking: looking.looking, facts: looking.facts } : {}),
         ...(eventGroups.length ? { eventGroups } : {}),
         ...(think ? { aid: think } : {}),
+        ...(takeaway ? { takeaway } : {}),
         ...(v.mySeat
           ? { ask: { sessionId: id, active: phase !== "other" && v.myTurn, phase } }
           : {}),

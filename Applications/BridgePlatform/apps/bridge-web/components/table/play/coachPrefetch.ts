@@ -143,6 +143,29 @@ export function fetchBenTell(sessionId: string, epoch: string): Promise<BenAnswe
 }
 
 /**
+ * BEN's read of a PAST decision — the History screen's "what if". `query` is
+ * ben-tell's own addressing for the spot: "at=3" for a call, "play=6-1" for
+ * a card. Never prefetched (a finished board holds up to 26 of these, most
+ * never asked); cached hard once asked — the position is over and cannot
+ * change, so a 40-second simulation is paid at most once per spot. Only a
+ * miss stays retryable, same rule as everything above.
+ */
+export function fetchBenWhatIf(sessionId: string, query: string): Promise<BenAnswer> {
+  const key = `benwhatif:${sessionId}:${query}`;
+  return once(key, async () => {
+    const res = await fetch(
+      `/api/bridge/ben-tell?sessionId=${encodeURIComponent(sessionId)}&${query}`,
+    );
+    const body = (await res.json()) as { tell?: BenTell | null; reason?: string };
+    if (!body.tell) {
+      cache.delete(key); // a miss stays retryable
+      return { tell: null, ...(body.reason ? { reason: body.reason } : {}) };
+    }
+    return { tell: body.tell };
+  });
+}
+
+/**
  * Fire the fetches the moment the decision is the learner's — called by the
  * coach's always-mounted hosts (the dock, the sheet), NOT by the screens that
  * display the answers. Results land in the shared cache above; errors are
