@@ -1607,7 +1607,14 @@ export function PlayTable({
       // and it fires on the way DOWN through the tree — a tap that lands on a
       // card stops at the card's own handler, which runs first.
       onClick={held != null || openSuit != null ? () => { setHeld(null); setOpenSuit(null); } : undefined}
-      style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
+      // NO pinned height (merge resolution, 2026-08-13): origin/main pinned
+      // the stage to the budget's worst-case height (minHeight/height:
+      // stageH), which predates the measured-footprint model above — pinned,
+      // offsetHeight reads the pin, the bleed can only refund the scale loss,
+      // and every band the budget priced but the phase never drew rendered as
+      // dead white between the toolbar and the coach. Content decides the
+      // height; the measured bleed hands the slack to the coach panel.
+      style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
     >
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
