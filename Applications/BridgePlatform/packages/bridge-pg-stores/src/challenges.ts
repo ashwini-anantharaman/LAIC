@@ -323,4 +323,35 @@ export class PgChallengeStore implements ChallengeStore {
     check(res, "challenges.decision.count");
     return res.count ?? 0;
   }
+
+  /**
+   * Erase a challenge and everything under it.
+   *
+   * The six tables have NO foreign keys between them (0027 declares challenge_id as
+   * plain text), so nothing cascades: deleting only the challenge row would leave
+   * five tables of rows keyed to an id nothing resolves. Each is removed explicitly.
+   *
+   * CHILDREN FIRST, parent last. Every child delete is keyed on challenge_id alone,
+   * so the order is not strictly required here — but it is the order that stays
+   * correct if a child is ever selected THROUGH the parent, and getting used to the
+   * other order is how orphans appear.
+   */
+  async deleteChallenge(challengeId: string) {
+    for (const table of [
+      "bridge_ben_decisions",
+      "bridge_challenge_baselines",
+      "bridge_challenge_plays",
+      "bridge_challenge_invites",
+      "bridge_challenge_boards",
+    ]) {
+      check(
+        await this.db.from(table).delete().eq("challenge_id", challengeId),
+        `challenges.delete.${table}`,
+      );
+    }
+    check(
+      await this.db.from("bridge_challenges").delete().eq("challenge_id", challengeId),
+      "challenges.delete",
+    );
+  }
 }
