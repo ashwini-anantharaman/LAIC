@@ -684,7 +684,7 @@ describe("the coach reads the table", () => {
     // The trace is the proof: it lists every move the panel assessed, and no
     // card of West's or North's may appear in it.
     const trace = listening(asDummy)!.detail ?? "";
-    expect(trace, "dummy's board must assess no cards").not.toMatch(/S5|S6/);
+    expect(trace, "dummy's board must assess no cards").not.toMatch(/\bS5\b|\bS6\b/);
     // Their own call is still assessed — being dummy does not retract the auction.
     expect(trace.startsWith("Heard: S P.")).toBe(true);
     // And the status line reports zero judged rather than implying coverage.

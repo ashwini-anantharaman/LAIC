@@ -9,8 +9,10 @@
 // It reuses PlayTable's exact bid plumbing: a legal cell click calls onStage
 // (the host's stageCall — which either fires onCall or parks the call in
 // `pending` when confirmBids is on); onConfirm / onCancel resolve the staged
-// call. Illegal cells sit at opacity .3 and are inert; a pending call freezes
-// the whole pad. One geometry knob — `cell` — drives every dimension.
+// call. Illegal cells sit at opacity .3 and are inert. A pending call freezes
+// the whole pad in the authored Confirm/Cancel style; in the "ok" style it does
+// not, because re-tapping a call is how you clear or change it. One geometry
+// knob — `cell` — drives every dimension.
 
 import type { CSSProperties } from "react";
 import { STRAIN_TINT, type Strain } from "@bridge/table-config";
@@ -88,6 +90,21 @@ export interface BidColumnsProps {
   minCellH?: number;
   /** Skin corner radius (px) for the column boxes and PASS/X/XX row. */
   radius?: number;
+  /**
+   * How a staged call is resolved.
+   *
+   * `"buttons"` (default) is the authored pair — Confirm and Cancel — and the
+   * pad freezes while a call is staged.
+   *
+   * `"ok"` is BBO's economy (owner, 2026-08-12): ONE button, and the pad stays
+   * live underneath it. The staged call is outlined where it sits in the grid
+   * rather than only named in the row, so the thing you are confirming is the
+   * thing you pressed; tapping it again un-stages it, and tapping a different
+   * call re-stages to that one. There is no Cancel because there is nothing a
+   * Cancel would do that tapping the call again does not — which is the point:
+   * the escape is where your finger already is.
+   */
+  confirmStyle?: "buttons" | "ok";
   /** Calls legal right now — the same list PlayTable feeds its BidBox. */
   legalCalls: readonly string[];
   /** True when the human is on turn and no call is staged (boxLive). */
@@ -106,6 +123,7 @@ export function BidColumns({
   cell = 46,
   minCellH = 0,
   radius = 5,
+  confirmStyle = "buttons",
   legalCalls,
   live,
   pending,
@@ -121,24 +139,34 @@ export function BidColumns({
   const levelFont = Math.round(cell * 0.62);
   const glyphFont = Math.round(cell * 0.42);
   const legal = new Set(legalCalls);
-  const inert = pending != null;
+  const staged = pending != null;
+  // The authored pair freezes the pad while a call waits; "ok" does not, because
+  // re-tapping is how you both cancel and change your mind.
+  const inert = staged && confirmStyle !== "ok";
   const cm = confirmMetrics(cell);
+  /** Tapping the staged call again clears it; any other legal call replaces it. */
+  const press = (call: string) => (pending === call ? onCancel() : onStage(call));
 
   const cellBtn = (strain: Strain, level: number) => {
     const call = `${level}${strain}`;
     const tint = STRAIN_TINT[strain];
     const isLegal = legal.has(call);
     const ok = live && !inert && isLegal;
+    const isStaged = pending === call;
     return (
       <button
         key={call}
         type="button"
         disabled={inert}
-        onClick={ok ? () => onStage(call) : undefined}
+        onClick={ok ? () => press(call) : undefined}
         aria-label={`${level}${strain === "N" ? "NT" : strain}`}
+        aria-pressed={confirmStyle === "ok" && isLegal ? isStaged : undefined}
         style={{
           display: "flex", alignItems: "baseline", justifyContent: "center", gap: 1,
-          width: cellW, height: cellH, padding: 0, background: "transparent", border: 0,
+          width: cellW, height: cellH, padding: 0,
+          background: isStaged ? "rgba(255,255,255,.92)" : "transparent",
+          border: 0, outline: isStaged ? `2px solid ${tint.ink}` : "none", outlineOffset: -2,
+          borderRadius: isStaged ? Math.round(radius * 0.8) : 0,
           color: tint.ink, lineHeight: 1, cursor: ok ? "pointer" : "default",
           opacity: isLegal ? 1 : 0.3,
         }}
@@ -157,10 +185,12 @@ export function BidColumns({
         key={call}
         type="button"
         disabled={inert}
-        onClick={ok ? () => onStage(call) : undefined}
+        onClick={ok ? () => press(call) : undefined}
         aria-label={call === "P" ? "Pass" : call === "X" ? "Double" : "Redouble"}
+        aria-pressed={confirmStyle === "ok" && isLegal ? pending === call : undefined}
         style={{
-          width: w, height: cellH, background: bg, border: `${BORDER}px solid ${border}`, borderRadius: radius,
+          width: w, height: cellH, background: bg,
+          border: `${BORDER}px solid ${pending === call ? "#fff" : border}`, borderRadius: radius,
           color: "#fff", fontWeight: 700, fontSize: levelFont, lineHeight: 1,
           cursor: ok ? "pointer" : "default", opacity: isLegal ? 1 : 0.3, ...extra,
         }}
@@ -172,7 +202,23 @@ export function BidColumns({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap }}>
-      {pending != null && (
+      {pending != null && confirmStyle === "ok" && (
+        // One button. The staged call is outlined in the grid where you pressed
+        // it, so this row does not have to name it twice — it says what pressing
+        // OK will do, and nothing else.
+        <div style={{ display: "flex", alignItems: "center", gap: cm.gap, padding: `${CONFIRM_PAD}px 0` }}>
+          <span style={{ fontSize: cm.callFont, fontWeight: 700, color: "#12281f", whiteSpace: "nowrap" }}>{callText(pending)}</span>
+          <button
+            type="button"
+            onClick={onConfirm}
+            aria-label={`Bid ${callText(pending)}`}
+            style={{ height: cm.btnH, padding: `0 ${Math.round(cm.padX * 1.6)}px`, border: "1px solid #0c4b0b", borderRadius: radius, background: "#116710", color: "#fff", fontSize: cm.btnFont, fontWeight: 700, lineHeight: 1, letterSpacing: ".06em", whiteSpace: "nowrap", cursor: "pointer" }}
+          >
+            OK
+          </button>
+        </div>
+      )}
+      {pending != null && confirmStyle === "buttons" && (
         <div style={{ display: "flex", alignItems: "center", gap: cm.gap, padding: `${CONFIRM_PAD}px 0` }}>
           <span style={{ fontSize: cm.callFont, fontWeight: 700, color: "#12281f", whiteSpace: "nowrap" }}>{callText(pending)}</span>
           <button

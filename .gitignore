@@ -78,3 +78,8 @@ Components/Generalizable Coach/domains/bridge/knowledge/*.pdf
 
 # Dead SDK-57 scaffold kept locally for reference only
 Applications/bridge-coach-app-sdk57-backup/
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules

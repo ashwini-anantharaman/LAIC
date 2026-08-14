@@ -31,7 +31,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { resolveSkin, type SkinTokens, type TableAppearance } from "@bridge/table-config";
+import { resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
@@ -78,17 +78,36 @@ const M_CARD: SeatHandMetrics & { backW: number } = {
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
-/** The trick's cards ARE the hand's cards (owner, 2026-08-11): a centre card
-    bigger than the cards you hold reads as a different deck. The compass takes
-    the hand's card box and index type, so the two match exactly. */
-const M_TRICK_CARD = { w: M_CARD.w, h: M_CARD.h };
-const M_TRICK_INDEX = { rank: M_CARD.rank, glyph: M_CARD.glyph };
+/**
+ * The trick card is LARGER than a hand card — 1.3x on height (owner,
+ * 2026-08-12), reversing the 2026-08-11 instruction that the two match. At hand
+ * size the played cards receded: the trick is the one thing everybody at the
+ * table is looking at, and it read as four more cards rather than as the trick.
+ * The band has the room — the compass uses roughly 192 of about 565 units.
+ *
+ * THE RATIO CHANGES TOO, and that matters more than the scale. A hand card is
+ * 56x96, a 1:1.71 box, and it is that tall-and-narrow ON PURPOSE: cards in the
+ * hand overlap by 8, so all anyone ever sees of one is the index strip down its
+ * left edge. A trick card is seen WHOLE, so it takes a real card's 1:1.4 —
+ * scaling the hand's 1:1.71 instead produced a card so narrow that a two-glyph
+ * "10" spanned nearly its full width and spilled out of the corner the layout
+ * had promised to keep clear.
+ *
+ * The index is sized against the CARD, not against the hand's index, for the
+ * same reason: the hand's rank fills its card because that is all you can see
+ * of it, whereas on a whole card an index that deep looks like a printing
+ * error. The face derives its own indexes from the box (TrickArea's FaceCard),
+ * so the only metric handed over is the card itself.
+ */
+/** The beat before your hand arms — long enough that the played card is well
+    clear of it, short enough that it never feels like lag. */
+const ARM_DELAY_MS = 300;
+
+const M_TRICK_H = Math.round(M_CARD.h * 1.3);
+const M_TRICK_CARD = { w: Math.round(M_TRICK_H / 1.4), h: M_TRICK_H };
 const M_TRICK_BOX = clusterBox(M_TRICK_CARD);
-/** The phone plate's floor. It still narrows with the hand it labels, but never
-    past what it has to SAY: at two cards left the hand is 104px wide and the
-    plate came out a stub reading "S du…", with the name and the dummy tag both
-    cut off. Wide enough for a badge, a name and a tag at the phone's type. */
-const M_PLATE_MIN = 260;
+/** How many cards a hand is dealt — what the plate is sized against. */
+const M_HAND_FULL = 13;
 
 // ---------------------------------------------------------------------------
 // Phone-tier band constants (Mobile Table.dc.html). The stack's content height
@@ -111,12 +130,15 @@ const TOUCH = 44;
  */
 const DUMMY_LINE = 54;
 /**
- * The rail's width. Wide enough for a suit in bridge notation at the strip's old
- * rank type (♠ plus about six ranks before the line wraps) and for the seat name
- * to stay horizontal — at 136 of a 720 stage there is no need to rotate it —
- * and narrow enough that the trick compass keeps the middle of the felt.
+ * The dummy rail's width. Narrowed from 136 (owner, 2026-08-13): the rail is
+ * `flex: none` beside a `flex: 1` felt, so every unit taken off it is a unit
+ * the trick gets. 116 still clears the widest thing a card has to say — a "10"
+ * at one end and a pip at the other, with about 20 units still between them on
+ * the tightest card. The fit is asserted rather than eyeballed: the type is
+ * sized from the STRIP, so a taller band grows the rank without growing the
+ * card, and the widest rank is the two-glyph "10".
  */
-const DUMMY_RAIL_W = 136;
+const DUMMY_RAIL_W = 116;
 /** The hand band: the lift headroom the row is given (paddingTop), the card
     itself, the 3px gap and the seat plate — plus a few px of rounding reserve.
     Derived from M_CARD.h so shortening the card SHORTENS THE TABLE instead of
@@ -210,7 +232,10 @@ const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 
  * construction, byte-identical to the pre-skin hard-coded constants above.
  */
 export type ResolvedAppearance = SkinTokens &
-  Pick<TableAppearance, "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius">;
+  Pick<
+    TableAppearance,
+    "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius" | "suitGroups"
+  >;
 
 const DEFAULT_LOOK: ResolvedAppearance = {
   ...resolveSkin("bbo"),
@@ -219,6 +244,9 @@ const DEFAULT_LOOK: ResolvedAppearance = {
   centreFrame: false,
   fanSpread: 56,
   fanRadius: 0,
+  // Off in the fallback look, which is the pre-skin table byte for byte; the
+  // owner's default (on) arrives with a real appearance from the store.
+  suitGroups: false,
 };
 
 /** The centre frame's gold surround (design token, wide/stacked only). */
@@ -305,6 +333,41 @@ export interface PlayTableProps {
   legalPlays?: readonly Card[];
   /** True when the human controls the seat on turn. */
   myTurn?: boolean;
+  /**
+   * How a tap on one of your own cards resolves (owner, 2026-08-12).
+   *
+   * `"off"` plays it. `"raise"` lifts it and wants a second tap on the SAME
+   * card — the default, because a finger on a thirteen-card row is imprecise
+   * and a mis-tap costs a trick. `"suit"` replaces the hand with the legal
+   * cards of the suit tapped, drawn larger, and plays on the second tap.
+   *
+   * Omitted, the table plays on one tap: every existing caller — the demo, the
+   * component tester, the embed — keeps the behaviour it was written against.
+   */
+  playMode?: PlayMode;
+  /**
+   * The finished trick has been gathered — draw the centre EMPTY.
+   *
+   * The engine keeps a completed trick as the last one until a card is played
+   * into the next, which is right for the model and wrong for the felt: once
+   * you have let the trick go, the cards should be off the table, the way they
+   * are at a real one. This is display only, deliberately — the state the table
+   * REASONS with is untouched, so following suit is still judged against the
+   * trick that was actually led.
+   */
+  trickCleared?: boolean;
+  /**
+   * Who took the trick now on the felt — display only, and supplied by the
+   * HOST rather than read off the state.
+   *
+   * `GameState` carries a `winner` on a completed trick, but the session store
+   * does not persist it: a trick the robots finished arrives with the field
+   * absent, so a table that trusted it lit the winner only when the human
+   * happened to play the fourth card. Working it out here would mean a copy of
+   * trick law in a presentational package, which is exactly the copy that
+   * drifts — so the host, which already has the engine, works it out.
+   */
+  trickWinner?: Seat | null;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -405,6 +468,9 @@ export function PlayTable({
   legalCalls = [],
   legalPlays = [],
   myTurn = false,
+  playMode = "off",
+  trickCleared = false,
+  trickWinner = null,
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -499,6 +565,26 @@ export function PlayTable({
 
   // Armed bid level and the staged (unconfirmed) call are instance state.
   const [armed, setArmed] = useState<number | null>(null);
+  /**
+   * The card lifted and waiting for its second tap ("S14"), or the suit the
+   * hand has been narrowed to. Both are the same idea — a tap that has been
+   * READ but not yet acted on — so they share one slot and one escape.
+   */
+  const [held, setHeld] = useState<string | null>(null);
+  const [openSuit, setOpenSuit] = useState<Suit | null>(null);
+  /**
+   * Your cards do not arm the instant the turn arrives — they wait a beat
+   * (owner, 2026-08-13: "so that it looks planned and not on accident").
+   *
+   * The lift used to appear in the same frame the played card was still
+   * travelling, so twelve cards twitched upward while one was mid-flight and it
+   * read as a glitch. The delay is on the STATE, not the CSS: the lift shares
+   * `transform` with the hand's FLIP slide, so a transition-delay would have
+   * held the gap-closing slide back too. Gating playability also means no card
+   * can be tapped while the previous one is still moving, which is a second
+   * small mercy.
+   */
+  const [handArmed, setHandArmed] = useState(false);
   const [pending, setPending] = useState<string | null>(null);
   useEffect(() => {
     setArmed(null);
@@ -755,7 +841,83 @@ export function PlayTable({
 
   /** Per-card playability the play leaves share (the old inline `on`/`live`). */
   const canPlay = (seat: Seat) => (card: Card) =>
-    myTurn && inPlay && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+    myTurn && inPlay && handArmed && state.turn === seat && playable.has(`${card.suit}${card.rank}`);
+
+  const cardId = (c: Card) => `${c.suit}${c.rank}`;
+
+  /**
+   * Where each seat's last played card was sitting when it was tapped.
+   *
+   * Captured HERE, in the handler, because this is the last moment the card
+   * still exists in the DOM: the play is optimistic, so by the time the trick
+   * renders the card has already left the hand. The lookup is by the aria-label
+   * the hand leaves on every card — a deal holds each card exactly once, so it
+   * cannot match the wrong one.
+   *
+   * Only the human's own taps have an origin. A robot's hand is face down and
+   * its cards have no position to fly from, so those seats stay null and fall
+   * back to the seat-direction glide.
+   */
+  const origins = useRef<Partial<Record<Seat, { x: number; y: number } | null>>>({});
+  const captureOrigin = (seat: Seat, card: Card) => {
+    if (typeof document === "undefined") return;
+    const el = document.querySelector(
+      `button[aria-label="Play ${rankText(card.rank)}${GLYPH[card.suit]}"]`,
+    );
+    const r = el?.getBoundingClientRect();
+    origins.current[seat] =
+      r && r.width > 0 ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+  };
+
+  /**
+   * What a tap on a playable card DOES — the one place the play modes live, so
+   * every leaf that shows a hand gets the same rule without knowing about it.
+   *
+   * `off` posts the card. `raise` posts only the card already lifted, and a tap
+   * on any other lifts that one instead — so no first tap can ever play. `suit`
+   * narrows the hand to the tapped card's suit first; once narrowed, everything
+   * on screen is legal and a tap posts.
+   */
+  const tapCard = (seat: Seat, card: Card) => {
+    const post = () => {
+      captureOrigin(seat, card);
+      onPlay?.(seat, card);
+    };
+    if (playMode === "off") return post();
+    if (playMode === "suit" && openSuit == null) return setOpenSuit(card.suit);
+    if (playMode === "suit") {
+      setOpenSuit(null);
+      return post();
+    }
+    if (held === cardId(card)) {
+      setHeld(null);
+      return post();
+    }
+    setHeld(cardId(card));
+  };
+
+  /** Is this the card lifted and waiting for its second tap? */
+  const isHeld = (card: Card) => playMode === "raise" && held === cardId(card);
+
+  // A tap that has been read but not acted on belongs to THIS turn. When the
+  // turn moves — you played, or the board advanced under you — the lift and the
+  // narrowed suit are stale, and leaving them up would arm a card you never
+  // chose on the next trick.
+  useEffect(() => {
+    setHeld(null);
+    setOpenSuit(null);
+  }, [state.turn, state.phase]);
+
+  // Re-armed on every turn change, so the beat lands once per card rather than
+  // once per board.
+  useEffect(() => {
+    if (!(myTurn && inPlay)) {
+      setHandArmed(false);
+      return;
+    }
+    const t = setTimeout(() => setHandArmed(true), ARM_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [myTurn, inPlay, state.turn, state.tricks.length]);
 
   /** Face-down cards — as many as the seat still HOLDS, not always 13. */
   const backs = (seat: Seat, m: { w: number; h: number } = { w: 14, h: 71 }) => (
@@ -768,7 +930,7 @@ export function PlayTable({
     width: number | string,
     m: { height?: number; badge?: number; font?: number; tagFont?: number; weight?: number } = {},
   ) => (
-    <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} metrics={m} />
+    <SeatPlate seat={seat} name={seats[seat].name} tag={seats[seat].tag} strip={seats[seat].strip} bg={plateBgFor(seat)} width={width} isDealer={seat === state.dealer} onTurn={state.turn === seat && (inPlay || inAuction)} metrics={m} />
   );
 
   /** Seats mode shows each seat's WHOLE bid history — latest call bold. */
@@ -794,13 +956,20 @@ export function PlayTable({
   const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW) => (
     <SeatHand
       cards={state.hands[seat]}
-      metrics={m}
+      // The seams are a property of the LOOK, so they ride the metrics bag
+      // rather than becoming a second prop every caller has to thread.
+      metrics={{ ...m, suitGaps: tok.suitGroups }}
       layout="row"
       fanSpread={tok.fanSpread}
       fanRadius={tok.fanRadius}
       backColor={tok.cardBack}
       isPlayable={canPlay(seat)}
-      onPlay={(card) => onPlay?.(seat, card)}
+      isHeld={isHeld}
+      // In `suit` mode the hand IS the narrowed suit while one is open — the
+      // point of the mode is that the cards get bigger, which they cannot do
+      // while twelve others are still on the row.
+      only={openSuit && canPlay(seat) !== undefined ? openSuit : null}
+      onPlay={(card) => tapCard(seat, card)}
     />
   );
 
@@ -819,7 +988,7 @@ export function PlayTable({
       bare={m.bare}
       touch={!!m.touch && myTurn && inPlay && state.turn === seat}
       isPlayable={canPlay(seat)}
-      onPlay={(card) => onPlay?.(seat, card)}
+      onPlay={(card) => tapCard(seat, card)}
     />
   );
 
@@ -896,14 +1065,23 @@ export function PlayTable({
     />
   );
 
-  const currentPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  const currentPlays =
+    inPlay && !trickCleared ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
 
   /** The trick as real card faces; `k` scales the whole box. Wide keeps the
       262px compass that spreads to the corners; the phone gets a tight
       interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
   const trickCluster = (k: number) => (
-    <TrickArea variant="cluster" plays={currentPlays} turn={state.turn} scale={k} card={M_TRICK_CARD} index={M_TRICK_INDEX} />
+    <TrickArea
+      variant="cluster"
+      plays={currentPlays}
+      turn={state.turn}
+      scale={k}
+      card={M_TRICK_CARD}
+      originOf={(seat) => origins.current[seat] ?? null}
+      winner={currentPlays.length === 4 ? trickWinner : null}
+    />
   );
 
   const resultCard = (
@@ -1243,26 +1421,133 @@ export function PlayTable({
    * the lead the rail is a name and nothing else: dummy spreads on the lead, and
    * that is bridge law, not a layout preference.
    */
+  /**
+   * The rail's stack geometry, from the band it has to fit in.
+   *
+   * The first version priced the pitch off a constant (340) and drew a
+   * card-shaped tile at 0.42 of the rail's width. Both were wrong at thirteen
+   * cards: the stack came to 362px in a ~303px band, so the bottom of the hand
+   * was simply cut off, and each card's index sat in the middle of a 50px tile
+   * of which only 26px showed — so every rank was sliced in half.
+   *
+   * The strip a covered card SHOWS is the pitch, so that is what the index has
+   * to fit in and what the whole hand has to be divided into. Solve it the
+   * other way round: n cards in the space available, plus a tail for the last
+   * one, which is the only card that shows a whole face.
+   */
+  const railStack = (n: number) => {
+    const w = DUMMY_RAIL_W - 16;
+    // The band, less the seat-name line and the rail's own padding. NO FLOOR:
+    // a floor is a promise to be at least this tall, which is the one promise a
+    // thing inside a squeezed band must not make. The first version floored
+    // both this and the pitch and duly overflowed a 111px rail by 20px.
+    const avail = Math.max(24, feltH - 40);
+    // How much of the LAST card shows beyond its strip. It is the only card
+    // with room below its index, and that room is BLANK — a whole card face
+    // with nothing on it, which reads as a gap in the hand rather than as a
+    // card (owner, 2026-08-13). So it is an edge, not a face: a fifth of a
+    // strip, enough to say "the stack ends here" and no more. Derived from the
+    // strip rather than the band, so it stays in proportion at any size.
+    const rough = Math.max(4, Math.floor(avail / Math.max(1, n)));
+    const TAIL = Math.max(3, Math.min(12, Math.round(rough * 0.2)));
+    // Solve for the strip, then the rest follows: n strips plus one tail must
+    // fit. The cap is in AUTHORED units and the stage renders at about half, so
+    // 46 is a card's worth of strip rather than a thin ribbon.
+    const pitch = n > 1 ? Math.max(4, Math.min(46, Math.floor((avail - TAIL) / n))) : 0;
+    const h = n > 1 ? pitch + TAIL : Math.min(Math.round(w * 0.42), avail);
+    return {
+      w, h, pitch,
+      total: pitch * Math.max(0, n - 1) + h,
+      font: Math.round(pitch * 0.88),
+      // Below this the rank is specks, not reading. The rail then says how many
+      // cards dummy holds and nothing more, which is honest — an unreadable
+      // index is worse than a plain stack of edges.
+      showIndex: pitch >= 13,
+    };
+  };
+
   const dummyRailEl =
     dummyIsStrip && sideSeat ? (
-      <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: 8, padding: "8px 6px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
+      <div data-testid="dummy-strip" style={{ flex: "none", width: DUMMY_RAIL_W, alignSelf: "stretch", boxSizing: "border-box", display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "8px 5px", background: "rgba(0,0,0,.16)", overflow: "hidden" }}>
         <span style={{ fontSize: 19, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[sideSeat]}</span>
-        {visible[sideSeat]
-          ? dummySuitSpans(sideSeat).map((s) => (
-              <div key={s.suit} style={{ display: "flex", alignItems: "flex-start", gap: 3, fontSize: 24, fontWeight: 700, lineHeight: 1.12 }}>
-                <span style={{ flex: "none", color: isRed(s.suit) ? RED : "#111" }}>{GLYPH[s.suit]}</span>
-                {/* A wrapping row of nowrap ranks: a long suit runs onto a
-                    second line without ever splitting a "10" down the middle. */}
-                <span style={{ display: "flex", flexWrap: "wrap", minWidth: 0, color: "#f2f6f4" }}>
-                  {s.ranks.map((r, i) => (
-                    <span key={`${r}-${i}`} style={{ whiteSpace: "nowrap" }}>{r}</span>
-                  ))}
+        {(() => {
+          const shown = visible[sideSeat];
+          const cards = [...state.hands[sideSeat]].sort(
+            (a, b) => DISPLAY.indexOf(a.suit) - DISPLAY.indexOf(b.suit) || b.rank - a.rank,
+          );
+          const g = railStack(cards.length);
+          return (
+            <div style={{ position: "relative", width: g.w, height: g.total, flex: "none" }}>
+              {cards.map((cd, i) => (
+                <span
+                  key={`${cd.suit}${cd.rank}`}
+                  style={{
+                    position: "absolute", left: 0, top: i * g.pitch, width: g.w, height: g.h,
+                    boxSizing: "border-box",
+                    background: shown ? "#fff" : tok.cardBack,
+                    border: shown ? "1px solid #6f6f6f" : "1px solid rgba(255,255,255,.55)",
+                    borderRadius: 4, boxShadow: "0 1px 3px rgba(0,0,0,.45)", zIndex: i + 1,
+                    // The index lives in the STRIP that shows, pinned to the top
+                    // — anywhere else and its own neighbour covers it.
+                    // Rank at one end, pip at the OTHER. A card 120 wide and 45
+                    // tall cannot look like a card whatever is drawn on it —
+                    // thirteen of them in a column is a list, not a hand — so
+                    // the job is to make the list READ. Both marks pushed to the
+                    // edges spans the strip instead of leaving two thirds of
+                    // every card blank (owner, 2026-08-13), and it echoes the
+                    // two-corner index the trick cards carry.
+                    display: shown && g.showIndex ? "flex" : "block",
+                    alignItems: "center", justifyContent: "space-between",
+                    padding: shown ? `0 ${Math.max(4, Math.round(g.pitch * 0.14))}px` : 0,
+                    color: isRed(cd.suit) ? RED : "#111",
+                  }}
+                >
+                  {shown && g.showIndex ? (
+                    <>
+                      <span style={{ fontSize: g.font, fontWeight: 800, lineHeight: 1 }}>{rankText(cd.rank)}</span>
+                      <span style={{ fontSize: Math.round(g.font * 0.95), fontWeight: 700, lineHeight: 1 }}>{GLYPH[cd.suit]}</span>
+                    </>
+                  ) : null}
                 </span>
-              </div>
-            ))
-          : null}
+              ))}
+            </div>
+          );
+        })()}
       </div>
     ) : null;
+
+  /**
+   * A side opponent, as a small badge on the edge of the felt (owner,
+   * 2026-08-13: the play band "looks completely empty" at the sides).
+   *
+   * On the phone an opponent's hand is not drawn at all, so West and East had
+   * no presence whatsoever — the felt read as a table with two players at it.
+   * The badge is deliberately more than decoration: it carries the seat, the
+   * name, and how many cards that opponent still holds, which is a thing a
+   * player actually tracks and otherwise has to count tricks to know.
+   *
+   * It brightens on that seat's turn, so the two of them also answer "who is
+   * thinking?" — the same question the compass arrow answers, from the edge.
+   */
+  const sideAvatar = (seat: Seat) => {
+    const onTurn = inPlay && state.turn === seat;
+    return (
+      <div
+        key={seat}
+        data-testid="side-avatar"
+        data-seat={seat}
+        style={{ flex: "none", width: 62, alignSelf: "center", display: "flex", flexDirection: "column", alignItems: "center", gap: 3, opacity: onTurn ? 1 : 0.62, transition: "opacity 240ms ease" }}
+      >
+        <span style={{ width: 42, height: 42, borderRadius: "50%", boxSizing: "border-box", background: onTurn ? SEAT_BADGE : "rgba(0,0,0,.28)", border: onTurn ? "2px solid #f0d78a" : "2px solid rgba(255,255,255,.28)", color: "#fff", fontSize: 21, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          {seat}
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[seat]}</span>
+        <span style={{ fontSize: 12, color: "rgba(233,241,237,.75)", whiteSpace: "nowrap" }}>
+          {state.hands[seat].length} left
+        </span>
+      </div>
+    );
+  };
 
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
@@ -1281,10 +1566,22 @@ export function PlayTable({
 
   /** Your hand's rendered width on the phone: an overlapping row of faces, or
       the butted strip of backs (SeatHand's 1.5px separators + its 2px frame). */
-  const phoneHandN = Math.max(1, state.hands.S.length);
+  /**
+   * The plate's width, and it does NOT move (owner, 2026-08-13: "why does the
+   * nameplate shrink with the cards. it should be the same size").
+   *
+   * It used to span the hand's ACTUAL width, which narrows by a pitch on every
+   * card played — so the label under your hand crept inward all board and ended
+   * as a stub. A floor was added first and was the wrong shape of fix: it only
+   * moved where the shrinking stopped. The plate is sized against a FULL hand
+   * instead, so it is the same object on trick one and trick thirteen.
+   *
+   * Computed with the hand's own geometry rather than a literal, so a change to
+   * the card, the overlap or the seams keeps the two agreeing.
+   */
   const phoneHandW = visible.S
-    ? M_CARD.w + (phoneHandN - 1) * M_PITCH
-    : Math.round(M_CARD.backW * phoneHandN + 1.5 * (phoneHandN - 1)) + 4;
+    ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
+    : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
   // The stage is a fixed 720-wide column at the fixed-point scale. The SCALE
@@ -1301,7 +1598,17 @@ export function PlayTable({
   // strip went short. The stage is a fixed 720 and the scale alone decides how
   // wide it renders: the board compacts VERTICALLY, never horizontally.
   const mobileStack = (
-    <div ref={setStageEl} data-testid="phone-stage" style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}>
+    <div
+      ref={setStageEl}
+      data-testid="phone-stage"
+      // THE ESCAPE. A tap anywhere that is not a card puts a lifted card down
+      // and re-opens a narrowed hand (owner: "tap felt to cancel"). It sits on
+      // the stage rather than on the felt so the whole board is the target,
+      // and it fires on the way DOWN through the tree — a tap that lands on a
+      // card stops at the card's own handler, which runs first.
+      onClick={held != null || openSuit != null ? () => { setHeld(null); setOpenSuit(null); } : undefined}
+      style={{ flex: "none", width: MOBILE_W, minHeight: stageH, height: stageH, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
+    >
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
           the scale — dividing twice produced a control wider than its bar. */}
@@ -1323,6 +1630,10 @@ export function PlayTable({
             centres in what is left. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
           {dummyRailSide === "left" ? dummyRailEl : null}
+          {/* The badge stands in for a seat the phone cannot draw a hand for, so
+              it yields to the dummy rail on that side rather than crowding it,
+              and never appears for the seat whose cards are already on screen. */}
+          {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
           <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
             {/* FOUR reserved call rows, whatever the auction holds: the grid is
                 one fixed object from "You deal" to the last pass, and the fifth
@@ -1343,6 +1654,7 @@ export function PlayTable({
             {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
+          {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
           {dummyRailSide === "right" ? dummyRailEl : null}
         </div>
         {/* Column pad (cell sized from the leftover) OR the level tray — one on
@@ -1369,13 +1681,9 @@ export function PlayTable({
                 ? fanHand("S", M_CARD)
                 : cardRow("S", M_CARD)
               : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
-            {/* The plate spans the hand it labels — the hand's ACTUAL rendered
-                width, which is the overlapping row's pitch face-up and a strip
-                of butted backs face-down (the old 390 was neither). It still
-                narrows as cards are played, but never below what it has to say:
-                at the end of a board the hand is one card wide. Bold name/tag:
-                the phone plate reads through the stage scale. */}
-            {plate("S", Math.max(M_PLATE_MIN, phoneHandW), { weight: 700 })}
+            {/* The plate spans a FULL hand, not the hand as it stands — see
+                phoneHandW. Bold name/tag: it reads through the stage scale. */}
+            {plate("S", phoneHandW, { weight: 700 })}
           </div>
         </div>
       </div>

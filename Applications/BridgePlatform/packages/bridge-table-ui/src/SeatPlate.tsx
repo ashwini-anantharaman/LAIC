@@ -28,6 +28,14 @@ export interface SeatPlateProps {
   width: number | string;
   /** Ring + DEALER mark when this seat dealt. */
   isDealer: boolean;
+  /**
+   * This seat is on turn — the plate LIGHTS rather than an arrow pointing at it
+   * (owner, 2026-08-13). A plate is already the thing that says whose hand this
+   * is, so lighting it says "and it is their go" in the same object, instead of
+   * adding a second mark to read. Costs no space, which matters in a band that
+   * is already tight.
+   */
+  onTurn?: boolean;
   metrics?: SeatPlateMetrics;
 }
 
@@ -39,6 +47,7 @@ export function SeatPlate({
   bg,
   width,
   isDealer,
+  onTurn = false,
   metrics = {},
 }: Readonly<SeatPlateProps>) {
   const h = metrics.height ?? 22;
@@ -47,7 +56,23 @@ export function SeatPlate({
   const tagFont = metrics.tagFont ?? 11;
   const weight = metrics.weight ?? 400;
   return (
-    <div data-testid="seat-plate" data-seat={seat} style={{ display: "flex", alignItems: "stretch", gap: 5, width, height: h, padding: "0 3px 0 0", background: bg, boxShadow: "0 1px 2px rgba(0,0,0,.45)", border: `2px solid ${isDealer ? DEALER_RING : "transparent"}`, boxSizing: "border-box", overflow: "hidden" }}>
+    <div
+      data-testid="seat-plate"
+      data-seat={seat}
+      data-on-turn={onTurn ? "" : undefined}
+      style={{
+        display: "flex", alignItems: "stretch", gap: 5, width, height: h,
+        padding: "0 3px 0 0", background: bg,
+        // The dealer ring still owns the border, so a dealer on turn keeps its
+        // ring and takes the glow — the two marks never compete for the edge.
+        boxShadow: onTurn
+          ? "0 0 0 2px rgba(255,226,140,.95), 0 0 10px 2px rgba(255,214,92,.55)"
+          : "0 1px 2px rgba(0,0,0,.45)",
+        border: `2px solid ${isDealer ? DEALER_RING : "transparent"}`,
+        boxSizing: "border-box", overflow: "hidden",
+        transition: "box-shadow 200ms ease",
+      }}
+    >
       <span style={{ flex: "none", width: 6, background: strip ?? "transparent" }} />
       <span style={{ flex: "none", width: badge, height: badge, alignSelf: "center", background: SEAT_BADGE, color: "#fff", fontSize: font - 1, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{seat}</span>
       <span style={{ alignSelf: "center", fontSize: font, fontWeight: weight, color: "#000", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{name}</span>

@@ -17,3 +17,16 @@ apps/bridge-web/playwright-report/
 .data-e2e/
 .next-e2e/
 .data-backup*/
+
+# ALTERNATE BUILD AND STORE DIRS (NEXT_DIST_DIR / BRIDGE_DATA_DIR).
+#
+# Tailwind v4 has no content globs — it auto-scans the project and skips what
+# .gitignore skips. So a build dir that is NOT ignored is read as SOURCE, and
+# its compiled chunks yield class names like
+#   [&>*:not(:!<binary>)]:-ml-px
+# which fail to parse and take the whole stylesheet down with them. `.next/`
+# and `.next-e2e/` were listed one at a time; every new one an experiment
+# invented (.next-probe, .next-mobiletest, .next-proddebug) was a fresh way to
+# break the build. Match them all.
+.next-*/
+.data-*/

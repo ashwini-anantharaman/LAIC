@@ -116,6 +116,7 @@ export default async function PlayTablePage({
     centreFrame: appearance.centreFrame,
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
+    suitGroups: appearance.suitGroups,
   };
 
   const canSeatsPanel = control["table.seats_panel"];
@@ -317,6 +318,47 @@ export default async function PlayTablePage({
     },
     // No "Confirm bids" row (owner direction 2026-08-13): a tap on a call IS
     // the call — the staged-confirm machinery in @bridge/table-ui sits unused.
+    // How a tap resolves, and how a finished trick clears. Both persist per
+    // user like the appearance rows below rather than riding a search param:
+    // they are preferences about how you PLAY, so they should follow you to
+    // the next board and the next device without being in the URL. Each row
+    // cycles its own values — one row per question, as decided.
+    {
+      label: "Playing a card",
+      value:
+        appearance.playMode === "off"
+          ? "One tap"
+          : appearance.playMode === "raise"
+            ? "Tap to lift, tap to play"
+            : "Tap for the suit",
+      action: patchAppearanceAction.bind(null, sessionId, {
+        playMode:
+          appearance.playMode === "off"
+            ? ("raise" as const)
+            : appearance.playMode === "raise"
+              ? ("suit" as const)
+              : ("off" as const),
+      }),
+    },
+    {
+      label: "After a trick",
+      value: appearance.trickPause === "tap" ? "Tap to continue" : appearance.trickPause,
+      action: patchAppearanceAction.bind(null, sessionId, {
+        trickPause:
+          appearance.trickPause === "tap"
+            ? ("1s" as const)
+            : appearance.trickPause === "1s"
+              ? ("2s" as const)
+              : appearance.trickPause === "2s"
+                ? ("3s" as const)
+                : ("tap" as const),
+      }),
+    },
+    {
+      label: "Group suits in hand",
+      value: appearance.suitGroups ? "On" : "Off",
+      action: patchAppearanceAction.bind(null, sessionId, { suitGroups: !appearance.suitGroups }),
+    },
     // The coach's own switch. Only offered where the coach can exist at all
     // (table.coach) — on a table that never carries one there is nothing to
     // turn off.
@@ -581,6 +623,11 @@ export default async function PlayTablePage({
         controlsExtra={canStepControls ? controlsAt(1) : undefined}
         controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
         railExtra={seatsPanel}
+        // How a tap plays a card, and how a finished trick clears — the two
+        // play preferences origin/main's table reads (persisted per user via
+        // the ☰ rows above).
+        playMode={appearance.playMode}
+        trickPause={appearance.trickPause}
         settings={canSettingsMenu ? settings : undefined}
         viewHref={canHandsView ? { label: "Hands", href: settingsHref({ view: "hands" }) } : undefined}
         // Inside the coach app the felt runs edge to edge: no info bar (the

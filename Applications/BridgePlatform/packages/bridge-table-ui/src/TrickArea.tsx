@@ -7,9 +7,9 @@
 // leaf draws the four positions.
 
 import type { Card, Seat } from "@bridge/events";
-import type { CSSProperties } from "react";
+import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { RED, GLYPH, isRed, rankText } from "./tokens";
-import { DEAL, TableMotion } from "./motion";
+import { FLY, GLIDE, TableMotion } from "./motion";
 
 export interface TrickPlay {
   seat: Seat;
@@ -24,14 +24,74 @@ export interface TrickAreaProps {
   /** `cross` = the wide 262px compass, `cluster` = the phone's tight one. */
   variant?: "cross" | "cluster" | "pill";
   /**
-   * CLUSTER only: the card box the trick is drawn at, and the index type that
-   * goes on it. The phone hands over the metrics of the cards in the HAND, so
-   * the card you played and the cards you hold are the same object at the same
-   * size — a trick card larger than a hand card reads as a different deck.
-   * Omitted, the compass keeps its authored 56x80 face.
+   * CLUSTER only: the card box the trick is drawn at. The phone hands over its
+   * own trick metrics; omitted, the compass keeps its authored 56x80 face. The
+   * face draws its OWN indexes from this box — see TrickFace.
    */
   card?: { w: number; h: number };
-  index?: { rank: number; glyph: number };
+  /**
+   * Where this seat's newest card CAME FROM, in viewport pixels — the centre of
+   * the card as it sat in the hand, captured on the tap (owner, 2026-08-13:
+   * "make it glide from the position of the card in the hand to the middle, not
+   * just from the middle always").
+   *
+   * The seat-direction keyframes could only ever start a card from a fixed
+   * vector, so every South card rose from the same spot however far along the
+   * row it had been sitting. With an origin the card starts where your finger
+   * left it. Return null for a seat whose origin is unknowable — a robot's hand
+   * is face down, and it falls back to the keyframe glide.
+   */
+  originOf?: (seat: Seat) => { x: number; y: number } | null;
+  /**
+   * The seat whose card TOOK this trick — set only once the trick is complete
+   * and still on the felt.
+   *
+   * It replaced a "tap to continue" line under the compass (owner, 2026-08-13).
+   * That line was clipped by the band it sat in, and it only ever said what the
+   * player would work out by tapping anyway. The winning card lifting says the
+   * same thing — the trick is over, nothing is waiting on the robots — and also
+   * answers the question a player actually has at that moment, which is who got
+   * it. No vertical space: the lift happens inside the compass box.
+   */
+  winner?: Seat | null;
+}
+
+/**
+ * Travel a card from where it really was to where it now is (FLIP).
+ *
+ * Measured in VIEWPORT space, then divided by the element's own rendered scale:
+ * the whole phone stage is `transform: scale(~0.5)`, so a 30px journey on
+ * screen is 60px in the element's own coordinates and a raw viewport delta
+ * would land the card half way. The ratio comes off the element itself
+ * (`rect.width / offsetWidth`) so it stays correct at any tier without being
+ * told what the scale is — the same trick the hand's gap-closing slide uses.
+ */
+function useFlyFrom(origin: { x: number; y: number } | null | undefined, key: string) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !origin) return;
+    if (
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
+      return;
+    const r = el.getBoundingClientRect();
+    const k = el.offsetWidth > 0 ? r.width / el.offsetWidth : 1;
+    const dx = (origin.x - (r.left + r.width / 2)) / (k || 1);
+    const dy = (origin.y - (r.top + r.height / 2)) / (k || 1);
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+    el.style.transition = "none";
+    el.style.opacity = "0.4";
+    el.style.transform = `translate(${dx}px, ${dy}px) scale(.94)`;
+    void el.offsetWidth; // commit the start frame, then let the class animate
+    el.style.transition = "";
+    el.style.opacity = "1";
+    el.style.transform = "none";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  return ref;
 }
 
 /**
@@ -58,66 +118,144 @@ export interface TrickAreaProps {
  */
 const CARD = { w: 56, h: 80 };
 /**
- * Top of the W/E flanks. Half a card down put their edge straight through the
- * TOP card's suit pip, so the leader's card showed a rank with no suit — the one
- * thing a player reads the trick for. They now start BELOW that pip (0.7 of a
- * card, measured against the index's ink: rank ends ~0.4h, pip ~0.66h), which
- * costs nothing: the vertical pair still touches, the box is still two cards by
- * two, and the flanks still cross both neighbours enough to interlock.
- *
- * The cost this shifts rather than removes is on the flanks themselves — see
- * CLUSTER_ORDER. On a 2x2 footprint no arrangement leaves all four indexes
- * whole; this spends that on a flank's pip instead of the top card's.
+ * Top of the W/E flanks: half a card down, on the seam the touching vertical
+ * pair makes. The real-card face keeps its whole index block above 0.47h (see
+ * TrickFace), so a flank starting at 0.5h clears the top card's rank AND pip
+ * with no extra allowance — the 0.7h drop the old oversized index needed is
+ * back to the geometric ideal.
  */
-const flankTop = (h: number) => Math.round(h * 0.7);
-/** The compass's box for a card box: exactly the union of the four positions —
-    two cards wide (the flanks) by two tall (the touching vertical pair). */
+const flankTop = (h: number) => Math.round(h * 0.5);
+/**
+ * A SEAM between the two columns, so the flanks' outward indexes clear N and S.
+ *
+ * The vertical constraint solves itself — the flanks sit at half a card, which
+ * is below N's index block and above S's. The horizontal one does not: N and S
+ * share the centre column, and their bodies reach far enough right to graze the
+ * index E keeps on its right edge. Widening the box by this much moves E's
+ * index just past N's right edge and W's just short of N's left one. Derived
+ * from the card so it holds if the card is resized; measured at 0.15 for the
+ * shipped 89-wide card, where the constraint needs 13px and this gives 13.
+ */
+const clusterGap = (w: number) => Math.round(w * 0.15);
 export function clusterBox(card: { w: number; h: number } = CARD) {
-  return { w: card.w * 2, h: card.h * 2 };
+  return { w: card.w * 2 + clusterGap(card.w), h: card.h * 2 };
 }
 export const CLUSTER = clusterBox(CARD);
 /** Seat -> top-left inside the compass box. N and S share the centre column and
     meet edge to edge; W/E flank that seam, half a card outside and half down. */
 const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number; top: number }> => {
-  const half = Math.round(card.w / 2);
+  const gap = clusterGap(card.w);
+  const centre = Math.round((card.w + gap) / 2);
   const fy = flankTop(card.h);
   return {
-    N: { left: half, top: 0 },
+    N: { left: centre, top: 0 },
     W: { left: 0, top: fy },
-    E: { left: card.w, top: fy },
-    S: { left: half, top: card.h },
+    E: { left: card.w + gap, top: fy },
+    S: { left: centre, top: card.h },
   };
 };
+
 /**
- * Paint order is SPATIAL, not play order: strictly TOP TO BOTTOM (N, then the
- * W/E flanks, then S). A fixed order means the compass never reshuffles under
- * the eye as cards land, and among the four possible orders this is the one
- * that protects what a card SAYS.
+ * A REAL playing card (owner, 2026-08-12): white face, thin neutral border, and
+ * the standard TWO diagonal indexes — rank over pip tucked top-left, the same
+ * pair rotated 180° bottom-right — exactly the card a deck deals. The BBO
+ * skin's Face is the reference look; what it proves is that "readable" and
+ * "looks like a card" are the same problem solved twice.
  *
- * It used to protect the whole index: at the old three-quarter-card offset a
- * card only ever covered the blank strip BELOW its neighbour's rank and pip.
- * Closing the vertical pair SPENDS that strip. With N and S touching, every
- * flank crosses N's lower half and is crossed by S's upper half, and because
- * the index lives at the card's left edge — under the column, on both sides —
- * no arrangement of four cards on a 2x2 footprint leaves all four indexes
- * whole. What survives, measured at the phone's 56x96 card (rank ink rows
- * 5-32, pip ink rows 39-64, and half a card down is row 48):
+ * The dual index RETIRES the away-facing-corner scheme. Paint order is play
+ * order, so any card can cover any other, and a single index cannot be kept
+ * whole on a 2x2 interlock — the previous fix moved each seat's lone index to
+ * the corner facing away from the centre, which kept it readable and made every
+ * card look wrong: no real card indexes its top-right. Two diagonal corners
+ * make the guarantee STRUCTURAL instead: whichever way a card faces the centre,
+ * one of its two indexes is on the outward side —
  *
- *  · every RANK is untouched, on all four seats and for every rank INCLUDING
- *    the two-glyph "10" — the covering edge falls at row 48, sixteen rows below
- *    the rank's baseline, whichever neighbour is doing the covering;
- *  · S — the seat you play from — is covered by nothing at all, and W keeps its
- *    pip, which S crosses only on the blank right of the index;
- *  · what is lost is the lower two thirds of ONE pip on N and one on E, split
- *    evenly by the half-card offset: the flanks take exactly as much off N as S
- *    takes off them. The suit still shows its top, and its colour.
+ *      N: top-left (its top edge is the box's top edge)
+ *      W: top-left (its left edge is the box's left edge)
+ *      E: bottom-right, rotated (its right edge is the box's right edge)
+ *      S: bottom-right, rotated (its bottom edge is the box's bottom edge)
  *
- * That is the best of the four orders, not merely the incumbent. Painting a
- * flank over S covers S's rank (S's index is under the flank's upper half);
- * painting the flanks under N covers theirs, and clips a "10" outright, because
- * N and S then cross the flanks' index rows rather than the strip beside it.
+ * — and the outward side is outside the union of the other three bodies by the
+ * same 2x2 arithmetic as before. The inward twin gets covered sometimes; on a
+ * real table it does too.
+ *
+ * Index metrics are derived from the card box, not passed in: rank 0.26h and
+ * pip 0.19h put the block's ink at ~0.46h, inside the half-card strip the
+ * flanks leave clear (flankTop). "10" is the only two-glyph rank — bold Arial
+ * digits run ~0.56em each — and it is capped so the pair stays under half the
+ * card's width and can never cross its diagonal twin.
  */
-const CLUSTER_ORDER: Seat[] = ["N", "W", "E", "S"];
+function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean }>) {
+  const rank = rankText(card.rank);
+  const colour = isRed(card.suit) ? RED : "#000";
+  const rankSize = Math.round(box.h * 0.26);
+  const glyphSize = Math.round(box.h * 0.19);
+  const size = rank.length > 1 ? Math.min(rankSize, Math.floor((box.w * 0.48) / 1.12)) : rankSize;
+  const inX = Math.round(box.w * 0.06);
+  const inY = Math.round(box.h * 0.025);
+  const index = (corner: CSSProperties, rotated: boolean) => (
+    <span
+      style={{
+        position: "absolute",
+        ...corner,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        lineHeight: 0.9,
+        color: colour,
+        fontVariantNumeric: "tabular-nums",
+        transform: rotated ? "rotate(180deg)" : undefined,
+      }}
+    >
+      <span style={{ fontSize: size, fontWeight: 700 }}>{rank}</span>
+      <span style={{ fontSize: glyphSize }}>{GLYPH[card.suit]}</span>
+    </span>
+  );
+  const flyRef = useFlyFrom(origin, `${card.suit}${card.rank}`);
+  return (
+    <span
+      ref={flyRef}
+      data-testid="trick-card"
+      data-seat={seat}
+      // A measured origin animates the transform itself (btu-fly); without one
+      // the seat-direction keyframe is the best guess available.
+      className={origin ? FLY : GLIDE[seat]}
+      style={{
+        position: "relative",
+        display: "block",
+        width: box.w,
+        height: box.h,
+        background: "#fff",
+        border: won ? "2px solid #e8c76a" : "1px solid #737373",
+        borderRadius: 4,
+        // The winner rides above the pile with a warm ring; everything else
+        // keeps the plain drop shadow it always had.
+        boxShadow: won
+          ? "0 0 0 3px rgba(232,199,106,.45), 0 8px 16px rgba(0,0,0,.5)"
+          : "0 3px 7px rgba(0,0,0,.45)",
+        boxSizing: "border-box",
+        transition: "box-shadow 200ms ease, border-color 200ms ease",
+      }}
+    >
+      {index({ left: inX, top: inY }, false)}
+      {index({ right: inX, bottom: inY }, true)}
+    </span>
+  );
+}
+
+
+/**
+ * A seat that has not played yet: space, and nothing else.
+ *
+ * This slot used to hold an arrow pointing outward at the seat that owed a
+ * card. The owner turned it down on seeing it (2026-08-13) — at phone scale it
+ * was an 8px glyph that read as a stray mark, and it was a SECOND thing to
+ * decode about a seat. Whose turn it is now lights the object that already
+ * names that seat: their plate, or their badge on the felt's edge.
+ */
+function EmptySlot({ box }: Readonly<{ box: { w: number; h: number } }>) {
+  return <span style={{ display: "block", width: box.w, height: box.h }} />;
+}
 
 export function TrickArea({
   plays,
@@ -125,7 +263,8 @@ export function TrickArea({
   scale = 1,
   variant = "cross",
   card = CARD,
-  index = { rank: 38, glyph: 30 },
+  originOf,
+  winner = null,
 }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
@@ -157,51 +296,40 @@ export function TrickArea({
     // than four cards pinned to the corners of a box twice their size.
     const box = clusterBox(card);
     const pos4 = clusterPos(card);
-    /**
-     * "10" is the only two-glyph rank, and at weight 700 Arial digits run just
-     * under 0.56em each — call it 1.12em for the pair (a hair generous). It is
-     * drawn at the SAME size as every other rank (the phone's card is sized for
-     * it), and this cap only bites for a caller that hands the compass a card
-     * too narrow to hold one, where a clipped "10" would be worse than a small
-     * one.
-     */
-    const twoGlyphCap = Math.floor((card.w - 11) / 1.12);
     return (
       <div style={{ width: box.w * scale, height: box.h * scale, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <TableMotion />
         <div style={{ position: "relative", width: box.w, height: box.h, flex: "none", transform: `scale(${scale})`, transformOrigin: "center center" }}>
-          {CLUSTER_ORDER.map((seat, z) => {
-            const play = plays.find((p) => p.seat === seat);
+          {(["N", "W", "E", "S"] as Seat[]).map((seat) => {
+            const order = plays.findIndex((p) => p.seat === seat);
+            const play = order >= 0 ? plays[order] : undefined;
             const pos = pos4[seat];
-            const onTurn = seat === turn;
-            const rank = play ? rankText(play.card.rank) : "";
+            // z IS the play order — the last card played sits on top, the way
+            // it does on a table and in BBO (owner, 2026-08-12). An empty slot
+            // sits under every card so the arrow never rides over one.
             return (
-              <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, zIndex: z + 1 }}>
+              // THE LIFT RIDES THE WRAPPER, not the card. A card that glided in
+              // keeps its keyframe animation with `fill: both`, and a filling
+              // animation's transform beats an inline one — so a lift written
+              // on the card itself was silently eaten for every seat except the
+              // one whose card flew (a transition, not an animation). Measured:
+              // the winner took its gold ring and stayed flat. The wrapper has
+              // no animation, so it can move.
+              <div
+                key={seat}
+                style={{
+                  position: "absolute", left: pos.left, top: pos.top,
+                  zIndex: winner === seat ? 9 : play ? order + 2 : 1,
+                  transform: winner === seat ? "translateY(-7px) scale(1.06)" : undefined,
+                  transition: "transform 200ms ease",
+                }}
+              >
                 {play ? (
-                  // Keyed on the card so a NEW card mounts (and deals in); a
+                  // Keyed on the card so a NEW card mounts (and glides in); a
                   // re-render of the same card must not replay the animation.
-                  <span
-                    key={`${play.card.suit}${play.card.rank}`}
-                    data-testid="trick-card"
-                    data-seat={seat}
-                    className={DEAL}
-                    style={{ position: "relative", display: "block", width: card.w, height: card.h, background: "#fff", border: "1.5px solid #4a4a4a", borderRadius: 4, boxShadow: "0 3px 7px rgba(0,0,0,.45)", boxSizing: "border-box" }}
-                  >
-                    {/* Bold face: a heavy rank with the pip directly beneath it,
-                        both pinned to the card's TOP-LEFT — the strip the paint
-                        order guarantees no neighbour covers, so every card on
-                        the compass still says what it is. */}
-                    {/* Same weights as the hand's cards (SeatHand's authored
-                        700/400): the compass shows the same deck you hold. */}
-                    <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.88, color: isRed(play.card.suit) ? RED : "#000" }}>
-                      <span style={{ fontSize: rank.length > 1 ? Math.min(index.rank, twoGlyphCap) : index.rank, fontWeight: 700, letterSpacing: "-.02em" }}>{rank}</span>
-                      <span style={{ fontSize: index.glyph, fontWeight: 400 }}>{GLYPH[play.card.suit]}</span>
-                    </span>
-                  </span>
+                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} />
                 ) : (
-                  <span style={{ display: "flex", width: card.w, height: card.h, alignItems: "center", justifyContent: "center" }}>
-                    <span style={{ display: "block", width: onTurn ? 24 : 0, height: 5, borderRadius: 3, background: onTurn ? "rgba(255,255,255,.62)" : "transparent" }} />
-                  </span>
+                  <EmptySlot box={card} />
                 )}
               </div>
             );
@@ -223,28 +351,22 @@ export function TrickArea({
   const k = scale;
   return (
     <div style={{ width: 262 * k, height: 262 * k, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <TableMotion />
       <div style={{ position: "relative", width: 262, height: 262, flex: "none", transform: `scale(${k})`, transformOrigin: "center center" }}>
         {(["N", "E", "S", "W"] as Seat[]).map((seat) => {
-          const play = plays.find((p) => p.seat === seat);
+          const order = plays.findIndex((p) => p.seat === seat);
+          const play = order >= 0 ? plays[order] : undefined;
           const pos =
             seat === "N" ? { left: "50%", top: "0", tr: "translateX(-50%)" }
             : seat === "S" ? { left: "50%", top: "182px", tr: "translateX(-50%)" }
             : seat === "W" ? { left: "0", top: "50%", tr: "translateY(-50%)" }
             : { left: "206px", top: "50%", tr: "translateY(-50%)" };
-          const onTurn = seat === turn;
           return (
-            <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? 2 : 1 }}>
+            <div key={seat} style={{ position: "absolute", left: pos.left, top: pos.top, transform: pos.tr, zIndex: play ? order + 2 : 1 }}>
               {play ? (
-                <span data-testid="trick-card" style={{ position: "relative", display: "block", width: 56, height: 80, background: "#fff", border: "1px solid #6b6b6b", borderRadius: 3, boxShadow: "0 2px 5px rgba(0,0,0,.4)" }}>
-                  <span style={{ position: "absolute", left: 4, top: 2, display: "flex", flexDirection: "column", alignItems: "center", lineHeight: 0.95, color: isRed(play.card.suit) ? RED : "#000" }}>
-                    <span style={{ fontSize: 27, fontWeight: 700 }}>{rankText(play.card.rank)}</span>
-                    <span style={{ fontSize: 24 }}>{GLYPH[play.card.suit]}</span>
-                  </span>
-                </span>
+                <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={CARD} seat={seat} />
               ) : (
-                <span style={{ display: "flex", width: 56, height: 80, alignItems: "center", justifyContent: "center" }}>
-                  <span style={{ display: "block", width: onTurn ? 22 : 0, height: 12, background: onTurn ? "#9a9a9a" : "transparent" }} />
-                </span>
+                <EmptySlot box={CARD} />
               )}
             </div>
           );
