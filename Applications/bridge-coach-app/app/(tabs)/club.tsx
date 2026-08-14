@@ -37,7 +37,7 @@ import { ActivityCarousel, type Activity } from "../../components/activity-carou
 import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
-import { PERSON_ROW, PersonRow } from "../../components/person-row";
+import { PERSON_ROW, PersonList, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { TabLoading } from "../../components/tab-loading";
 import { useAuth } from "../../lib/auth-context";
@@ -64,6 +64,10 @@ import {
 } from "../../lib/nexus";
 
 const DESIGN_WIDTH = 390;
+
+/** The roster list's own top padding — shared with the index strip's jump
+ *  arithmetic, which has to account for it. */
+const ROSTER_TOP_PAD = 18;
 
 /** Header: title, blurb, and the Members pill on the title's line. */
 const HEAD = { left: 25, blurbGap: 13, pillTop: 5, pillRight: 24 };
@@ -1035,11 +1039,15 @@ function Roster({
   const list = useRef<ScrollView>(null);
   /**
    * Rows are a uniform pitch, so a row's offset is exact arithmetic rather than a
-   * measured guess — index * pitch, less the list's own top padding so the row lands
-   * at the top edge instead of just below it.
+   * measured guess. The list's own top padding is part of that offset — a row sits at
+   * `padding + index * pitch` inside the content, and omitting the padding landed
+   * every jump a padding's worth short.
    */
   const jumpTo = (index: number) =>
-    list.current?.scrollTo({ y: Math.max(0, index * PERSON_ROW.pitch * s), animated: true });
+    list.current?.scrollTo({
+      y: Math.max(0, (ROSTER_TOP_PAD + index * PERSON_ROW.pitch) * s),
+      animated: true,
+    });
 
   if (error) return <Text style={styles.stateText}>{error}</Text>;
   if (loading) return <Text style={styles.stateText}>Loading the club roster…</Text>;
@@ -1063,19 +1071,22 @@ function Roster({
         paddingLeft: 22 * s,
         // Room for the index strip, so a long name never runs under the letters.
         paddingRight: (20 + INDEX_STRIP.width) * s,
-        paddingTop: 18 * s,
+        paddingTop: ROSTER_TOP_PAD * s,
       }}
       showsVerticalScrollIndicator={false}
     >
-      {people.map((p, i) => (
-        <PersonRow
-          key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
-          name={personName(p)}
-          standing={standingOf(p)}
-          avatar={p.profile_id ? avatars.get(p.profile_id) : null}
-          scale={s}
-        />
-      ))}
+      <PersonList scale={s}>
+        {people.map((p, i) => (
+          <PersonRow
+            key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
+            name={personName(p)}
+            standing={standingOf(p)}
+            avatar={p.profile_id ? avatars.get(p.profile_id) : null}
+            first={i === 0}
+            scale={s}
+          />
+        ))}
+      </PersonList>
       <View style={{ height: PERSON_ROW.pitch * s }} />
     </ScrollView>
 
