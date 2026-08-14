@@ -37,7 +37,7 @@ import { ActivityCarousel, type Activity } from "../../components/activity-carou
 import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
-import { PERSON_ROW, PersonRow } from "../../components/person-row";
+import { PERSON_ROW, PersonList, PersonRow } from "../../components/person-row";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { TabLoading } from "../../components/tab-loading";
 import { useAuth } from "../../lib/auth-context";
@@ -49,6 +49,13 @@ import {
 } from "../../lib/challenges";
 import { useClubs } from "../../lib/club-context";
 import { useCan } from "../../lib/use-can";
+import type { LearningObject } from "../../lib/nexus";
+import {
+  canAuthorLearning,
+  getLearningContext,
+  getLearningObjects,
+  splitByOwner,
+} from "../../lib/learning";
 import {
   fetchAppMembers,
   fetchProgramMembers,
@@ -57,6 +64,10 @@ import {
 } from "../../lib/nexus";
 
 const DESIGN_WIDTH = 390;
+
+/** The roster list's own top padding — shared with the index strip's jump
+ *  arithmetic, which has to account for it. */
+const ROSTER_TOP_PAD = 18;
 
 /** Header: title, blurb, and the Members pill on the title's line. */
 const HEAD = { left: 25, blurbGap: 13, pillTop: 5, pillRight: 24 };
@@ -202,6 +213,16 @@ export default function ClubScreen() {
 
   // Each button is its own grant, so a role can have challenges without deals.
   const canChat = useCan("app.chat.view", true);
+  // Creating a CHALLENGE is a club-app capability; creating CONTENT is a learning
+  // one, from the Studio's own catalogue — two catalogues, so two questions.
+  const canCreateChallenge = useCan("app.challenge.create", true);
+  const [canAuthor, setCanAuthor] = useState(false);
+  /** The club's OWN authored content, which the Activities row lists after the
+   *  pinned challenges. The curriculum above the club is the Learn tab's, not this
+   *  row's — a club's row is about the club. */
+  const [clubContent, setClubContent] = useState<LearningObject[]>([]);
+  /** Which "add" options to offer; null while closed. */
+  const [addOpen, setAddOpen] = useState(false);
   const canChallenges = useCan("app.challenge.view", true);
   const canMembers = useCan("app.club.members.view", true);
 
@@ -398,6 +419,30 @@ export default function ClubScreen() {
    * page for every club is a prototype rather than a feature. Real activity types join
    * this list when they carry their own ids.
    */
+// The club's own authored content, and whether this person may add more. Both
+  // are per club, so both re-resolve on a club switch.
+  useEffect(() => {
+    if (!token || !club?.id) {
+      setCanAuthor(false);
+      setClubContent([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const [ctx, objects] = await Promise.all([
+        getLearningContext(token, club.id),
+        getLearningObjects(token, { programId: club.id }).catch(() => []),
+      ]);
+      if (cancelled) return;
+      setCanAuthor(canAuthorLearning(ctx));
+      // Only the club's half: the parent's curriculum belongs to the Learn tab.
+      setClubContent(splitByOwner(objects, club.id).club);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, club?.id]);
+
   const activities: Activity[] = [
     {
       id: "latest-challenge",
@@ -432,6 +477,17 @@ export default function ClubScreen() {
           },
         ]
       : []),
+    // The club's OWN content, after the pinned pair. Deliberately after: those two
+    // boxes exist so a new challenge and one you are mid-way through are always
+    // both visible, and content filling the front of the row would push the thing
+    // you were doing out of sight — the exact problem the pinning solved.
+    ...clubContent.map((o) => ({
+      id: `content-${o.id}`,
+      kind: "document" as const,
+      title: o.title,
+      ...(o.estimated_time ? { detail: o.estimated_time } : {}),
+      onPress: () => router.push({ pathname: "/learn-object/[id]", params: { id: o.id } }),
+    })),
   ];
 
   /**
@@ -559,7 +615,13 @@ export default function ClubScreen() {
             </Text>
 
             <View style={{ marginTop: HOME.tileGap * s }}>
-              <ActivityCarousel activities={activities} scale={s} onAdd={() => {}} />
+              <ActivityCarousel
+                activities={activities}
+                scale={s}
+                // No + at all for someone who may create neither: an inert button
+                // that opens an empty sheet is worse than no button.
+                {...(canCreateChallenge || canAuthor ? { onAdd: () => setAddOpen(true) } : {})}
+              />
             </View>
 
             <View
@@ -741,6 +803,48 @@ export default function ClubScreen() {
       </View>
 
       {/* Three or more clubs: choose from the list rather than cycling. */}
+      {/* What this person may ADD here. Each entry is its own capability, from its
+          own catalogue — a club can be allowed to run challenges but not author
+          content, or the reverse — so the sheet lists what is actually available
+          rather than dimming what is not. */}
+      <BrandSheet
+        visible={addOpen}
+        onClose={() => setAddOpen(false)}
+        title="Add to Activities"
+        top={insets.top + CONTENT_TOP_GAP}
+      >
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          {canCreateChallenge ? (
+            <Pressable
+              onPress={() => {
+                setAddOpen(false);
+                router.push("/challenge-new");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="New challenge"
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons name="trophy-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>Challenge</Text>
+            </Pressable>
+          ) : null}
+          {canAuthor ? (
+            <Pressable
+              onPress={() => {
+                setAddOpen(false);
+                router.push("/studio");
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="New content in the Content Studio"
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons name="document-text-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>Tutorial or other content</Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      </BrandSheet>
+
       <BrandSheet
         visible={switcherOpen}
         onClose={() => setSwitcherOpen(false)}
@@ -935,11 +1039,15 @@ function Roster({
   const list = useRef<ScrollView>(null);
   /**
    * Rows are a uniform pitch, so a row's offset is exact arithmetic rather than a
-   * measured guess — index * pitch, less the list's own top padding so the row lands
-   * at the top edge instead of just below it.
+   * measured guess. The list's own top padding is part of that offset — a row sits at
+   * `padding + index * pitch` inside the content, and omitting the padding landed
+   * every jump a padding's worth short.
    */
   const jumpTo = (index: number) =>
-    list.current?.scrollTo({ y: Math.max(0, index * PERSON_ROW.pitch * s), animated: true });
+    list.current?.scrollTo({
+      y: Math.max(0, (ROSTER_TOP_PAD + index * PERSON_ROW.pitch) * s),
+      animated: true,
+    });
 
   if (error) return <Text style={styles.stateText}>{error}</Text>;
   if (loading) return <Text style={styles.stateText}>Loading the club roster…</Text>;
@@ -963,19 +1071,22 @@ function Roster({
         paddingLeft: 22 * s,
         // Room for the index strip, so a long name never runs under the letters.
         paddingRight: (20 + INDEX_STRIP.width) * s,
-        paddingTop: 18 * s,
+        paddingTop: ROSTER_TOP_PAD * s,
       }}
       showsVerticalScrollIndicator={false}
     >
-      {people.map((p, i) => (
-        <PersonRow
-          key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
-          name={personName(p)}
-          standing={standingOf(p)}
-          avatar={p.profile_id ? avatars.get(p.profile_id) : null}
-          scale={s}
-        />
-      ))}
+      <PersonList scale={s}>
+        {people.map((p, i) => (
+          <PersonRow
+            key={p.membership_id ?? p.invitation_id ?? `${p.email}-${i}`}
+            name={personName(p)}
+            standing={standingOf(p)}
+            avatar={p.profile_id ? avatars.get(p.profile_id) : null}
+            first={i === 0}
+            scale={s}
+          />
+        ))}
+      </PersonList>
       <View style={{ height: PERSON_ROW.pitch * s }} />
     </ScrollView>
 

@@ -117,11 +117,15 @@ const PROGRAM_COLORS: Record<string, string> = {
 
 function useNavItems(): NavItem[] {
   const { role, nexusMode, learningPerms, learningIsAdmin, learningCapabilities } = useApp();
-  const nexusItems = learningIsAdmin
-    ? navItemsForPerms(learningPerms, true)
-    : (learningCapabilities?.length
-        ? navItemsForCapabilities(learningCapabilities)
-        : navItemsForPerms(learningPerms, false));
+  // Capabilities first, for ADMINS TOO. The admin branch used to come first and
+  // skip capabilities entirely, so a club admin saw every screen regardless of what
+  // the org provisioned to that club. The server now clamps admins to the club's
+  // ceiling; honouring it here is what makes the toggle visible.
+  // An empty/absent list still means "nothing recorded" → fall back to perms, which
+  // is what keeps pre-capability accounts working.
+  const nexusItems = learningCapabilities?.length
+    ? navItemsForCapabilities(learningCapabilities)
+    : navItemsForPerms(learningPerms, learningIsAdmin);
   return nexusMode
     ? nexusItems.map((it) => ({ ...it, icon: ICON_BY_ID[it.id] ?? <Home size={16} /> }))
     : NAV[role] ?? [];

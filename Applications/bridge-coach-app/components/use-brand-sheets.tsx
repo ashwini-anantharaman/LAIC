@@ -64,7 +64,7 @@ export function useBrandSheets(top: number): {
       ) : section === "other" ? (
         <OtherSheetBody onClose={close} />
       ) : (
-        <MenuIndexBody coach={showOther} onOpen={setSection} />
+        <MenuIndexBody coach={showOther} onOpen={setSection} onClose={close} />
       )}
     </BrandSheet>
   );

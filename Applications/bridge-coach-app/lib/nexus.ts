@@ -21,7 +21,10 @@ export class NexusError extends Error {
   }
 }
 
-async function request<T>(
+// Exported so feature modules (lib/friends.ts) reuse the token handling, the
+// single refresh-and-retry, and the NexusError mapping rather than re-implementing
+// them per feature — which is how two call sites end up disagreeing about a 401.
+export async function request<T>(
   path: string,
   options: {
     method?: string;
@@ -183,6 +186,14 @@ export type LearningObject = {
    *  the migration, so a consumer can treat them as arrays unconditionally. */
   collection_ids?: string[];
   collection_names?: string[];
+  /**
+   * The program that OWNS this object — a club's own id for content its people
+   * authored, the parent program's for shared curriculum. A club read returns
+   * both, so this is how a caller tells them apart: the Learn tab shows the
+   * curriculum, and a club's own content belongs to the club's surfaces.
+   * Absent on a server that predates it.
+   */
+  program_id?: string | null;
   /** Which version's content this row holds, and when an author last published it
    *  (0004). Publishing overwrites the row, so there is exactly one row per object
    *  and it is always the current published version — no version filtering on the
@@ -192,6 +203,25 @@ export type LearningObject = {
   version_number?: number | null;
   published_at?: string | null;
 };
+
+/** What the Content Studio says this person may do in a given club. */
+export type LearningContext = {
+  programId: string | null;
+  /** The club, when they arrived through one — the parent otherwise. */
+  nexus_club_program_id?: string | null;
+  capabilities?: string[];
+  is_admin?: boolean;
+  program_name?: string | null;
+};
+
+/** The learning platform's context for one club — the app reads it only to know
+ *  whether to offer authoring. */
+export function fetchLearningContext(token: string, programId?: string): Promise<LearningContext> {
+  return request<LearningContext>(
+    `/api/platform/learning/context?program_id=${programId ?? PROGRAM_ID}`,
+    { token },
+  );
+}
 
 // ── Endpoints ────────────────────────────────────────────────────────────────
 

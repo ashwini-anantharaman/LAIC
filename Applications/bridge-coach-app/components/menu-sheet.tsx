@@ -66,9 +66,14 @@ export function MenuIndexBody({
   /** Whether to offer "Other" — a capability, resolved by the caller. */
   coach,
   onOpen,
+  onClose,
 }: {
   coach: boolean;
   onOpen: (section: "profile" | "settings" | "other") => void;
+  /** Friends is a pushed SCREEN rather than another section of this sheet, so the
+   *  drawer has to dismiss itself before navigating — the same two steps OtherSheetBody
+   *  takes in `go`, or the sheet is left sitting over the screen it opened. */
+  onClose: () => void;
 }) {
   const { user } = useAuth();
 
@@ -87,6 +92,16 @@ export function MenuIndexBody({
           label="Settings"
           hint="Bidding system and table preferences"
           onPress={() => onOpen("settings")}
+        />
+        {/* Not capability-gated, unlike "Other": friends are person-to-person, so
+            there is no club role that could grant or withhold them. */}
+        <Row
+          label="Friends"
+          hint="Find people, and answer requests"
+          onPress={() => {
+            onClose();
+            router.push("/friends");
+          }}
         />
         {/* Capability-gated: without it there is nothing behind this row. */}
         {coach ? (

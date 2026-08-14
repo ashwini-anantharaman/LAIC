@@ -2009,36 +2009,8 @@ platformRouter.get("/learning/context", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   const mapped = LEARNING_ROLE_MAP[access.level];
-  // A person's custom Learning role (if assigned) carries per-area view/edit
-  // perms that gate the app's nav/screens. Admins get no custom role (they see
-  // everything); everyone else is confined to their role's granted areas.
-  const isAdmin = access.level === "admin";
-  const customRole = !isAdmin && user.email ? await graph.getLearningRoleForEmail(access.programId, user.email) : null;
-  // Effective learning capabilities — the app gates its screens on these:
-  //  • admin        → everything the catalogue grants (full access)
-  //  • custom role  → exactly the capabilities that Content Studio role binds
-  //  • program role → a "partial" program-role grant binds specific learning
-  //                   capabilities (filtered to the learning catalogue)
-  //  • otherwise    → the launch level's sample-role capabilities (edit →
-  //                   content-developer, comment → reviewer, view → learner).
-  // Defensive: never let capability computation break context resolution.
-  let capabilities: string[] = [];
-  try {
-    const learningDoc = await catalogue.getCatalogue("learning");
-    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
-    const programCaps = access.programRoleCapabilities?.length
-      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
-      : [];
-    capabilities = isAdmin
-      ? _learningCapsForLevel(learningDoc, "admin")
-      : Array.isArray(roleCaps) && roleCaps.length
-        ? (roleCaps as string[])
-        : programCaps.length
-          ? programCaps
-          : _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
-  } catch (e) {
-    console.error("learning/context capability computation failed (using empty set):", e);
-  }
+  const eff = await _learningEffective(user, access);
+  const { isAdmin, capabilities, customRole } = eff;
   // An exact pre-built learning role on the grant (picked in the role builder,
   // or implied — a bridge coach arrives as the learning app's `coach`) is
   // authoritative, same as the bridge context: flattening it through the
@@ -2053,6 +2025,10 @@ platformRouter.get("/learning/context", async (c) => {
     nexusUserId: access.profileId,
     laicOrgId: access.orgId,
     programId: access.programId,
+    // The CLUB, when the caller arrived through one — `programId` above is the
+    // connected PARENT, so without this no client can tell which club it is in.
+    // Mirrors nexus_club_program_id on the bridge context.
+    nexus_club_program_id: access.partnerProgramId ?? null,
     appId: await platformAppSlug(access.programId, "learning-platform", "learning_platform"),
     roles: prebuiltLearning ? [prebuiltLearning] : mapped.roles,
     permissions: [`learning:${access.level}`],
@@ -2080,9 +2056,13 @@ platformRouter.get("/learning/objects", async (c) => {
   // never pay that — fetch one object's content via GET /learning/objects/:id.
   // Program-scoped either way: each program is its own Content Studio instance.
   if (c.req.query("meta") === "1") {
-    return c.json(await graph.listLearningObjectsMeta(access.orgId, access.programId));
+    return c.json(
+      await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null),
+    );
   }
-  return c.json(await graph.listLearningObjects(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null),
+  );
 });
 
 // The bridge platform's program-instance library, for the LP's authoring
@@ -2106,7 +2086,15 @@ platformRouter.get("/learning/objects/:object_id", async (c) => {
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
-  const row = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  // Scoped like the list: club ∪ parent. The embed chain survives this because the
+  // mobile launch carries the club id and the Studio sends it back on every by-id
+  // call, so a by-id fetch resolves to a SUPERSET of the list that offered the item.
+  const row = await graph.getLearningObject(
+    access.orgId,
+    c.req.param("object_id"),
+    access.programId,
+    access.partnerProgramId ?? null,
+  );
   if (!row) throw new HttpError(404, "Learning object not found");
   return c.json(row);
 });
@@ -2115,11 +2103,192 @@ platformRouter.put("/learning/objects", async (c) => {
   const user = await getCurrentUser(c);
   const body = (await c.req.json()) as Row;
   const access = await resolvePlatformAccess(user, "learning", (body.program_id as string) ?? c.req.query("program_id") ?? null);
+  // Writing content requires content-author access, the same test its neighbours
+  // apply (/bridge-library above, /share below). This route had NO level check at
+  // all, so a `view`-level learner could upsert any object into the program — and
+  // because the repo's conflict clause rewrites owner_id from the payload, could
+  // also take authorship of someone else's work.
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   if (!body.id || !body.type) throw new HttpError(422, "id and type are required");
-  await graph.upsertLearningObject(access.orgId, body, access.programId);
+  // Autosave is a write like any other: a role scoped to Tutorials must not be able to
+  // edit a Quiz by letting the editor's own save fire. Stored type wins over the
+  // payload's for an existing row, so a relabel cannot slip past the scope.
+  const eff = await _learningEffective(user, access);
+  const probe = await graph.probeLearningObject(access.orgId, String(body.id));
+  _requireLearningCap(
+    eff,
+    probe ? "learning.object.edit" : "learning.object.create",
+    (probe?.type ?? (body.type as string | null)) ?? null,
+  );
+  const wrote = await graph.upsertLearningObject(access.orgId, body, _learningWriteScope(access));
+  if (!wrote) {
+    // The id exists, in this org or another, under a different program. Refusing is
+    // the point — see upsertLearningObject — but it must SAY so: answering {ok:true}
+    // on a write that matched no rows tells an author their work is saved when it
+    // is not. 409, not 404: the object is there, it is just not theirs to write.
+    throw new HttpError(409, "That object belongs to another program");
+  }
+  return c.json({ ok: true });
+});
+
+// ── Publishing, with a session ──────────────────────────────────────────────
+// These replace the Content Studio's own /api/learning/* routes, which were
+// UNAUTHENTICATED and wrote with the service-role key, stamping org and program
+// from environment variables. Two consequences that made club-owned content
+// impossible: the publisher's identity never reached the row, and every object
+// landed in one env-configured program however it was authored.
+//
+// The body envelope is deliberately identical to the route being replaced
+// ({ object, share }), so the Studio's call sites move by changing which fetch
+// helper they use and nothing else.
+//
+// AUTHORITY here is the coarse content-author guard (admin|edit), the same one
+// /share applies. Per-capability and per-content-type enforcement (a role scoped to
+// Tutorials but not Quizzes) is the next pass and belongs in _learningEffective,
+// which already resolves typeScopes for it.
+
+/**
+ * The program a write is stamped with — ONE expression, so club ownership arrives
+ * everywhere at once or nowhere.
+ *
+ * The CLUB when the caller came through one, the program otherwise. Both writers go
+ * through here, which is what stops the same row ping-ponging between two program ids
+ * on alternate saves.
+ *
+ * No backfill was owed. The diagnostic found every existing object stamped with a
+ * parent program (Bridge Program 16, Brain Bee 5) or nothing at all (14, none of them
+ * published) and NOT ONE owned by a club — so there is no attribution to undo, and
+ * parent-stamped content keeps flowing down to every connected club through the read
+ * arm.
+ *
+ * The consequence that was signed off: a club member can no longer save edits to
+ * PARENT curriculum. The sticky guard in upsertLearningObject refuses it and the route
+ * answers 409, rather than the old behaviour of silently moving the object into their
+ * club. Someone authoring AS the parent (the usual Content Studio launch) is
+ * unaffected — their scope is the program, exactly as before.
+ */
+function _learningWriteScope(access: ResolvedPlatformAccess): string | null {
+  return access.partnerProgramId ?? access.programId ?? null;
+}
+
+/**
+ * May this caller use `capId` on content of this TYPE?
+ *
+ * Two independent questions, and they deserve different answers on the wire: "you
+ * cannot publish" and "you cannot publish QUIZZES" send an author to different
+ * places.
+ *
+ * Only FINE-GRAINED callers are gated. The sample templates are incomplete —
+ * `learning-content-developer` grants no `object.delete` and none of the
+ * `publish.*` ids — and every partner club member is pinned to level "edit", which
+ * maps to that template. So gating on capability alone would strip publishing and
+ * deleting from every club member the day it shipped. Level-derived callers stay
+ * governed by each route's coarse admin|edit guard, which is the same accommodation
+ * enforce.ts already makes for the same reason.
+ *
+ * An absent or empty type list means EVERY type — the pruning never stores an empty
+ * one, and absence has to keep meaning "unrestricted" here as everywhere else.
+ */
+function _requireLearningCap(
+  eff: { fineGrained: boolean; capabilities: string[]; typeScopes: Record<string, string[]> },
+  capId: string,
+  objectType: string | null | undefined,
+): void {
+  if (!eff.fineGrained) return;
+  if (!eff.capabilities.includes(capId)) {
+    throw new HttpError(403, `Missing capability: ${capId}`);
+  }
+  const types = eff.typeScopes[capId];
+  if (!types?.length) return;
+  if (!objectType || !types.includes(objectType)) {
+    throw new HttpError(403, `That role's ${capId} is limited to specific content types`);
+  }
+}
+
+async function _learningAuthor(c: Context, pinned: string | null) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", pinned);
+  if (access.level !== "admin" && access.level !== "edit") {
+    throw new HttpError(403, "Content-author access required");
+  }
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  // Resolved here so the coarse guard and the fine one are never out of step, and so
+  // no route can forget the org's provisioning ceiling (_learningEffective clamps).
+  const eff = await _learningEffective(user, access);
+  return { user, access, eff };
+}
+
+platformRouter.post("/learning/objects/publish", async (c) => {
+  const body = (await c.req.json()) as { object?: Row; share?: boolean; program_id?: string };
+  const row = (body.object ?? (body as unknown as Row)) as Row;
+  // AUTH FIRST, then shape. Validating ahead of the session let an unauthenticated
+  // caller tell a real route from a missing one by the error it got back.
+  // program_id is only the launch PIN fed to access resolution — resolvePlatformAccess
+  // verifies membership, and the id that gets WRITTEN comes from the resolved access.
+  const { access, eff } = await _learningAuthor(
+    c,
+    body.program_id ?? (row?.program_id as string) ?? c.req.query("program_id") ?? null,
+  );
+  if (!row?.id || !row?.type) throw new HttpError(422, "id and type are required");
+  const scope = _learningWriteScope(access);
+  const share = body.share === true;
+
+  // The same mode decision the Studio's server made: a version number means this is
+  // a real publish; otherwise, if the object is already published, an autosave must
+  // only refresh the draft backup — never the reader-visible columns.
+  const isPublish = Number.isFinite(Number(row.version_number));
+  const probe = await graph.probeLearningObject(access.orgId, String(row.id));
+
+  // The type is the OBJECT's, and for an existing row the stored one wins: a payload
+  // may not relabel a quiz as a tutorial to slip past a type-scoped role.
+  const objectType = (probe?.type ?? (row.type as string | null)) ?? null;
+  _requireLearningCap(
+    eff,
+    probe ? "learning.object.edit" : "learning.object.create",
+    objectType,
+  );
+  if (isPublish) _requireLearningCap(eff, "learning.publish.release", objectType);
+  if (share) _requireLearningCap(eff, "learning.publish.audience", objectType);
+  const wrote =
+    !isPublish && !share && probe?.published
+      ? await graph.backupLearningObjectDraft(access.orgId, scope, String(row.id), row)
+      : await graph.publishLearningObject(access.orgId, scope, row, { publish: isPublish, share });
+
+  if (!wrote) throw new HttpError(409, "That object belongs to another program");
+  return c.json({ ok: true, id: row.id });
+});
+
+platformRouter.post("/learning/objects/unpublish", async (c) => {
+  const body = (await c.req.json()) as { id?: string; program_id?: string };
+  const { access, eff } = await _learningAuthor(
+    c,
+    body.program_id ?? c.req.query("program_id") ?? null,
+  );
+  if (!body.id) throw new HttpError(422, "id is required");
+  const probe = await graph.probeLearningObject(access.orgId, body.id);
+  _requireLearningCap(eff, "learning.publish.release", probe?.type);
+  const ok = await graph.unpublishLearningObject(access.orgId, _learningWriteScope(access), body.id);
+  if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true });
+});
+
+platformRouter.delete("/learning/objects/:object_id", async (c) => {
+  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const probe = await graph.probeLearningObject(access.orgId, c.req.param("object_id"));
+  _requireLearningCap(eff, "learning.object.delete", probe?.type);
+  const ok = await graph.deleteLearningObject(
+    access.orgId,
+    _learningWriteScope(access),
+    c.req.param("object_id"),
+  );
+  if (!ok) throw new HttpError(404, "Learning object not found");
   return c.json({ ok: true });
 });
 
@@ -2164,39 +2333,125 @@ const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
 // A learning role now binds fine-grained capability ids from the learning
 // catalogue (her capability-based model). The legacy per-area view/edit `perms`
 // stays for backward compatibility; capabilities are the new source of truth.
-// A capability may additionally be narrowed to specific learning objects:
-// capability id → the object ids it applies to. Absent/empty means every object.
-const _learningObjectScopes = z.record(z.string(), z.array(z.string()));
-const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}), capabilities: z.array(z.string()).optional(), object_scopes: _learningObjectScopes.optional() });
-const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional(), capabilities: z.array(z.string()).optional(), object_scopes: _learningObjectScopes.optional() });
+// A capability may additionally be narrowed to particular content types:
+// capability id → the object types it covers. Absent/empty means every type.
+const _learningTypeScopes = z.record(z.string(), z.array(z.string()));
+const learningRoleCreateSchema = z.object({ program_id: z.string(), name: z.string().min(1), perms: _learningPerms.default({}), capabilities: z.array(z.string()).optional(), type_scopes: _learningTypeScopes.optional() });
+const learningRoleUpdateSchema = z.object({ name: z.string().min(1).optional(), perms: _learningPerms.optional(), capabilities: z.array(z.string()).optional(), type_scopes: _learningTypeScopes.optional() });
 const learningAssignSchema = z.object({ program_id: z.string(), email: z.string().email(), role_id: z.string().nullable() });
 
 /** Fold sanitized learning-catalogue capabilities into a role's perms blob
  *  (dropping unknown/reserved ids), mirroring the org/program role builders.
- *  Object scopes ride along beside them, pruned to the capabilities that
+ *  Type scopes ride along beside them, pruned to the capabilities that
  *  survived so a scope can never outlive the capability it narrows. */
 async function _learningPermsWithCaps(
   perms: Record<string, unknown>,
   capabilities: string[] | undefined,
-  objectScopes?: Record<string, string[]>,
+  typeScopes?: Record<string, string[]>,
 ): Promise<Record<string, unknown>> {
-  if (capabilities === undefined && objectScopes === undefined) return perms;
+  if (capabilities === undefined && typeScopes === undefined) return perms;
   const next = { ...perms };
   if (capabilities !== undefined) {
     next.capabilities = await catalogue.validGrantsAcross([{ providerId: "learning" }], capabilities);
   }
-  if (objectScopes !== undefined) {
+  if (typeScopes !== undefined) {
     const granted = new Set((next.capabilities as string[] | undefined) ?? []);
     const scopes: Record<string, string[]> = {};
-    for (const [capId, ids] of Object.entries(objectScopes)) {
+    for (const [capId, ids] of Object.entries(typeScopes)) {
       if (!granted.has(capId)) continue;
       const unique = [...new Set(ids.filter(Boolean))];
       if (unique.length) scopes[capId] = unique;
     }
-    if (Object.keys(scopes).length) next.objectScopes = scopes;
-    else delete next.objectScopes;
+    if (Object.keys(scopes).length) next.typeScopes = scopes;
+    else delete next.typeScopes;
   }
   return next;
+}
+
+/**
+ * What the caller may do in the learning platform — the ONE resolver.
+ *
+ * Every learning route reads this; none computes capabilities itself. That is the
+ * discipline `appAccessFor` uses for the club app (accessCatalogue/appRoles.ts):
+ * there is no unclamped export, so no call site can forget the org's ceiling.
+ *
+ * Precedence, unchanged from what /learning/context did inline:
+ *   • admin        → everything the catalogue grants
+ *   • custom role  → exactly what that Content Studio role binds
+ *   • program role → a "partial" grant's learning capabilities
+ *   • otherwise    → the launch LEVEL's sample-role capabilities
+ *
+ * `fineGrained` records WHICH of those answered. It matters because the sample
+ * templates are incomplete — `learning-content-developer` grants no
+ * `object.delete` and none of the `publish.*` ids — and every partner club member
+ * is hardcoded to level "edit", so a naive "capability absent → refuse" would strip
+ * publishing and deleting from every club member on day one. Level-derived callers
+ * are therefore governed by each endpoint's coarse guard, exactly as
+ * enforce.ts:76-85 already decides for the same reason.
+ */
+async function _learningEffective(
+  user: PlatformUser,
+  access: ResolvedPlatformAccess,
+): Promise<{
+  isAdmin: boolean;
+  fineGrained: boolean;
+  capabilities: string[];
+  typeScopes: Record<string, string[]>;
+  customRole: Row | null;
+}> {
+  const isAdmin = access.level === "admin";
+  const customRole = !isAdmin && user.email
+    // Under the CLUB when there is one: the Studio has always SENT the club id when
+    // saving a role (it posts whatever program it was launched with), while this read
+    // looked under the parent — so a club's own roles were written where nothing read
+    // them. One footing, or per-club permissions cannot be expressed at all.
+    ? await graph.getLearningRoleForEmail(access.partnerProgramId ?? access.programId, user.email)
+    : null;
+
+  let capabilities: string[] = [];
+  let fineGrained = false;
+  // Defensive: never let capability computation break context resolution.
+  try {
+    const learningDoc = await catalogue.getCatalogue("learning");
+    const roleCaps = (customRole?.perms as Row | undefined)?.capabilities;
+    const programCaps = access.programRoleCapabilities?.length
+      ? await catalogue.validGrantsAcross([{ providerId: "learning" }], access.programRoleCapabilities)
+      : [];
+    if (isAdmin) {
+      capabilities = _learningCapsForLevel(learningDoc, "admin");
+    } else if (Array.isArray(roleCaps) && roleCaps.length) {
+      capabilities = roleCaps as string[];
+      fineGrained = true;
+    } else if (programCaps.length) {
+      capabilities = programCaps;
+      fineGrained = true;
+    } else {
+      capabilities = _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view");
+    }
+  } catch (e) {
+    console.error("learning/context capability computation failed (using empty set):", e);
+  }
+
+  // The org's CEILING, applied to every branch above INCLUDING admin. A club's
+  // administrator holds what the club WAS GIVEN, not everything the catalogue
+  // defines — the same call the club app makes (appAccessFor), and the case most
+  // likely to be tested first. Clamped against the CLUB's own program id, because
+  // that is where feature_access lives; clampCapsToProvisioning intersects the
+  // org's envelope as well, so the parent's ceiling still applies.
+  //
+  // Deliberately OUTSIDE the try above: an unloadable program already imposes no
+  // ceiling (provisioning.ts), and a catalogue failure must leave the set
+  // unclamped rather than read as denial. Absent is not denial, all the way down.
+  capabilities = await provisioning.clampCapsForProgram(
+    access.partnerProgramId ?? access.programId,
+    capabilities,
+  );
+
+  const rawScopes = (customRole?.perms as Row | undefined)?.typeScopes;
+  const typeScopes =
+    rawScopes && typeof rawScopes === "object" ? (rawScopes as Record<string, string[]>) : {};
+
+  return { isAdmin, fineGrained, capabilities, typeScopes, customRole };
 }
 
 /** The capability ids a launch LEVEL implies, sourced from the learning
@@ -2212,10 +2467,41 @@ function _learningCapsForLevel(doc: CapabilityCatalogueDocument, level: "admin" 
 }
 
 /** The caller must be a learning admin of the program. Returns the resolved access. */
+/**
+ * Does this person ADMINISTER the club they arrived through?
+ *
+ * Judged on their membership, not on `access.level` — a partner club's level is
+ * hardcoded to "edit" for everyone (platformAccess.ts), so no club member can ever
+ * reach admin through it. This is the same test the club app already uses to decide
+ * a structural tier, applied to the club rather than the parent, which is why it can
+ * grant a club authority over its own roles WITHOUT loosening that hardcoded level
+ * for anything else.
+ */
+function _clubStructuralTier(user: PlatformUser, access: ResolvedPlatformAccess): boolean {
+  if (!access.partnerProgramId || !access.orgId) return false;
+  return user.memberships.some(
+    (m) =>
+      m.org_id === access.orgId &&
+      ["owner", "administrator"].includes(m.role) &&
+      (!m.program_id || m.program_id === access.partnerProgramId),
+  );
+}
+
+/**
+ * The caller must administer the learning program — or the club they came through.
+ *
+ * Clubs were locked out entirely: every /learning/roles* route required
+ * `level === "admin"`, and a partner club is pinned to "edit", so a club
+ * administrator got 403 on their own club's roles. Per-club content permissions were
+ * therefore only ever configurable by the parent org, which is not what "one club =
+ * one program" is supposed to mean.
+ */
 async function _learningAdmin(c: Context, programId: string) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", programId);
-  if (access.level !== "admin") throw new HttpError(403, "Learning admin access required");
+  if (access.level !== "admin" && !_clubStructuralTier(user, access)) {
+    throw new HttpError(403, "Learning admin access required");
+  }
   return access;
 }
 
@@ -2245,14 +2531,26 @@ platformRouter.delete("/learning/catalogue", async (c) => {
 platformRouter.get("/learning/roles", async (c) => {
   const pid = c.req.query("program_id") ?? "";
   const access = await _learningAdmin(c, pid);
-  return c.json(await graph.listLearningRoles(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningRoles(access.orgId, access.partnerProgramId ?? access.programId),
+  );
 });
 
 platformRouter.post("/learning/roles", async (c) => {
   const req = parseBody(learningRoleCreateSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
-  const perms = await _learningPermsWithCaps(req.perms, req.capabilities, req.object_scopes);
-  return c.json(await graph.createLearningRole(access.orgId, access.programId, req.name, perms));
+  const perms = await _learningPermsWithCaps(req.perms, req.capabilities, req.type_scopes);
+  // Stored under the CLUB when there is one, matching where getLearningRoleForEmail
+  // now reads. Both sides move together or a club's roles are written where nothing
+  // looks for them.
+  return c.json(
+    await graph.createLearningRole(
+      access.orgId,
+      access.partnerProgramId ?? access.programId,
+      req.name,
+      perms,
+    ),
+  );
 });
 
 platformRouter.patch("/learning/roles/:id", async (c) => {
@@ -2262,10 +2560,10 @@ platformRouter.patch("/learning/roles/:id", async (c) => {
   // Merge capabilities into whatever perms are being written (or the existing
   // blob) so the area perms and capabilities don't clobber each other.
   let perms = body.perms as Record<string, unknown> | undefined;
-  if (body.capabilities !== undefined || body.object_scopes !== undefined) {
+  if (body.capabilities !== undefined || body.type_scopes !== undefined) {
     const existing = await graph.getLearningRole(c.req.param("id")).catch(() => null);
     const base = (perms ?? (existing?.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-    perms = await _learningPermsWithCaps(base, body.capabilities, body.object_scopes);
+    perms = await _learningPermsWithCaps(base, body.capabilities, body.type_scopes);
   }
   const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms });
   if (!row) throw new HttpError(404, "Role not found");
@@ -2282,13 +2580,21 @@ platformRouter.delete("/learning/roles/:id", async (c) => {
 platformRouter.get("/learning/roster", async (c) => {
   const pid = c.req.query("program_id") ?? "";
   const access = await _learningAdmin(c, pid);
-  return c.json(await graph.listLearningPeople(access.orgId, access.programId));
+  return c.json(
+    await graph.listLearningPeople(access.orgId, access.partnerProgramId ?? access.programId),
+  );
 });
 
 platformRouter.put("/learning/assign", async (c) => {
   const req = parseBody(learningAssignSchema, await c.req.json());
   const access = await _learningAdmin(c, req.program_id);
-  await graph.setLearningRoleAssignment(access.orgId, access.programId, req.email, req.role_id);
+  // The club again: an assignment must live where the role and the lookup do.
+  await graph.setLearningRoleAssignment(
+    access.orgId,
+    access.partnerProgramId ?? access.programId,
+    req.email,
+    req.role_id,
+  );
   return c.json({ ok: true });
 });
 

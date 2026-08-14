@@ -2676,25 +2676,66 @@ export async function upsertAppUserData(opts: {
  * returned; passing null keeps the legacy org-wide behavior (e.g. an org-level
  * admin with no program pinned).
  */
-export async function listLearningObjects(orgId: string, programId?: string | null): Promise<Row[]> {
+/**
+ * Which programs' content a caller may read.
+ *
+ * A club sees its OWN content plus the parent program's curriculum; a parent sees
+ * only its own. Both ids are needed, which is why this is not the
+ * `partnerProgramId ?? programId` idiom the bridge routes use for club-scoped DATA —
+ * there, one id answers; here, two do.
+ *
+ * NULL program_id stays INVISIBLE, deliberately. The challenge work made null
+ * fail-open because there was no column and every row was null; content is the
+ * opposite — these queries already filtered `program_id = X` strictly, so unstamped
+ * rows are invisible today and an `is null` arm would newly EXPOSE them.
+ */
+function _programScope(programId?: string | null, clubProgramId?: string | null) {
+  const ids = [...new Set([programId, clubProgramId].filter(Boolean) as string[])];
+  if (!ids.length) return sql``; // no program pinned → org-wide, as before
+  return sql`and program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`;
+}
+
+export async function listLearningObjects(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
+  // Same optional group and the same fallback as the meta listing below. This
+  // query used to omit collection_ids/collection_names/version_number/published_at
+  // entirely, so an object round-tripped through Nexus came back with NO folder
+  // membership and no publication state — which is why the Content Studio still
+  // hydrated its library from the service-role path instead. Reader apps group the
+  // Learn tab by collection_names, so losing them is not cosmetic.
+  try {
+    return await _listLearningObjects(orgId, programId, clubProgramId, true);
+  } catch (e) {
+    if (!_isUndefinedColumn(e)) throw e;
+    console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
+    return _listLearningObjects(orgId, programId, clubProgramId, false);
+  }
+}
+
+async function _listLearningObjects(
+  orgId: string,
+  programId: string | null | undefined,
+  clubProgramId: string | null | undefined,
+  withCollections: boolean,
+): Promise<Row[]> {
+  const cols = withCollections
+    ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
+            coalesce(collection_names, '[]'::jsonb) as collection_names,
+            version_number,
+            published_at::text as published_at`
+    : sql``;
+  // One query, not two near-identical ones: the pinned/unpinned pair had to be kept
+  // in step by hand, which is exactly where a program predicate drifts.
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(
-      programId
-        ? sql`
+    const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             program_id::text as program_id,
              created_at::text as created_at, updated_at::text as updated_at
+             ${cols}
       from learning_objects
-      where organization_id = ${orgId} and program_id = ${programId}
-      order by updated_at desc nulls last`
-        : sql`
-      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, blocks, tags, source_ids, pipeline_draft,
-             created_at::text as created_at, updated_at::text as updated_at
-      from learning_objects
-      where organization_id = ${orgId}
-      order by updated_at desc nulls last`,
-    );
+      where organization_id = ${orgId} ${scope}
+      order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
 }
@@ -2702,23 +2743,24 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
 /** Metadata-only listing: everything except the (potentially huge) content
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
-export async function listLearningObjectsMeta(orgId: string, programId?: string | null): Promise<Row[]> {
+export async function listLearningObjectsMeta(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
   // collection_ids/collection_names arrive with 0003_object_collections.sql. A
   // deploy that lands before that migration must still serve the list, so the
   // richer query falls back to the original one on undefined_column rather than
   // 500ing the Learn tab.
   try {
-    return await _listLearningObjectsMeta(orgId, programId, true);
+    return await _listLearningObjectsMeta(orgId, programId, clubProgramId, true);
   } catch (e) {
     if (!_isUndefinedColumn(e)) throw e;
     console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
-    return _listLearningObjectsMeta(orgId, programId, false);
+    return _listLearningObjectsMeta(orgId, programId, clubProgramId, false);
   }
 }
 
 async function _listLearningObjectsMeta(
   orgId: string,
   programId: string | null | undefined,
+  clubProgramId: string | null | undefined,
   withCollections: boolean,
 ): Promise<Row[]> {
   // One optional group for every column added by 0003/0004. They land together in
@@ -2730,39 +2772,49 @@ async function _listLearningObjectsMeta(
             version_number,
             published_at::text as published_at`
     : sql``;
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
-    const rows = await tx.execute(
-      programId
-        ? sql`
+    const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, tags, source_ids,
+             description, estimated_time, tags, source_ids, program_id::text as program_id,
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
-      where organization_id = ${orgId} and program_id = ${programId}
-      order by updated_at desc nulls last`
-        : sql`
-      select id, type, title, owner_id, owner_name, status, scope, reuse_count,
-             description, estimated_time, tags, source_ids,
-             created_at::text as created_at, updated_at::text as updated_at
-             ${cols}
-      from learning_objects
-      where organization_id = ${orgId}
-      order by updated_at desc nulls last`,
-    );
+      where organization_id = ${orgId} ${scope}
+      order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
 }
 
-/** One learning object, full row — org-scoped like the list. */
-export async function getLearningObject(orgId: string, id: string): Promise<Row | null> {
+/**
+ * One learning object, full row — scoped like the list.
+ *
+ * This used to filter on org and id ALONE, so any authenticated member of the org
+ * could fetch any object of any program by id, `pipeline_draft` included — the
+ * in-progress authoring draft that even the public share route deliberately withholds.
+ * Once content is club-owned that is one club reading a sibling club's unpublished
+ * work, which is the sharpest edge in this area and one predicate to close.
+ *
+ * Out of scope returns null and the route 404s, indistinguishable from a missing id —
+ * the same rule the public route states, and the house 404-for-forbidden convention.
+ *
+ * Passing no program keeps the org-wide behaviour, which is what an org-level admin
+ * with nothing pinned relies on.
+ */
+export async function getLearningObject(
+  orgId: string,
+  id: string,
+  programId?: string | null,
+  clubProgramId?: string | null,
+): Promise<Row | null> {
+  const scope = _programScope(programId, clubProgramId);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
-      where organization_id = ${orgId} and id = ${id}
+      where organization_id = ${orgId} and id = ${id} ${scope}
       limit 1`);
     return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
   });
@@ -2856,10 +2908,46 @@ async function _setLearningObjectShared(
   });
 }
 
-/** Insert-or-update one learning object, always stamped to the caller's org. */
-export async function upsertLearningObject(orgId: string, r: Row, programId?: string | null): Promise<void> {
-  await asPrivileged(async (tx) => {
-    await tx.execute(sql`
+/**
+ * Insert-or-update one learning object, always stamped to the caller's org.
+ *
+ * Returns FALSE when nothing was written — the row exists but belongs to another
+ * org or another program. It used to return void, so a refused write reported
+ * success and the route answered `{ok:true}`: an author could be told "saved"
+ * while the update matched zero rows. That is how someone loses an afternoon.
+ *
+ * A row's program is STICKY. Content is club-scoped, so if this could re-stamp
+ * `program_id` then a club member opening a parent-program object and autosaving
+ * it would move that object into their club — out of the parent's library and out
+ * of every sibling club's. `coalesce(existing, excluded)` lets a NULL row be
+ * healed by its first stamp while making a *move* impossible.
+ *
+ * Ownership is likewise not rewritten on update. It was `owner_id =
+ * excluded.owner_id` from the client payload, so whoever saved last owned the
+ * object — which quietly breaks the Studio's "only content you created can be
+ * deleted" rule for the original author.
+ */
+export async function upsertLearningObject(
+  orgId: string,
+  r: Row,
+  programId?: string | null,
+): Promise<boolean> {
+  // An UNKNOWN scope narrows nothing: with no program resolved, fall back to the
+  // org guard alone, exactly as before. Only a caller that knows its program gets
+  // the program predicate.
+  //
+  // The NULL arm is load-bearing and was verified the hard way — with `is not
+  // distinct from` instead, a legacy row whose program_id is null matches nothing,
+  // so the `coalesce` healing below never fires AND every pre-program object
+  // becomes unsaveable: its author gets a 409 on content that works today. Here an
+  // unclaimed row may be adopted (it is invisible to every program-scoped read
+  // until it is, so nobody loses access), while a row that already belongs to a
+  // program matches only its own program and therefore can never be moved.
+  const programGuard = programId
+    ? sql`and (learning_objects.program_id is null or learning_objects.program_id = ${programId})`
+    : sql``;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
       insert into learning_objects
         (id, organization_id, program_id, type, title, owner_id, owner_name, status, scope,
          reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
@@ -2873,14 +2961,213 @@ export async function upsertLearningObject(orgId: string, r: Row, programId?: st
         ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
         coalesce(${r.created_at ?? null}::timestamptz, now()), now())
       on conflict (id) do update set
-        program_id = coalesce(excluded.program_id, learning_objects.program_id),
-        title = excluded.title, type = excluded.type, owner_id = excluded.owner_id,
-        owner_name = excluded.owner_name, status = excluded.status, scope = excluded.scope,
+        -- Sticky: an existing program always wins, a null one gets healed. Never a move.
+        program_id = coalesce(learning_objects.program_id, excluded.program_id),
+        title = excluded.title, type = excluded.type,
+        -- owner_id / owner_name deliberately absent: authorship is set once, on insert.
+        status = excluded.status, scope = excluded.scope,
         reuse_count = excluded.reuse_count, description = excluded.description,
         estimated_time = excluded.estimated_time, blocks = excluded.blocks,
         tags = excluded.tags, source_ids = excluded.source_ids,
         pipeline_draft = excluded.pipeline_draft, updated_at = now()
-      where learning_objects.organization_id = ${orgId}`);
+      where learning_objects.organization_id = ${orgId}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+// ── Publishing (moved off the Content Studio's own service-role server) ─────
+// The Studio published straight to Supabase with the service-role key from an
+// UNAUTHENTICATED route, stamping org and program from environment variables. So
+// "which club owns this content" was answered by a deployment setting rather than
+// by the person publishing, and anyone who could reach that server could publish,
+// unpublish or delete anything. These are the session-scoped replacements.
+//
+// They are SIBLINGS of upsertLearningObject rather than options on it. That one is
+// the AUTOSAVE writer, and the separation is load-bearing: autosave must remain
+// structurally incapable of touching published_at/version_number, or a draft keystroke
+// can reach readers. Two writers, two shapes, one doctrine — see the Studio's own
+// note on why a draft backup is not a publish.
+
+/** What the write path needs to know about an object before writing it. */
+export async function probeLearningObject(
+  orgId: string,
+  id: string,
+): Promise<{ programId: string | null; published: boolean; ownerId: string | null; type: string | null } | null> {
+  // Org-scoped on purpose. A cross-org id collision reports "not here", the write
+  // is then attempted as an insert, and the conflict guard refuses it — so the
+  // caller learns nothing about other orgs' ids from this probe.
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select program_id, owner_id, type, published_at
+      from learning_objects
+      where organization_id = ${orgId} and id = ${id}
+      limit 1`);
+    const row = (rows as unknown as Row[])[0] as Row | undefined;
+    if (!row) return null;
+    return {
+      programId: (row.program_id as string | null) ?? null,
+      published: row.published_at != null,
+      ownerId: (row.owner_id as string | null) ?? null,
+      type: (row.type as string | null) ?? null,
+    };
+  });
+}
+
+/**
+ * Publish (or re-save) an object, including the columns autosave must not touch.
+ *
+ * `publish` stamps published_at — that is what makes it visible to reader apps.
+ * `share` sets shared_at, and never clears it: a link already handed out keeps
+ * working, which is the same reasoning the Studio's own path used.
+ *
+ * Returns false when the row belongs to another org or another program; the route
+ * turns that into 409 rather than a silent success.
+ */
+export async function publishLearningObject(
+  orgId: string,
+  programId: string | null | undefined,
+  r: Row,
+  opts: { publish: boolean; share: boolean },
+): Promise<boolean> {
+  try {
+    return await _publishLearningObject(orgId, programId, r, opts);
+  } catch (e) {
+    if (_isUndefinedColumn(e)) {
+      // LOUD, like the share toggle: someone clicking Publish must never be told it
+      // worked when the column that makes it visible does not exist.
+      throw new Error(
+        "publish-unavailable: learning_objects is missing collection_*/version_number/published_at/shared_at (run migrations)",
+      );
+    }
+    throw e;
+  }
+}
+
+async function _publishLearningObject(
+  orgId: string,
+  programId: string | null | undefined,
+  r: Row,
+  opts: { publish: boolean; share: boolean },
+): Promise<boolean> {
+  // Same guard as upsertLearningObject, for the same reasons: an unclaimed row may
+  // be adopted, a row that belongs to a program can never be moved out of it.
+  const programGuard = programId
+    ? sql`and (learning_objects.program_id is null or learning_objects.program_id = ${programId})`
+    : sql``;
+  const pubInsert = opts.publish ? sql`, ${r.version_number ?? null}, now()` : sql`, null, null`;
+  const pubUpdate = opts.publish
+    ? sql`, version_number = excluded.version_number, published_at = now()`
+    : sql``;
+  const shareInsert = opts.share ? sql`, now()` : sql`, null`;
+  // coalesce so an existing share survives a later publish that did not ask to share.
+  const shareUpdate = opts.share
+    ? sql`, shared_at = coalesce(learning_objects.shared_at, now())`
+    : sql``;
+
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      insert into learning_objects
+        (id, organization_id, program_id, type, title, owner_id, owner_name, status, scope,
+         reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+         collection_ids, collection_names, created_at, updated_at, version_number, published_at,
+         shared_at)
+      values (
+        ${r.id}, ${orgId}, ${programId ?? (r.program_id as string) ?? null}, ${r.type},
+        ${r.title ?? ""}, ${r.owner_id ?? null}, ${r.owner_name ?? null},
+        ${r.status ?? "in-review"}, ${r.scope ?? "bridge"}, ${r.reuse_count ?? 0},
+        ${r.description ?? ""}, ${r.estimated_time ?? ""},
+        ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
+        ${JSON.stringify(r.source_ids ?? [])}::jsonb,
+        ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
+        ${JSON.stringify(r.collection_ids ?? [])}::jsonb,
+        ${JSON.stringify(r.collection_names ?? [])}::jsonb,
+        coalesce(${r.created_at ?? null}::timestamptz, now()), now() ${pubInsert} ${shareInsert})
+      on conflict (id) do update set
+        program_id = coalesce(learning_objects.program_id, excluded.program_id),
+        title = excluded.title, type = excluded.type,
+        status = excluded.status, scope = excluded.scope,
+        reuse_count = excluded.reuse_count, description = excluded.description,
+        estimated_time = excluded.estimated_time, blocks = excluded.blocks,
+        tags = excluded.tags, source_ids = excluded.source_ids,
+        pipeline_draft = excluded.pipeline_draft,
+        collection_ids = excluded.collection_ids,
+        collection_names = excluded.collection_names,
+        updated_at = now() ${pubUpdate} ${shareUpdate}
+      where learning_objects.organization_id = ${orgId}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+/**
+ * The draft backup: pipeline state and folder membership, nothing else.
+ *
+ * This is what autosave does to an ALREADY PUBLISHED object. Writing status or
+ * blocks here would push work-in-progress to everyone reading the published
+ * version, which is the whole reason the two paths are separate.
+ */
+export async function backupLearningObjectDraft(
+  orgId: string,
+  programId: string | null | undefined,
+  id: string,
+  r: Row,
+): Promise<boolean> {
+  const programGuard = programId
+    ? sql`and (program_id is null or program_id = ${programId})`
+    : sql``;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      update learning_objects
+      set pipeline_draft = ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
+          collection_ids = ${JSON.stringify(r.collection_ids ?? [])}::jsonb,
+          collection_names = ${JSON.stringify(r.collection_names ?? [])}::jsonb,
+          updated_at = now()
+      where organization_id = ${orgId} and id = ${id}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+/** Withdraw from reader apps, keeping the content and its backup. */
+export async function unpublishLearningObject(
+  orgId: string,
+  programId: string | null | undefined,
+  id: string,
+): Promise<boolean> {
+  const programGuard = programId
+    ? sql`and (program_id is null or program_id = ${programId})`
+    : sql``;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      update learning_objects
+      set published_at = null, version_number = null, status = 'draft', updated_at = now()
+      where organization_id = ${orgId} and id = ${id}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+/** Remove content from the shared store for good. */
+export async function deleteLearningObject(
+  orgId: string,
+  programId: string | null | undefined,
+  id: string,
+): Promise<boolean> {
+  const programGuard = programId
+    ? sql`and (program_id is null or program_id = ${programId})`
+    : sql``;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      delete from learning_objects
+      where organization_id = ${orgId} and id = ${id}
+        ${programGuard}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
   });
 }
 

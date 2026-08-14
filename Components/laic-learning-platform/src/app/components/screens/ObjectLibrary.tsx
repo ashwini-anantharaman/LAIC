@@ -29,7 +29,6 @@ import { useApp } from '../../App';
 import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 import { objectToPublishRow, saveObject, setObjectShared } from '../../../lib/supabase';
-import { publishLearningObject } from '../../../lib/api';
 import { applyObjectOrder, setObjectOrder, subscribeObjectOrder } from '../../../lib/objectOrderStore';
 import {
   objectCollectionIds,
@@ -348,20 +347,12 @@ export function ObjectLibrary() {
       } catch {
         ok = false;
       }
-      if (!ok) {
-        // No Nexus session (the standalone site): both calls above 401, so the
-        // link would be copied but dead. Publish through the CS API instead,
-        // which writes the same row server-side and flags it shared.
-        try {
-          const names = objectCollections
-            .filter((c) => objectCollectionIds(obj).includes(c.id))
-            .map((c) => c.name);
-          const res = await publishLearningObject(objectToPublishRow(obj, names), true);
-          ok = !!res?.ok;
-        } catch {
-          ok = false;
-        }
-      }
+      // No second attempt. There used to be a fallback here that published through
+      // the Content Studio's own service-role API when the two calls above failed —
+      // which is to say, precisely when the authenticated path REFUSED. That made it
+      // an authentication bypass by construction: every server-side permission check
+      // could be defeated by failing it once. Without a session the link is simply
+      // reported as not public, which is the truth.
     }
     setLinkPublic((m) => ({ ...m, [objectId]: ok }));
   };

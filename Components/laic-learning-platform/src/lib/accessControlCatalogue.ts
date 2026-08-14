@@ -184,15 +184,13 @@ export function groupsSorted(catalogue: CapabilityCatalogueDocument): CatalogueG
 }
 
 /**
- * Capabilities a grant may narrow to specific existing objects. A capability
+ * Capabilities a grant may narrow to particular content types. A capability
  * qualifies when the catalogue says it supports resource constraints over an
- * object resource type — `create` is excluded because there is no existing
- * object to point at (its scoping is the content-type restriction instead).
+ * object resource type — create, edit, delete and browse all do.
  */
-export function objectScopableCapabilities(catalogue: CapabilityCatalogueDocument): Capability[] {
+export function typeScopableCapabilities(catalogue: CapabilityCatalogueDocument): Capability[] {
   return catalogue.capabilities.filter((c) => (
     c.supportsResourceConstraints
-    && !c.id.endsWith('.create')
     && (c.resourceTypes || []).some((rt) => rt.includes('object') || rt.includes('composition'))
   ));
 }

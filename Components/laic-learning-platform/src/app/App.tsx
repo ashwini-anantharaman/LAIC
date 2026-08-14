@@ -2,7 +2,14 @@ import React, { createContext, useContext, useState, useCallback, useEffect, use
 import type { Role, Program, LearningObject, ObjectType, Version } from '../lib/types';
 import { USERS, OBJECTS } from '../lib/data';
 import { supabaseEnabled, listObjects, fetchObject, saveObject, objectToPublishRow } from '../lib/supabase';
-import { deleteSharedObject, fetchSharedLibrary, publishLearningObject, unpublishLearningObject } from '../lib/api';
+// Publishing goes through Nexus (session-scoped) rather than the Content Studio's
+// own service-role server. Same bodies, same call sites — a different door.
+import {
+  deleteObjectEverywhere,
+  fetchLibraryRows,
+  publishObject,
+  unpublishObject,
+} from '../lib/supabase';
 
 /**
  * Back the library up to the shared store, coalesced per object.
@@ -19,7 +26,11 @@ function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
   if (pending) clearTimeout(pending);
   sharedSyncTimers.set(obj.id, setTimeout(() => {
     sharedSyncTimers.delete(obj.id);
-    publishLearningObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
+    // Standalone (no Nexus session) is draft-only: the local library is still the
+    // author's, it simply has nowhere shared to go. Skipping keeps the console clean
+    // rather than logging a refusal every 2.5s per edited object.
+    if (!supabaseEnabled()) return;
+    publishObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
       console.warn('[library] could not back up to the shared store:', err?.message || err);
     });
   }, SHARED_SYNC_DELAY_MS));
@@ -113,7 +124,7 @@ import {
   signOutToNexus,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
-import { defaultScreenForCapabilities } from '../lib/roleAccess';
+import { canAccessScreen, defaultScreenForCapabilities } from '../lib/roleAccess';
 
 /**
  * What a save should do to version history.
@@ -372,7 +383,7 @@ function StudioApp() {
     // survives a refresh, a cleared cache, or a different machine — this is
     // what replaced baking a snapshot into the build.
     try {
-      const shared = await fetchSharedLibrary();
+      const shared = await fetchLibraryRows();
       if (gen !== hydrateGenRef.current) return;
       if (Array.isArray(shared) && shared.length) {
         const claimed = shared.map((r) => ({ ...sharedRowToObject(r), ownerId: userId }));
@@ -474,7 +485,13 @@ function StudioApp() {
         const uid = ctx.nexusUserId || 'nexus';
         const isAdmin = ctx.is_admin ?? r === 'administrator';
         const perms = ctx.learning_role?.perms ?? null;
-        const caps = isAdmin ? null : (ctx.capabilities ?? null);
+        // Admins are NOT exempt. This used to be `isAdmin ? null : …`, discarding the
+        // server's answer and treating null as unrestricted — which made the org's
+        // provisioning ceiling decorative for exactly the person most likely to test
+        // it. The server clamps every branch, admin included, to what the org
+        // provisioned this club; take what it says. An empty/absent list still means
+        // "nothing recorded" and falls back to perms, as before.
+        const caps = ctx.capabilities ?? null;
         setNexusMode(true);
         setLearningIsAdmin(isAdmin);
         setLearningPerms(perms);
@@ -489,7 +506,15 @@ function StudioApp() {
         // program overview. Fall back to the legacy area-perms nav.
         const nav = navItemsForPerms(perms, isAdmin);
         const memberLanding = caps?.length ? defaultScreenForCapabilities(caps) : (nav[0]?.id ?? DEFAULT_SCREEN[r]);
-        setCurrentScreen(isAdmin ? 'admin-overview' : memberLanding);
+        // A launch may name the screen it wants — the club app opens this straight
+        // into the creator from its own + button, and landing on the overview first
+        // would make that button feel like it did nothing. Honoured only when the
+        // person's own access actually exposes that screen, so a URL cannot be a way
+        // in: an unauthorised `screen` falls back to wherever they would have landed.
+        const wanted = bootParams.get('screen');
+        const allowed =
+          wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
+        setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
         if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring
@@ -818,7 +843,7 @@ function StudioApp() {
     };
 
     try {
-      await publishLearningObject(
+      await publishObject(
         objectToPublishRow(shipped, names, version.versionNumber),
       );
     } catch (err: any) {
@@ -849,7 +874,7 @@ function StudioApp() {
       sharedSyncTimers.delete(objectId);
     }
     try {
-      await unpublishLearningObject(objectId);
+      await unpublishObject(objectId);
     } catch (err: any) {
       return { ok: false, error: err?.message || 'Could not reach the shared library.' };
     }
@@ -971,7 +996,7 @@ function StudioApp() {
       sharedSyncTimers.delete(objectId);
     }
     // Delete the durable copy too — otherwise the next hydrate rebuilds it.
-    deleteSharedObject(objectId).catch((err) => {
+    deleteObjectEverywhere(objectId).catch((err) => {
       console.warn('[library] could not delete from the shared store:', err?.message || err);
     });
     setEditingObjectId((cur) => (cur === objectId ? null : cur));

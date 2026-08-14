@@ -94,20 +94,21 @@ function emptyPolicy(catalogue?: CapabilityCatalogueDocument): AccessPolicyDocum
 }
 
 /**
- * Per-capability object scoping: capability id → the learning-object ids the
- * grant is narrowed to. An absent key (or an empty list) means "every object",
- * which is how an unscoped grant has always behaved.
+ * Per-capability content-type scoping: capability id → the object types the
+ * grant is narrowed to (`tutorial-v2`, `flashcard-set`, …). An absent key (or
+ * an empty list) means "every type", which is how a grant has always behaved.
  */
-export type ObjectScopeMap = Record<string, string[]>;
+export type TypeScopeMap = Record<string, string[]>;
 
-/** The resource type a scoped grant constrains — object-level ids live here. */
+/** The resource type a scoped grant constrains, and the field it filters on. */
 export const SCOPED_RESOURCE_TYPE = 'learning_object';
+export const SCOPED_FILTER_FIELD = 'object_type';
 
-function cleanScopes(scopes: ObjectScopeMap | undefined, caps: Set<string>): ObjectScopeMap {
-  const out: ObjectScopeMap = {};
-  for (const [capId, ids] of Object.entries(scopes || {})) {
-    if (!caps.has(capId) || !Array.isArray(ids)) continue;
-    const unique = [...new Set(ids.filter((id) => typeof id === 'string' && id))];
+function cleanScopes(scopes: TypeScopeMap | undefined, caps: Set<string>): TypeScopeMap {
+  const out: TypeScopeMap = {};
+  for (const [capId, types] of Object.entries(scopes || {})) {
+    if (!caps.has(capId) || !Array.isArray(types)) continue;
+    const unique = [...new Set(types.filter((t) => typeof t === 'string' && t))];
     if (unique.length) out[capId] = unique;
   }
   return out;
@@ -116,34 +117,40 @@ function cleanScopes(scopes: ObjectScopeMap | undefined, caps: Set<string>): Obj
 /**
  * Split a capability set into grants: one unconstrained grant for the plain
  * capabilities, plus a narrowed grant per capability that was scoped to
- * specific objects. Keeping each scope on its own grant is what lets "edit
- * these two objects" and "delete only that one" coexist on one role.
+ * particular content types. Keeping each scope on its own grant is what lets
+ * "edit tutorials" and "delete only flashcards" coexist on one role.
  */
-export function grantsFor(capabilityIds: string[], scopes?: ObjectScopeMap): CapabilityGrant[] {
+export function grantsFor(capabilityIds: string[], scopes?: TypeScopeMap): CapabilityGrant[] {
   const caps = [...new Set(capabilityIds)];
   const scoped = cleanScopes(scopes, new Set(caps));
   const plain = caps.filter((id) => !scoped[id]);
   const grants: CapabilityGrant[] = [{ platformInstanceId: LEARNING_INSTANCE_ID, capabilityIds: plain }];
-  for (const [capId, ids] of Object.entries(scoped)) {
+  for (const [capId, types] of Object.entries(scoped)) {
     grants.push({
       platformInstanceId: LEARNING_INSTANCE_ID,
       capabilityIds: [capId],
-      resourceConstraints: [{ resourceType: SCOPED_RESOURCE_TYPE, includeIds: ids }],
+      resourceConstraints: [{
+        resourceType: SCOPED_RESOURCE_TYPE,
+        filters: { [SCOPED_FILTER_FIELD]: types },
+      }],
     });
   }
   return grants;
 }
 
-/** Read a role's per-capability object scoping back out of its grants. */
-export function roleObjectScopes(role: PolicyRole): ObjectScopeMap {
-  const out: ObjectScopeMap = {};
+/** Read a role's per-capability content-type scoping back out of its grants. */
+export function roleTypeScopes(role: PolicyRole): TypeScopeMap {
+  const out: TypeScopeMap = {};
   for (const g of role.grants || []) {
-    const ids = (g.resourceConstraints || [])
+    const types = (g.resourceConstraints || [])
       .filter((c) => c.resourceType === SCOPED_RESOURCE_TYPE)
-      .flatMap((c) => c.includeIds || []);
-    if (!ids.length) continue;
+      .flatMap((c) => {
+        const v = c.filters?.[SCOPED_FILTER_FIELD];
+        return Array.isArray(v) ? v.map(String) : v == null ? [] : [String(v)];
+      });
+    if (!types.length) continue;
     for (const capId of g.capabilityIds || []) {
-      out[capId] = [...new Set([...(out[capId] || []), ...ids])];
+      out[capId] = [...new Set([...(out[capId] || []), ...types])];
     }
   }
   return out;
@@ -179,7 +186,7 @@ let _policyCache: AccessPolicyDocument | null = null;
 
 /** A backend learning role → a custom PolicyRole (capabilities live in perms). */
 function backendRoleToPolicy(r: LearningRole, validCaps: Set<string>): PolicyRole {
-  const blob = r.perms as { capabilities?: string[]; objectScopes?: ObjectScopeMap } | undefined;
+  const blob = r.perms as { capabilities?: string[]; typeScopes?: TypeScopeMap } | undefined;
   const raw = blob?.capabilities;
   const capabilityIds = (Array.isArray(raw) ? raw : []).filter((id) => validCaps.has(id));
   return {
@@ -187,7 +194,7 @@ function backendRoleToPolicy(r: LearningRole, validCaps: Set<string>): PolicyRol
     name: r.name,
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     origin: 'custom',
-    grants: grantsFor(capabilityIds, blob?.objectScopes),
+    grants: grantsFor(capabilityIds, blob?.typeScopes),
   };
 }
 
@@ -303,14 +310,14 @@ export async function upsertCustomPolicyRole(
     capabilityIds: string[];
     restrictedResourceTypes?: string[];
     /** capability id → learning-object ids that capability is narrowed to. */
-    objectScopes?: ObjectScopeMap;
+    typeScopes?: TypeScopeMap;
   },
 ): Promise<AccessPolicyDocument> {
   const catalogue = loadCatalogue();
   const validCaps = new Set(catalogue.capabilities.map((c) => c.id));
   const name = input.name.trim() || 'Untitled role';
   const caps = input.capabilityIds.filter((c) => validCaps.has(c));
-  const objectScopes = cleanScopes(input.objectScopes, new Set(caps));
+  const typeScopes = cleanScopes(input.typeScopes, new Set(caps));
   const existing = loadPolicy();
   // Editing a catalogue-sample role via the custom editor forks a new custom role.
   const editingSample = input.id ? existing.roles.find((r) => r.id === input.id)?.origin === 'catalogue-sample' : false;
@@ -318,8 +325,8 @@ export async function upsertCustomPolicyRole(
 
   if (getToken()) {
     // Backend is the source of truth for custom roles.
-    if (targetId) await updateLearningRole(targetId, { name, capabilities: caps, objectScopes });
-    else await createLearningRole(name, {}, caps, objectScopes);
+    if (targetId) await updateLearningRole(targetId, { name, capabilities: caps, typeScopes });
+    else await createLearningRole(name, {}, caps, typeScopes);
     return initPolicy(); // refetch → cache
   }
 
@@ -330,7 +337,7 @@ export async function upsertCustomPolicyRole(
     scopeRef: { type: 'program', id: BRIDGE_PROGRAM_ID },
     origin: 'custom',
     restrictedResourceTypes: input.restrictedResourceTypes || [],
-    grants: grantsFor(caps, objectScopes),
+    grants: grantsFor(caps, typeScopes),
   };
   const idx = existing.roles.findIndex((r) => r.id === id);
   const roles = existing.roles.slice();
