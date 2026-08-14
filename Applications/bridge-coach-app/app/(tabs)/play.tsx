@@ -116,7 +116,15 @@ export default function PlayScreen() {
   const colPitch = (ACTION_CARD.width + ACTION_CARD.columnGap) * s;
   const rowPitch = (ACTION_CARD.height + ACTION_CARD.rowGap) * s;
 
-  const cards = [
+  const cards: {
+    key: string;
+    label: string;
+    icon: string;
+    suit: string;
+    onPress: () => void;
+    disabled: boolean;
+    badge?: number;
+  }[] = [
     {
       key: "new",
       label: "New Play",
@@ -134,6 +142,8 @@ export default function PlayScreen() {
       // Nothing to resume — dim it rather than opening an empty picker. Only
       // once the summary has loaded, so it doesn't flicker on arrival.
       disabled: summary != null && inProgress.length === 0,
+      // How many boards are waiting behind the card — the badge on its corner.
+      badge: inProgress.length,
     },
     {
       key: "plays",
@@ -176,6 +186,7 @@ export default function PlayScreen() {
                 suit={c.suit}
                 onPress={c.onPress}
                 scale={s}
+                {...(c.badge != null ? { badge: c.badge } : {})}
               />
             </View>
           ))}
