@@ -242,7 +242,7 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
           onKeyDown={(e) => {
             if (e.key === "Enter") void ask();
           }}
-          placeholder="Ask the coach about this position…"
+          placeholder="Ask Owlee about this position…"
           maxLength={300}
           style={{
             flex: 1, minWidth: 0, minHeight: 36, padding: "6px 10px",

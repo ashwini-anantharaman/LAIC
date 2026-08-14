@@ -549,7 +549,7 @@ export function CoachTell({
       {/* ── the coach's own answer — the existing advice, reused whole ── */}
       {phase === "play" && active && (
         <div style={SECTION}>
-          <SectionLabel>Your coach</SectionLabel>
+          <SectionLabel>Owlee</SectionLabel>
           <WhatShouldIPlay sessionId={sessionId} epoch={epoch} />
         </div>
       )}
@@ -576,7 +576,7 @@ export function CoachTell({
           </span>
         </div>
         <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-          BEN is a neural player, not your system — where it agrees with your coach is
+          BEN is a neural player, not your system — where it agrees with Owlee is
           worth noticing, and where it doesn&rsquo;t is worth thinking about.
         </p>
 

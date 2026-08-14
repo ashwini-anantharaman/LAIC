@@ -76,6 +76,32 @@ const RED = "#cc0000"; // suit red — unchanged, ♥/♦ read the same everywhe
 const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 
 /**
+ * OWLEE's face (owner direction 2026-08-14: the coach is named Owlee and
+ * wears the owl, not a ♠ chip) — the mascot art cropped to a round badge,
+ * zoomed to the owl's head. Decorative; the name beside it does the naming.
+ */
+function OwleeFace({ size }: Readonly<{ size: number }>) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        flex: "none", width: size, height: size, borderRadius: "50%",
+        overflow: "hidden", position: "relative", display: "block",
+        background: GOLD, // paints while the image streams in
+        boxShadow: "inset 0 0 0 1px rgba(42,5,6,.25)",
+      }}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/coach/owlee.png"
+        alt=""
+        style={{ position: "absolute", width: "200%", height: "200%", left: "-54%", top: "-10%", objectFit: "cover" }}
+      />
+    </span>
+  );
+}
+
+/**
  * The big "Ask me" button row, switched off (owner decision 2026-08-05) while
  * those actions move into the context card's event rows. A flag rather than a
  * deletion: the buttons and everything behind them still work, and come back
@@ -92,7 +118,7 @@ const SHOW_PROMPT_BUTTONS = false as boolean;
 const SHOW_PLAY_ASK = false as boolean;
 
 const BADGE: Record<CoachNoteSource, { bg: string; label: string }> = {
-  coach: { bg: FELT_MID, label: "Coach" },
+  coach: { bg: FELT_MID, label: "Owlee" },
   ben: { bg: "#384bb3", label: "BEN" },
   kb: { bg: "#0d707c", label: "Rulebook" }, // PlayTable's CARD_BACK
   system: { bg: "#6f6f5a", label: "Table" },
@@ -451,20 +477,20 @@ export function CoachFab({
       }}
     >
       <style>{KEYFRAMES}</style>
-      {/* The way into the panel — a small card face with the coach's ♠. */}
+      {/* The way into the panel — Owlee's own face. */}
       <button
         type="button"
         onClick={onOpen}
-        aria-label="Open the coach"
+        aria-label="Open Owlee"
         style={{
           width: 30, height: 30, borderRadius: "50%", padding: 0,
           background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "rgba(42,5,6,.35)",
           boxShadow: "0 2px 6px rgba(42,5,6,.4)",
-          color: FELT_DEEP, fontSize: 14, lineHeight: 1, cursor: "pointer",
+          cursor: "pointer",
           display: "flex", alignItems: "center", justifyContent: "center",
         }}
       >
-        <span aria-hidden style={{ transform: "translateY(0.5px)" }}>♠</span>
+        <OwleeFace size={28} />
       </button>
 
       <div style={{ position: "relative" }}>
@@ -490,7 +516,7 @@ export function CoachFab({
             onPresence(next);
             setAnnounced(next);
           }}
-          aria-label={`Coach mode: ${PRESENCE[presence].label}. Tap to switch to ${PRESENCE[next].label}.`}
+          aria-label={`Owlee mode: ${PRESENCE[presence].label}. Tap to switch to ${PRESENCE[next].label}.`}
           style={{
             width: 52, height: 52, borderRadius: "50%",
             // The dealer's chip: the table's gold, because gold is the one colour
@@ -574,7 +600,7 @@ export function CoachSheet({
       <style>{KEYFRAMES}</style>
       <button
         type="button"
-        aria-label="Close the coach"
+        aria-label="Close Owlee"
         onClick={onClose}
         className="coach-anim"
         style={{
@@ -585,7 +611,7 @@ export function CoachSheet({
       <div
         role="dialog"
         aria-modal="true"
-        aria-label={data.title ?? "Coach"}
+        aria-label={data.title ?? "Owlee"}
         className="coach-anim"
         style={{
           position: "absolute", left: 0, right: 0, bottom: 0, zIndex: 9,
@@ -609,22 +635,12 @@ export function CoachSheet({
             <span style={{ width: 36, height: 4, borderRadius: 2, background: "rgba(255,255,255,.4)" }} />
           </div>
 
-          {/* who is talking — with the settings gear beside the coach */}
+          {/* who is talking — with the settings gear beside Owlee */}
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "4px 14px 11px" }}>
-            <span
-              aria-hidden
-              style={{
-                flex: "none", width: 38, height: 38, borderRadius: "50%",
-                background: CHIP,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                color: FELT_DEEP, fontSize: 17,
-              }}
-            >
-              ♠
-            </span>
+            <OwleeFace size={38} />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: "block", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>
-                {data.title ?? "Coach"}
+                {data.title ?? "Owlee"}
               </span>
               {/* The mode line is gone (owner direction 2026-08-13: "remove
                   the text") — the header names the coach and nothing else.
@@ -642,7 +658,7 @@ export function CoachSheet({
                 does nothing until they do. */}
             <button
               type="button"
-              aria-label="Coach settings (nothing here yet)"
+              aria-label="Owlee settings (nothing here yet)"
               aria-disabled="true"
               style={{
                 flex: "none", width: 32, height: 32, borderRadius: 8,
@@ -828,7 +844,7 @@ function CoachScreens({
                 />
                 {data.ask && (
                   <div>
-                    <Label>Ask the coach</Label>
+                    <Label>Ask Owlee</Label>
                     <CoachChat key="board-over" sessionId={data.ask.sessionId} />
                   </div>
                 )}
@@ -1313,7 +1329,7 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
       {/* the chat — anything about the position */}
       {data.ask && (
         <div>
-          <Label>Ask the coach</Label>
+          <Label>Ask Owlee</Label>
           <CoachChat key={epoch} sessionId={data.ask.sessionId} />
         </div>
       )}
@@ -1361,18 +1377,9 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
       }}
     >
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "7px 12px 5px" }}>
-        <span
-          aria-hidden
-          style={{
-            flex: "none", width: 22, height: 22, borderRadius: "50%",
-            background: CHIP, display: "flex", alignItems: "center", justifyContent: "center",
-            color: FELT_DEEP, fontSize: 11,
-          }}
-        >
-          ♠
-        </span>
+        <OwleeFace size={26} />
         <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14.5, fontWeight: 700, color: INK }}>
-          Coach
+          Owlee
         </span>
         {/* the tabs ride the header itself (owner direction 2026-08-13:
             same level as the coach's chip and the expand button) */}
@@ -1387,7 +1394,7 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
         </div>
         <button
           type="button"
-          aria-label="Open the full coach"
+          aria-label="Open the full Owlee panel"
           aria-expanded={open}
           onClick={() => setOpen(true)}
           style={{
