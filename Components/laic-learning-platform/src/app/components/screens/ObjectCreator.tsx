@@ -8,6 +8,7 @@ import {
   Youtube, ClipboardPaste, MessageSquare, Image as ImageIcon, PenLine, Eye, Pencil, Link2, Play
 } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { composePublisher } from '../../../lib/clubComposeBridge';
 import { useApp } from '../../App';
 import { OBJECTS } from '../../../lib/data';
 import { SourceLibrary, PullFromLibraryButton, type PickedLibrarySource } from './CDSources';
@@ -4915,9 +4916,16 @@ export function ObjectCreator() {
       navigate('cd-create');
       return;
     }
-    persistPipelineDraft();
+    const savedId = persistPipelineDraft();
     const { ids, label } = draftCollectionLabel();
     if (ids[0]) setActiveObjectCollectionId(ids[0]);
+    // The club compose flow owns the ending: publish and hand the author back to the
+    // app, rather than a dialog about collections and a trip to the Content Library.
+    const compose = composePublisher();
+    if (compose && savedId) {
+      compose(savedId);
+      return;
+    }
     const go = await confirmDelete({
       title: 'Saved to drafts',
       description: `Your progress is saved under ${label}. Open that collection in Content Library to find and continue this ${fmtType(typeId).toLowerCase()}.`,
