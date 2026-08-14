@@ -67,6 +67,12 @@ export interface ChallengeFilter {
    * this store and the SQL one derive from. Omitted means no scope restriction.
    */
   programId?: string | null;
+  /**
+   * PRIVATE TABLES only — challenges that belong to a person rather than a club
+   * (`scope_level: "user"`). A club read excludes them; this is how the surface that
+   * owns them asks for them, and the two are mutually exclusive by construction.
+   */
+  personalOnly?: boolean;
 }
 
 export interface InviteFilter {
@@ -137,7 +143,9 @@ function matchesChallenge(c: Challenge, f?: ChallengeFilter): boolean {
   if (f.challengeIds !== undefined && !f.challengeIds.includes(c.challengeId)) return false;
   // The SAME predicate the Postgres store expresses in SQL — see
   // challengeVisibleInScope. Do not restate the rule here.
-  if (!challengeVisibleInScope(c, f.programId)) return false;
+  if (f.personalOnly) {
+    if (c.scopeLevel !== "user") return false;
+  } else if (!challengeVisibleInScope(c, f.programId)) return false;
   return true;
 }
 

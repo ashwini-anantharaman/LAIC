@@ -100,12 +100,18 @@ export class PgChallengeStore implements ChallengeStore {
       if (!filter.challengeIds.length) return [];
       query = query.in("challenge_id", [...filter.challengeIds]);
     }
-    if (filter?.programId) {
-      // challengeVisibleInScope in SQL: the club's own, plus the unscoped ones.
-      // Separate PostgREST filters AND together, so this narrows the id set above.
-      query = query.or(
-        `nexus_program_id.eq.${filter.programId},nexus_program_id.is.null`,
-      );
+    if (filter?.personalOnly) {
+      // The private-tables read: a person's own, never a club's.
+      query = query.eq("scope_level", "user");
+    } else if (filter?.programId) {
+      // challengeVisibleInScope in SQL: the club's own, plus legacy unscoped rows —
+      // and NEVER a personal one. A private table's owner is null like a legacy
+      // row's, so the null arm alone would put every private table on every club's
+      // list; `scope_level` is what tells them apart. Separate PostgREST filters AND
+      // together, so this narrows the id set above.
+      query = query
+        .or(`nexus_program_id.eq.${filter.programId},nexus_program_id.is.null`)
+        .or("scope_level.is.null,scope_level.neq.user");
     }
     return check(await query, "challenges.list").map(challengeRow);
   }

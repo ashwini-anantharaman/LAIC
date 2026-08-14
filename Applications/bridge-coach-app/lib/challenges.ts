@@ -237,13 +237,20 @@ export function describeChallengesError(e: unknown): string {
 export async function fetchClubChallenges(
   token: string,
   programId: string | null,
+  /**
+   * PRIVATE TABLES instead of the club's challenges: the ones the viewer set up with
+   * friends, which belong to a person and appear on no club's list. The row shape is
+   * identical, so this is one fetch with two questions rather than two fetches.
+   */
+  opts: { personal?: boolean } = {},
 ): Promise<ClubChallenge[]> {
   const base = bridgeApiBase();
   if (!base) throw new ChallengesError(0, "No bridge platform configured.");
 
+  const query = opts.personal ? "?scope=personal" : "";
   let response: Response;
   try {
-    response = await fetch(`${base}/api/bridge/challenges/summary`, {
+    response = await fetch(`${base}/api/bridge/challenges/summary${query}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         ...(programId ? { "x-program-id": programId } : {}),
@@ -257,7 +264,11 @@ export async function fetchClubChallenges(
   }
   const json = (await response.json().catch(() => ({}))) as { challenges?: SummaryRow[] };
   const rows = (json.challenges ?? []).map(mapRow);
-  for (const row of rows) lastFetched.set(cacheKey(programId, row.id), row);
+  // Private tables are keyed on their own, not under the club that happened to be
+  // selected when they were fetched — they belong to no club, and filing them
+  // under one is how a challenge shows up where it does not live.
+  const key = opts.personal ? null : programId;
+  for (const row of rows) lastFetched.set(cacheKey(key, row.id), row);
   return rows;
 }
 

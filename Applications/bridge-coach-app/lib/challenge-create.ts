@@ -29,6 +29,13 @@ export type ChallengeDraft = {
   controlOverrides: Record<string, "show" | "hide">;
   invites: { userId: string; moderator: boolean }[];
   editorBadge: boolean;
+  /**
+   * A PRIVATE TABLE — owned by the person who made it rather than a club, so it is
+   * visible to exactly the people invited and appears on no club's list. Opt-in and
+   * explicit: the server refuses an unowned challenge otherwise, precisely so that a
+   * club's challenge cannot leak everywhere by accident.
+   */
+  personal?: boolean;
 };
 
 export type ChallengePerson = { userId: string; name: string; handle?: string };

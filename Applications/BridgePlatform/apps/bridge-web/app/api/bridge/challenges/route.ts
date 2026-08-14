@@ -61,7 +61,12 @@ export async function POST(request: NextRequest) {
 
     // 0029: the club this challenge belongs to. Refuses rather than storing a null
     // owner, which the read path would treat as "visible in every club".
-    const ownerScope = requireChallengeOwnerScope(context);
+    //
+    // A PRIVATE TABLE is the deliberate exception: it belongs to its creator rather
+    // than a club, so it is stored unowned and marked scope_level "user", which
+    // keeps it off every club's list while remaining visible to whoever was invited.
+    const personal = draft.personal === true;
+    const ownerScope = personal ? null : requireChallengeOwnerScope(context);
 
     const challenge: Challenge = {
       challengeId,
@@ -76,7 +81,7 @@ export async function POST(request: NextRequest) {
       standingsVisibility: draft.standingsVisibility,
       createdAt: now,
       nexusProgramId: ownerScope,
-      scopeLevel: "program",
+      scopeLevel: personal ? "user" : "program",
     };
     await store.putChallenge(challenge);
 
