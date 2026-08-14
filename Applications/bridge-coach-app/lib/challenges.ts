@@ -205,7 +205,12 @@ export function pickPinned(all: ClubChallenge[]): {
 }
 
 export function getCachedChallenge(programId: string | null, id: string): ClubChallenge | null {
-  return lastFetched.get(cacheKey(programId, id)) ?? null;
+  // A PRIVATE TABLE is cached under no club, because it belongs to none. Falling back
+  // to that key means a screen holding a club can still find one without having to
+  // know which kind of challenge it is about to show.
+  return (
+    lastFetched.get(cacheKey(programId, id)) ?? lastFetched.get(cacheKey(null, id)) ?? null
+  );
 }
 
 /**

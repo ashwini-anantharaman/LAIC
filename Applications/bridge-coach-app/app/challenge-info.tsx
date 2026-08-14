@@ -71,14 +71,21 @@ export default function ChallengeInfoScreen() {
   useEffect(() => {
     if (challenge || !token || !id) return;
     let cancelled = false;
-    fetchClubChallenges(token, clubId)
-      .then((rows) => {
-        if (cancelled) return;
-        const found = rows.find((r) => r.id === id);
-        if (found) setChallenge(found);
-        else setError("This challenge is no longer available.");
-      })
-      .catch((e) => !cancelled && setError(describeChallengesError(e)));
+    // Two reads, because a challenge is either a club's or a PRIVATE TABLE's and this
+    // screen shows both. The club list deliberately excludes private tables — that is
+    // what keeps them off every club's screens — so looking only there made a table
+    // you had just created report itself as "no longer available".
+    (async () => {
+      const club = await fetchClubChallenges(token, clubId);
+      let found = club.find((r) => r.id === id);
+      if (!found) {
+        const personal = await fetchClubChallenges(token, clubId, { personal: true });
+        found = personal.find((r) => r.id === id);
+      }
+      if (cancelled) return;
+      if (found) setChallenge(found);
+      else setError("This challenge is no longer available.");
+    })().catch((e) => !cancelled && setError(describeChallengesError(e)));
     return () => {
       cancelled = true;
     };
