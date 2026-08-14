@@ -138,6 +138,31 @@ export const listChallengesForUser = cache(
   },
 );
 
+/**
+ * The viewer's PRIVATE TABLES — challenges they were invited to that belong to a
+ * person rather than a club.
+ *
+ * Separate from the club read rather than a mode of it, because the two answer
+ * different questions and a caller should not be able to blur them: a club list must
+ * never include private tables, and the private-tables screen must never include a
+ * club's challenges.
+ */
+export const listPersonalChallengesForUser = cache(
+  async (userId: string): Promise<Challenge[]> => {
+    const invites = await listInvitesForUser(userId);
+    if (!invites.length) return [];
+    return safely(
+      "personal challenges",
+      () =>
+        challengeStore().listChallenges({
+          challengeIds: invites.map((i) => i.challengeId),
+          personalOnly: true,
+        }),
+      [],
+    );
+  },
+);
+
 export const listChallengePlays = cache(
   async (challengeId: string): Promise<ChallengePlay[]> =>
     safely("plays", () => challengeStore().listPlays({ challengeId }), []),

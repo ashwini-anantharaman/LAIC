@@ -146,6 +146,14 @@ export default function PlayScreen() {
       badge: inProgress.length,
     },
     {
+      key: "private",
+      label: "Private Table",
+      icon: ICON_CARD_PLUS,
+      suit: Brand.green,
+      onPress: () => router.push("/private-table"),
+      disabled: false,
+    },
+    {
       key: "plays",
       label: "My Plays",
       icon: ICON_CARD_HISTORY,

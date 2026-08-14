@@ -29,7 +29,7 @@ import {
   listChallengeBoards,
   listChallengeInvites,
   listChallengePlays,
-  listChallengesForUser, challengeOwnerScope } from "@/lib/challenges";
+  listChallengesForUser, listPersonalChallengesForUser, challengeOwnerScope } from "@/lib/challenges";
 import { corsHeaders, corsOptions } from "@/lib/cors";
 import { getBridgeContext, getBridgeContextFromToken } from "@/lib/nexus";
 
@@ -222,7 +222,14 @@ export async function GET(request: NextRequest) {
     const viewerId = context.nexusUserId;
     // The club the app asked about (x-program-id) now FILTERS, where before it only
     // resolved auth. Two clubs, two lists.
-    const mine = await listChallengesForUser(viewerId, challengeOwnerScope(context));
+    // `?scope=personal` asks for PRIVATE TABLES — the viewer's own, from any club or
+    // none. Anything else is the club read, which excludes them. One route, because
+    // the shape of a summarised challenge is identical either way; two listings,
+    // because the question is not.
+    const personal = request.nextUrl.searchParams.get("scope") === "personal";
+    const mine = personal
+      ? await listPersonalChallengesForUser(viewerId)
+      : await listChallengesForUser(viewerId, challengeOwnerScope(context));
     const summaries = (
       await Promise.all(mine.map((c) => summarize(c.challengeId, viewerId)))
     ).filter((s): s is ChallengeSummary => s !== null);

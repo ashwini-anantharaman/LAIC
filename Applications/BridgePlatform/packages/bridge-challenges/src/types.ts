@@ -107,9 +107,16 @@ export type ChallengeScopeLevel = "user" | "program" | "org";
  * unscoped internal read expect.
  */
 export function challengeVisibleInScope(
-  challenge: Pick<Challenge, "nexusProgramId">,
+  challenge: Pick<Challenge, "nexusProgramId" | "scopeLevel">,
   scope: string | null | undefined,
 ): boolean {
+  // A PERSONAL challenge (a private table between friends) belongs to nobody's club.
+  // Its owner is null like a legacy row's, but the two must not be confused: the
+  // legacy null is fail-open on purpose — the cross-org door 0029's header describes
+  // — whereas a private table appearing on every club's list is exactly what makes
+  // it not private. `scope_level` is what separates them, and this is the first
+  // thing to read it.
+  if (challenge.scopeLevel === "user") return !scope;
   if (!scope) return true;
   const owner = challenge.nexusProgramId;
   return !owner || owner === scope;

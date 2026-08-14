@@ -225,6 +225,17 @@ export interface ChallengeDraft {
   invites: ChallengeInviteDraft[];
   /** True once a pack editor was OPENED on any board (spec §3). */
   editorBadge: boolean;
+  /**
+   * A PRIVATE TABLE: this challenge belongs to the person who made it, not to a
+   * club. It is stored with no owning program and `scope_level: "user"`, so it
+   * appears for exactly the people invited and on nobody's club list — which is
+   * what lets someone play with friends from another club, or from none.
+   *
+   * Explicit and opt-in, never inferred. `requireChallengeOwnerScope` exists to
+   * stop an ACCIDENTAL null owner leaking a club's challenge everywhere; this flag
+   * is the deliberate case, and the two must stay distinguishable.
+   */
+  personal?: boolean;
 }
 
 const SEAT_SET = new Set<string>(SEATS);

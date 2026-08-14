@@ -202,6 +202,21 @@ describe("club scope (0029)", () => {
     expect(challengeVisibleInScope(UNSCOPED, "club-b")).toBe(true);
   });
 
+  it("keeps a PRIVATE TABLE off every club's list", () => {
+    // Its owner is null, like a legacy row's — but scope_level says it belongs to a
+    // person, not to nobody. Confusing the two would put every private table between
+    // friends on every club's challenge list, which is the opposite of private.
+    const PERSONAL: Challenge = {
+      ...CH,
+      challengeId: "ch_private",
+      scopeLevel: "user",
+    };
+    expect(challengeVisibleInScope(PERSONAL, "club-a")).toBe(false);
+    expect(challengeVisibleInScope(PERSONAL, "club-b")).toBe(false);
+    // Asked for WITHOUT a club — the private-tables read — it is visible.
+    expect(challengeVisibleInScope(PERSONAL, null)).toBe(true);
+  });
+
   it("restricts nothing when the caller has no scope", () => {
     // What the JSON dev store and any internal read with no club in hand get.
     expect(challengeVisibleInScope(OTHER_CLUB, null)).toBe(true);
