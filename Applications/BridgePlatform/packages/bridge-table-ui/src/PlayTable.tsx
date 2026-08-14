@@ -71,8 +71,14 @@ const MOBILE_W = 720;
  *    at 75, and 96 ends the card shortly after the pip, in a still card-shaped
  *    1:1.71 box.
  */
+/**
+ * The phone's hand card. Rank down from 38 and the card shorter from 96 (owner,
+ * 2026-08-13) — the rank was filling its sliver edge to edge, which reads as
+ * cramped rather than bold, and the height it needed came out of the felt.
+ * Every band that quotes HAND_H follows this automatically.
+ */
 const M_CARD: SeatHandMetrics & { backW: number } = {
-  w: 56, h: 96, rank: 38, glyph: 36, inset: 5, overlap: 8, weight: 800, backW: 52,
+  w: 56, h: 88, rank: 34, glyph: 33, inset: 5, overlap: 8, weight: 800, backW: 52,
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
@@ -545,7 +551,16 @@ export function PlayTable({
   const legalSet = new Set(legalCalls);
   const playable = new Set(legalPlays.map((p) => `${p.suit}${p.rank}`));
   const myCall = inAuction && myTurn;
-  const boxLive = myCall && !pending;
+  /**
+   * The tray is live while a call is STAGED, not frozen by it.
+   *
+   * With Confirm/Cancel the freeze was right: the only way out was the Cancel
+   * button, so nothing else should have been pressable. With one OK there is no
+   * Cancel — pressing the staged call again is the escape, and pressing a
+   * different one restages — so the pad has to stay live for either to be
+   * possible. `stageCall` below is what makes the second press mean "clear".
+   */
+  const boxLive = myCall;
 
   const vulFor = (seat: Seat) => state.vul === "both" || state.vul === "All" || sideOf(seat).toLowerCase() === String(state.vul).toLowerCase();
   const dealerCol = ORDER.indexOf(state.dealer);
@@ -710,8 +725,9 @@ export function PlayTable({
   // until confirmed — robots (server seats) are never staged.
   const stageCall = (call: string) => {
     if (!boxLive) return;
-    if (confirmBids) setPending(call);
-    else onCall?.(call);
+    if (!confirmBids) return onCall?.(call);
+    // Press the staged call again to clear it; press another to restage.
+    setPending((p) => (p === call ? null : call));
   };
   // Shared by both bid pads (BidBox tray and BidColumns): resolve the staged
   // call, or drop it.
@@ -997,21 +1013,43 @@ export function PlayTable({
     cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42,
   });
 
+  /**
+   * ONE BUTTON: OK (owner, 2026-08-13), the same economy the columns pad uses.
+   *
+   * The pair it replaces was "Confirm 1♠" beside a Cancel — 360px of chrome to
+   * resolve a call that is already named right above it. The staged call is
+   * shown by the row itself, so the button only has to say what pressing it
+   * does. Cancel goes because pressing the staged call again clears it, which
+   * puts the escape under the finger that made the mistake rather than across
+   * the pad. The aria-label still names the call, so a screen reader hears what
+   * a sighted player reads from the row.
+   */
   const confirmButtons = (h: number, font: number) => (
     <>
-      <button
-        type="button"
-        onClick={confirmPending}
-        style={bidBtnStyle(240, h, "#116710", "#0c4b0b", true, font)}
-      >
-        Confirm {callText(pending ?? "")}
-      </button>
+      {/* The staged call, and the way out of it. The columns pad clears by
+          pressing the call again where it sits in the grid; this tray HIDES the
+          grid while a call waits, so there is nothing left to press — the call
+          itself becomes the escape instead. Without it, dropping Cancel would
+          have left a staged bid with no way back at all. */}
       <button
         type="button"
         onClick={cancelPending}
-        style={bidBtnStyle(120, h, "#8a3030", "#5e1c1c", true, font)}
+        aria-label={`Clear ${callText(pending ?? "")}`}
+        style={{
+          flex: "none", height: h, padding: `0 ${Math.round(font * 0.7)}px`,
+          border: "1px solid #b9b98a", borderRadius: skinRadius, background: "#fffdf2",
+          color: "#3a3a20", fontSize: font, fontWeight: 700, lineHeight: 1, cursor: "pointer",
+        }}
       >
-        Cancel
+        {callText(pending ?? "")}
+      </button>
+      <button
+        type="button"
+        onClick={confirmPending}
+        aria-label={`Bid ${callText(pending ?? "")}`}
+        style={{ ...bidBtnStyle(150, h, "#116710", "#0c4b0b", true, font), letterSpacing: ".06em" }}
+      >
+        OK
       </button>
     </>
   );
@@ -1085,7 +1123,7 @@ export function PlayTable({
     <div style={{ width: 581, flex: "none", background: tok.trayBg, borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
-          <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
+          
           {confirmButtons(44, 21)}
         </div>
       ) : (
@@ -1175,7 +1213,7 @@ export function PlayTable({
     <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: TRAY_ROWS * touchH + 5 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#3a3a20" }}>Confirm your call</span>
+          
           {confirmButtons(touchH, 26)}
         </div>
       ) : (
@@ -1227,6 +1265,10 @@ export function PlayTable({
     onConfirm: confirmPending,
     onCancel: cancelPending,
     radius: skinRadius,
+    // BBO's economy (owner, 2026-08-13): one OK, and the staged call is cleared
+    // by pressing it again rather than by a second button. The pad stays live
+    // underneath, so changing your mind is a tap on the call you meant.
+    confirmStyle: "ok" as const,
   };
   const wideBidColumns = <BidColumns cell={46} {...bidColumnsProps} />;
   const narrowBidColumns = (
@@ -1246,7 +1288,9 @@ export function PlayTable({
   const infoItems: ToolbarItem[] = [
     { kind: "chip", label: "Board", value: String(boardLabel) },
     { kind: "chip", label: "Dealer", value: state.dealer },
-    { kind: "chip", label: "Vul", value: vulLabel, color: vulLabel === "None" ? "#eef4f1" : "#ff9c9c" },
+    // Vulnerable is RED (owner, 2026-08-13) — it is the one chip that changes what
+    // a bid is worth, so it should not read as ordinary chrome.
+    { kind: "chip", label: "Vul", value: vulLabel, color: vulLabel === "None" ? "#eef4f1" : "#ff5555" },
     { kind: "divider" },
     { kind: "chip", label: "Contract", value: c ? `${c.level}${GLYPH[c.strain]}${c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}` : "—", color: c && isRed(c.strain) ? "#ff8a8a" : "#eef4f1" },
     { kind: "chip", label: "By", value: c ? SEAT_NAMES[c.declarer] : "—" },
@@ -1304,6 +1348,10 @@ export function PlayTable({
    * every time it appears there.
    */
   const dummyRailSide: "left" | "right" = dummy === "E" ? "right" : "left";
+
+  /** Both flanks of the centre band reserve this, so the felt stays centred. */
+  const SIDE_AVATAR_W = 62;
+  const bandSideW = dummyIsStrip && sideSeat ? DUMMY_RAIL_W : inPlay ? SIDE_AVATAR_W : 0;
 
   /**
    * The dummy rail: a vertical strip beside the centre band rather than a band
@@ -1513,13 +1561,26 @@ export function PlayTable({
             rail is `flex: none` and the felt `flex: 1`, so the band's height is
             untouched by the hand hanging beside it and the compass simply
             centres in what is left. */}
+        {/* SYMMETRIC SIDES, so the trick sits in the middle of the screen.
+            The band is a row — something on the left, the felt, something on the
+            right — and the felt centres its own content. But a dummy rail is
+            116 and a seat badge is 62, so on a board with a rail the felt's
+            centre was half that difference off the band's, and the compass with
+            it: measured 15px left of centre on a phone (owner, 2026-08-13, "the
+            trick pad is not always centered"). Both flanks now reserve the SAME
+            width — whatever the wider one needs — so the felt is centred
+            whatever is standing in the slots, including nothing. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
-          {dummyRailSide === "left" ? dummyRailEl : null}
-          {/* The badge stands in for a seat the phone cannot draw a hand for, so
-              it yields to the dummy rail on that side rather than crowding it,
-              and never appears for the seat whose cards are already on screen. */}
-          {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
-          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
+          <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-start" }}>
+            {dummyRailSide === "left" ? dummyRailEl : null}
+            {/* The badge stands in for a seat the phone cannot draw a hand for,
+                so it yields to the dummy rail on that side rather than crowding
+                it, and never appears for a seat already on screen. */}
+            {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", // A hairline, not a picture frame (owner, 2026-08-13): it marks where the
+                // felt is, and at 3px it competed with the cards inside it.
+                ...(framed ? { border: "1px solid rgba(201,153,43,.85)", borderRadius: 8, boxSizing: "border-box" } : {}) }}>
             {/* FOUR reserved call rows, whatever the auction holds: the grid is
                 one fixed object from "You deal" to the last pass, and the fifth
                 row scrolls the first off the top. A grid that grew with the
@@ -1539,8 +1600,10 @@ export function PlayTable({
             {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
-          {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
-          {dummyRailSide === "right" ? dummyRailEl : null}
+          <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-end" }}>
+            {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
+            {dummyRailSide === "right" ? dummyRailEl : null}
+          </div>
         </div>
         {/* Column pad (cell sized from the leftover) OR the level tray — one on
             screen at a time. The pad falls back to the tray when the fit could
@@ -1677,8 +1740,23 @@ export function PlayTable({
         <div style={{ flex: "none", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
           {/* CSS-driven table region box; the stage scrolls inside it if the
               scaled content ever exceeds the region (align to the top). */}
-          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto" }}>
-            {mobileStack}
+          {/* THE TABLE CANNOT BE SLID SIDEWAYS.
+              `transform: scale()` does not change layout size, so the stage's
+              box is a full 720 wide however small it renders. This region is a
+              vertical scroller, and a scroller whose content is wider than it is
+              can be scrolled horizontally too — `overflow-x: hidden` hides the
+              bar but still permits it. Anything calling scrollIntoView on a card
+              near the edge (a tap, a focus, a test) slid the whole table across
+              and it stayed: measured 165px off, which is the owner's "the trick
+              pad is not always centered".
+              `overflow-x: clip` is the value that REFUSES the scroll — but next
+              to `overflow-y: auto` the spec computes it back to `hidden`, so it
+              has to sit on its own element, whose other axis is visible. Hence
+              the inner box: the scroller sees nothing wider than itself. */}
+          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", overflowY: "auto" }}>
+            <div style={{ width: "100%", overflowX: "clip", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+              {mobileStack}
+            </div>
           </div>
         </div>
         {coachSharePct > 0 && (

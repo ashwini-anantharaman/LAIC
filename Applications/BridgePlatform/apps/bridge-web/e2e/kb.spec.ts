@@ -795,20 +795,25 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
   await expect(page.getByText("Table settings")).toHaveCount(0);
 
-  // Confirm bids: with confirm=1, a human call is STAGED — Cancel discards,
-  // Confirm lands it. The board runs on its own until it's our turn.
+  // Confirm bids: with confirm=1, a human call is STAGED and one OK lands it
+  // (owner, 2026-08-13 — BBO's economy, replacing the Confirm/Cancel pair).
+  // There is no Cancel because the staged call is outlined where you pressed
+  // it and pressing it AGAIN clears it, which is the property asserted here:
+  // the escape is under the finger that made the mistake.
   await page.goto(`/bridge/table2/${sid}?confirm=1`);
   const pass = page.getByRole("button", { name: "Pass", exact: true });
   await expect(async () => {
     expect(await pass.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   }).toPass({ timeout: 30_000 });
+  const ok = page.getByRole("button", { name: /^Bid / });
   await pass.click();
-  await expect(page.getByText(/Confirm your call/)).toBeVisible();
-  await page.getByRole("button", { name: "Cancel" }).click();
-  await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
+  await expect(ok, "staging a call offers one OK").toBeVisible();
+  // The staged call is the way out — there is no Cancel to press.
+  await page.getByRole("button", { name: /^Clear / }).click();
+  await expect(ok, "pressing the staged call clears it").toHaveCount(0);
   await pass.click();
-  await page.getByRole("button", { name: /Confirm Pass/ }).click();
-  await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
+  await ok.click();
+  await expect(ok, "OK lands the call").toHaveCount(0);
 
   // PHONE tier (Mobile Table design): one vertical stack, and NO West/East
   // seats anywhere (only your hand and, in play, dummy's). Pass now sits INLINE

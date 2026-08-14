@@ -188,8 +188,12 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
 function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean }>) {
   const rank = rankText(card.rank);
   const colour = isRed(card.suit) ? RED : "#000";
-  const rankSize = Math.round(box.h * 0.26);
-  const glyphSize = Math.round(box.h * 0.19);
+  // Up from 0.26/0.19 (owner, 2026-08-13). The ceiling is not taste: the flanks
+  // sit at half a card, so an index block deeper than that gets clipped by its
+  // own neighbour. 0.30/0.22 puts the ink at ~0.46h against a 0.5h strip, which
+  // is bigger and still clear — 0.32/0.23 would leave only a pixel of margin.
+  const rankSize = Math.round(box.h * 0.30);
+  const glyphSize = Math.round(box.h * 0.22);
   const size = rank.length > 1 ? Math.min(rankSize, Math.floor((box.w * 0.48) / 1.12)) : rankSize;
   const inX = Math.round(box.w * 0.06);
   const inY = Math.round(box.h * 0.025);
@@ -207,7 +211,7 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
         transform: rotated ? "rotate(180deg)" : undefined,
       }}
     >
-      <span style={{ fontSize: size, fontWeight: 700 }}>{rank}</span>
+      <span style={{ fontSize: size, fontWeight: 800 }}>{rank}</span>
       <span style={{ fontSize: glyphSize }}>{GLYPH[card.suit]}</span>
     </span>
   );
@@ -238,7 +242,11 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
       }}
     >
       {index({ left: inX, top: inY }, false)}
-      {index({ right: inX, bottom: inY }, true)}
+      {/* UPRIGHT, not rotated (owner, 2026-08-13). A real card rotates its
+          second index because a real card gets turned around; nothing on this
+          felt ever does, so the rotation only cost the reader — an upside-down
+          rank is a rank you have to decode rather than read. */}
+      {index({ right: inX, bottom: inY }, false)}
     </span>
   );
 }
