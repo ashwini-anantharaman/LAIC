@@ -48,6 +48,9 @@ export type BridgeLibraryContent = Pick<
   | "challengeBoards"
   | "challengeFormat"
   | "challengeScoring"
+  | "challengeBoardCount"
+  | "challengeStatus"
+  | "challengeDraftJson"
   | "sourceChallengeId"
 >;
 
@@ -97,6 +100,9 @@ export function entryToItem(e: LibraryEntry): LibraryItem<BridgeLibraryContent> 
       ...(e.challengeBoards ? { challengeBoards: e.challengeBoards } : {}),
       ...(e.challengeFormat ? { challengeFormat: e.challengeFormat } : {}),
       ...(e.challengeScoring ? { challengeScoring: e.challengeScoring } : {}),
+      ...(e.challengeBoardCount != null ? { challengeBoardCount: e.challengeBoardCount } : {}),
+      ...(e.challengeStatus ? { challengeStatus: e.challengeStatus } : {}),
+      ...(e.challengeDraftJson ? { challengeDraftJson: e.challengeDraftJson } : {}),
       ...(e.sourceChallengeId ? { sourceChallengeId: e.sourceChallengeId } : {}),
     },
   };

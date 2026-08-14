@@ -181,15 +181,19 @@ export default async function LibraryPage({
                       them means. Without it the row is a title and a date, and
                       you cannot tell two saved challenges apart. */}
                   {e.kind === "challenge"
-                    ? [
-                        `${e.challengeBoards?.length ?? 0} board${
-                          (e.challengeBoards?.length ?? 0) === 1 ? "" : "s"
-                        }`,
-                        e.challengeFormat === "bidding-only" ? "bidding only" : null,
-                        e.challengeScoring,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")
+                    ? (() => {
+                        // A draft counts its boards from the draft itself (it
+                        // holds seeds, not packs, until it is published).
+                        const n = e.challengeBoardCount ?? e.challengeBoards?.length ?? 0;
+                        return [
+                          e.challengeStatus === "draft" ? "draft" : "published",
+                          `${n} board${n === 1 ? "" : "s"}`,
+                          e.challengeFormat === "bidding-only" ? "bidding only" : null,
+                          e.challengeScoring,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ");
+                      })()
                     : e.kind === "table"
                     ? `lineup · ${Object.values(e.seats ?? {})
                         .map((s) => s.label)
@@ -207,6 +211,21 @@ export default async function LibraryPage({
                 </p>
                 <p className="mt-0.5 text-[11px] text-neutral-400">
                   {e.origin}
+                  {/* PICK IT BACK UP. A parked draft is only worth parking if
+                      there is a way back into the wizard; the entry id is what
+                      the creator page reopens from, and publishing promotes
+                      this same row rather than leaving it behind. */}
+                  {e.kind === "challenge" && e.challengeStatus === "draft" && (
+                    <>
+                      {" · "}
+                      <Link
+                        href={`/bridge/challenges/new?draft=${e.entryId}`}
+                        className="font-semibold text-emerald-800 underline-offset-4 hover:underline"
+                      >
+                        keep building →
+                      </Link>
+                    </>
+                  )}
                   {e.importFileName && ` · ${e.importFileName}`}
                   {e.sourceSessionId && (
                     <>

@@ -493,3 +493,44 @@ test("save a challenge to the library, boards and all", async ({ page }) => {
     "the boards came with it, not just the title",
   ).toBeVisible();
 });
+
+// PARKING WORK IN PROGRESS (owner, 2026-08-14). The wizard's draft lives in
+// React state, so before this the only ways out of it were "publish" and "lose
+// it" — and a challenge is a pack per board, seats, invites and overrides.
+// The whole loop is asserted here because each half is useless alone: saving
+// that cannot be reopened, or a reopen that does not restore the WORK.
+test("park a challenge draft, pick it up, and publish it in place", async ({ page }) => {
+  test.setTimeout(150_000);
+  await switchUser(page.context(), "user_orgadmin_olivia");
+  const title = "E2E parked challenge";
+
+  await page.goto("/bridge/challenges/new");
+  await page.getByLabel("Title").fill(title);
+  const fewer = page.getByRole("button", { name: "One board fewer" }).first();
+  for (let n = 6; n > 3; n--) await fewer.click();
+  await page.getByRole("button", { name: /Save draft to library/ }).click();
+  await expect(page.getByRole("button", { name: /Saved to library/ })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Walk away completely, then come back through the library.
+  await page.goto("/bridge/library?kind=challenge");
+  const row = page.locator("li", { hasText: title }).first();
+  await expect(row).toContainText("draft");
+  await expect(row).toContainText("3 boards");
+  await row.getByRole("link", { name: /keep building/ }).click();
+  await page.waitForURL(/challenges\/new\?draft=/);
+
+  // The WORK came back, not just the name.
+  await expect(page.getByLabel("Title")).toHaveValue(title);
+  await expect(page.getByText(/^Board 3$/).first()).toBeVisible();
+  await expect(page.getByText(/^Board 4$/), "the board count came back too").toHaveCount(0);
+
+  // Publishing PROMOTES the row it came from rather than leaving a stale draft
+  // beside the challenge it became.
+  await page.getByRole("button", { name: "Create challenge" }).first().click();
+  await page.waitForURL(/\/bridge\/challenges\?created=/);
+  await page.goto("/bridge/library?kind=challenge");
+  await expect(page.locator("li", { hasText: title }), "promoted, not duplicated").toHaveCount(1);
+  await expect(page.locator("li", { hasText: title }).first()).toContainText("published");
+});
