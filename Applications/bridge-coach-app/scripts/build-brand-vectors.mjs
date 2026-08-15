@@ -77,6 +77,12 @@ const NAMES = {
   "icon-coach-assignments.svg": "ICON_COACH_ASSIGNMENTS",
   "icon-feedback-bubble.svg": "ICON_FEEDBACK_BUBBLE",
   "icon-plus.svg": "ICON_PLUS",
+  // Coach's own view (Figma 870:699). The circled plus arrives from Figma as the
+  // SAME path drawn twice, the second at 0.2 opacity — kept once, or tinting
+  // would darken every edge where the copies overlap.
+  "icon-grad-cap.svg": "ICON_GRAD_CAP",
+  "icon-reviews-doc.svg": "ICON_REVIEWS_DOC",
+  "icon-plus-circle.svg": "ICON_PLUS_CIRCLE",
 };
 
 const TRUNK_FILL = "#421313";
