@@ -25,11 +25,12 @@ import { seededDeal } from "@bridge/engine";
 import { parseBbo } from "@bridge/formats";
 import type { Card, Seat } from "@bridge/events";
 import { useMemo, useRef, useState, useTransition } from "react";
-import { createChallengeAction } from "../actions";
+import { createChallengeAction, saveChallengeDraftAction } from "../actions";
 import {
   CHALLENGE_CONTROLS,
   CONTROL_STATES,
   controlOverridesOf,
+  packFromDraft,
   defaultControlStates,
   FORMAT_OPTIONS,
   SCORING_OPTIONS,
@@ -85,6 +86,8 @@ export function CreateChallenge({
   people,
   self,
   seedBase,
+  initialDraft,
+  draftEntryId,
 }: Readonly<{
   people: ChallengePerson[];
   /** The creator's own row: auto-invited, accepted, moderator, undeletable. */
@@ -92,22 +95,52 @@ export function CreateChallenge({
   /** Seed the first set of deals derive from — chosen on the server so the
    *  first paint and the hydrated tree agree. */
   seedBase: number;
+  /** A parked draft being picked up again (library entry `draftEntryId`). */
+  initialDraft?: ChallengeDraft;
+  draftEntryId?: string;
 }>) {
+  // A RESUMED DRAFT SEEDS EVERY FIELD. `initialDraft` has already been through
+  // the app's validator on the server, so anything missing from an older save
+  // has been defaulted rather than left undefined — which is why each fallback
+  // below is the same default a fresh wizard starts from.
+  const d = initialDraft;
   const [step, setStep] = useState<StepKey>("basics");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [format, setFormat] = useState<ChallengeFormat>("full");
-  const [scoring, setScoring] = useState<ChallengeScoring>("imps");
-  const [standings, setStandings] = useState<StandingsVisibility>("after-finish");
-  const [boards, setBoards] = useState<BoardDraftState[]>(() =>
-    Array.from({ length: DEFAULT_BOARDS }, (_, i) =>
-      makeBoard(seedFor(seedBase, i + 1), i + 1),
-    ),
+  const [title, setTitle] = useState(d?.title ?? "");
+  const [description, setDescription] = useState(d?.description ?? "");
+  const [format, setFormat] = useState<ChallengeFormat>(d?.format ?? "full");
+  const [scoring, setScoring] = useState<ChallengeScoring>(d?.scoring ?? "imps");
+  const [standings, setStandings] = useState<StandingsVisibility>(
+    d?.standingsVisibility ?? "after-finish",
   );
-  const [controls, setControls] = useState<Record<string, ControlState>>(defaultControlStates);
+  const [boards, setBoards] = useState<BoardDraftState[]>(() =>
+    d?.boards.length
+      ? d.boards.map((b) => {
+          const base = makeBoard(b.seed, b.boardNo);
+          const edited = b.pack ? packFromDraft(b.pack) : null;
+          return {
+            ...base,
+            dealer: b.dealer,
+            humanSeat: b.humanSeat,
+            ...(b.vul ? { vul: b.vul } : {}),
+            // A hand-edited pack travels card-by-card; anything else is the
+            // seed's own deal, which re-derives identically.
+            ...(edited && "hands" in edited
+              ? { hands: edited.hands, edited: true, touched: true }
+              : {}),
+          };
+        })
+      : Array.from({ length: DEFAULT_BOARDS }, (_, i) =>
+          makeBoard(seedFor(seedBase, i + 1), i + 1),
+        ),
+  );
+  const [controls, setControls] = useState<Record<string, ControlState>>(() =>
+    d ? { ...defaultControlStates(), ...d.controlOverrides } : defaultControlStates(),
+  );
   const [query, setQuery] = useState("");
-  const [invited, setInvited] = useState<{ userId: string; moderator: boolean }[]>([]);
-  const [editorBadge, setEditorBadge] = useState(false);
+  const [invited, setInvited] = useState<{ userId: string; moderator: boolean }[]>(
+    d?.invites.map((i) => ({ userId: i.userId, moderator: i.moderator })) ?? [],
+  );
+  const [editorBadge, setEditorBadge] = useState(d?.editorBadge ?? false);
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
   const [importInfo, setImportInfo] = useState<string | null>(null);
@@ -286,10 +319,32 @@ export function CreateChallenge({
     setError(null);
     startTransition(async () => {
       try {
-        await createChallengeAction(payload);
+        // The parked entry rides along so publishing PROMOTES it rather than
+        // leaving a stale draft beside the challenge it became.
+        await createChallengeAction(payload, entryId ?? undefined);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not create the challenge");
         goStep("review");
+      }
+    });
+  };
+
+  /**
+   * Park it. Deliberately no validation: a draft is unfinished by definition,
+   * and refusing to save one for want of a title is the opposite of the point.
+   * The returned id is held so a second save updates the same row.
+   */
+  const [entryId, setEntryId] = useState<string | null>(draftEntryId ?? null);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const saveDraft = () => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const id = await saveChallengeDraftAction(draft(), entryId ?? undefined);
+        setEntryId(id);
+        setSavedAt(new Date().toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not save the draft");
       }
     });
   };
@@ -404,6 +459,19 @@ export function CreateChallenge({
             className="mt-3.5 h-[46px] w-full rounded-lg bg-emerald-700 text-[15px] font-extrabold text-white disabled:bg-neutral-300 disabled:text-neutral-500"
           >
             {createLabel}
+          </button>
+          {/* PARK IT. The wizard's draft lives in React state, so before this
+              the only ways out were publish or lose it — and a challenge is a
+              pack per board, seats, invites and overrides. It sits under Create
+              rather than beside it: publishing is the thing you came to do, and
+              saving is the way out that used not to exist. */}
+          <button
+            type="button"
+            onClick={saveDraft}
+            disabled={pending}
+            className="mt-2 h-[38px] w-full rounded-lg border border-emerald-700/30 text-[13px] font-semibold text-emerald-900 disabled:text-neutral-400"
+          >
+            {savedAt ? `Saved to library · ${savedAt}` : "Save draft to library"}
           </button>
           <p className="mt-1.5 text-center text-[11.5px] leading-snug text-emerald-900/70">
             {boards.length} boards · {1 + invited.length} player

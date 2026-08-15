@@ -135,7 +135,10 @@ export function BidColumns({
   const colPad = Math.round(cell * 0.11);
   const cellW = cell;
   const cellH = Math.max(Math.round(cell * 0.92), minCellH);
-  const passW = Math.round(cell * 3.4);
+  // "P", not "Pass" (owner, 2026-08-13), so the button no longer needs three
+  // and a half cells to hold a word. The width it gives back is the width the
+  // whole pad gives back — this row is the widest thing in it.
+  const passW = Math.round(cell * 1.6);
   const levelFont = Math.round(cell * 0.62);
   const glyphFont = Math.round(cell * 0.42);
   const legal = new Set(legalCalls);
@@ -252,7 +255,7 @@ export function BidColumns({
         ))}
       </div>
       <div style={{ display: "flex", gap }}>
-        {bottomBtn("P", "Pass", passW, "#116710", "#0c4b0b", { letterSpacing: ".04em" })}
+        {bottomBtn("P", "P", passW, "#116710", "#0c4b0b")}
         {bottomBtn("X", "X", cellW, "#7a5b3a", "#5e4227")}
         {/* Two glyphs in a one-cell button: the level font overruns the box at small
             `cell`. Only the type shrinks — the button keeps its width. */}

@@ -78,6 +78,25 @@ export function AutoAdvance({
 }>) {
   const router = useRouter();
   const [paused, setPaused] = useState(initialPaused);
+  /**
+   * An UNDO pauses the table, without a navigation to say so.
+   *
+   * Undo used to redirect to `?paused=<now>`, which remounted this component
+   * with `initialPaused` set — correct, and it reloaded the whole table to do
+   * it. The event count is the signal instead: `seq` only ever goes UP as a
+   * board is played, so a DECREASE is an undo and nothing else. Pausing is the
+   * point of undo — you take a card back to look at it, and auto-play would
+   * instantly put it back.
+   */
+  const lastSeq = useRef(seq);
+  if (seq < lastSeq.current) {
+    lastSeq.current = seq;
+    // Setting state during render is legal when it is a plain "derived from
+    // props" correction; React re-renders immediately without committing.
+    setPaused(true);
+  } else if (seq !== lastSeq.current) {
+    lastSeq.current = seq;
+  }
   // A finished trick is on the felt and has not been let go — stepping now
   // would sweep it away, which is the one thing the hold exists to stop. The
   // default context reads "not holding", so tables without the provider (the

@@ -118,6 +118,7 @@ export default async function PlayTablePage({
     fanSpread: appearance.fanSpread,
     fanRadius: appearance.fanRadius,
     suitGroups: appearance.suitGroups,
+    cardLift: appearance.cardLift,
   };
 
   const canSeatsPanel = control["table.seats_panel"];
@@ -381,6 +382,23 @@ export default async function PlayTablePage({
               : appearance.trickPause === "2s"
                 ? ("3s" as const)
                 : ("tap" as const),
+      }),
+    },
+    {
+      label: "Card lift",
+      value:
+        appearance.cardLift === "off"
+          ? "Off"
+          : appearance.cardLift === "subtle"
+            ? "Subtle"
+            : "Pronounced",
+      action: patchAppearanceAction.bind(null, sessionId, {
+        cardLift:
+          appearance.cardLift === "off"
+            ? ("subtle" as const)
+            : appearance.cardLift === "subtle"
+              ? ("pronounced" as const)
+              : ("off" as const),
       }),
     },
     {
@@ -727,6 +745,24 @@ export default async function PlayTablePage({
       )}
       {/* Every control lives INSIDE the canvas — rail chips on the table, the
           nav cell on the hand viewer. Nothing floats above the design. */}
+      {/*
+        EDGE TO EDGE ON A PHONE (owner, 2026-08-13).
+
+        The bridge layout pads its <main> with p-3 — right for every reading
+        page under it, wrong for this one. The table sizes itself from the width
+        it is GIVEN, so 12px each side became a 12px white gutter around a felt
+        that had shrunk to fit between them.
+
+        The breakout goes on THIS element, the one that clips. Put on a wrapper
+        inside it, the table came out 24px wider than the box meant to contain
+        it, which left that box quietly scrollable sideways — a worse bug than
+        the gutter. And it cannot go on the page root either: that already
+        carries `mx-auto`, and two rules setting the same property are settled
+        by the order Tailwind emits them, not by the order they are written.
+
+        The rounding goes with it: a card bled to the screen edge has no corners
+        to round, and keeping them cut two notches out of the felt.
+      */}
       <div
         // Embedded: the WebView is the whole screen — full-bleed and EXACTLY
         // the viewport (owner direction 2026-08-08: the play screen never
@@ -735,7 +771,10 @@ export default async function PlayTablePage({
         // band takes the leftover height and scrolls inside itself, and on a
         // genuinely short window availPx shrinks the whole stage rather than
         // pushing anything below the fold.
-        className={embedded ? "overflow-hidden" : "overflow-hidden rounded-lg"}
+        // Non-embedded takes origin/main's edge-to-edge treatment (merge
+        // 2026-08-14, "the felt reaches the edges"): full-bleed and unrounded
+        // on a phone-width platform window, the rounded card back at md+.
+        className={embedded ? "overflow-hidden" : "-mx-3 overflow-hidden rounded-none md:mx-0 md:rounded-lg"}
         style={{
           height: embedded ? "100dvh" : "calc(100vh - 5.5rem)",
         }}

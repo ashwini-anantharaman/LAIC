@@ -37,6 +37,23 @@ export interface SeatHandMetrics {
    * unchanged for every caller that does not ask.
    */
   suitGaps?: boolean;
+  /**
+   * How far a playable card rises, and how far the HELD one goes beyond it
+   * (CARD_LIFT_PX). The lift is how the hand says "this one is legal"; how much
+   * of it a player wants is taste, so it is a setting rather than a constant.
+   * Omitted, the authored 6/16 stands.
+   */
+  lift?: { playable: number; held: number };
+  /**
+   * Which way "raised" is. Default -1: your own hand sits at the BOTTOM of the
+   * phone, so a card lifts up, out of the row and towards the felt.
+   *
+   * Dummy's row sits at the TOP (owner, 2026-08-14), where up is off the edge
+   * of the table — the card backed away into the toolbar instead of offering
+   * itself. It raises DOWN, which is still towards the felt: the direction that
+   * means "raised" is the table's, not the screen's.
+   */
+  liftDir?: 1 | -1;
 }
 
 export interface SeatHandProps {
@@ -217,20 +234,18 @@ export function SeatHand({
               style={{
                 position: "relative", display: "block", width: wide ?? m.w, height: m.h, flex: "none",
                 background: "#fff",
+                // SUIT GROUPING IS A COLOUR, AT THE SAME WIDTH. It was a gap
+                // once (the overlap handed back) and then a 3px edge, and both
+                // made the spaces between cards UNEQUAL — the 3px one in a dark
+                // green that read as felt showing through (owner, 2026-08-14).
+                // Every seam in the row is now exactly 1px; a suit boundary is
+                // only DARKER. Nothing moves, nothing varies in width, and the
+                // boundary is still findable.
                 border: up ? "2px solid #b8860b" : "1px solid #6b6b6b",
-                // With seams every block has a first card, so the left round
-                // belongs to any card that opens one.
-                borderRadius:
-                  i === 0 || (m.suitGaps && card.suit !== hand[i - 1]!.suit) ? "3px" : "0 3px 3px 0",
-                // A new suit un-overlaps instead of tucking under its
-                // predecessor: the seam is exactly the overlap given back, so
-                // the row grows by three gaps and nothing is re-measured.
-                marginLeft:
-                  i === 0 || wide
-                    ? 0
-                    : m.suitGaps && card.suit !== hand[i - 1]!.suit
-                      ? 0
-                      : -(m.overlap ?? 1),
+                borderLeftColor:
+                  m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit ? "#23231f" : "#6b6b6b",
+                borderRadius: i === 0 ? "3px 0 0 3px" : i === hand.length - 1 ? "0 3px 3px 0" : 0,
+                marginLeft: i === 0 || wide ? 0 : -(m.overlap ?? 1),
                 padding: 0,
                 cursor: on ? "pointer" : "default",
                 // The re-centre offset and the playable lift, composed: the FLIP
@@ -238,7 +253,9 @@ export function SeatHand({
                 // the other mid-slide.
                 // Three heights, not two: flat, playable, and the one card a
                 // second tap will commit.
-                transform: `translateX(var(--btu-dx, 0px)) translateY(${up ? -16 : on ? -6 : 0}px)`,
+                transform: `translateX(var(--btu-dx, 0px)) translateY(${
+                  (m.liftDir ?? -1) * (up ? (m.lift?.held ?? 16) : on ? (m.lift?.playable ?? 6) : 0)
+                }px)`,
                 // A lifted card rises ABOVE its neighbours: overlapped cards
                 // paint in hand order, so without this the next card clips the
                 // one the thumb is about to press.

@@ -101,6 +101,7 @@ describe("normalizeAppearance", () => {
       playMode: "suit",
       trickPause: "2s",
       suitGroups: false,
+      cardLift: "pronounced",
       overrides: { feltColor: "#0d707c" },
     });
     expect(a).toEqual({
@@ -113,6 +114,7 @@ describe("normalizeAppearance", () => {
       playMode: "suit",
       trickPause: "2s",
       suitGroups: false,
+      cardLift: "pronounced",
       overrides: { feltColor: "#0d707c" },
     });
   });
@@ -120,10 +122,11 @@ describe("normalizeAppearance", () => {
     // The defaults are deliberate (owner, 2026-08-12): a new player should not
     // lose a card to a mis-tap, so a corrupt stored value must degrade towards
     // the rails, never away from them.
-    const a = normalizeAppearance({ playMode: "yolo", trickPause: 5, suitGroups: "yes" });
+    const a = normalizeAppearance({ playMode: "yolo", trickPause: 5, suitGroups: "yes", cardLift: 9 });
     expect(a.playMode).toBe("raise");
     expect(a.trickPause).toBe("tap");
     expect(a.suitGroups).toBe(true);
+    expect(a.cardLift).toBe("subtle");
   });
   it("clamps fanSpread into range and snaps to the step", () => {
     expect(normalizeAppearance({ fanSpread: 5 }).fanSpread).toBe(FAN_LIMITS.spread.min);

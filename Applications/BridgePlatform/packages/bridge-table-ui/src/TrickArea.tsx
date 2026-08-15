@@ -9,7 +9,7 @@
 import type { Card, Seat } from "@bridge/events";
 import { useLayoutEffect, useRef, type CSSProperties } from "react";
 import { RED, GLYPH, isRed, rankText } from "./tokens";
-import { FLY, GLIDE, TableMotion } from "./motion";
+import { FLY, GATHER, GLIDE, TableMotion } from "./motion";
 
 export interface TrickPlay {
   seat: Seat;
@@ -54,6 +54,14 @@ export interface TrickAreaProps {
    * it. No vertical space: the lift happens inside the compass box.
    */
   winner?: Seat | null;
+  /**
+   * The trick is being GATHERED — every card leaves towards the winner.
+   *
+   * The host keeps the plays on screen for exactly the animation's length; this
+   * only decides what they do while they are there. It overrides the arrival
+   * animation, because a card cannot be gliding in and sweeping out at once.
+   */
+  gathering?: boolean;
 }
 
 /**
@@ -185,11 +193,15 @@ const clusterPos = (card: { w: number; h: number }): Record<Seat, { left: number
  * digits run ~0.56em each — and it is capped so the pair stays under half the
  * card's width and can never cross its diagonal twin.
  */
-function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean }>) {
+function FaceCard({ card, box, seat, origin, won, gather }: Readonly<{ card: Card; box: { w: number; h: number }; seat: Seat; origin?: { x: number; y: number } | null; won?: boolean; gather?: Seat | null }>) {
   const rank = rankText(card.rank);
   const colour = isRed(card.suit) ? RED : "#000";
-  const rankSize = Math.round(box.h * 0.26);
-  const glyphSize = Math.round(box.h * 0.19);
+  // Up from 0.26/0.19 (owner, 2026-08-13). The ceiling is not taste: the flanks
+  // sit at half a card, so an index block deeper than that gets clipped by its
+  // own neighbour. 0.30/0.22 puts the ink at ~0.46h against a 0.5h strip, which
+  // is bigger and still clear — 0.32/0.23 would leave only a pixel of margin.
+  const rankSize = Math.round(box.h * 0.30);
+  const glyphSize = Math.round(box.h * 0.22);
   const size = rank.length > 1 ? Math.min(rankSize, Math.floor((box.w * 0.48) / 1.12)) : rankSize;
   const inX = Math.round(box.w * 0.06);
   const inY = Math.round(box.h * 0.025);
@@ -207,7 +219,7 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
         transform: rotated ? "rotate(180deg)" : undefined,
       }}
     >
-      <span style={{ fontSize: size, fontWeight: 700 }}>{rank}</span>
+      <span style={{ fontSize: size, fontWeight: 800 }}>{rank}</span>
       <span style={{ fontSize: glyphSize }}>{GLYPH[card.suit]}</span>
     </span>
   );
@@ -219,7 +231,7 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
       data-seat={seat}
       // A measured origin animates the transform itself (btu-fly); without one
       // the seat-direction keyframe is the best guess available.
-      className={origin ? FLY : GLIDE[seat]}
+      className={gather ? GATHER[gather] : origin ? FLY : GLIDE[seat]}
       style={{
         position: "relative",
         display: "block",
@@ -238,7 +250,11 @@ function FaceCard({ card, box, seat, origin, won }: Readonly<{ card: Card; box: 
       }}
     >
       {index({ left: inX, top: inY }, false)}
-      {index({ right: inX, bottom: inY }, true)}
+      {/* UPRIGHT, not rotated (owner, 2026-08-13). A real card rotates its
+          second index because a real card gets turned around; nothing on this
+          felt ever does, so the rotation only cost the reader — an upside-down
+          rank is a rank you have to decode rather than read. */}
+      {index({ right: inX, bottom: inY }, false)}
     </span>
   );
 }
@@ -265,6 +281,7 @@ export function TrickArea({
   card = CARD,
   originOf,
   winner = null,
+  gathering = false,
 }: Readonly<TrickAreaProps>) {
   if (variant === "pill") {
     return (
@@ -327,7 +344,7 @@ export function TrickArea({
                 {play ? (
                   // Keyed on the card so a NEW card mounts (and glides in); a
                   // re-render of the same card must not replay the animation.
-                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} />
+                  <FaceCard key={`${play.card.suit}${play.card.rank}`} card={play.card} box={card} seat={seat} origin={originOf?.(seat) ?? null} won={winner === seat} gather={gathering ? winner : null} />
                 ) : (
                   <EmptySlot box={card} />
                 )}

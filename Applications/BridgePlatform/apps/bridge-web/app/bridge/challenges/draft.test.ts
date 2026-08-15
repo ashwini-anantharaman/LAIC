@@ -10,6 +10,7 @@ import {
   defaultControlStates,
   FORMAT_OPTIONS,
   packFromDraft,
+  normalizeDraft,
   validateDraft,
   type ChallengeDraft,
 } from "./draft";
@@ -184,5 +185,53 @@ describe("the challenge FORMAT (bid & play vs bidding only)", () => {
 
   it("offers exactly the two formats the model knows about", () => {
     expect(FORMAT_OPTIONS.map((f) => f.key)).toEqual(["full", "bidding-only"]);
+  });
+});
+
+describe("normalizeDraft", () => {
+  it("reopens a draft saved by an older build", () => {
+    // Every field missing, and one that was legal once. A parked draft must
+    // still OPEN — a draft you cannot reopen is worse than one never saved.
+    const d = normalizeDraft({ title: "Half-built", boards: [{ seed: 5 }], format: "gone" });
+    expect(d.title).toBe("Half-built");
+    expect(d.scoring).toBe("imps");
+    expect(d.standingsVisibility).toBe("after-finish");
+    expect(d.format).toBeUndefined();
+    expect(d.boards).toEqual([{ boardNo: 1, seed: 5, dealer: "N", humanSeat: "S" }]);
+    expect(d.invites).toEqual([]);
+    expect(d.editorBadge).toBe(false);
+  });
+
+  it("keeps what is valid and drops what is not", () => {
+    const d = normalizeDraft({
+      title: "Real",
+      description: "x",
+      format: "bidding-only",
+      scoring: "mp",
+      boards: [
+        { boardNo: 2, seed: 9, dealer: "E", humanSeat: "W", vul: "both" },
+        "rubbish",
+        { seed: 1, dealer: "nowhere", humanSeat: "S" },
+      ],
+      controlOverrides: { "table.undo": "show", "not.a.control": "show", "table.hands": "maybe" },
+      invites: [{ userId: "u1", moderator: true }, { moderator: true }],
+      editorBadge: true,
+    });
+    expect(d.format).toBe("bidding-only");
+    expect(d.scoring).toBe("mp");
+    expect(d.boards).toHaveLength(2);
+    expect(d.boards[0]).toMatchObject({ boardNo: 2, dealer: "E", vul: "both" });
+    // An unknown seat falls back rather than dropping the board.
+    expect(d.boards[1]).toMatchObject({ dealer: "N" });
+    expect(Object.keys(d.controlOverrides)).toEqual(["table.undo"]);
+    expect(d.invites).toEqual([{ userId: "u1", moderator: true }]);
+  });
+
+  it("drops a malformed pack instead of the board", () => {
+    const d = normalizeDraft({
+      boards: [{ boardNo: 1, seed: 1, dealer: "N", humanSeat: "S", pack: { N: "junk" } }],
+    });
+    expect(d.boards).toHaveLength(1);
+    expect(d.boards[0]!.pack, "the board survives on its seed").toBeUndefined();
   });
 });

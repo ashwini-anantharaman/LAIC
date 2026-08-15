@@ -27,6 +27,8 @@ import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
+import { libraryStore } from "@/lib/sessions";
+import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { packFromDraft, validateDraft, type ChallengeDraft } from "./draft";
 import { listChallengePeople } from "./people";
 
@@ -66,7 +68,11 @@ function packOf(board: { seed: number; pack?: Record<Seat, string> }): Record<Se
  * ALWAYS from the standard cycle), write the boards, write the invites with
  * the creator's own row accepted + moderator, and land back on the list.
  */
-export async function createChallengeAction(draft: ChallengeDraft): Promise<void> {
+export async function createChallengeAction(
+  draft: ChallengeDraft,
+  /** The library draft this was resumed from, if any — promoted below. */
+  draftEntryId?: string,
+): Promise<void> {
   const context = await requireContext();
   await requireFeature(context, "page.challenges");
   await requireCreateChallenge(context);
@@ -166,8 +172,91 @@ export async function createChallengeAction(draft: ChallengeDraft): Promise<void
     overrides: Object.keys(draft.controlOverrides).length,
   });
 
+  // A DRAFT IS PROMOTED, NOT DUPLICATED (owner, 2026-08-14). The entry you
+  // parked keeps its identity and becomes the record of the published thing, so
+  // the library holds one row for the whole life of a challenge rather than a
+  // row per moment in it. Best-effort: the challenge is already written, and
+  // failing to update a library row must not undo that or 500 the redirect.
+  if (draftEntryId) {
+    try {
+      const entry = await libraryStore().getEntry(draftEntryId);
+      if (entry && entry.createdBy === context.nexusUserId) {
+        await libraryStore().putEntry({
+          ...entry,
+          name: challenge.title,
+          challengeStatus: "published",
+          sourceChallengeId: challengeId,
+          challengeFormat: format,
+          challengeScoring: draft.scoring,
+          challengeBoardCount: draft.boards.length,
+        });
+      }
+    } catch {
+      // The challenge stands either way; the row simply stays a draft.
+    }
+  }
+
   revalidatePath(LIST);
+  revalidatePath("/bridge/library");
   redirect(`${LIST}?created=${encodeURIComponent(challenge.title)}`);
+}
+
+/**
+ * Park a challenge you are still building.
+ *
+ * The wizard's draft lives entirely in React state, so until now the only ways
+ * out of it were "publish" and "lose it" — and a challenge is real work: a pack
+ * per board, seats, invites, control overrides. This writes the draft to the
+ * library so it can be closed and picked up again (owner, 2026-08-14).
+ *
+ * Saving again UPDATES the same entry rather than adding another. A draft is
+ * one thing being worked on, and a shelf that grew a row per save would bury
+ * the challenge it was meant to keep.
+ */
+export async function saveChallengeDraftAction(
+  draft: ChallengeDraft,
+  entryId?: string,
+): Promise<string> {
+  const context = await requireContext();
+  await requireFeature(context, "page.challenges");
+  await requireFeature(context, "challenge.create");
+
+  // Deliberately NOT validateDraft: a draft is unfinished by definition, and
+  // refusing to save one because it has no title yet defeats the purpose. The
+  // title is only defaulted for the shelf row, which needs something to show.
+  const title = draft.title.trim() || "Untitled challenge";
+  const existing = entryId ? await libraryStore().getEntry(entryId) : null;
+  const mine = existing && existing.createdBy === context.nexusUserId ? existing : null;
+
+  const entry = {
+    ...(mine ?? {
+      entryId: newId("le"),
+      tags: [] as string[],
+      origin: "authored" as const,
+      createdBy: context.nexusUserId,
+      createdAt: new Date().toISOString(),
+      programOrganizationId: orgScopeOf(context),
+      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+      scopeLevel: authoredScope(context),
+    }),
+    kind: "challenge" as const,
+    name: title,
+    ...(draft.description.trim() ? { notes: draft.description.trim() } : {}),
+    challengeStatus: "draft" as const,
+    challengeFormat: challengeFormat(draft),
+    challengeScoring: draft.scoring,
+    challengeBoardCount: draft.boards.length,
+    challengeDraftJson: JSON.stringify(draft),
+  };
+
+  await libraryStore().putEntry(entry);
+  await audit(context, "profile.create", "kb_library", entry.entryId, {
+    kind: "challenge",
+    status: "draft",
+    boards: draft.boards.length,
+  });
+  revalidatePath("/bridge/library");
+  return entry.entryId;
 }
 
 /**
@@ -290,4 +379,82 @@ export async function inviteAction(formData: FormData): Promise<void> {
   const target = returnTo.startsWith("/bridge/challenges") ? returnTo : LIST;
   revalidatePath(target);
   redirect(target);
+}
+
+/**
+ * Save a challenge to the library, so the same contest can be set again.
+ *
+ * WHAT IS SAVED IS THE DEFINITION, NOT THE RESULT. A challenge's standings
+ * belong to the people who played it and are already on its own page; what has
+ * no home anywhere else is the thing that took work to build — the boards, and
+ * the format and scoring that decide what playing them means. That is what a
+ * saved challenge has to carry to be worth saving.
+ *
+ * The boards are COPIED, not referenced. A library entry outlives the record it
+ * came from: challenges are deleted, edited before they lock, and re-packed,
+ * and an entry that pointed at one would quietly become a title with nothing
+ * behind it. `sourceChallengeId` records where it came from without depending
+ * on it still being there.
+ */
+export async function saveChallengeToLibraryAction(formData: FormData): Promise<void> {
+  const context = await requireContext();
+  await requireFeature(context, "table.save_library");
+  const challengeId = String(formData.get("challengeId"));
+
+  const store = challengeStore();
+  const challenge = await store.getChallenge(challengeId);
+  if (!challenge) redirect(`${LIST}?error=${encodeURIComponent("That challenge is gone.")}`);
+  const boards = await store.listBoards(challengeId);
+  if (boards.length === 0)
+    redirect(
+      `${LIST}/${challengeId}?error=${encodeURIComponent(
+        "Nothing to save yet — this challenge has no boards.",
+      )}`,
+    );
+
+  const name = String(formData.get("name") ?? "").trim() || challenge.title;
+  const notes = String(formData.get("notes") ?? "").trim();
+
+  const entry = {
+    entryId: newId("le"),
+    kind: "challenge" as const,
+    name,
+    ...(notes && { notes }),
+    tags: [] as string[],
+    origin: "authored" as const,
+    createdBy: context.nexusUserId,
+    createdAt: new Date().toISOString(),
+    programOrganizationId: orgScopeOf(context),
+    nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    scopeLevel: authoredScope(context),
+    sourceChallengeId: challengeId,
+    challengeFormat: challengeFormat(challenge),
+    challengeScoring: challenge.scoring,
+    challengeBoards: boards
+      .slice()
+      .sort((a, b) => a.boardNo - b.boardNo)
+      .map((b) => ({
+        boardNo: b.boardNo,
+        pack: b.pack,
+        dealer: b.dealer,
+        vul: b.vul,
+        humanSeat: b.humanSeat,
+      })),
+  };
+
+  try {
+    await libraryStore().putEntry(entry);
+  } catch {
+    redirect(
+      `${LIST}/${challengeId}?error=${encodeURIComponent(
+        "Couldn't save — the library isn't provisioned on this backend yet.",
+      )}`,
+    );
+  }
+  await audit(context, "profile.create", "kb_library", entry.entryId, {
+    challengeId,
+    kind: "challenge",
+    boards: entry.challengeBoards.length,
+  });
+  redirect(`/bridge/library?kind=challenge&saved=challenge`);
 }

@@ -245,6 +245,83 @@ const SCORINGS = new Set<string>(SCORING_OPTIONS.map((s) => s.key));
 const STANDINGS = new Set<string>(STANDINGS_OPTIONS.map((s) => s.key));
 const CONTROL_KEYS = new Set(CHALLENGE_CONTROLS.map((c) => c.key));
 
+/**
+ * Coerce a STORED draft back into a usable one.
+ *
+ * A parked draft is JSON written by an older build of this wizard, so nothing
+ * in it can be trusted to exist or to be well-formed: fields arrive missing,
+ * renamed, or holding values that were legal once. Every unknown is replaced by
+ * the default a fresh wizard starts from rather than rejected, because the
+ * alternative is a saved draft that will not open — and a draft you cannot
+ * reopen is worse than one you never saved.
+ *
+ * `validateDraft` still runs before anything is PUBLISHED. This only has to
+ * make the wizard openable; it is not the authority on whether a draft is
+ * fit to become a challenge.
+ */
+export function normalizeDraft(input: unknown): ChallengeDraft {
+  const o = input && typeof input === "object" ? (input as Record<string, unknown>) : {};
+  const str = (v: unknown, fallback = "") => (typeof v === "string" ? v : fallback);
+  const rawBoards = Array.isArray(o.boards) ? o.boards : [];
+
+  const boards: ChallengeBoardDraft[] = rawBoards.flatMap((raw, i) => {
+    if (!raw || typeof raw !== "object") return [];
+    const b = raw as Record<string, unknown>;
+    const seed = typeof b.seed === "number" && Number.isFinite(b.seed) ? b.seed : 0;
+    const boardNo = typeof b.boardNo === "number" && b.boardNo > 0 ? b.boardNo : i + 1;
+    const dealer = SEAT_SET.has(str(b.dealer)) ? (b.dealer as Seat) : "N";
+    const humanSeat = SEAT_SET.has(str(b.humanSeat)) ? (b.humanSeat as Seat) : "S";
+    // A pack is only carried when it was hand-edited; a malformed one is
+    // dropped rather than kept, and the board falls back to its seed's deal.
+    const pack =
+      b.pack && typeof b.pack === "object"
+        ? (Object.fromEntries(
+            SEATS.map((seat) => [seat, str((b.pack as Record<string, unknown>)[seat])]),
+          ) as Record<Seat, string>)
+        : undefined;
+    return [
+      {
+        boardNo,
+        seed,
+        dealer,
+        humanSeat,
+        ...(VUL_SET.has(str(b.vul)) ? { vul: b.vul as Vul } : {}),
+        ...(pack && "hands" in packFromDraft(pack) ? { pack } : {}),
+      },
+    ];
+  });
+
+  const overrides: Record<string, ControlOverride> = {};
+  if (o.controlOverrides && typeof o.controlOverrides === "object")
+    for (const [key, value] of Object.entries(o.controlOverrides as Record<string, unknown>))
+      if (CONTROL_KEYS.has(key) && (value === "show" || value === "hide"))
+        overrides[key] = value;
+
+  const invites: ChallengeInviteDraft[] = (Array.isArray(o.invites) ? o.invites : []).flatMap(
+    (raw) => {
+      if (!raw || typeof raw !== "object") return [];
+      const i = raw as Record<string, unknown>;
+      return typeof i.userId === "string" && i.userId
+        ? [{ userId: i.userId, moderator: i.moderator === true }]
+        : [];
+    },
+  );
+
+  return {
+    title: str(o.title),
+    description: str(o.description),
+    ...(FORMATS.has(str(o.format)) ? { format: o.format as ChallengeFormat } : {}),
+    scoring: SCORINGS.has(str(o.scoring)) ? (o.scoring as ChallengeScoring) : "imps",
+    standingsVisibility: STANDINGS.has(str(o.standingsVisibility))
+      ? (o.standingsVisibility as StandingsVisibility)
+      : "after-finish",
+    boards,
+    controlOverrides: overrides,
+    invites,
+    editorBadge: o.editorBadge === true,
+  };
+}
+
 /** A hand-edited pack, parsed and legality-checked. */
 export function packFromDraft(
   pack: Record<Seat, string>,

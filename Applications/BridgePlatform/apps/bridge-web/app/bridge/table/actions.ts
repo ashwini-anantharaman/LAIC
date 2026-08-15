@@ -319,14 +319,24 @@ export async function undoAction(formData: FormData): Promise<void> {
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
+  // BOTH table chromes, because either may be the one that posted. This used to
+  // revalidate only the legacy path and lean on the redirect below to refresh
+  // table2 — which is why undo felt like a page load there.
   revalidatePath(`/bridge/table/${sessionId}`);
-  // Come back PAUSED: the point of undo is to inspect (and often fix) the
-  // decision — auto-play would instantly redo it. Step ▸ resumes one beat
-  // at a time. The token is unique per undo so AutoAdvance remounts paused
-  // even when the previous pause was already resumed. A post from the legacy
-  // page returns there (its Decisions rail is where undo makes sense).
-  const legacy = formData.get("legacy") === "1" ? "&legacy=1" : "";
-  redirect(`${tableBase}${sessionId}?paused=${Date.now()}${legacy}`);
+  revalidatePath(`/bridge/table2/${sessionId}`);
+  void tableBase;
+
+  // NO REDIRECT (owner, 2026-08-13: "pressing undo reloads the whole table").
+  //
+  // It used to return to `?paused=${Date.now()}` — a URL that is different every
+  // time, so the router replaced the whole payload and AutoAdvance, whose key is
+  // that param, remounted from scratch. The table visibly reloaded to undo one
+  // card. Every caller posts from the page it is already on, so the navigation
+  // only ever existed to carry the pause.
+  //
+  // The pause survives without it: AutoAdvance pauses itself when the event
+  // count goes DOWN, which is exactly and only what an undo does. `?paused` is
+  // still honoured for anything that links to a held table.
 }
 
 /** Rewind the whole board to the deal — undo's big sibling. Comes back
