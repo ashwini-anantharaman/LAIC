@@ -1,4 +1,4 @@
-// Play — four big playing cards, two by two (Figma 627:4285).
+// Play — a grid of playing cards (Figma 870:752).
 //
 // Everything it launches is the bridge platform (the table itself stays an
 // embed); this screen is only the door. The behaviour behind each card is the
@@ -14,22 +14,23 @@
 // replaced it with this grid. Its route (/play-board/[entryId]) still exists and
 // is still reached from a Learn card's embedded board.
 //
+// IT SCROLLS. Five cards on three rows already reached under the floating tab
+// bar on a short phone, and the grid was a fixed two-row box — so the fifth card
+// sat behind the bar with no way to get at it, and every card added after it
+// would have been invisible rather than merely low. The rows now measure
+// themselves from the number of cards and the whole thing scrolls, with the tab
+// bar's clearance paid at the end of the scroll body.
+//
 // "From Coach" shows for everyone now. It used to be hidden from coaches on the
 // grounds that assignments are something a coach gives; but a coach can also be
 // assigned boards, and a four-card grid with a hole in it reads as broken.
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
-import { ACTION_CARD, ActionCard } from "../../components/action-card";
+import { ACTION_CARD, ActionCard, CARD_ICONS, type CardIcon } from "../../components/action-card";
 import { BrandChrome } from "../../components/brand-chrome";
-import {
-  ICON_CARD_ENVELOPE,
-  ICON_CARD_HISTORY,
-  ICON_CARD_PLAY,
-  ICON_CARD_PLUS,
-} from "../../constants/brand-vectors";
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { TabLoading } from "../../components/tab-loading";
@@ -40,9 +41,16 @@ import { peekSummary, refreshSummary } from "../../lib/summary-cache";
 import { useClubs } from "../../lib/club-context";
 
 const DESIGN_WIDTH = 390;
-/** The grid's left edge, and its top measured from under the screen title. */
-const GRID_LEFT = 24;
-const GRID_TOP_GAP = 42;
+/**
+ * The grid's left edge, and its top measured from under the screen title.
+ *
+ * 51.7 looks like a lot of margin against the title's 23, and it is not: each
+ * card's backing card is ROTATED, so it reaches out past the face on both sides.
+ * The frame centres the pair's envelope (49.79 on the left, 54 on the right),
+ * not the faces — line the faces up with the title and the whole deck sits left.
+ */
+const GRID_LEFT = 51.7;
+const GRID_TOP_GAP = 27;
 
 export default function PlayScreen() {
   const { token } = useAuth();
@@ -119,7 +127,7 @@ export default function PlayScreen() {
   const cards: {
     key: string;
     label: string;
-    icon: string;
+    icon: CardIcon;
     suit: string;
     onPress: () => void;
     disabled: boolean;
@@ -128,7 +136,7 @@ export default function PlayScreen() {
     {
       key: "new",
       label: "New Play",
-      icon: ICON_CARD_PLUS,
+      icon: CARD_ICONS.plus,
       suit: Brand.maroon,
       onPress: () => router.push("/new-board"),
       disabled: false,
@@ -136,7 +144,7 @@ export default function PlayScreen() {
     {
       key: "resume",
       label: "Resume Board",
-      icon: ICON_CARD_PLAY,
+      icon: CARD_ICONS.play,
       suit: Brand.green,
       onPress: resume,
       // Nothing to resume — dim it rather than opening an empty picker. Only
@@ -148,35 +156,45 @@ export default function PlayScreen() {
     {
       key: "private",
       label: "Private Table",
-      icon: ICON_CARD_PLUS,
+      icon: CARD_ICONS.table,
       suit: Brand.green,
       onPress: () => router.push("/private-table"),
       disabled: false,
     },
     {
-      key: "plays",
-      label: "My Plays",
-      icon: ICON_CARD_HISTORY,
-      suit: Brand.green,
-      onPress: () => router.push("/plays"),
-      disabled: false,
-    },
-    {
       key: "assigned",
       label: "From Coach",
-      icon: ICON_CARD_ENVELOPE,
+      icon: CARD_ICONS.envelope,
       suit: Brand.maroon,
       onPress: () => router.push("/assigned"),
       disabled: false,
     },
+    {
+      key: "plays",
+      label: "My Plays",
+      icon: CARD_ICONS.history,
+      suit: Brand.maroon,
+      onPress: () => router.push("/plays"),
+      disabled: false,
+    },
   ];
+
+  // From the cards actually present, not fixed at two rows. The last row needs
+  // only a card's height — the pitch would add a trailing gap, which on a
+  // scrolling page reads as the list having more below it.
+  const rows = Math.ceil(cards.length / 2);
+  const gridHeight = (rows - 1) * rowPitch + ACTION_CARD.height * s;
 
   return (
     <BrandChrome>
-      <View style={styles.page}>
+      <ScrollView
+        style={styles.page}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollBody}
+      >
         <Text style={styles.title}>Play</Text>
 
-        <View style={[styles.grid, { height: rowPitch * 2, marginTop: GRID_TOP_GAP * s }]}>
+        <View style={[styles.grid, { height: gridHeight, marginTop: GRID_TOP_GAP * s }]}>
           {cards.map((c, i) => (
             <View
               key={c.key}
@@ -201,7 +219,7 @@ export default function PlayScreen() {
         </View>
 
         {error ? <Text style={styles.stateText}>{error}</Text> : null}
-      </View>
+      </ScrollView>
 
       {/* Ready once the club is known and the summary (or its error) is in —
           the tiles' numbers arrive with the content, not after it. */}
@@ -211,7 +229,11 @@ export default function PlayScreen() {
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
+  page: { flex: 1 },
+  /** The tab bar floats over the content, so its clearance is paid here — at the
+   *  END of the scroll body, where it becomes scrollable room rather than a
+   *  permanent dead band. */
+  scrollBody: { paddingBottom: TAB_BAR_CLEARANCE + 24 },
   title: {
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,

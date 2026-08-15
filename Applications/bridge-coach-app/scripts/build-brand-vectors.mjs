@@ -39,6 +39,10 @@ const NAMES = {
   "icon-card-play.svg": "ICON_CARD_PLAY",
   "icon-card-history.svg": "ICON_CARD_HISTORY",
   "icon-card-envelope.svg": "ICON_CARD_ENVELOPE",
+  // Private Table's own glyph (Figma 870:752) — a table seen end-on. It had been
+  // borrowing New Play's plus, which said "make one" on a card that also opens the
+  // ones you already have.
+  "icon-card-table.svg": "ICON_CARD_TABLE",
   "icon-assignments.svg": "ICON_ASSIGNMENTS",
   "icon-home.svg": "ICON_HOME",
   "icon-learn.svg": "ICON_LEARN",
