@@ -25,8 +25,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { WhatShouldIPlay } from "./CoachEventAsk";
+import { OWLEE_DISCLAIMER, WhatShouldIPlay } from "./CoachEventAsk";
 import { fetchBenTell, fetchBenWhatIf, fetchHints, type BenTell } from "./coachPrefetch";
+import { OwleeFace } from "./OwleeFace";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -42,6 +43,57 @@ const FELT_LINE = "#e0d7c2";
 const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 /** BEN's badge blue — the same one CoachPanel's note badges wear. */
 const BEN_BLUE = "#384bb3";
+
+/** BEN's ⓘ small print — same one line of honesty Owlee's answer carries. */
+const BEN_DISCLAIMER =
+  "BEN works out its own answer, and it might not be entirely accurate — weigh it against your own reading of the position.";
+
+/**
+ * BEN's long waits, with a live clock (owner pick #5, 2026-08-14): a
+ * 30-second simulation behind static text reads as a hang — the difference
+ * between "working" and "broken" in a user's head is whether something
+ * moves. Short waits keep the plain line; only `long` earns the counter.
+ */
+function BenWorking({ long, verb }: Readonly<{ long: boolean; verb: string }>) {
+  const [secs, setSecs] = useState(0);
+  useEffect(() => {
+    if (!long) return;
+    const t = setInterval(() => setSecs((s) => s + 1), 1000);
+    return () => clearInterval(t);
+  }, [long]);
+  return (
+    <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+      {long
+        ? `BEN is ${verb} — ${secs}s in, it can take up to a minute…`
+        : "BEN is thinking — a few seconds…"}
+    </p>
+  );
+}
+
+/**
+ * BEN's face — a round badge with a tiny neural net, in BEN's own blue
+ * (owner direction 2026-08-14: an icon beside the name, not just words).
+ * The visual counterpart of Owlee's owl badge on the answer above.
+ */
+function BenFace({ size = 20 }: Readonly<{ size?: number }>) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        flex: "none", width: size, height: size, borderRadius: "50%",
+        background: BEN_BLUE, display: "flex", alignItems: "center", justifyContent: "center",
+      }}
+    >
+      <svg width={size * 0.64} height={size * 0.64} viewBox="0 0 24 24" style={{ display: "block" }}>
+        {/* three nodes, two links — a neural net at favicon size */}
+        <path d="M7 11.2 15.2 6.4 M7 12.8 15.2 17.6" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" fill="none" />
+        <circle cx="5.6" cy="12" r="2.6" fill="#fff" />
+        <circle cx="17.4" cy="5.6" r="2.6" fill="#fff" />
+        <circle cx="17.4" cy="18.4" r="2.6" fill="#fff" />
+      </svg>
+    </span>
+  );
+}
 
 /** Text with ♥ and ♦ in red, as printed hand diagrams have them. */
 function RedSuits({ children }: Readonly<{ children: string }>) {
@@ -96,10 +148,14 @@ function SectionLabel({ children }: Readonly<{ children: string }>) {
    HINTS — five rungs, opened one at a time
    ════════════════════════════════════════════════════════════════════════════ */
 
+/** The ladder's CAP — the count is dynamic below it (owner direction
+ *  2026-08-14): the server writes 2–5 rungs, as many as the decision needs. */
 const HINT_COUNT = 5;
+const HINT_MIN = 2;
 
-/** "Hint 1" … "Hint 4", and the last rung says what it costs to open. */
-const rungName = (i: number): string => (i === HINT_COUNT - 1 ? "The answer" : `Hint ${i + 1}`);
+/** "Hint 1", "Hint 2" …, and whichever rung is LAST is "The answer". */
+const rungName = (i: number, total: number): string =>
+  i === total - 1 ? "The answer" : `Hint ${i + 1}`;
 
 type HintsState =
   | { kind: "idle" }
@@ -131,7 +187,7 @@ export function CoachHints({
     setState({ kind: "loading" });
     try {
       const r = await fetchHints(sessionId, epoch);
-      if (r.hints?.length === HINT_COUNT) {
+      if (r.hints && r.hints.length >= HINT_MIN && r.hints.length <= HINT_COUNT) {
         setState({ kind: "ready", hints: r.hints });
       } else {
         setState({ kind: "empty", reason: r.reason ?? "no answer" });
@@ -151,7 +207,7 @@ export function CoachHints({
   if (!active) {
     return (
       <div style={SECTION}>
-        <SectionLabel>Hints</SectionLabel>
+        <SectionLabel>Incremental Hints</SectionLabel>
         <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
           Hints are for a decision that&rsquo;s in front of you — they&rsquo;ll be here when
           it&rsquo;s your turn.
@@ -162,18 +218,48 @@ export function CoachHints({
 
   return (
     <div style={SECTION}>
-      <SectionLabel>Hints</SectionLabel>
+      <SectionLabel>Incremental Hints</SectionLabel>
       <p style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-        Five hints for this decision, each giving away a little more. Open them one at a
-        time — stopping early is the win.
+        Up to five hints for this decision, each giving away a little more — a simple
+        decision gets fewer. Open them one at a time — stopping early is the win.
       </p>
 
+      {/* the writing shimmer — five face-down rungs settling in, instead of a
+          sentence about writing (owner pick #5, 2026-08-14) */}
+      <style>{`.hint-shimmer{background:linear-gradient(100deg,#f3ead4 40%,#fbf5e3 50%,#f3ead4 60%);background-size:200% 100%;animation:hintShimmer 1.2s linear infinite}
+@keyframes hintShimmer{from{background-position:180% 0}to{background-position:-20% 0}}
+@media (prefers-reduced-motion:reduce){.hint-shimmer{animation:none!important}}`}</style>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {Array.from({ length: HINT_COUNT }, (_, i) => {
+        {/* The ladder is as tall as the DECISION: once the hints land, the
+            rungs are however many were written. Before they land the cap
+            stands in, so the list doesn't pop taller when they arrive. */}
+        {Array.from(
+          { length: state.kind === "ready" ? state.hints.length : HINT_COUNT },
+          (_, i) => i,
+        ).map((i) => {
+          const total = state.kind === "ready" ? state.hints.length : HINT_COUNT;
+
+          // Still being written: every rung is a shimmering face-down blank,
+          // staggered like a deal — no button, no sentence, just work visibly
+          // underway until the real rungs replace them.
+          if (state.kind === "loading" || state.kind === "idle") {
+            return (
+              <div
+                key={i}
+                className="hint-shimmer"
+                aria-hidden
+                style={{
+                  minHeight: 38, borderRadius: 9,
+                  borderWidth: 1, borderStyle: "dashed", borderColor: FELT_LINE,
+                  animationDelay: `${i * 120}ms`,
+                }}
+              />
+            );
+          }
+
           const isOpen = state.kind === "ready" && i < revealed;
-          const isNext =
-            (state.kind === "ready" && i === revealed) || (state.kind !== "ready" && i === 0);
-          const isAnswer = i === HINT_COUNT - 1;
+          const isNext = state.kind === "ready" && i === revealed;
+          const isAnswer = i === total - 1;
 
           if (isOpen) {
             const hint = (state as { hints: string[] }).hints[i] ?? "";
@@ -203,7 +289,7 @@ export function CoachHints({
                       textTransform: "uppercase", color: isAnswer ? FELT_DEEP : FAINT,
                     }}
                   >
-                    {rungName(i)}
+                    {rungName(i, total)}
                   </span>
                   <span style={{ ...SAYS, display: "block", fontSize: 13.5, color: INK }}>
                     <RedSuits>{hint}</RedSuits>
@@ -213,21 +299,20 @@ export function CoachHints({
             );
           }
 
-          if (isNext && state.kind !== "empty") {
-            const loading = state.kind === "loading";
+          if (isNext) {
+            // Only ever reached with the ladder READY — the writing state is
+            // the shimmer above, so this button never has a disabled face.
             return (
               <button
                 key={i}
                 type="button"
                 onClick={reveal}
-                disabled={loading}
                 style={{
                   display: "flex", gap: 9, alignItems: "center", width: "100%",
                   minHeight: 38, padding: "8px 10px",
                   background: PAPER, borderWidth: 1, borderStyle: "dashed",
-                  borderColor: loading ? FELT_LINE : FELT_MID, borderRadius: 9,
-                  fontFamily: "inherit", textAlign: "left",
-                  cursor: loading ? "default" : "pointer", opacity: loading ? 0.7 : 1,
+                  borderColor: FELT_MID, borderRadius: 9,
+                  fontFamily: "inherit", textAlign: "left", cursor: "pointer",
                 }}
               >
                 <span
@@ -241,12 +326,8 @@ export function CoachHints({
                 >
                   {i + 1}
                 </span>
-                <span style={{ fontSize: 12.5, fontWeight: 700, color: loading ? FAINT : FELT_MID }}>
-                  {loading
-                    ? "Writing your hints — a few seconds…"
-                    : isAnswer
-                      ? "Show the answer"
-                      : `Reveal ${rungName(i).toLowerCase()}`}
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: FELT_MID }}>
+                  {isAnswer ? "Show the answer" : `Reveal ${rungName(i, total).toLowerCase()}`}
                 </span>
               </button>
             );
@@ -255,7 +336,7 @@ export function CoachHints({
           return (
             <div
               key={i}
-              aria-label={`${rungName(i)} — locked`}
+              aria-label={`${rungName(i, total)} — locked`}
               style={{
                 display: "flex", gap: 9, alignItems: "center",
                 minHeight: 38, padding: "8px 10px",
@@ -273,7 +354,7 @@ export function CoachHints({
               >
                 {i + 1}
               </span>
-              <span style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>{rungName(i)}</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: FAINT }}>{rungName(i, total)}</span>
               <span style={{ flex: 1 }} />
               <span aria-hidden style={{ fontSize: 11, color: FAINT }}>
                 ●●●
@@ -408,13 +489,7 @@ export function BenWhatIf({
         </span>
       </div>
 
-      {state.kind === "loading" && (
-        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
-          {kind === "card"
-            ? "BEN is replaying the position — this can take up to a minute…"
-            : "BEN is thinking — a few seconds…"}
-        </p>
-      )}
+      {state.kind === "loading" && <BenWorking long={kind === "card"} verb="replaying the position" />}
       {state.kind === "empty" && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
           {state.reason === "board still live"
@@ -500,6 +575,148 @@ export function BenWhatIf({
    TELL — the answers, side by side, each labelled with who is talking
    ════════════════════════════════════════════════════════════════════════════ */
 
+/** The call named inside a hint's prose — "1♠", "1NT", "Pass" — for the chip. */
+function callIn(text: string): string | null {
+  const bid = /([1-7])\s?(NT|♠|♥|♦|♣)/.exec(text);
+  if (bid) return `${bid[1]}${bid[2]}`;
+  const word = /\b(pass|double|redouble)\b/i.exec(text);
+  if (word) return word[1]!.charAt(0).toUpperCase() + word[1]!.slice(1).toLowerCase();
+  return null;
+}
+
+/**
+ * Owlee's answer for a BIDDING decision (owner direction 2026-08-14: "use
+ * the same answer in the hint for Owlee") — the hint ladder's final rung,
+ * read from the SAME prefetched ladder the Hints tab shows. One source, two
+ * surfaces: Tell and Hints cannot disagree about a call, because Tell's
+ * answer IS the ladder's answer. (The play has its own deterministic advice
+ * — WhatShouldIPlay — and the ladder is anchored to it; the auction runs
+ * the other way round.)
+ */
+function OwleeBids({
+  sessionId,
+  epoch,
+}: Readonly<{ sessionId: string; epoch: string }>) {
+  const [state, setState] = useState<
+    { kind: "loading" } | { kind: "done"; hint: string } | { kind: "empty"; reason: string }
+  >({ kind: "loading" });
+  const [infoOpen, setInfoOpen] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const r = await fetchHints(sessionId, epoch);
+        if (!alive) return;
+        const last = r.hints?.[r.hints.length - 1];
+        setState(last ? { kind: "done", hint: last } : { kind: "empty", reason: r.reason ?? "no answer" });
+      } catch {
+        if (alive) setState({ kind: "empty", reason: "unreachable" });
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, epoch]);
+
+  const call = state.kind === "done" ? callIn(state.hint) : null;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <OwleeFace size={20} mood={state.kind === "loading" ? "working" : "idle"} />
+        <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>Owlee bids</span>
+        <button
+          type="button"
+          aria-label="About Owlee's answer"
+          aria-expanded={infoOpen}
+          onClick={() => setInfoOpen(true)}
+          style={{
+            flex: "none", width: 17, height: 17, padding: 0, borderRadius: "50%",
+            background: "transparent", borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+            color: FELT_DEEP, fontSize: 10.5, fontWeight: 700, lineHeight: 1,
+            fontFamily: "Georgia, 'Times New Roman', serif", fontStyle: "italic",
+            cursor: "pointer",
+          }}
+        >
+          i
+        </button>
+        {call && (
+          <span style={{ ...CARD_STYLE, color: /[♥♦]/.test(call) ? "#c00" : "#000" }}>
+            <RedSuits>{call}</RedSuits>
+          </span>
+        )}
+      </div>
+      {state.kind === "loading" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          Working it out — a few seconds…
+        </p>
+      )}
+      {state.kind === "empty" && (
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          {state.reason === "not your turn"
+            ? "Not your turn."
+            : "No call to suggest for this position."}
+        </p>
+      )}
+      {state.kind === "done" && (
+        <p style={{ ...SAYS, fontSize: 13, color: INK }}>
+          <RedSuits>{state.hint}</RedSuits>
+        </p>
+      )}
+
+      {infoOpen && (
+        <div
+          role="presentation"
+          onClick={() => setInfoOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 950,
+            background: "rgba(42,5,6,.45)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="About Owlee's answer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 340, maxHeight: "80%", overflowY: "auto",
+              background: PAPER, borderRadius: 12, padding: "13px 15px 15px",
+              boxShadow: "0 8px 26px rgba(0,0,0,.35)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: 0.7,
+                  textTransform: "uppercase", color: FELT_DEEP,
+                }}
+              >
+                Owlee
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setInfoOpen(false)}
+                style={{
+                  flex: "none", width: 26, height: 26, borderRadius: 7,
+                  background: "#f3ead4", borderWidth: 0, color: MUTED,
+                  fontSize: 13, lineHeight: 1, cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ ...SAYS, fontSize: 13.5, color: INK }}>{OWLEE_DISCLAIMER}</p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 type TellState =
   | { kind: "loading" }
   | { kind: "done"; tell: BenTell }
@@ -519,6 +736,12 @@ export function CoachTell({
   active: boolean;
 }>) {
   const [ben, setBen] = useState<TellState>({ kind: "loading" });
+  // The ⓘ beside BEN's name — the one line of small print.
+  const [benInfoOpen, setBenInfoOpen] = useState(false);
+  // "It also weighed" folded away by default (owner direction 2026-08-14:
+  // the screen read as packed) — the also-rans are one tap for whoever wants
+  // them, not three rows for everyone.
+  const [altOpen, setAltOpen] = useState(false);
 
   // No button any more (owner direction 2026-08-11: "run the BEN before
   // anyone even taps"): BEN starts thinking when the decision lands (the
@@ -544,24 +767,29 @@ export function CoachTell({
 
   const benVerb = phase === "auction" ? "bid" : "play";
 
+  // ONE CARD, TWO SPEAKERS (owner direction 2026-08-14: the stacked boxes
+  // read as packed) — Owlee's answer above, a hairline, then BEN's. Each
+  // speaker is a couple of lines; the box count is what made it heavy.
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      {/* ── the coach's own answer — the existing advice, reused whole ── */}
-      {phase === "play" && active && (
-        <div style={SECTION}>
-          <SectionLabel>Owlee</SectionLabel>
-          <WhatShouldIPlay sessionId={sessionId} epoch={epoch} />
-        </div>
-      )}
-
-      {/* ── BEN's answer — a second opinion, labelled as one ── */}
       <div style={SECTION}>
+        {active && (phase === "play" || phase === "auction") && (
+          <>
+            {phase === "play" ? (
+              <WhatShouldIPlay sessionId={sessionId} epoch={epoch} />
+            ) : (
+              // A bidding decision: Owlee's answer is the hint ladder's
+              // final rung — the same one the Hints tab reveals last.
+              <OwleeBids sessionId={sessionId} epoch={epoch} />
+            )}
+            <div aria-hidden style={{ height: 1, background: "#f0e7d2", margin: "12px 0" }} />
+          </>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
+          <BenFace size={20} />
           <span
             style={{
-              display: "inline-block", height: 16, padding: "0 5px",
-              background: BEN_BLUE, borderRadius: 3, color: "#fff",
-              fontSize: 9.5, fontWeight: 700, lineHeight: "16px",
+              fontSize: 12, fontWeight: 700, color: FELT_DEEP,
             }}
           >
             BEN
@@ -569,16 +797,29 @@ export function CoachTell({
           <span
             style={{
               fontSize: 10, fontWeight: 700, letterSpacing: 0.7,
-              textTransform: "uppercase", color: FELT_DEEP,
+              textTransform: "uppercase", color: FAINT,
             }}
           >
             Neural engine
           </span>
+          <button
+            type="button"
+            aria-label="About BEN's answer"
+            aria-expanded={benInfoOpen}
+            onClick={() => setBenInfoOpen(true)}
+            style={{
+              flex: "none", width: 17, height: 17, padding: 0, borderRadius: "50%",
+              background: "transparent", borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+              color: FELT_DEEP, fontSize: 10.5, fontWeight: 700, lineHeight: 1,
+              fontFamily: "Georgia, 'Times New Roman', serif", fontStyle: "italic",
+              cursor: "pointer",
+            }}
+          >
+            i
+          </button>
         </div>
-        <p style={{ margin: "0 0 8px", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-          BEN is a neural player, not your system — where it agrees with Owlee is
-          worth noticing, and where it doesn&rsquo;t is worth thinking about.
-        </p>
+        {/* The neural-player explainer paragraph retired (owner direction
+            2026-08-14); the ⓘ above carries the honest caveat instead. */}
 
         {!active ? (
           <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
@@ -586,13 +827,7 @@ export function CoachTell({
           </p>
         ) : (
           <>
-            {ben.kind === "loading" && (
-              <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
-                {phase === "play"
-                  ? "BEN is simulating the play — this can take up to a minute…"
-                  : "BEN is thinking — a few seconds…"}
-              </p>
-            )}
+            {ben.kind === "loading" && <BenWorking long={phase === "play"} verb="simulating the play" />}
             {ben.kind === "empty" && (
               <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
                 {ben.reason === "not your turn"
@@ -604,7 +839,7 @@ export function CoachTell({
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
-                    BEN would {benVerb}
+                    BEN {benVerb}s
                   </span>
                   <span
                     style={{
@@ -627,14 +862,32 @@ export function CoachTell({
                 )}
                 {ben.tell.alternatives.length > 0 && (
                   <div>
-                    <div
+                    <button
+                      type="button"
+                      aria-expanded={altOpen}
+                      onClick={() => setAltOpen((v) => !v)}
                       style={{
+                        display: "flex", alignItems: "center", gap: 4,
+                        margin: "3px 0 4px", padding: 0,
+                        background: "transparent", borderWidth: 0,
                         fontSize: 9.5, fontWeight: 700, letterSpacing: 0.6,
-                        textTransform: "uppercase", color: FAINT, margin: "3px 0 4px",
+                        textTransform: "uppercase", color: FAINT,
+                        fontFamily: "inherit", cursor: "pointer",
                       }}
                     >
-                      It also weighed
-                    </div>
+                      It also weighed {ben.tell.alternatives.length}
+                      <span
+                        aria-hidden
+                        style={{
+                          fontSize: 7, color: FELT_MID,
+                          transform: altOpen ? "rotate(180deg)" : undefined,
+                          transition: "transform .15s ease",
+                        }}
+                      >
+                        ▼
+                      </span>
+                    </button>
+                    {altOpen && (
                     <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 3 }}>
                       {ben.tell.alternatives.map((alt) => (
                         <li
@@ -651,6 +904,7 @@ export function CoachTell({
                         </li>
                       ))}
                     </ul>
+                    )}
                   </div>
                 )}
               </div>
@@ -658,6 +912,56 @@ export function CoachTell({
           </>
         )}
       </div>
+
+      {/* ── BEN's ⓘ popup: the same one line of small print Owlee's carries ── */}
+      {benInfoOpen && (
+        <div
+          role="presentation"
+          onClick={() => setBenInfoOpen(false)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 950,
+            background: "rgba(42,5,6,.45)",
+            display: "flex", alignItems: "center", justifyContent: "center", padding: 18,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="About BEN's answer"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              maxWidth: 340, maxHeight: "80%", overflowY: "auto",
+              background: PAPER, borderRadius: 12, padding: "13px 15px 15px",
+              boxShadow: "0 8px 26px rgba(0,0,0,.35)",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
+              <span
+                style={{
+                  fontSize: 10, fontWeight: 700, letterSpacing: 0.7,
+                  textTransform: "uppercase", color: FELT_DEEP,
+                }}
+              >
+                BEN
+              </span>
+              <span style={{ flex: 1 }} />
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setBenInfoOpen(false)}
+                style={{
+                  flex: "none", width: 26, height: 26, borderRadius: 7,
+                  background: "#f3ead4", borderWidth: 0, color: MUTED,
+                  fontSize: 13, lineHeight: 1, cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ ...SAYS, fontSize: 13.5, color: INK }}>{BEN_DISCLAIMER}</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

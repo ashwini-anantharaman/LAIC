@@ -25,6 +25,7 @@ import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { loadTableView } from "@/lib/tableView";
 import { lookingAt } from "@/lib/coach/looking";
+import { partnershipStates } from "@/lib/coach/states";
 import { boardTakeaway } from "@/lib/coach/takeaway";
 import { thinkAid } from "@/lib/coach/think";
 import { bidMeaningReader } from "@/lib/bidMeanings";
@@ -236,10 +237,38 @@ export default async function PlayTablePage({
       };
     }),
   }));
+  // THE PARTNER AND PARTNERSHIP VIEWS (owner direction 2026-08-14): what the
+  // bids have shown, read from the same replayed KB meanings the bidding grid
+  // draws. Recomputed on every call, so the cards narrow as the auction grows.
+  const coachStates =
+    coachLooking && coachSeat
+      ? partnershipStates({
+          auction: state.auction,
+          seat: coachSeat,
+          hand: coachHands[coachSeat],
+          meanings: coachMeanings,
+        })
+      : [];
+
   const quanCoach: CoachPanelData | undefined = showCoach
     ? {
-        title: "Coach",
-        ...(coachLooking ? { looking: coachLooking.looking, facts: coachLooking.facts } : {}),
+        title: "Owlee",
+        ...(coachLooking
+          ? {
+              looking: coachLooking.looking,
+              facts: [
+                ...coachLooking.facts,
+                // KnownCard's `title` is the facts slot's `label` — same card,
+                // different corner of the plumbing.
+                ...coachStates.map((c) => ({
+                  label: c.title,
+                  value: c.value,
+                  detail: c.detail,
+                  ...(c.group ? { group: c.group } : {}),
+                })),
+              ],
+            }
+          : {}),
         ...(coachGroups?.length ? { eventGroups: coachGroups } : {}),
         ...(coachAid ? { aid: coachAid } : {}),
         ...(takeaway ? { takeaway } : {}),
@@ -553,13 +582,12 @@ export default async function PlayTablePage({
     // the felt to whatever box it is given, so this is composition, not
     // squeezing.
     //
-    // The style override: PlayTable's phone tier paints its own wrapper
-    // layers white, inline. The component belongs to another workbench right
-    // now, so the page blacks out exactly those three wrapper layers from
-    // the outside — !important beats an inline style, and the selectors stop
-    // above mobileStack, whose own felt and cards paint over everything
-    // deeper. Worst case, a structure change under this selector shows a
-    // white patch again; it can never break the table.
+    // The blackout rides surroundBg now (2026-08-14): the old page-side
+    // `#coach-off-stage` !important override matched wrapper divs BY DEPTH,
+    // and the compact-centred layout added a wrapper under it — every layer
+    // below the match line came back white (owner report: "make sure all of
+    // the white screens are also dark"). PlayTable paints its own empty
+    // space from the prop instead, so layout changes can't reopen the hole.
     <div
       style={
         embedded
@@ -568,6 +596,10 @@ export default async function PlayTablePage({
               height: "100%",
               margin: "0 auto",
               background: coachOff ? "#000" : "#fff",
+              // Part of the coach-toggle morph (owner ask 2026-08-14): the
+              // surround fades between white and theatre black in step with
+              // the heights, instead of snapping.
+              transition: "background-color .35s ease",
               ...(coachOff
                 ? { display: "flex", flexDirection: "column", justifyContent: "center" }
                 : {}),
@@ -575,12 +607,15 @@ export default async function PlayTablePage({
           : { height: "100%" }
       }
     >
-      {embedded && coachOff && (
-        <style>{`#coach-off-stage > div, #coach-off-stage > div > div, #coach-off-stage > div > div > div { background: #000 !important; }`}</style>
-      )}
       <div
-        {...(embedded && coachOff ? { id: "coach-off-stage" } : {})}
-        style={embedded && coachOff ? { height: "68%" } : { height: "100%" }}
+        // The height TRANSITION makes flipping the coach on/off a morph, not
+        // a jump (owner ask 2026-08-14) — the settings row soft-navigates, so
+        // this same node survives the re-render and glides between sizes.
+        style={
+          embedded && coachOff
+            ? { height: "68%", transition: "height .35s ease" }
+            : { height: "100%", transition: "height .35s ease" }
+        }
       >
       <LivePlayTable
         sessionId={sessionId}
@@ -640,6 +675,9 @@ export default async function PlayTablePage({
         // Off means the BAND goes too — at zero share the table-ui renders no
         // coach region at all, not a white placeholder band.
         {...(coachOff ? { coachShare: 0 } : {})}
+        // The theatre's black is painted by the component itself — every
+        // empty layer, not just the ones a selector could reach.
+        {...(embedded && coachOff ? { surroundBg: "#000" } : {})}
         coach={coachData}
         {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
       />

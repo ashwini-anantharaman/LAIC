@@ -99,9 +99,10 @@ export interface LookingAt {
    * Compact chips. `label` may be empty for a value that reads alone.
    * `detail` is the flip side — the same fact spelled out, for the Game State
    * card's back. Factual only, like everything in this file: a definition or
-   * a count, never advice.
+   * a count, never advice. `group` files a chip under one of the Game State's
+   * three views (me / partner / partnership); absent means the learner's own.
    */
-  facts: { label: string; value: string; detail?: string }[];
+  facts: { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" }[];
   /** The whole board so far — the auction and every trick, one group each. */
   eventGroups: LookingEventGroup[];
 }

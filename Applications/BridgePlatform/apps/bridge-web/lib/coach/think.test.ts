@@ -68,28 +68,16 @@ describe("thinkAid — the auction", () => {
     );
   });
 
-  it("distinguishes a pass that ends the auction from one that does not", () => {
-    const carriesOn = state({ auction: [call("N", "1D"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(carriesOn, "S"))).toContain("The auction carries on");
-
-    const ends = state({ auction: [call("W", "1D"), call("N", "P"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(ends, "S"))).toContain("The auction ends — West plays 1♦");
-  });
-
-  it("warns that a pass throws the board in when nobody has bid", () => {
-    const s = state({ auction: [call("N", "P"), call("E", "P"), call("S", "P")], turn: "W" });
-    expect(text(thinkAid(s, "W"))).toContain("thrown in");
-  });
-
-  it("says whether the auction is contested, which the grid cannot", () => {
-    const ours = state({ auction: [call("N", "1D"), call("E", "P")], turn: "S" });
-    expect(text(thinkAid(ours, "S"))).toContain("Only your side has bid");
-
-    const theirs = state({ auction: [call("W", "1S")], turn: "N" });
-    expect(text(thinkAid(theirs, "N"))).toContain("partner hasn");
-
-    const both = state({ auction: [call("W", "1S"), call("N", "2C")], turn: "E" });
-    expect(text(thinkAid(both, "E"))).toContain("Both sides are bidding");
+  // "IF YOU PASS" and "THE AUCTION" retired (owner direction 2026-08-14):
+  // the Game State classifies into My state / My partner / Partnership, and
+  // neither card described a hand. The tests that asserted them retire too;
+  // this one pins the removal so they don't quietly come back.
+  it("no longer narrates the pass consequences or the auction's shape", () => {
+    const s = state({ auction: [call("W", "1D"), call("N", "P"), call("E", "P")], turn: "S" });
+    const t = text(thinkAid(s, "S"));
+    expect(t).not.toContain("If you pass");
+    expect(t).not.toContain("The auction ends");
+    expect(t).not.toContain("Only your side has bid");
   });
 
   it("offers the cheapest call in each strain plus pass — never all 35", () => {

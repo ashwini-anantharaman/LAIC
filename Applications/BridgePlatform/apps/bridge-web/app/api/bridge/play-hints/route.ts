@@ -120,7 +120,14 @@ async function handle(request: Request): Promise<NextResponse> {
       }
     }
 
-    const result = await generateHints({ pos, ...(target ? { target } : {}) });
+    let result = await generateHints({ pos, ...(target ? { target } : {}) });
+    if (!("hints" in result) && result.reason === "off-target") {
+      // An off-target ladder is a model wobble, not a position problem — one
+      // bounded retry usually lands it. Never more than one: the VALIDATOR is
+      // the guarantee that Hints and Tell agree, the retry is just politeness.
+      console.warn(`[coach] play-hints off-target — one retry for ${sessionId}`);
+      result = await generateHints({ pos, ...(target ? { target } : {}) });
+    }
     if (!("hints" in result)) {
       // Every no-answer is logged with its reason — whoever reads the function
       // logs must be able to tell a leak from a dead key (the event-qa rule).

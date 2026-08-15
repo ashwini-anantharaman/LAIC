@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import type { BoardTakeaway, TakeawayChip } from "@/lib/coach/takeaway";
 
 import { CoachEventAsk } from "./CoachEventAsk";
+import { OwleeFace } from "./OwleeFace";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -211,9 +212,30 @@ export function CoachTakeaway({
   }, [sessionId, m.auctionIndex]);
 
   const disagreement = m.kind === "disagreement";
+  // Every judged call correct, and at least one judged: the board deserves a
+  // MOMENT, not just a row of green ticks (owner pick #4, 2026-08-14).
+  const cleanBoard =
+    takeaway.chips.length > 0 && takeaway.chips.every((c) => !c.verdict || c.verdict === "correct") &&
+    takeaway.chips.some((c) => c.verdict === "correct");
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* ── the clean-board moment: Owlee, pleased, one warm line ── */}
+      {cleanBoard && (
+        <div
+          style={{
+            display: "flex", alignItems: "center", gap: 10,
+            background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
+            borderRadius: 11, padding: "10px 12px",
+          }}
+        >
+          <OwleeFace size={34} mood="proud" />
+          <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14, lineHeight: 1.45, color: FELT_DEEP, fontWeight: 700 }}>
+            Clean board — every call as your system plays it.
+          </p>
+        </div>
+      )}
+
       {/* ── your calls, judged ── */}
       <div style={SECTION}>
         <SectionLabel>Your calls</SectionLabel>

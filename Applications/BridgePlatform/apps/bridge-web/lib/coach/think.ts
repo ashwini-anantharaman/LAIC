@@ -28,7 +28,7 @@ import type { Call, Card, Seat, Suit } from "@bridge/events";
 
 import {
   cardLabel, callLabel, dealtHand, GLYPH, isHonour, partnerOf,
-  Relative, relative, step, SUITS, SUIT_WORD, visibleSeats,
+  Relative, relative, SUITS, SUIT_WORD, visibleSeats,
 } from "./position";
 
 export interface ThinkCandidate {
@@ -44,6 +44,13 @@ export interface ThinkCandidate {
 }
 
 /**
+ * Which of the Game State's three views a fact belongs to (owner direction
+ * 2026-08-14): the learner's own hand, what partner's bids have shown, or
+ * what the two hands add up to. Absent means "me".
+ */
+export type StateGroup = "me" | "partner" | "partnership";
+
+/**
  * One worked-out fact as a two-sided card: a glanceable front (a short title
  * and a value the size of a chip) and the full sentence on the back. The
  * sentence is the source of truth — `ThinkAid.known` is derived from these,
@@ -51,12 +58,14 @@ export interface ThinkCandidate {
  * always read.
  */
 export interface KnownCard {
-  /** Two-or-three-word headline — "Points out there", "If you pass". */
+  /** Two-or-three-word headline — "Points out there", "Partner's points". */
   title: string;
-  /** The front's centrepiece — "33", "auction ends", "no ♦s". Short. */
+  /** The front's centrepiece — "33", "12–21", "no ♦s". Short. */
   value: string;
   /** The back: the whole fact as one sentence. */
   detail: string;
+  /** Which Game State view it files under. Absent = the learner's own state. */
+  group?: StateGroup;
 }
 
 export interface ThinkAid {
@@ -171,65 +180,10 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
     detail: `${40 - hcp(mine)} of the 40 points sit in the other three hands.`,
   });
 
-  // WHAT A PASS DOES. Deterministic, and the thing a beginner most often misses:
-  // that passing can end the auction rather than merely decline to bid.
-  const spoken = state.auction.filter((a) => a.call !== "P");
-  const last = spoken[spoken.length - 1];
-  const since = last ? state.auction.length - 1 - state.auction.indexOf(last) : state.auction.length;
-  if (!last) {
-    out.push(
-      since >= 3
-        ? {
-            title: "If you pass",
-            value: "board thrown in",
-            detail: "The board is thrown in — nobody plays it.",
-          }
-        : {
-            title: "If you pass",
-            value: "moves along",
-            detail: "Nobody has bid — passing moves it along.",
-          },
-    );
-  } else if (since >= 2) {
-    const contract = state.auction.filter((a) => a.call !== "P" && a.call !== "X" && a.call !== "XX");
-    const final = contract[contract.length - 1];
-    out.push({
-      title: "If you pass",
-      value: "auction ends",
-      detail: final
-        ? `The auction ends — ${relative(final.seat, seat)} plays ${callLabel(final.call)}.`
-        : "The auction ends here.",
-    });
-  } else {
-    out.push({
-      title: "If you pass",
-      value: "carries on",
-      detail: "The auction carries on — it won't end here.",
-    });
-  }
-
-  // Whether this is a contested auction. Relational, and the grid can't say it.
-  const opps = [step(seat, 1), step(seat, 3)];
-  const oppsBid = state.auction.some((a) => opps.includes(a.seat) && a.call !== "P");
-  const partnerBid = state.auction.some((a) => a.seat === partnerOf(seat) && a.call !== "P");
-  if (partnerBid && !oppsBid)
-    out.push({
-      title: "The auction",
-      value: "yours so far",
-      detail: "Only your side has bid so far.",
-    });
-  else if (oppsBid && !partnerBid)
-    out.push({
-      title: "The auction",
-      value: "they're in",
-      detail: "The opponents are in; partner hasn't spoken.",
-    });
-  else if (oppsBid && partnerBid)
-    out.push({
-      title: "The auction",
-      value: "contested",
-      detail: "Both sides are bidding.",
-    });
+  // "IF YOU PASS" and "THE AUCTION" retired (owner direction 2026-08-14):
+  // the Game State classifies into My state / My partner / Partnership now,
+  // and neither of those cards described a hand — they narrated the auction,
+  // which the History tab already does.
 
   return out;
 }
@@ -303,6 +257,8 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
         title: Relative(s, seat),
         value: `no ${GLYPH[v]}s`,
         detail: `${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they couldn't follow suit.`,
+        // A proof about PARTNER's hand files under the partner view.
+        ...(s === partnerOf(seat) ? { group: "partner" as const } : {}),
       });
     }
   }

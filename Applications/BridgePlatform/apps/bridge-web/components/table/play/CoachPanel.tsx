@@ -47,6 +47,7 @@ import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
 import { BenWhatIf, CoachHints, CoachTell } from "./CoachHintsTell";
 import { CoachTakeaway } from "./CoachTakeaway";
 import { useCoachPrefetch } from "./coachPrefetch";
+import { OwleeFace } from "./OwleeFace";
 
 // ── the BirdBridge palette (owner direction 2026-08-06: the coach wears the
 // app's brand — bridge-coach-app/constants/theme.ts is the source of truth).
@@ -75,31 +76,6 @@ const RED = "#cc0000"; // suit red — unchanged, ♥/♦ read the same everywhe
 /** The stacked-edge shadow behind the app's playing cards (Brand.cardShadow). */
 const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 
-/**
- * OWLEE's face (owner direction 2026-08-14: the coach is named Owlee and
- * wears the owl, not a ♠ chip) — the mascot art cropped to a round badge,
- * zoomed to the owl's head. Decorative; the name beside it does the naming.
- */
-function OwleeFace({ size }: Readonly<{ size: number }>) {
-  return (
-    <span
-      aria-hidden
-      style={{
-        flex: "none", width: size, height: size, borderRadius: "50%",
-        overflow: "hidden", position: "relative", display: "block",
-        background: GOLD, // paints while the image streams in
-        boxShadow: "inset 0 0 0 1px rgba(42,5,6,.25)",
-      }}
-    >
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src="/coach/owlee.png"
-        alt=""
-        style={{ position: "absolute", width: "200%", height: "200%", left: "-54%", top: "-10%", objectFit: "cover" }}
-      />
-    </span>
-  );
-}
 
 /**
  * The big "Ask me" button row, switched off (owner decision 2026-08-05) while
@@ -276,7 +252,7 @@ export interface CoachPanelData {
    * arithmetic the learner should arguably do themselves, so it wants gating on
    * level rather than being always on.
    */
-  facts?: readonly { label: string; value: string; detail?: string }[];
+  facts?: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" }[];
   /** One line on what the coach is looking at, for the context card. */
   looking?: string;
   /**
@@ -720,7 +696,9 @@ function CoachTabRow({
     <>
       {(
         [
-          ["now", "Game State"],
+          // "Position" over "Game State" (owner ask 2026-08-14: a better
+          // one-word term) — it's the bridge word for exactly this.
+          ["now", "Position"],
           ["hints", "Hints"],
           ["tell", "Tell"],
           ["history", "History"],
@@ -736,13 +714,13 @@ function CoachTabRow({
             title={label}
             onClick={() => onView(v)}
             style={{
-              flex: "none", minHeight: 40, padding: "4px 9px 3px", borderRadius: 11,
+              flex: "none", minHeight: 44, padding: "4px 9px 3px", borderRadius: 12,
               background: on ? FELT_MID : "transparent",
               borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
               color: on ? "#fff" : "#8a8071",
               fontFamily: "inherit", cursor: "pointer",
               display: "flex", flexDirection: "column", alignItems: "center",
-              justifyContent: "center", gap: 1,
+              justifyContent: "center", gap: 2,
             }}
           >
             <TabGlyph kind={v} />
@@ -751,7 +729,7 @@ function CoachTabRow({
                 one control */}
             <span
               style={{
-                fontSize: 8, fontWeight: 700, letterSpacing: ".03em",
+                fontSize: 8.5, fontWeight: 700, letterSpacing: ".03em",
                 lineHeight: 1.1, whiteSpace: "nowrap",
               }}
             >
@@ -845,7 +823,7 @@ function CoachScreens({
                 {data.ask && (
                   <div>
                     <Label>Ask Owlee</Label>
-                    <CoachChat key="board-over" sessionId={data.ask.sessionId} />
+                    <CoachChat key="board-over" sessionId={data.ask.sessionId} suggestions={askSuggestions(data)} />
                   </div>
                 )}
               </>
@@ -853,16 +831,11 @@ function CoachScreens({
               <CoachNow data={data} />
             ))}
 
-          {/* ── HINTS: the realistic choices first (owner direction
-              2026-08-13, moved here from Now — the menu of options belongs
-              beside the ladder that narrows them), then five hints for this
-              decision, opened one at a time. Keyed per decision (every card,
-              every call) so each play deals a fresh, unopened ladder. ── */}
+          {/* ── HINTS: five hints for this decision, opened one at a time.
+              Keyed per decision (every card, every call) so each play deals
+              a fresh, unopened ladder. ── */}
           {view === "hints" && (
             <>
-              {data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
-                <ThinkCard aid={data.aid} />
-              )}
               {data.ask ? (
                 <CoachHints
                   key={decisionEpoch(data)}
@@ -879,22 +852,31 @@ function CoachScreens({
             </>
           )}
 
-          {/* ── TELL: the answers, side by side — the coach's card and BEN's ── */}
-          {view === "tell" &&
-            (data.ask ? (
-              <CoachTell
-                key={decisionEpoch(data)}
-                sessionId={data.ask.sessionId}
-                epoch={decisionEpoch(data)}
-                phase={data.ask.phase}
-                active={data.ask.active}
-              />
-            ) : (
-              <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
-                The answers are for a player with a decision in front of them — take a seat to
-                see them.
-              </p>
-            ))}
+          {/* ── TELL: the realistic choices first (owner direction
+              2026-08-14, moved from Hints — the menu of options belongs
+              above the answers, and above BEN's in particular), then the
+              answers side by side — the coach's card and BEN's ── */}
+          {view === "tell" && (
+            <>
+              {data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
+                <ThinkCard aid={data.aid} />
+              )}
+              {data.ask ? (
+                <CoachTell
+                  key={decisionEpoch(data)}
+                  sessionId={data.ask.sessionId}
+                  epoch={decisionEpoch(data)}
+                  phase={data.ask.phase}
+                  active={data.ask.active}
+                />
+              ) : (
+                <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                  The answers are for a player with a decision in front of them — take a seat to
+                  see them.
+                </p>
+              )}
+            </>
+          )}
 
           {/* ── HISTORY: the board's past — the auction and the play, one tab,
               two collapsible sections (owner direction 2026-08-11). Untouched,
@@ -1141,8 +1123,8 @@ function CoachScreens({
 function TabGlyph({ kind }: Readonly<{ kind: "now" | "hints" | "tell" | "history" }>) {
   return (
     <svg
-      width={20}
-      height={20}
+      width={22}
+      height={22}
       viewBox="0 0 24 24"
       aria-hidden
       style={{ display: "block" }}
@@ -1260,6 +1242,45 @@ function RedSuits({ children }: Readonly<{ children: string }>) {
   );
 }
 
+/**
+ * Tap-to-ask starters for the chat (owner pick #3, 2026-08-14). Deterministic
+ * templates over what the position already knows — partner's actual last bid,
+ * the phase — so every chip is answerable; the model answers them exactly as
+ * it would the same question typed. Three at most: chips are an invitation,
+ * not a menu.
+ */
+function askSuggestions(data: CoachPanelData): string[] {
+  const phase = data.ask?.phase;
+  const auction = data.eventGroups?.find((g) => g.id === "auction")?.events ?? [];
+  const lastBid = (match: (who?: string) => boolean) =>
+    [...auction].reverse().find((e) => e.token && match(e.who));
+  if (phase === "auction") {
+    const partner = lastBid((w) => w === "Partner");
+    const opp = lastBid((w) => w !== "Partner" && w !== "You");
+    return [
+      ...(partner?.token ? [`What does partner's ${partner.token} show?`] : []),
+      ...(opp?.token && opp.who ? [`How should I handle ${opp.who}'s ${opp.token}?`] : []),
+      "What is my hand worth?",
+      "What should I be thinking about here?",
+    ].slice(0, 3);
+  }
+  if (phase === "play") {
+    return [
+      "What's the plan for this trick?",
+      "What should I be counting right now?",
+      "What have the opponents' cards told me so far?",
+    ];
+  }
+  return ["What was the key moment of this board?", "What should I take away from this hand?"];
+}
+
+/** Where the board is, as a chat divider label — "The auction", "Trick 4". */
+function chatChapter(data: CoachPanelData): string {
+  const id = currentGroup(data)?.id ?? "auction";
+  const m = /^trick-(\d+)$/.exec(id);
+  return m ? `Trick ${Number(m[1]) + 1}` : "The auction";
+}
+
 /** The board's current history section — the open trick, or the auction. */
 function currentGroup(data: CoachPanelData): CoachEventGroup | undefined {
   return (
@@ -1298,10 +1319,11 @@ function decisionEpoch(data: CoachPanelData): string {
  * through the same CoachScreens the sheet uses).
  */
 export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
-  // A new trick is a new conversation. The chat and the advice answer hold
-  // their exchanges in component state, so they are keyed by where the board
-  // is (the current history section): the next trick remounts them empty
-  // rather than carrying last trick's answers into a different position.
+  // The epoch keys the GAME-STATE cards: a new trick deals a fresh sealed
+  // set. The CHAT no longer keys on it (owner pick #6, 2026-08-14,
+  // superseding "a new trick is a new conversation"): the thread holds the
+  // whole board — "as I asked earlier…" has to work — with a quiet divider
+  // stamped wherever the board moved on between questions.
   const epoch = boardEpoch(data);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1309,9 +1331,8 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
           and "What you can work out" merged into one section of small flip
           cards — sealed to a title first, the value one tap in, the full
           fact behind it. */}
-      {(data.looking || !!data.facts?.length) && (
+      {(!!data.facts?.length || !!data.aid?.knownCards?.length) && (
         <GameState
-          looking={data.looking}
           facts={data.facts ?? []}
           known={data.aid?.knownCards ?? []}
           epoch={epoch}
@@ -1330,7 +1351,12 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
       {data.ask && (
         <div>
           <Label>Ask Owlee</Label>
-          <CoachChat key={epoch} sessionId={data.ask.sessionId} />
+          <CoachChat
+            key="board-chat"
+            sessionId={data.ask.sessionId}
+            suggestions={askSuggestions(data)}
+            chapter={chatChapter(data)}
+          />
         </div>
       )}
     </div>
@@ -1377,8 +1403,8 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
       }}
     >
       <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "7px 12px 5px" }}>
-        <OwleeFace size={26} />
-        <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14.5, fontWeight: 700, color: INK }}>
+        <OwleeFace size={40} />
+        <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 19, fontWeight: 700, color: INK }}>
           Owlee
         </span>
         {/* the tabs ride the header itself (owner direction 2026-08-13:
@@ -1420,21 +1446,44 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
 /* ── the Game State — the position as flip cards ─────────────────────────────
    "What I'm looking at" and "What you can work out" used to be two prose
    blocks; the owner asked for one section (2026-08-10) with the information
-   dissected into small cards. THREE FACES NOW (owner direction 2026-08-13):
-   the card starts SEALED — its title alone ("HCP"), like an unopened letter —
-   the first tap opens it to the value ("4 HCP"), and taps after that turn it
-   between the value and the full fact. Working the number out before peeking
-   is the exercise. The same discipline as the sections it replaces: every
-   card is arithmetic or a definition, all cards are styled identically, and
-   nothing on any face recommends. */
+   dissected into small cards. THREE FACES (owner directions 2026-08-13/14,
+   REAFFIRMED 2026-08-14 after a row-based redesign was tried and reversed —
+   "reverse back to the flip card design"): the card starts SEALED as a
+   nameless envelope, the first tap OPENS it like a letter (flap lifts,
+   envelope falls away, the value rises), and taps after that flip between
+   the value and the full fact. Working it out before peeking is the
+   exercise. Every card is arithmetic or a definition, all cards are styled
+   identically, and nothing on any face recommends. */
 
-/** What every card shows: a sealed title, the value behind it, the fact behind that. */
-type StateCard = { title: string; value: string; detail?: string };
+/** What every card shows: a sealed envelope, the value behind it, the fact behind that. */
+type StateCard = {
+  title: string;
+  value: string;
+  detail?: string;
+  group?: "me" | "partner" | "partnership";
+};
+
+/** The three views, in reading order: you, then partner, then the pair. */
+const STATE_VIEWS = [
+  ["me", "My state"],
+  ["partner", "My partner"],
+  ["partnership", "Partnership"],
+] as const;
+
+/** What each view says while it has no cards — honest, and different per view. */
+const STATE_EMPTY: Record<(typeof STATE_VIEWS)[number][0], string> = {
+  me: "Nothing to show for your hand yet.",
+  partner: "Nothing inferred yet — partner's bids will fill this in.",
+  partnership: "Nothing to combine yet — it takes partner's bids plus your hand.",
+};
+
+/** The envelope coachmark's once-only flag — one browser, one showing. */
+const ENVELOPE_HINT_KEY = "owlee-envelope-coachmark";
 
 /** The three faces, in opening order. */
 type FlipStage = "sealed" | "value" | "detail";
 
-function FlipCard({ card }: Readonly<{ card: StateCard }>) {
+function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => void }>) {
   // A card with no title has nothing to seal with — it starts open.
   const [stage, setStage] = useState<FlipStage>(card.title ? "sealed" : "value");
   // The 3D stage exists ONLY while the card is turning. A face that sits under
@@ -1443,15 +1492,28 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
   // rest the visible face renders flat, with no transform anywhere, so the
   // glyphs come off the ordinary crisp text path.
   const [turning, setTurning] = useState(false);
+  // The SEAL doesn't flip — it OPENS (owner direction 2026-08-14: "an
+  // animation similar to opening a letter, not a flip card"): the flap
+  // lifts, the envelope falls away, and the letter rises from behind it.
+  // Its own phase, separate from `turning`, so the flip machinery stays
+  // exactly what it was for value ↔ fact.
+  const [opening, setOpening] = useState(false);
   // The face this turn lands on; null at rest. Every turn animates 0→180 with
   // the outgoing face in front and the incoming behind, then settles flat.
   const [target, setTarget] = useState<FlipStage | null>(null);
   const [rotated, setRotated] = useState(false);
 
   // A letter, once opened, stays open: sealed leads to the value, and from
-  // there taps toggle value ↔ fact. No detail means nothing past the value.
+  // there taps toggle value ↔ fact. No detail means nothing past the value —
+  // and an UNTITLED card ("Trick 1", the system chip) is not a flip card at
+  // all (owner direction 2026-08-14): it was never sealed, so it's simply a
+  // readout, static from the first render to the last.
   const next: FlipStage | null =
-    stage === "sealed" ? "value" : card.detail ? (stage === "value" ? "detail" : "value") : null;
+    stage === "sealed"
+      ? "value"
+      : card.title && card.detail
+        ? (stage === "value" ? "detail" : "value")
+        : null;
   const canFlip = next !== null;
 
   const finish = (to: FlipStage) => {
@@ -1459,10 +1521,21 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
     setTarget(null);
     setTurning(false);
     setRotated(false);
+    setOpening(false);
   };
   const flip = () => {
-    if (!next || turning) return;
+    if (!next || turning || opening) return;
     const to = next;
+    if (stage === "sealed") {
+      // Opening the letter: pure keyframes with `both` fill, so there is no
+      // frame-order dance — mount the overlay and it plays. The timeout is
+      // the ONLY settle (reduced motion sets animation:none and the timeout
+      // still lands the card on its crisp flat face).
+      onOpen?.(); // the host's coachmark retires on the first real opening
+      setOpening(true);
+      setTimeout(() => finish(to), 620);
+      return;
+    }
     setTarget(to);
     setTurning(true);
     // Two frames so the stage PAINTS at the old angle first — flipping state in
@@ -1472,41 +1545,60 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
     // motion sets transition:none): settle to the crisp flat face regardless.
     setTimeout(() => finish(to), 650);
   };
-  // IN-FLOW, not absolute (2026-08-14: "the text here is overflowing"). A
-  // face pinned inset:0 could never size its card, so a two-line title or a
-  // long fact spilled past the 54px footprint. The face now sizes the card
-  // — minHeight keeps the small ones even, and the grid row grows for the
-  // tall ones instead of clipping them.
+  // IN-FLOW, not absolute: a face pinned inset:0 could never size its card,
+  // so a two-line title or a long fact spilled past the 54px footprint. The
+  // face sizes the card — minHeight keeps the small ones even, and the grid
+  // row grows for the tall ones instead of clipping them.
   const face: React.CSSProperties = {
     position: "relative", width: "100%", minHeight: 54, boxSizing: "border-box",
     borderRadius: 9,
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
-  const sealed = (
-    <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: ".07em", textTransform: "uppercase", color: INK, lineHeight: 1.25 }}>
-        {card.title}
+  // A REAL ENVELOPE (owner direction 2026-08-14: "the text HCP and stuff
+  // should be hidden, as in like an envelope"): the sealed face names
+  // NOTHING — every closed card is the same closed letter, and what's inside
+  // is only known by opening it. The flap is its OWN element on top of the
+  // body, so the opening animation can lift just the flap before the whole
+  // envelope drops away.
+  const sealedFace = (flapOpen: boolean) => (
+    <span style={{ ...face, alignItems: "center", background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
+      <span style={{ position: "relative", width: 32, height: 23, display: "block", perspective: 130 }}>
+        <svg width={32} height={23} viewBox="0 0 32 23" aria-hidden style={{ display: "block" }}>
+          <rect x="1" y="1" width="30" height="21" rx="3" fill="#fbf5e3" stroke="#c9b98f" strokeWidth="1.4" />
+          {/* the bottom fold — the body still reads as an envelope once the flap lifts */}
+          <path d="M2 21.2 16 13 30 21.2" fill="none" stroke="#e8ddbb" strokeWidth="1.2" strokeLinejoin="round" />
+        </svg>
+        <svg
+          width={32}
+          height={14}
+          viewBox="0 0 32 14"
+          aria-hidden
+          className={flapOpen ? "coach-flap" : undefined}
+          style={{ position: "absolute", left: 0, top: 0, display: "block", transformOrigin: "50% 1.5px" }}
+        >
+          <path d="M1.5 1.5 H30.5 L16 12.5 Z" fill="#f3e7c8" stroke="#c9b98f" strokeWidth="1.4" strokeLinejoin="round" />
+        </svg>
       </span>
-      <span style={{ marginTop: 2, fontSize: 7.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#b3a789" }}>
+      <span style={{ marginTop: 3, fontSize: 7.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#b3a789" }}>
         tap to open
-      </span>
-      <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
-        ✉
       </span>
     </span>
   );
+  const sealed = sealedFace(false);
   const front = (
     <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
       <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
         <RedSuits>{card.value}</RedSuits>
       </span>
       {card.title && (
-        <span style={{ marginTop: 2, fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
+        // maxWidth + break-word: "DISTRIBUTION" is one unbreakable word and
+        // was overflowing the card's edge at grid width.
+        <span style={{ marginTop: 2, maxWidth: "100%", overflowWrap: "break-word", fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
           {card.title}
         </span>
       )}
-      {card.detail && (
+      {card.title && card.detail && (
         <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
           ⟳
         </span>
@@ -1516,7 +1608,7 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
   const back = card.detail ? (
     <span
       style={{
-        // No scroll region any more: the card grows to hold the whole fact.
+        // No scroll region: the card grows to hold the whole fact.
         ...face,
         background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
       }}
@@ -1534,15 +1626,15 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
       aria-pressed={stage !== "sealed"}
       aria-label={
         stage === "sealed"
-          ? `${card.title} — tap to open`
-          : card.detail
+          ? "A sealed card — tap to open" // names nothing: the not-knowing is the point
+          : canFlip
             ? `${card.title || card.value} — tap to flip`
             : card.value
       }
       style={{
-        // The CONTENT owns the footprint now: the visible face renders
-        // in-flow, so the button — and with it the grid row — grows to hold
-        // whatever the face says, and nothing clips.
+        // The CONTENT owns the footprint: the visible face renders in-flow,
+        // so the button — and with it the grid row — grows to hold whatever
+        // the face says, and nothing clips.
         position: "relative", minHeight: 54,
         display: "flex", flexDirection: "column",
         ...(turning ? { perspective: 600 } : {}),
@@ -1551,7 +1643,23 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
         fontFamily: "inherit",
       }}
     >
-      {turning && target ? (
+      {opening ? (
+        // ── opening the letter: flap lifts, envelope drops away, the value
+        // face rises from behind it. Keyframed with `both` fill; the flip's
+        // timeout settles the card flat either way. ──
+        <span style={{ position: "relative", flex: 1, display: "block" }}>
+          {/* invisible in-flow copy of the landing face — the footprint */}
+          <span aria-hidden style={{ visibility: "hidden", display: "block" }}>
+            {front}
+          </span>
+          <span className="coach-letter" style={{ position: "absolute", inset: 0, display: "flex" }}>
+            {front}
+          </span>
+          <span className="coach-env" style={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none" }}>
+            {sealedFace(true)}
+          </span>
+        </span>
+      ) : turning && target ? (
         <span
           className="coach-flip"
           onTransitionEnd={() => finish(target)}
@@ -1587,57 +1695,133 @@ function FlipCard({ card }: Readonly<{ card: StateCard }>) {
   );
 }
 
-/**
- * The Game State section: the one-line position, then the cards — the hand's
- * own facts first, the worked-out inferences after them, one grid.
- *
- * Keyed by `epoch` so a new trick deals a fresh set with every card face up;
- * a flip is a reading of THIS position and must not survive into the next.
- */
 function GameState({
-  looking, facts, known, epoch,
+  facts, known, epoch,
 }: Readonly<{
-  looking?: string;
-  facts: readonly { label: string; value: string; detail?: string }[];
+  facts: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" }[];
   known: readonly KnownCard[];
   epoch: string;
 }>) {
   const cards: StateCard[] = [
-    ...facts.map((f) => ({ title: f.label, value: f.value, ...(f.detail ? { detail: f.detail } : {}) })),
-    ...known.map((k) => ({ title: k.title, value: k.value, detail: k.detail })),
+    ...facts.map((f) => ({ title: f.label, value: f.value, ...(f.detail ? { detail: f.detail } : {}), ...(f.group ? { group: f.group } : {}) })),
+    ...known.map((k) => ({ title: k.title, value: k.value, detail: k.detail, ...(k.group ? { group: k.group } : {}) })),
   ];
+  // THREE VIEWS (owner direction 2026-08-14): my state, my partner, the
+  // partnership — partner and partnership INFERRED from the bids, so their
+  // cards appear and narrow as the auction grows.
+  const [view, setView] = useState<"me" | "partner" | "partnership">("me");
+  const shown = cards.filter((c) => (c.group ?? "me") === view);
+  // THE ENVELOPE COACHMARK (owner pick #4, 2026-08-14): identical sealed
+  // envelopes don't explain themselves — one first-run strip says why they
+  // are sealed, then never again. Retired by the ✕, or by the first real
+  // opening (the learner who opened one has understood the mechanic).
+  // localStorage read is in an effect so the server render never touches it.
+  const [envelopeHint, setEnvelopeHint] = useState(false);
+  useEffect(() => {
+    try {
+      if (!window.localStorage.getItem(ENVELOPE_HINT_KEY)) setEnvelopeHint(true);
+    } catch {
+      // Storage blocked (private mode) — no coachmark rather than a crash.
+    }
+  }, []);
+  const dismissEnvelopeHint = () => {
+    setEnvelopeHint(false);
+    try {
+      window.localStorage.setItem(ENVELOPE_HINT_KEY, "1");
+    } catch {
+      // Undismissable-forever is the worst case here; acceptable.
+    }
+  };
   return (
     <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
-      {/* the flip rotation, and its absence for those who asked motion to stop */}
+      {/* the flip rotation, the letter-opening choreography, and their
+          absence for those who asked motion to stop */}
       <style>{`.coach-flip{transition:transform .45s;display:block}
-@media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}}`}</style>
-      <Label color={FELT_DEEP}>Game state</Label>
-      {looking && <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45 }}>{looking}</p>}
-      {cards.length > 0 && (
+.coach-flap{animation:coachFlap .26s ease both}
+.coach-letter{animation:coachLetterUp .38s ease .16s both}
+.coach-env{animation:coachEnvGone .3s ease .22s both}
+@keyframes coachFlap{from{transform:rotateX(0)}to{transform:rotateX(-150deg)}}
+@keyframes coachLetterUp{from{transform:translateY(16%) scale(.94);opacity:0}to{transform:none;opacity:1}}
+@keyframes coachEnvGone{from{opacity:1;transform:none}to{opacity:0;transform:translateY(24%)}}
+@media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}.coach-flap,.coach-letter,.coach-env{animation:none!important}}`}</style>
+      <Label color={FELT_DEEP}>Position</Label>
+      {/* the view switch — a quiet segmented row, same ink as the tabs */}
+      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+        {STATE_VIEWS.map(([v, label]) => {
+          const on = view === v;
+          return (
+            <button
+              key={v}
+              type="button"
+              aria-pressed={on}
+              onClick={() => setView(v)}
+              style={{
+                flex: "none", minHeight: 26, padding: "3px 10px", borderRadius: 13,
+                background: on ? FELT_MID : "transparent",
+                borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
+                color: on ? "#fff" : "#8a8071",
+                fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
+              }}
+            >
+              {label}
+            </button>
+          );
+        })}
+      </div>
+      {envelopeHint && shown.some((c) => c.title) && (
+        <div
+          style={{
+            display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
+            background: TINT, borderRadius: 8, padding: "8px 10px",
+            borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TINT_EDGE,
+          }}
+        >
+          <p style={{ margin: 0, flex: 1, fontSize: 12, lineHeight: 1.5, color: INK }}>
+            The envelopes are sealed on purpose — try working each fact out
+            before you open it. That&rsquo;s the exercise.
+          </p>
+          <button
+            type="button"
+            aria-label="Got it"
+            onClick={dismissEnvelopeHint}
+            style={{
+              flex: "none", width: 22, height: 22, borderRadius: 6,
+              background: "transparent", borderWidth: 0, color: TINT_EDGE,
+              fontSize: 13, lineHeight: 1, cursor: "pointer",
+            }}
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {shown.length > 0 ? (
         <div
           style={{
             display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
-            gap: 6, marginTop: looking ? 9 : 0,
+            gap: 6, marginTop: 8,
           }}
         >
-          {cards.map((c) => (
-            <FlipCard key={`${epoch}|${c.title}|${c.value}`} card={c} />
+          {shown.map((c) => (
+            <FlipCard key={`${epoch}|${view}|${c.title}|${c.value}`} card={c} onOpen={dismissEnvelopeHint} />
           ))}
         </div>
+      ) : (
+        <p style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
+          {STATE_EMPTY[view]}
+        </p>
       )}
     </div>
   );
 }
 
 /**
- * The realistic choices, shown at the top of the HINTS screen (owner
- * direction 2026-08-13, moved off Now) — this is what the "Help me think"
- * button used to answer with, now sitting above the ladder that narrows the
- * options it lists. (Its "what you can work out" half lives in the Game
- * State card on Now.) Candidates render in given order and are styled
- * identically, same as CoachPrompts' block: any visual difference between
- * them reads as a recommendation, and the point of the scaffold is that it
- * does not answer.
+ * The realistic choices, shown at the top of the TELL screen (owner
+ * direction 2026-08-14, moved from Hints — the menu of options sits above
+ * the answers, BEN's especially, so the learner reads what the choice WAS
+ * before reading what everyone would do with it). Candidates render in
+ * given order and are styled identically, same as CoachPrompts' block: any
+ * visual difference between them reads as a recommendation, and the point
+ * of the scaffold is that it does not answer.
  */
 function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
   return (
@@ -1651,20 +1835,31 @@ function ThinkCard({ aid }: Readonly<{ aid: ThinkAid }>) {
       {aid.candidates.length > 0 && (
         <div>
           <Label>Your realistic choices</Label>
-          <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 4 }}>
+          {/* Chips, not a column (owner direction 2026-08-14: less packed) —
+              six auction candidates were six full rows; wrapped chips carry
+              the same labels and notes in two lines, and identical styling
+              still recommends nothing. */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
             {aid.candidates.map((c) => (
-              <li key={c.label} style={{ display: "flex", alignItems: "baseline", gap: 8, fontSize: 13.5, lineHeight: 1.45 }}>
-                <span style={{ flex: "none", minWidth: 42, fontWeight: 700, color: INK }}>
+              <span
+                key={c.label}
+                style={{
+                  display: "inline-flex", alignItems: "baseline", gap: 6,
+                  background: "#fdfaf1", borderWidth: 1, borderStyle: "solid",
+                  borderColor: "#eee3c9", borderRadius: 8, padding: "4px 10px",
+                }}
+              >
+                <span style={{ fontWeight: 700, fontSize: 13, color: INK }}>
                   <RedSuits>{c.label}</RedSuits>
                 </span>
                 {c.note ? (
-                  <span style={{ color: FAINT }}>
+                  <span style={{ fontSize: 11, color: FAINT }}>
                     <RedSuits>{c.note}</RedSuits>
                   </span>
                 ) : null}
-              </li>
+              </span>
             ))}
-          </ul>
+          </div>
         </div>
       )}
       {aid.noChoice && (

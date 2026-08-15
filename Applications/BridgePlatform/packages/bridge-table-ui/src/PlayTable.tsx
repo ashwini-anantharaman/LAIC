@@ -193,15 +193,15 @@ const AUCTION_BOX_H = AUCTION_HEAD + auctionRowsBoxH(AUCTION_ROWS, AUCTION_CELL)
 const CENTRE_MIN_AUCTION = AUCTION_HEAD + auctionRowsBoxH(2, AUCTION_CELL);
 const CENTRE_MIN_PLAY = Math.round(M_TRICK_BOX.h * 0.7) + 16;
 const CENTRE_MIN_RESULT = 200;
-const CENTRE_MAX = 900;
 /**
  * What the centre band WANTS, per phase — its designed content height: the
  * whole four-row auction grid, the full trick compass with air, the result
- * card with margin. WITH THE COACH PANEL ON this is also its CEILING (owner
- * direction 2026-08-11: "the table should be very compact and the rest of the
- * space is given to the coach"): a taller window makes the coach taller, never
- * the felt emptier — CENTRE_MAX-style absorption is for the standalone table,
- * where there is nobody below to give the leftover to.
+ * card with margin. This is also its CEILING, coach or no coach (owner
+ * directions 2026-08-11 "the table should be very compact and the rest of
+ * the space is given to the coach", and 2026-08-14 extending the same shape
+ * to the coach-off table — the old CENTRE_MAX absorption read as a table
+ * stretched out of its proportions). Leftover height is the coach's when
+ * the panel is on, and neutral margin when it isn't.
  */
 const CENTRE_IDEAL_AUCTION = AUCTION_BOX_H;
 const CENTRE_IDEAL_PLAY = M_TRICK_BOX.h + 16;
@@ -448,6 +448,16 @@ export interface PlayTableProps {
    */
   showToolbars?: boolean;
   showCoach?: boolean;
+  /**
+   * What the phone tier's EMPTY space wears — the root column, the table
+   * region around the centred stage, and the stage's own slack. Default
+   * white (the coach-on look). The coach-off theatre passes black, which
+   * replaced the page-side `#coach-off-stage` !important override: that
+   * hack matched wrapper divs BY DEPTH, and every layout change under it
+   * re-opened a white patch (owner report 2026-08-14, "make sure all of
+   * the white screens are also dark").
+   */
+  surroundBg?: string;
   /** The coach panel's share of the phone screen, 0–55%. Default 30. */
   coachShare?: number;
   /** Header title for the coach panel. Default "Coach". */
@@ -492,6 +502,7 @@ export function PlayTable({
   viewHref,
   hideTopBar = false,
   bootNeutral = false,
+  surroundBg = "#fff",
   appearance,
   showToolbars = true,
   showCoach = true,
@@ -626,8 +637,9 @@ export function PlayTable({
   // The table region is content-sized and CAPPED at (100 − coachShare)% of
   // the box; the coach panel takes every remaining pixel, and coachShare is
   // its MINIMUM — a short window shrinks the stage rather than squeezing the
-  // coach out. (The centre band flexes between its floors and CENTRE_MAX —
-  // owner direction 2026-08-11, superseding the 2026-08-09 fixed height.)
+  // coach out. (The centre band flexes between its floor and its ideal —
+  // owner directions 2026-08-11 and 2026-08-14; the ideal is the ceiling
+  // everywhere now.)
   const coachOn = showCoach !== false;
   const coachSharePct = Math.max(0, Math.min(55, coachShare ?? 30));
   const tableSharePct = 100 - coachSharePct;
@@ -702,11 +714,16 @@ export function PlayTable({
   const trayFor = (k: number) => TRAY_ROWS * trayRowFor(k) + TRAY_PAD;
   /** What the centre band's content needs before it starts scrolling/scaling. */
   const centreMin = complete ? CENTRE_MIN_RESULT : inAuction ? CENTRE_MIN_AUCTION : CENTRE_MIN_PLAY;
-  /** …and what it WANTS. With the coach panel below, want is also the ceiling:
-      the table stays compact and the coach's flex band takes every remaining
-      pixel; standalone, the felt may still absorb up to CENTRE_MAX. */
+  /** …and what it WANTS — which is also the ceiling, coach or no coach
+      (owner direction 2026-08-14: "make it more compact, similar to the
+      version with the coach panel"). The felt used to absorb leftover
+      height up to CENTRE_MAX when no coach band sat below, which read as a
+      table stretched out of its own proportions the moment the panel was
+      switched off. The table now keeps ONE compact shape everywhere;
+      whatever the screen has left over stays neutral margin below it (and
+      the embedded coach-off theatre centres the whole box anyway). */
   const centreIdeal = complete ? CENTRE_IDEAL_RESULT : inAuction ? CENTRE_IDEAL_AUCTION : CENTRE_IDEAL_PLAY;
-  const centreCap = coachOn && coachSharePct > 0 ? centreIdeal : CENTRE_MAX;
+  const centreCap = centreIdeal;
   const fit = (k: number, usePad: boolean) => {
     const avail = availPx / (k || 1);
     const others =
@@ -1614,7 +1631,10 @@ export function PlayTable({
       // and every band the budget priced but the phase never drew rendered as
       // dead white between the toolbar and the coach. Content decides the
       // height; the measured bleed hands the slack to the coach panel.
-      style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
+      // The transform/margin TRANSITION is the coach toggle's other half
+      // (owner ask 2026-08-14): share change → new scale/bleed → the felt
+      // glides to its new size in step with the bands around it.
+      style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: surroundBg, transition: "transform .35s ease, margin-bottom .35s ease, background-color .35s ease" }}
     >
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
@@ -1802,27 +1822,51 @@ export function PlayTable({
     // on a short window the whole stage shrinks rather than starving the
     // coach band out of existence.
     return (
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: surroundBg, display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased", transition: "background-color .35s ease" }}>
         {/* The table region is CONTENT-SIZED, capped at its share. Its share is
             what the budget prices the stack against, so ordinarily it lands on
             exactly tableSharePct — but a stack that comes out shorter (hidden
             toolbars) hands the difference DOWN to the coach panel instead of
             inflating the felt to fill a fixed 70% box. */}
-        <div style={{ flex: "none", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
+        <div style={{ flex: coachSharePct > 0 ? "none" : "1 1 auto", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: surroundBg, transition: "max-height .35s ease, background-color .35s ease" }}>
           {/* CSS-driven table region box; the stage scrolls inside it if the
               scaled content ever exceeds the region (align to the top). */}
-          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto" }}>
-            {mobileStack}
+          <div style={{ flex: 1, minHeight: 0, width: "100%", background: surroundBg, display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto", transition: "background-color .35s ease" }}>
+            {/* With a coach below, the table hugs the top and the panel owns
+                the rest. WITHOUT one (owner direction 2026-08-14: compact,
+                "but still in the middle of the screen"), the region fills
+                the box and the compact stage centres in it — via cross-axis
+                auto margins, which collapse to zero when the stage is taller
+                than the region, so a small window still scrolls from the
+                very top instead of clipping it. */}
+            <div style={{ display: "flex", flexDirection: "column", margin: coachSharePct > 0 ? "0" : "auto 0" }}>
+              {mobileStack}
+            </div>
           </div>
         </div>
-        {coachSharePct > 0 && (
-          <div style={{ flex: "1 1 auto", minHeight: `${coachSharePct}%`, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
-            {/* Hidden coach keeps its reserved band as plain white space. */}
-            {coachOn && (
-              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
-            )}
-          </div>
-        )}
+        {/* The coach band is ALWAYS in the tree so toggling the panel is a
+            TRANSITION, not a jump (owner ask 2026-08-14): at share 0 it is a
+            zero-height, borderless, empty box — visually "no region at all",
+            exactly as before — and switching share animates min/max-height
+            while the table region's cap and the stage's scale animate with
+            it. Content mounts only with a real share, so nothing white ever
+            peeks out of a collapsed band. */}
+        <div
+          style={{
+            flex: "1 1 auto",
+            minHeight: `${coachSharePct}%`,
+            maxHeight: coachSharePct > 0 ? "100%" : "0%",
+            overflow: "hidden",
+            display: "flex", background: "#fff",
+            borderTop: `1px solid ${coachSharePct > 0 ? "#d8ded9" : "transparent"}`,
+            transition: "min-height .35s ease, max-height .35s ease, border-top-color .35s ease",
+          }}
+        >
+          {/* Hidden coach keeps its reserved band as plain white space. */}
+          {coachOn && coachSharePct > 0 && (
+            <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
+          )}
+        </div>
         {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />
