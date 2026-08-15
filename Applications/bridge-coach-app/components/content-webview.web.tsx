@@ -178,6 +178,9 @@ export function ContentWebView(props: {
    *  host must not depend on them. The pool is off — see POOL_ENABLED. */
   onLoadEnd?: () => void;
   onError?: () => void;
+  /** Accepted for parity with native and IGNORED: a browser tab's iframe
+   *  has no separate renderer process for the OS to reclaim. */
+  onDied?: () => void;
   /**
    * Accepted for parity with native and deliberately IGNORED here: styling a
    * cross-origin iframe's document from the host is exactly what the same-origin
