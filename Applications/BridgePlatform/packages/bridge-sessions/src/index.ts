@@ -39,8 +39,10 @@ import {
 } from "@bridge/engine";
 import type { CompiledKb, DecisionPolicyId, KbPlayer, KbStore } from "@bridge/kb";
 import { newId } from "@bridge/kb";
+import { createDdDecider } from "./ddSeat";
 import { matchesScope, type ScopeFilter } from "./library";
 
+export { createDdDecider, DD_SEAT_LABEL, type DdDeciderOptions } from "./ddSeat";
 export * from "./library";
 export * from "./submissions";
 export * from "./assignments";
@@ -61,6 +63,16 @@ export type SeatConfig =
        * replays never re-ask BEN.
        */
       kind: "ben";
+      label: string;
+    }
+  | {
+      /**
+       * The double dummy solver — bids from this session's knowledge base and
+       * plays cards by searching all four hands. Needs nothing injected (it is
+       * pure and local), and answers a card in well under a second instead of
+       * BEN's 20-45s. See ddSeat.ts for what it does and does not know.
+       */
+      kind: "dd";
       label: string;
     }
   | {
@@ -476,6 +488,8 @@ export class SessionService {
           ? humanDecider
           : config.kind === "ben"
             ? this.benSeatDecider(record, compiled, seat)
+          : config.kind === "dd"
+            ? createDdDecider({ compiled, sessionId: record.sessionId, seat })
           : createKbDecider({
               compiled,
               player: {

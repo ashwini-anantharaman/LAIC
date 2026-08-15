@@ -10,7 +10,7 @@ import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { suggestPlayersAction } from "../kb/actions";
-import { createRungPlayerAction, deletePlayerAction, tryBenAction, tryPlayerAction } from "./actions";
+import { createRungPlayerAction, deletePlayerAction, tryEngineAction, tryPlayerAction } from "./actions";
 
 /** Players area (2026-07-16 rework): Configured (per-system, per-creator
  *  facets, one-click rung creation) | AI (reserved for BEN). */
@@ -105,8 +105,57 @@ export default async function PlayersPage({
       />
 
       {aiTab ? (
-        canAiTab && benAvailable() ? (
+        canAiTab ? (
           <ul className="mt-8 grid gap-3 sm:grid-cols-2">
+            {/* The solver leads: it is the default opposition, and the only one
+                that always works — it is pure local search, so there is no
+                endpoint to configure and nothing to be unreachable. */}
+            <li className="rounded-lg border border-neutral-200 p-4">
+              <div className="flex items-start justify-between gap-2">
+                <p className="font-medium">Solver · double dummy</p>
+                <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-[10px] uppercase tracking-wide text-emerald-700">
+                  default
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-neutral-500">
+                Searches all four hands and plays the card that wins the most tricks against best
+                defence — so it finesses, ducks and counts out a hand exactly. It answers in well
+                under a second rather than BEN&apos;s twenty to forty-five, which is the difference
+                between playing a board and waiting for one.
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-500">
+                Two things to know. It <em>sees every hand</em> when it plays cards, so it defends
+                better than any human could. And it <em>bids from this knowledge base</em>, not
+                from the solver — peeking is no help in an auction, and its calls stay explainable.
+              </p>
+              <p className="mt-0.5 text-xs text-neutral-400">
+                Also seatable anywhere from a live board&apos;s seat menus.
+              </p>
+              {canTry && (
+                <div className="mt-3 flex gap-2">
+                  <form action={tryEngineAction}>
+                    {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    <button
+                      type="submit"
+                      className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
+                    >
+                      Play
+                    </button>
+                  </form>
+                  <form action={tryEngineAction}>
+                    {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    <input type="hidden" name="watch" value="1" />
+                    <button
+                      type="submit"
+                      className="rounded border border-neutral-300 px-3 py-1 text-xs hover:border-emerald-400"
+                    >
+                      Watch 4 copies
+                    </button>
+                  </form>
+                </div>
+              )}
+            </li>
+            {benAvailable() && (
             <li className="rounded-lg border border-neutral-200 p-4">
               <div className="flex items-start justify-between gap-2">
                 <p className="font-medium">{BEN_SEAT_LABEL} engine</p>
@@ -125,8 +174,10 @@ export default async function PlayersPage({
               </p>
               {canTry && (
                 <div className="mt-3 flex gap-2">
-                  <form action={tryBenAction}>
+                  <form action={tryEngineAction}>
                     {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    {/* Say BEN explicitly: the action now defaults to the solver. */}
+                    <input type="hidden" name="engine" value="ben" />
                     <button
                       type="submit"
                       className="rounded bg-emerald-700 px-3 py-1 text-xs font-medium text-white hover:bg-emerald-800"
@@ -134,8 +185,10 @@ export default async function PlayersPage({
                       Play
                     </button>
                   </form>
-                  <form action={tryBenAction}>
+                  <form action={tryEngineAction}>
                     {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                    {/* Say BEN explicitly: the action now defaults to the solver. */}
+                    <input type="hidden" name="engine" value="ben" />
                     <input type="hidden" name="watch" value="1" />
                     <button
                       type="submit"
@@ -147,17 +200,17 @@ export default async function PlayersPage({
                 </div>
               )}
             </li>
+            )}
           </ul>
         ) : (
           <section className="mt-8 rounded-lg border border-dashed border-neutral-300 p-8 text-center">
-            <p className="font-serif text-lg text-neutral-600">Neural players arrive here.</p>
+            <p className="font-serif text-lg text-neutral-600">Engine players arrive here.</p>
             <p className="mx-auto mt-2 max-w-md text-sm text-neutral-500">
-              This tab hosts engine-backed players (BEN) — they play from a trained model, not
-              from knowledge packs. BEN_ENDPOINT isn&apos;t configured on this server, so no
-              engine is available to seat.
+              This tab hosts players that don&apos;t come from knowledge packs — the double dummy
+              solver, and BEN&apos;s trained model. Your access doesn&apos;t include them yet.
             </p>
             <span className="mt-4 inline-block rounded-full border border-neutral-300 px-3 py-1 text-xs uppercase tracking-wide text-neutral-400">
-              not configured
+              not available
             </span>
           </section>
         )

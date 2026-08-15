@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  bridge-dds@1.4.0: 59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a
+
 importers:
 
   .:
@@ -383,6 +386,9 @@ importers:
       '@bridge/kb':
         specifier: workspace:*
         version: link:../bridge-kb
+      bridge-dds:
+        specifier: 1.4.0
+        version: 1.4.0(patch_hash=59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a)
     devDependencies:
       '@types/node':
         specifier: ^24.10.1
@@ -1691,6 +1697,9 @@ packages:
   brace-expansion@5.0.7:
     resolution: {integrity: sha512-7oFy703dxfY3/NLxC1fh2SUCQ0H9rmAY+5EpDVfXjUTTs+HEwR2nYaqLv+GWcTsumwxPfiz6CzCNkwXwBUwqCA==}
     engines: {node: 18 || 20 || >=22}
+
+  bridge-dds@1.4.0:
+    resolution: {integrity: sha512-bYcyrZmKALx5dsF+RUWYgyr5mqzK9wstbJ7dn31/8ex2sn97f0NUnzAyZmi6OmX0J12XyXHEjEBU56ALX2wnMQ==}
 
   browserslist@4.28.8:
     resolution: {integrity: sha512-V2NpofLblG64mfOtSgDhOJESZEGogzDMBv/q+W6oc4LXWP/q75eOXoOaaOu1EOadB9U4Bwx/e0yzbvwKH8zalA==}
@@ -3500,6 +3509,8 @@ snapshots:
   brace-expansion@5.0.7:
     dependencies:
       balanced-match: 4.0.4
+
+  bridge-dds@1.4.0(patch_hash=59e39b7389c788cacd34baa1e12d192e792e7c12a098b8bd82ddd5ea20bac83a): {}
 
   browserslist@4.28.8:
     dependencies:

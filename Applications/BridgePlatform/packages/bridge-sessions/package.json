@@ -7,8 +7,14 @@
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
-    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
-    "./fileStore": { "types": "./src/fileStore.ts", "default": "./src/fileStore.ts" }
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./fileStore": {
+      "types": "./src/fileStore.ts",
+      "default": "./src/fileStore.ts"
+    }
   },
   "scripts": {
     "build": "tsc --noEmit",
@@ -18,7 +24,8 @@
     "@bridge/config": "workspace:*",
     "@bridge/engine": "workspace:*",
     "@bridge/events": "workspace:*",
-    "@bridge/kb": "workspace:*"
+    "@bridge/kb": "workspace:*",
+    "bridge-dds": "1.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.10.1",

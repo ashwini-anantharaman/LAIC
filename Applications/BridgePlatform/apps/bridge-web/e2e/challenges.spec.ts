@@ -2,13 +2,15 @@
 // wizard, invites, and the results gate.
 //
 // ── WHAT THIS SPEC DELIBERATELY DOES NOT COVER ──────────────────────────────
-// BEN_ENDPOINT is unset in dev and CI, and challenge play correctly REFUSES to
-// start without it (spec §2: BEN everywhere, no KB fallback — a one-attempt
-// scored board must never be played against the shelved house player). That
-// refusal is asserted below, and it is not stubbed away: nothing here fakes a
-// BEN service into the app. So everything downstream of "a board actually
-// starts" is out of reach here and is covered by unit tests + manual runs
-// against a live BEN instead:
+// BEN_ENDPOINT is unset in dev and CI. Challenges created from 2026-08-15 face
+// the DOUBLE DUMMY SOLVER instead of BEN — local search, no endpoint — so the
+// old "refuses to start without BEN" rule is gone, and its test below now
+// asserts the opposite. What still cannot be driven from here is a board
+// actually PLAYED: this spec sorts ahead of kb.spec and there is no compiled
+// knowledge base yet, and boards are dealt inside one. Nothing here fakes a BEN
+// service into the app either. So everything downstream of "a board actually
+// starts" is out of reach here and is covered by unit tests instead — solver
+// play by packages/bridge-sessions/ddSeat.test.ts, and the rest by:
 //
 //   · playing a board — session creation, the seat plan, the decision cache
 //     (lib/challengeBen.test.ts), the one-attempt/resume rule, the freeze;
@@ -298,23 +300,30 @@ test.describe("challenges", () => {
     await expect(page.getByText("Results are locked")).toHaveCount(0);
   });
 
-  test("without BEN a challenge board refuses to start, and says so", async ({
+  test("with no BEN configured a challenge board still starts, on the solver", async ({
     page,
     context,
   }) => {
-    // BEN_ENDPOINT is unset here. Challenges are BEN-only with no KB fallback
-    // (spec §2), so the entry route must refuse rather than seat the shelved
-    // house player in a one-attempt scored board.
+    // BEN_ENDPOINT is unset here, and this used to be the test that a challenge
+    // REFUSED to start at all — challenges were BEN-only, with the KB house
+    // player shelved and no fallback. Challenges created from now on face the
+    // double dummy solver, which is pure local search, so that gate is gone.
+    //
+    // WHAT THIS CAN AND CANNOT ASSERT. The gate is what is checked here: the
+    // entry route must no longer bounce back to the list saying BEN is
+    // missing. It cannot go on to assert the board OPENS, because this spec
+    // sorts ahead of kb.spec and no knowledge base has been compiled yet —
+    // boards are dealt inside one, so entry now gets past the engine check and
+    // stops at that instead. A board actually played by the solver, start to
+    // finish, is covered where it can be: packages/bridge-sessions/ddSeat.test.ts
+    // plays whole deals through the real SessionService.
     await switchUser(context, INVITEE);
     await page.goto("/bridge/challenges");
     await cardLink(page, IMPS_TITLE).first().click();
 
-    await page.waitForURL(/\/bridge\/challenges\?error=/);
-    await expect(
-      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
-    ).toBeVisible();
-    // The attempt was NOT burned: the card still offers board 1.
-    await expect(cardLink(page, IMPS_TITLE).first()).toContainText("Start · board 1 of 2");
+    await page.waitForLoadState("networkidle");
+    expect(page.url()).not.toMatch(/\/bridge\/challenges\?error=/);
+    await expect(page.getByText(/BEN isn't configured/)).toHaveCount(0);
   });
 
   test("a BBO hand link becomes a board, keeping its dealer and vulnerability", async ({
@@ -418,14 +427,15 @@ test.describe("challenges", () => {
     // Nothing prints a score where there is none.
     await expect(page.getByText("IMPs vs datum")).toHaveCount(0);
 
-    // A bidding-only board still refuses to start without BEN — the format
-    // changes what a board asks for, never the no-fallback rule (spec §2).
+    // A bidding-only board no longer stops at the BEN gate either: the format
+    // changes what a board asks for, and the engine behind it is now the
+    // solver, so neither one needs an endpoint. (As above, this cannot go on
+    // to open the board — no knowledge base is compiled this early in the run.)
     await page.goto("/bridge/challenges");
     await cardLink(page, BIDDING_TITLE).first().click();
-    await page.waitForURL(/\/bridge\/challenges\?error=/);
-    await expect(
-      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
-    ).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(page.url()).not.toMatch(/\/bridge\/challenges\?error=/);
+    await expect(page.getByText(/BEN isn't configured/)).toHaveCount(0);
   });
 
   test("a practice replay opens nothing until the challenge is finished", async ({

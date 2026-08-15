@@ -10,6 +10,7 @@
 import type { AuditAction } from "@bridge/audit";
 import {
   challengeFormat,
+  type ChallengeEngine,
   standardVul,
   type Challenge,
   type ChallengeBoard,
@@ -88,12 +89,18 @@ export async function createChallengeAction(
   // record is byte-identical to one created before the option existed — which
   // is what makes this additive with no migration owed.
   const format = challengeFormat(draft);
+  // New challenges face the solver: a board takes seconds instead of the
+  // minutes BEN needs, and being deterministic it gives every entrant a
+  // genuinely identical opponent. Existing challenges are untouched — an
+  // absent `engine` still means BEN (see challengeEngine).
+  const engine: ChallengeEngine = "dd";
 
   const challenge: Challenge = {
     challengeId,
     title: draft.title.trim(),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
     ...(format === "full" ? {} : { format }),
+    engine,
     scoring: draft.scoring,
     createdBy: context.nexusUserId,
     ...(displayNameOf(context) ? { createdByName: displayNameOf(context) } : {}),

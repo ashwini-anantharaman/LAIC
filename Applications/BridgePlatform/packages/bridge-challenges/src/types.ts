@@ -33,6 +33,9 @@ export type ChallengeScoring = "imps" | "mp" | "total";
  */
 export type ChallengeFormat = "full" | "bidding-only";
 
+/** Which robot fills a challenge's non-human seats. */
+export type ChallengeEngine = "ben" | "dd";
+
 /** Open (playable) or archived by the creator. No deadline in v1. */
 export type ChallengeStatus = "open" | "archived";
 
@@ -56,6 +59,17 @@ export interface Challenge {
    * created before the option existed is. See `ChallengeFormat`.
    */
   format?: ChallengeFormat;
+  /**
+   * The opposition. Absent = `ben`, which is what every challenge created
+   * before the solver existed faced.
+   *
+   * IT IS STAMPED ON THE CHALLENGE, not decided per board, and that is the
+   * whole point: a contest is only fair if everyone meets the same opponents,
+   * so a challenge already under way must never switch engines because the
+   * platform default moved. New challenges get `dd`, which plays a board in
+   * seconds instead of minutes.
+   */
+  engine?: ChallengeEngine;
   /**
    * When the first participant STARTED a board. Set once; from then on boards,
    * seats and control overrides are frozen (invites stay addable forever).
@@ -83,6 +97,15 @@ export function challengeIsEditable(challenge: Challenge): boolean {
  */
 export function challengeFormat(challenge: Pick<Challenge, "format">): ChallengeFormat {
   return challenge.format === "bidding-only" ? "bidding-only" : "full";
+}
+
+/**
+ * The challenge's engine, defaulted. THE ONLY legitimate way to ask who the
+ * robots are: a stored record may carry no `engine` at all, and that is not a
+ * missing value — it is `ben`, the only engine that existed when it was made.
+ */
+export function challengeEngine(challenge: Pick<Challenge, "engine">): ChallengeEngine {
+  return challenge.engine === "dd" ? "dd" : "ben";
 }
 
 /** True when the board ends with the auction and nobody plays a card. */

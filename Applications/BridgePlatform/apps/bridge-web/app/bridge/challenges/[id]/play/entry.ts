@@ -20,8 +20,10 @@
 import {
   boardParticipants,
   challengeBoardIsOver,
+  challengeEngine,
   isBiddingOnly,
   type Challenge,
+  type ChallengeEngine,
   type ChallengeBoard,
   type ChallengePlay,
   type ChallengeSnapshot,
@@ -32,6 +34,7 @@ import type { SeatConfig } from "@bridge/sessions";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { audit } from "@/lib/audit";
 import { BEN_SEAT_LABEL, benAvailable } from "@/lib/benSeat";
+import { DD_SEAT_LABEL } from "@bridge/sessions";
 import { warmBen } from "@/lib/challengeBen";
 import {
   challengeStore,
@@ -225,9 +228,12 @@ export async function enterChallenge(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return null;
 
-  if (!benAvailable()) return BEN_MISSING_HREF;
+  // Only BEN needs an endpoint; the solver is local, so a solver challenge
+  // starts on a server with no BEN configured at all.
+  const engine = challengeEngine(challenge);
+  if (engine === "ben" && !benAvailable()) return BEN_MISSING_HREF;
 
-  warmUpBen();
+  if (engine === "ben") warmUpBen();
   await ensureSeeds();
   await assertAiAllowed(context);
   const { kbId, compiled } = await liveKb();
@@ -235,7 +241,7 @@ export async function enterChallenge(
   const record = await sessionService().createSession({
     kbId,
     compiled,
-    seats: seatsForBoard(board, userId),
+    seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
     dealer: board.dealer,
@@ -347,9 +353,12 @@ export async function enterChallengePractice(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return resultsHref;
 
-  if (!benAvailable()) return BEN_MISSING_HREF;
+  // Only BEN needs an endpoint; the solver is local, so a solver challenge
+  // starts on a server with no BEN configured at all.
+  const engine = challengeEngine(challenge);
+  if (engine === "ben" && !benAvailable()) return BEN_MISSING_HREF;
 
-  warmUpBen();
+  if (engine === "ben") warmUpBen();
   await ensureSeeds();
   await assertAiAllowed(context);
   const { kbId, compiled } = await liveKb();
@@ -357,7 +366,7 @@ export async function enterChallengePractice(
   const record = await sessionService().createSession({
     kbId,
     compiled,
-    seats: seatsForBoard(board, userId),
+    seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
     dealer: board.dealer,
@@ -393,23 +402,31 @@ function warmUpBen(): void {
 
 /**
  * The board's seat plan as session seat configs. Read through
- * `boardParticipants` rather than assuming three BEN opponents (ADDENDUM A6) —
- * the day a live human-vs-human table arrives, only the plan changes. Every
- * non-human seat is BEN; the KB house player is shelved for challenges and is
- * never seated here, not even as a fallback.
+ * `boardParticipants` rather than assuming three robot opponents (ADDENDUM A6)
+ * — the day a live human-vs-human table arrives, only the plan changes. The KB
+ * house player is shelved for challenges and is never seated here, not even as
+ * a fallback.
+ *
+ * `engine` comes from the CHALLENGE, never from today's platform default, so a
+ * contest half-played against BEN keeps meeting BEN on its remaining boards.
  */
 export function seatsForBoard(
   board: Pick<ChallengeBoard, "humanSeat" | "participants">,
   userId: string,
+  engine: ChallengeEngine = "ben",
 ): Record<Seat, SeatConfig> {
+  const robot: SeatConfig =
+    engine === "dd"
+      ? { kind: "dd", label: DD_SEAT_LABEL }
+      : { kind: "ben", label: BEN_SEAT_LABEL };
   const seats = {} as Record<Seat, SeatConfig>;
   for (const participant of boardParticipants(board, userId)) {
     seats[participant.seat] =
       participant.kind === "user"
         ? { kind: "human", nexusUserId: participant.userId ?? userId }
-        : { kind: "ben", label: BEN_SEAT_LABEL };
+        : robot;
   }
-  for (const seat of SEATS) seats[seat] ??= { kind: "ben", label: BEN_SEAT_LABEL };
+  for (const seat of SEATS) seats[seat] ??= robot;
   return seats;
 }
 

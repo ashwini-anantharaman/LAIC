@@ -5,3 +5,14 @@ packages:
 allowBuilds:
   esbuild: true
   sharp: true
+
+# bridge-dds is Bo Haglund and Søren Hein's C++ double dummy solver compiled to
+# WebAssembly — the engine essentially every bridge site runs. It ships ESM whose
+# entry does `import DdsLoader from "./lib/dds"` — no file extension — which
+# Node's ESM resolver rejects outright, so the package cannot be imported at all
+# as published. The patch adds `.js`. One line, and preferred to vendoring
+# because the alternative is owning 252 lines of generated wrapper plus a 524 KB
+# base64 payload. (Carried over from the Quan branch, which uses the same solver
+# for the coach's assessors.)
+patchedDependencies:
+  bridge-dds@1.4.0: patches/bridge-dds@1.4.0.patch
