@@ -48,6 +48,11 @@ export interface LearningContext {
   accessLevel: string;
   displayName?: string | null;
   program_name?: string | null;
+  /** The CLUB the caller launched from, when they came through one. `program_name`
+   *  above is the connected PARENT — the right label for the data instance, and the
+   *  wrong one for telling an author which club their work will feed. */
+  nexus_club_program_id?: string | null;
+  nexus_club_program_name?: string | null;
   role_name?: string | null;
   is_admin?: boolean;
   /** The caller's effective learning-catalogue capability ids (screen gating). */
@@ -135,17 +140,50 @@ export async function nexusFetch(path: string, init: RequestInit = {}): Promise<
 }
 
 /** Fetch the caller's learning context, or null if not signed in / no access. */
+/**
+ * Why the context could not be fetched, when it could not.
+ *
+ * This used to collapse every failure into `null`, so a caller could not tell a spent
+ * launch token from "the Learning Platform is not enabled for this club" from a dead
+ * network — and the boot screen therefore had to guess, which meant asserting one cause
+ * and being wrong about the others. The server's own 403 text names the exact toggle;
+ * carrying it is the difference between a dead end and an instruction.
+ */
+export type LearningContextFailure = {
+  reason: 'no-session' | 'refused' | 'unreachable';
+  status?: number;
+  detail?: string;
+};
+
+let _lastContextFailure: LearningContextFailure | null = null;
+
+/** The reason the last `fetchLearningContext` returned null. */
+export function lastLearningContextFailure(): LearningContextFailure | null {
+  return _lastContextFailure;
+}
+
 export async function fetchLearningContext(): Promise<LearningContext | null> {
-  if (!getToken()) return null;
+  _lastContextFailure = null;
+  if (!getToken()) {
+    // No stored token at all: the launch exchange never completed, or its token had
+    // already been spent (they are single-use).
+    _lastContextFailure = { reason: 'no-session' };
+    return null;
+  }
   const pid = getProgramId();
   const qs = pid ? `?program_id=${encodeURIComponent(pid)}` : "";
   try {
     const res = await nexusFetch(`/api/platform/learning/context${qs}`);
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { detail?: string };
+      _lastContextFailure = { reason: 'refused', status: res.status, detail: body.detail };
+      return null;
+    }
     const ctx = (await res.json()) as LearningContext;
     _orgId = ctx.laicOrgId ?? null;
     return ctx;
   } catch {
+    _lastContextFailure = { reason: 'unreachable' };
     return null;
   }
 }

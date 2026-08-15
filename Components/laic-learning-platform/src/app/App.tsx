@@ -120,6 +120,8 @@ import { applyEmbedSkin } from './embedSkin';
 import {
   consumeLaunchFromUrl,
   fetchLearningContext,
+  lastLearningContextFailure,
+  type LearningContextFailure,
   contextToRole,
   signOutToNexus,
 } from '../lib/nexus';
@@ -165,6 +167,8 @@ export interface AppState {
   stopRolePreview: () => void;
   /** Identity from the Nexus launch (null in standalone demo mode). */
   nexusProgramName: string | null;
+  /** The club this session authors for, or null when it is not a club launch. */
+  nexusClubName: string | null;
   nexusUserName: string | null;
   nexusUserRole: string | null;
   readerObjectId: string | null;
@@ -308,10 +312,25 @@ function StudioApp() {
   const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
+  /**
+   * The CLUB this session is authoring for, when the launch came from one.
+   *
+   * It exists to answer the question an author actually has — "where does this go?" —
+   * which `nexusProgramName` cannot: for a club launch that is the connected PARENT,
+   * so showing it would name the wrong place with total confidence.
+   */
+  const [nexusClubName, setNexusClubName] = useState<string | null>(null);
   const [nexusUserName, setNexusUserName] = useState<string | null>(null);
   const [nexusUserRole, setNexusUserRole] = useState<string | null>(null);
   /** Gate first paint until we know whether this is a Nexus launch. */
   const [booting, setBooting] = useState(true);
+  /**
+   * A launch arrived and could not be signed in. Held separately from "not logged in"
+   * because the honest answer differs: a visitor should see the sign-in page, whereas
+   * someone sent here by the app should be told to reopen it rather than be handed a
+   * demo identity that quietly authors as the wrong person.
+   */
+  const [launchFailed, setLaunchFailed] = useState<LearningContextFailure | null>(null);
 
   const activeUserIdRef = useRef(activeUserId);
   const createdObjectsRef = useRef(createdObjects);
@@ -473,6 +492,9 @@ function StudioApp() {
         // come from in here (its native WebView injects the same sheet).
         applyEmbedSkin();
       }
+      // Read BEFORE the exchange: consumeLaunchFromUrl strips the query either way, so
+      // afterwards there is no way to tell a launch that failed from a plain visit.
+      const arrivedWithLaunchToken = !!bootParams.get('launch_token');
       await consumeLaunchFromUrl();
       // Embed boot renders exactly one object — fetch just that object (not
       // the whole org library), in parallel with the context read.
@@ -497,6 +519,7 @@ function StudioApp() {
         setLearningPerms(perms);
         setLearningCapabilities(caps);
         setNexusProgramName(ctx.program_name ?? null);
+        setNexusClubName(ctx.nexus_club_program_name ?? null);
         setNexusUserName(ctx.displayName ?? null);
         setNexusUserRole(isAdmin ? 'Administrator' : (ctx.learning_role?.role_name ?? ctx.role_name ?? 'Member'));
         setActiveUserId(uid);
@@ -538,6 +561,19 @@ function StudioApp() {
         } else {
           void hydrateForUser(uid);
         }
+        setBooting(false);
+        return;
+      }
+      // A LAUNCHED session that failed must NOT become somebody else.
+      //
+      // This used to fall straight through to the demo session below, so a launch whose
+      // token had already been spent — they are single-use, and the query is stripped
+      // after the first exchange, so any reload of the host's WebView qualifies — came
+      // up as a hard-coded demo user with the full desktop sidebar. Everything after
+      // that is wrong in ways that look like bugs somewhere else: the wrong name, the
+      // wrong program, and content saved as the wrong person.
+      if (arrivedWithLaunchToken) {
+        setLaunchFailed(lastLearningContextFailure() ?? { reason: 'no-session' });
         setBooting(false);
         return;
       }
@@ -1063,7 +1099,7 @@ function StudioApp() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
     previewName, startRolePreview, stopRolePreview,
-    nexusProgramName, nexusUserName, nexusUserRole,
+    nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
     objectVersionsTick, listObjectVersions, listAllObjectVersions,
     saveObjectAsNewVersion, overwriteObjectVersion, restoreObjectVersion, publishObjectVersion,
@@ -1090,6 +1126,25 @@ function StudioApp() {
           {booting ? (
             <div className="grid min-h-screen place-items-center text-slate-600">
               <div className="text-sm">Loading…</div>
+            </div>
+          ) : launchFailed ? (
+            <div className="grid min-h-screen place-items-center px-6">
+              <div className="text-center" style={{ maxWidth: 360 }}>
+                <p style={{ fontSize: 17, fontWeight: 700, color: '#1f1f1f' }}>
+                  {launchFailed.reason === 'refused' ? 'No access to author here' : 'Couldn’t sign you in'}
+                </p>
+                <p style={{ fontSize: 13.5, color: 'rgba(31,31,31,0.65)', marginTop: 6, lineHeight: 1.5 }}>
+                  {launchFailed.reason === 'refused'
+                    // The server's own words: it names the exact toggle that is off —
+                    // the club's Learning feature, its parent program's, or the org's
+                    // learning module — which a generic message would send someone
+                    // hunting for.
+                    ? (launchFailed.detail ?? `The server refused this (${launchFailed.status ?? '403'}).`)
+                    : launchFailed.reason === 'unreachable'
+                      ? 'Could not reach the server. Check the connection and try again from the app.'
+                      : 'This link works once. Close this and open it again from the app, which mints a fresh one.'}
+                </p>
+              </div>
             </div>
           ) : !isLoggedIn ? (
             <LoginPortal />

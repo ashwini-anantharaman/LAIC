@@ -90,9 +90,18 @@ b, strong, th {
 }
 h1, h2, h3, h4, h5, h6, b, strong { font-synthesis: none; }
 
-/* Buttons keep their own fills — only the face changes, so an action still
-   reads as an action. */
-button, [role="button"] { color: inherit !important; }
+/* Buttons keep their own fills AND their own text colour — only the face changes,
+   so an action still reads as an action.
+ *
+ * This used to force the colour to inherit, which contradicted the sentence above it:
+ * body is forced to the ink, so every button inherited DARK text — including the ones
+ * that set light text on a dark fill themselves. In the reader that mostly went
+ * unnoticed, because its buttons are dark-on-cream anyway. On an authoring screen it
+ * produced black text on a black pill and grey on near-black: unreadable, and
+ * unreadable in a way that looked like the app's own styling. */
+button, [role="button"] {
+  font-family: 'NecoApp', Georgia, serif !important;
+}
 `;
 
 /** Idempotent: keyed on an id, appended last so it wins ties on specificity. */

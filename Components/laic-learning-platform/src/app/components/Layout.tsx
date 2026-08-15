@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, PanelLeft } from 'lucide-react';
+import { Eye, PanelLeft, Users } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
@@ -20,6 +20,33 @@ function ReadOnlyBanner() {
   );
 }
 
+/**
+ * Which club this session authors for — shown on every screen, not just at the moment
+ * of publishing.
+ *
+ * An author arriving from a club's + button has no way to tell that their work will go
+ * to that club rather than to the shared library: the sidebar, the creator and the
+ * library look identical either way, and the topbar shows the PARENT program's name.
+ * "Where did my content go?" is the question that follows, and it is cheaper to answer
+ * before the fact than after.
+ *
+ * Absent for a non-club session, where "the shared library" is exactly right and a
+ * banner would be noise.
+ */
+function ClubScopeBanner() {
+  const { nexusClubName } = useApp();
+  if (!nexusClubName) return null;
+  return (
+    <div className="flex items-center gap-2 border-b border-emerald-200 bg-emerald-50 px-4 sm:px-5 py-2 text-sm text-emerald-900">
+      <Users className="h-4 w-4 shrink-0" />
+      <span>
+        Authoring for <strong>{nexusClubName}</strong> — what you publish appears in that
+        club’s Activities, not in Learn.
+      </span>
+    </div>
+  );
+}
+
 // Screen imports
 import { StudentDashboard } from './screens/StudentDashboard';
 import { LearnerReader } from './screens/LearnerReader';
@@ -27,6 +54,7 @@ import { CDHome } from './screens/CDHome';
 import { CDCreate } from './screens/CDCreate';
 import { CDSources } from './screens/CDSources';
 import { ObjectLibrary } from './screens/ObjectLibrary';
+import { ClubCompose } from './screens/ClubCompose';
 import { TemplateLibrary } from './screens/TemplateLibrary';
 import { MySubmissions } from './screens/MySubmissions';
 import { VersionsPublishing } from './screens/VersionsPublishing';
@@ -63,6 +91,10 @@ function ScreenRouter() {
     case 'cd-submissions': return <MySubmissions />;
     case 'cd-versions': return <VersionsPublishing />;
     case 'cd-analytics': return <AuthorAnalytics />;
+    // Reached only from the club app's + (?screen=club-compose&embed=1). Deliberately
+    // NOT in the navigation catalogue: a sidebar entry would be a second way in, with
+    // different expectations about where the content lands.
+    case 'club-compose': return <ClubCompose />;
     case 'cd-creator':
       return creatorObjectType === 'tutorial-v2'
         ? <ObjectCreatorTutorialV2 />
@@ -209,6 +241,7 @@ export function Layout() {
           <TopBar mobile={mobile} onOpenNav={() => setNavOpen(true)} />
         ) : null}
         <ReadOnlyBanner />
+        <ClubScopeBanner />
         <main
           className={`flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col ${mobile ? 'cs-mobile-main' : ''}`}
         >

@@ -10,6 +10,7 @@ import {
   AlertTriangle, ArrowLeft, Check, ChevronRight, Database, Highlighter,
   Layers, Loader2, Save, Settings2, Sparkles,
 } from 'lucide-react';
+import { composePublisher } from '../../../../lib/clubComposeBridge';
 import { useApp } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { parsePdf, docFromText, type ParsedDoc } from '../../../../lib/pdf';
@@ -792,9 +793,17 @@ export function ObjectCreatorPipelineV2() {
   };
 
   const saveDraft = async () => {
-    persistPipelineDraft();
+    const savedId = persistPipelineDraft();
     const { ids, label } = draftCollectionLabel();
     if (ids[0]) setActiveObjectCollectionId?.(ids[0]);
+    // The club compose flow owns the ending: publish and hand the author back to the
+    // app, rather than the folder dialog and a trip to the Content Library — which is
+    // the right ending in the Studio and a dead end on a phone.
+    const compose = composePublisher();
+    if (compose) {
+      compose(savedId);
+      return;
+    }
     const continueEditing = await confirm({
       title: 'Saved',
       description: `Saved in folder ${label}. Open Content Library and go to that folder to find and continue this content.`,
@@ -1321,7 +1330,8 @@ export function ObjectCreatorPipelineV2() {
         boxShadow: '0 10px 28px -12px rgba(5,150,105,0.55)',
       }}
     >
-      <Save size={15} /> Save
+      {/* Publishes in a club compose session — see saveDraft. */}
+      <Save size={15} /> {composePublisher() ? 'Publish' : 'Save'}
     </button>
   );
 

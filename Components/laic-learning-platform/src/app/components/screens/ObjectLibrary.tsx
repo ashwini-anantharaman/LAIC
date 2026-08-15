@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
   BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
-  GripVertical,
+  GripVertical, Upload,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -271,6 +271,13 @@ export function ObjectLibrary() {
 
   const versionCount = (objectId: string) => (
     typeof listObjectVersions === 'function' ? listObjectVersions(objectId).length : 0
+  );
+  /** Is a version of this object live? One live version per object by construction
+   *  (markVersionPublished clears the stamp from its siblings), so `some` is exact. */
+  const publishedVersion = (objectId: string) => (
+    typeof listObjectVersions === 'function'
+      ? listObjectVersions(objectId).some((v) => !!v.publishedAt)
+      : false
   );
   // Keep count reactive when history changes.
   void objectVersionsTick;
@@ -678,6 +685,30 @@ export function ObjectLibrary() {
                 title="Save as new version"
               >
                 <GitBranch size={13} />
+              </button>
+              {/* PUBLISH, said out loud.
+                  The action already existed and was reachable only behind the history
+                  icon below — an author looking for "how do I make this appear in the
+                  app" had no reason to open a version list to find it. Same modal, same
+                  action; this is a signpost, not a second flow. The label switches to
+                  Published once a version is live, so the row states the fact rather
+                  than inviting the same click twice. */}
+              <button
+                type="button"
+                onClick={() => setVersionsFor(item)}
+                className={`h-7 px-2 rounded-lg flex items-center gap-1 text-[11px] font-semibold transition-colors ${
+                  publishedVersion(item.id)
+                    ? 'text-emerald-700 hover:bg-emerald-50'
+                    : 'text-[#0B0F1A] hover:bg-gray-100'
+                }`}
+                title={
+                  publishedVersion(item.id)
+                    ? 'Published — open versions to change or withdraw it'
+                    : 'Publish a version so readers can see it'
+                }
+              >
+                <Upload size={12} />
+                {publishedVersion(item.id) ? 'Published' : 'Publish'}
               </button>
               <button
                 type="button"

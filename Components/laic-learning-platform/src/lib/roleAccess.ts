@@ -192,6 +192,10 @@ export function inferShellRole(capabilityIds: string[]): Role {
 
 export function canAccessScreen(capabilityIds: string[], screenId: string): boolean {
   // Creator / wizard are part of Create flow
+  // The club app's compose screen: the same authority as creating anything else.
+  if (screenId === 'club-compose') {
+    return hasAnyCapability(capabilityIds, ['learning.object.create', 'learning.composition.create']);
+  }
   if (screenId === 'cd-creator' || screenId === 'cd-wizard') {
     return hasAnyCapability(capabilityIds, ['learning.object.create', 'learning.composition.create']);
   }

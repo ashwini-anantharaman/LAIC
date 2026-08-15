@@ -23,6 +23,7 @@ import { StatusBar } from "expo-status-bar";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AppState,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,8 +33,11 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { SvgXml } from "react-native-svg";
 
 import { ActivityCarousel, type Activity } from "../../components/activity-carousel";
+import { tintSvg } from "../../components/svg-tint";
+import { ICON_CHAT, ICON_MEMBERS, ICON_SWORDS } from "../../constants/brand-vectors";
 import { BackChevron, BrandChrome, CONTENT_TOP_GAP } from "../../components/brand-chrome";
 import { BrandSheet } from "../../components/brand-sheet";
 import { MyClubs } from "../../components/my-clubs";
@@ -95,15 +99,29 @@ const PILL = { width: 58.504, height: 27.374, radius: 6.441, font: 10.261, offse
 const FILTER = { top: 32, pitch: 71, font: 10.261 };
 /** Home view, measured from the blurb. */
 const HOME = { headingTop: 40, tile: 155.469, tileGap: 12, buttonsTop: 43 };
-/** The 2x2 grid: 172 x 48 faces with a darker one behind at (+3, +5). */
+/**
+ * The club's own buttons (Figma 850:361): near-square tiles, an icon over a Neco
+ * Medium label, on the stacked-card idiom the leaderboard and the playing cards use —
+ * a darker green sitting behind and below the face.
+ *
+ * They were 172x48 text-only bars. The design gives them room for a glyph, which is
+ * what makes the two readable at a glance rather than by reading; the pair is also
+ * narrower than the old row, so the grid keeps its two columns with a wider gutter.
+ */
 const BTN = {
-  width: 172,
-  height: 48,
-  radius: 12,
-  offset: { x: 3, y: 5 },
-  left: 16,
-  columnPitch: 184,
-  rowPitch: 70,
+  width: 120.891,
+  height: 102.376,
+  radius: 13.069,
+  /** The shadow card, offset down and slightly right. */
+  offset: { x: 2.18, y: 7.62 },
+  left: 44,
+  /** 218.26 − 44 in the design. */
+  columnPitch: 174.26,
+  rowPitch: 120,
+  icon: 27.23,
+  labelSize: 20.821,
+  /** Icon to label, and the pair's optical centre inside the face. */
+  iconGap: 10,
 };
 
 type View2 = "home" | "members";
@@ -133,6 +151,56 @@ function standingOf(row: AppMemberRow): string {
   return (
     row.app_role_name?.trim() ||
     (isStaff(row) ? FALLBACK_STANDING.staff : FALLBACK_STANDING.learner)
+  );
+}
+
+/**
+ * The Members switch (Figma 850:361): the people glyph alone, in a cream box.
+ *
+ * It said "Members" in a green pill, which is the same shape the roster's ROLE filters
+ * use — so the control that changes what the whole screen is sat in the same visual
+ * language as the controls that filter one list inside it. The glyph separates them,
+ * and it sits over the club's banner photo, where cream holds up and ink does not.
+ *
+ * Same footprint as PILL on purpose: the header's layout is measured from it, so this
+ * changes what the control looks like without moving anything around it. Filled green
+ * while the roster is open, because a toggle must still say which way it is.
+ */
+function MembersButton({
+  active,
+  onPress,
+  scale: s,
+}: {
+  active: boolean;
+  onPress: () => void;
+  scale: number;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="tab"
+      accessibilityState={{ selected: active }}
+      accessibilityLabel="Members"
+      style={({ pressed }) => [
+        {
+          width: PILL.width * s,
+          height: PILL.height * s,
+          borderRadius: PILL.radius * s,
+          alignItems: "center",
+          justifyContent: "center",
+          backgroundColor: active ? Brand.green : Brand.cream,
+          borderWidth: active ? 0 : 0.921 * s,
+          borderColor: "#d9d9d9",
+        },
+        pressed && styles.pressed,
+      ]}
+    >
+      <SvgXml
+        xml={tintSvg(ICON_MEMBERS, active ? Brand.cream : Brand.ink)}
+        width={24 * s}
+        height={17.455 * s}
+      />
+    </Pressable>
   );
 }
 
@@ -421,27 +489,49 @@ export default function ClubScreen() {
    */
 // The club's own authored content, and whether this person may add more. Both
   // are per club, so both re-resolve on a club switch.
-  useEffect(() => {
-    if (!token || !club?.id) {
-      setCanAuthor(false);
-      setClubContent([]);
-      return;
-    }
-    let cancelled = false;
-    void (async () => {
+  const loadClubContent = useCallback(
+    async (opts: { refresh?: boolean } = {}) => {
+      if (!token || !club?.id) {
+        setCanAuthor(false);
+        setClubContent([]);
+        return;
+      }
       const [ctx, objects] = await Promise.all([
         getLearningContext(token, club.id),
-        getLearningObjects(token, { programId: club.id }).catch(() => []),
+        // `refresh` matters: the module cache is one slot shared with the Learn tab,
+        // so without it a list warmed seconds ago by that tab is reused verbatim —
+        // and the whole point of coming back here is to see something new.
+        getLearningObjects(token, { programId: club.id, ...opts }).catch(() => []),
       ]);
-      if (cancelled) return;
       setCanAuthor(canAuthorLearning(ctx));
       // Only the club's half: the parent's curriculum belongs to the Learn tab.
       setClubContent(splitByOwner(objects, club.id).club);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [token, club?.id]);
+    },
+    [token, club?.id],
+  );
+
+  /**
+   * Re-read on every focus, and on returning to the foreground.
+   *
+   * Authoring happens on ANOTHER screen — the Content Studio, through the + — and
+   * publishing there is precisely the moment this list becomes wrong. Without this the
+   * effect only ran on a club switch or a token change, so a card someone had just
+   * published did not appear until they restarted the app, which reads as "publishing
+   * did nothing". The Learn tab already refreshes on both; this is the same treatment
+   * for the surface the + actually feeds.
+   */
+  useFocusEffect(
+    useCallback(() => {
+      void loadClubContent({ refresh: true });
+    }, [loadClubContent]),
+  );
+
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state === "active") void loadClubContent({ refresh: true });
+    });
+    return () => sub.remove();
+  }, [loadClubContent]);
 
   const activities: Activity[] = [
     {
@@ -506,16 +596,24 @@ export default function ClubScreen() {
     canChallenges && {
       key: "challenges",
       label: "Challenges",
+      icon: ICON_SWORDS,
       onPress: () => router.push("/club-challenges"),
       disabled: false,
     },
     canChat && {
       key: "chat",
       label: "Chat",
+      icon: ICON_CHAT,
       onPress: () => router.push("/club-chat"),
       disabled: false,
     },
-  ].filter(Boolean) as { key: string; label: string; onPress: () => void; disabled: boolean }[];
+  ].filter(Boolean) as {
+    key: string;
+    label: string;
+    icon: string;
+    onPress: () => void;
+    disabled: boolean;
+  }[];
 
   const onHome = view === "home";
   // Over a photograph the ink text and the ink outline both disappear.
@@ -598,11 +696,9 @@ export default function ClubScreen() {
             }}
             pointerEvents={canMembers ? "auto" : "none"}
           >
-            <Pill
-              label="Members"
+            <MembersButton
               active={!onHome}
               onPress={() => setView(onHome ? "members" : "home")}
-              ink={headText}
               scale={s}
             />
           </View>
@@ -677,8 +773,16 @@ export default function ClubScreen() {
                       { width: BTN.width * s, height: BTN.height * s, borderRadius: BTN.radius * s },
                     ]}
                   >
+                    <SvgXml
+                      xml={tintSvg(b.icon, Brand.cream)}
+                      width={BTN.icon * s}
+                      height={BTN.icon * s}
+                    />
                     <Text
-                      style={[styles.btnLabel, { fontSize: Type.sectionHeading * s }]}
+                      style={[
+                        styles.btnLabel,
+                        { fontSize: BTN.labelSize * s, marginTop: BTN.iconGap * s },
+                      ]}
                       numberOfLines={1}
                     >
                       {b.label}
@@ -1150,7 +1254,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: Brand.green,
   },
-  btnLabel: { fontFamily: Fonts.displayMedium, color: Brand.white },
+  btnLabel: { fontFamily: Fonts.displayMedium, color: Brand.cream },
   rosterWrap: { flex: 1, position: "relative" },
   /** Down the right edge, over the list, centred vertically. */
   indexStrip: {

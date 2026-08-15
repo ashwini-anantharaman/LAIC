@@ -55,6 +55,8 @@ export interface ResolvedPlatformAccess {
    * that id is otherwise lost at this seam.
    */
   partnerProgramId?: string;
+  /** The club's own NAME, for surfaces that must say which club they mean. */
+  partnerProgramName?: string | null;
   /** Fine-grained capabilities carried by the granting PROGRAM role (its
    *  `perms.capabilities`), when access came from a program role with a
    *  "partial" (capability-bound) platform grant. The platform context filters
@@ -279,6 +281,10 @@ export async function resolvePlatformAccess(
         roleName: "Partner access",
         partnerClub: true,
         partnerProgramId: partnerRow.id as string,
+        // The CLUB's own name. `programName` above is the connected parent's, which is
+        // the right label for the data instance and the wrong one for telling someone
+        // which club they are authoring for.
+        partnerProgramName: (partnerRow.name as string | null) ?? null,
         programRoleCapabilities: fa && fa.length ? fa : null,
       };
     }

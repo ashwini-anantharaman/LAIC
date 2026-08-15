@@ -59,6 +59,10 @@ const NAMES = {
   "icon-activity-doc.svg": "ICON_ACTIVITY_DOC",
   "icon-activity-add.svg": "ICON_ACTIVITY_ADD",
   "icon-archive-box.svg": "ICON_ARCHIVE_BOX",
+  // Club home buttons + the members pill (Figma 850:361).
+  "icon-swords.svg": "ICON_SWORDS",
+  "icon-chat.svg": "ICON_CHAT",
+  "icon-members.svg": "ICON_MEMBERS",
   "icon-friends.svg": "ICON_FRIENDS",
   "icon-friend-add.svg": "ICON_FRIEND_ADD",
   "icon-bell.svg": "ICON_BELL",
