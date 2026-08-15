@@ -67,6 +67,12 @@ const NAMES = {
   "icon-friend-add.svg": "ICON_FRIEND_ADD",
   "icon-bell.svg": "ICON_BELL",
   "icon-search.svg": "ICON_SEARCH",
+  // Coach tab (Figma 869:597). The Hire button's plus is stored on its OWN,
+  // rebased to its glyph box, because the design draws it inside a filled green
+  // circle — a two-colour export cannot be tinted, and the circle is a view.
+  "icon-coach-assignments.svg": "ICON_COACH_ASSIGNMENTS",
+  "icon-feedback-bubble.svg": "ICON_FEEDBACK_BUBBLE",
+  "icon-plus.svg": "ICON_PLUS",
 };
 
 const TRUNK_FILL = "#421313";
