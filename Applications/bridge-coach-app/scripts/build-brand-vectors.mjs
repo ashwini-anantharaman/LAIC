@@ -43,6 +43,9 @@ const NAMES = {
   // borrowing New Play's plus, which said "make one" on a card that also opens the
   // ones you already have.
   "icon-card-table.svg": "ICON_CARD_TABLE",
+  // Curated Deals' four-point sparkle. Symmetric under 180°, which is why the
+  // frame draws both corners unrotated and the card can still mirror it.
+  "icon-card-sparkle.svg": "ICON_CARD_SPARKLE",
   "icon-assignments.svg": "ICON_ASSIGNMENTS",
   "icon-home.svg": "ICON_HOME",
   "icon-learn.svg": "ICON_LEARN",

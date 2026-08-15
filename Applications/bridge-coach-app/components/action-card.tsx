@@ -32,6 +32,7 @@ import {
   ICON_CARD_HISTORY,
   ICON_CARD_PLAY,
   ICON_CARD_PLUS,
+  ICON_CARD_SPARKLE,
   ICON_CARD_TABLE,
 } from "../constants/brand-vectors";
 import { Brand, Fonts } from "../constants/theme";
@@ -66,6 +67,7 @@ export const CARD_ICONS = {
   play: { xml: ICON_CARD_PLAY, w: 14.143, h: 16.5, left: 12.01, top: 10.93 },
   table: { xml: ICON_CARD_TABLE, w: 21.314, h: 10.214, left: 6.97, top: 15.79 },
   envelope: { xml: ICON_CARD_ENVELOPE, w: 17.482, h: 13.985, left: 12.8, top: 13.28 },
+  sparkle: { xml: ICON_CARD_SPARKLE, w: 16.98, h: 16.946, left: 7.53, top: 11.57 },
   // No frame reference: 870:752 draws My Plays with From Coach's envelope, which
   // is the same card component pasted twice rather than a decision. History keeps
   // the two maroon cards apart, at the plus's box and inset since it is square too.

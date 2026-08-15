@@ -9,6 +9,8 @@
 //                 the picker. With none, the card is dimmed and inert.
 //   My Plays      boards you've played (was "My Games", off the old Menu)
 //   From Coach    boards your coach assigned (was "Coach's Assignments")
+//   Curated Deals reserved by the design (870:752) and not yet specified — the
+//                 card is real, its destination is the placeholder screen
 //
 // The Deal of the Day hero the previous layout led with is gone — the design
 // replaced it with this grid. Its route (/play-board/[entryId]) still exists and
@@ -175,6 +177,17 @@ export default function PlayScreen() {
       icon: CARD_ICONS.history,
       suit: Brand.maroon,
       onPress: () => router.push("/plays"),
+      disabled: false,
+    },
+    {
+      key: "curated",
+      label: "Curated Deals",
+      icon: CARD_ICONS.sparkle,
+      suit: Brand.green,
+      // Nothing behind it yet. It opens the app's standing placeholder rather
+      // than swallowing the tap: a card that looks live and does nothing when
+      // pressed reads as broken, and this is the same screen Analysis shows.
+      onPress: () => router.push("/curated-deals"),
       disabled: false,
     },
   ];
