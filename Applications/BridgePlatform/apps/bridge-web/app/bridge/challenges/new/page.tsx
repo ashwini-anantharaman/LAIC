@@ -3,7 +3,8 @@ import { libraryStore } from "@/lib/sessions";
 import { normalizeDraft, type ChallengeDraft } from "../draft";
 import { CreateChallenge } from "./CreateChallenge";
 import { listChallengePeople, selfPerson } from "../people";
-import { requireFeature } from "@/lib/access";
+import { benAvailable } from "@/lib/benSeat";
+import { canUse, requireFeature } from "@/lib/access";
 import { getBridgeContext } from "@/lib/nexus";
 
 /**
@@ -39,6 +40,13 @@ export default async function NewChallengePage({
     }
   }
 
+  // Quick create is the whole wizard for most people; the advanced form is a
+  // separate capability so a program can keep challenge-making to two taps.
+  const canAdvanced = await canUse(context, "challenge.advanced");
+  // BEN is only offerable where the server can actually reach it — otherwise
+  // the choice is between the solver and a seat that would fail to act.
+  const benOffered = benAvailable();
+
   const people = await listChallengePeople(context);
   // Chosen here, not in the browser: the first paint and the hydrated tree
   // must deal the same cards.
@@ -50,6 +58,8 @@ export default async function NewChallengePage({
         people={people}
         self={selfPerson(context)}
         seedBase={seedBase}
+        canAdvanced={canAdvanced}
+        benOffered={benOffered}
         {...(initialDraft ? { initialDraft, draftEntryId } : {})}
       />
     </div>

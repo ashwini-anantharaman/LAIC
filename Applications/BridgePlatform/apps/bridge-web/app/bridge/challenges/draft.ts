@@ -11,6 +11,7 @@
 import {
   MAX_BOARDS,
   MIN_BOARDS,
+  type ChallengeEngine,
   type ChallengeFormat,
   type ChallengeScoring,
   type ControlOverride,
@@ -223,12 +224,36 @@ export interface ChallengeDraft {
   boards: ChallengeBoardDraft[];
   controlOverrides: Record<string, ControlOverride>;
   invites: ChallengeInviteDraft[];
+  /**
+   * Which robot fills the non-human seats. Absent MEANS the solver, which is
+   * what a challenge created today gets — see `challengeEngine`. Carried on the
+   * draft so a parked draft remembers a deliberate choice of BEN.
+   */
+  engine?: ChallengeEngine;
   /** True once a pack editor was OPENED on any board (spec §3). */
   editorBadge: boolean;
 }
 
 const SEAT_SET = new Set<string>(SEATS);
 const VUL_SET = new Set<string>(Object.keys(VUL_LABEL));
+/** The robot the non-human seats are filled with. */
+export const ENGINE_OPTIONS: readonly {
+  key: ChallengeEngine;
+  label: string;
+  blurb: string;
+}[] = [
+  {
+    key: "dd",
+    label: "Solver · double dummy",
+    blurb: "Plays a card in milliseconds and never misplays. A board takes seconds.",
+  },
+  {
+    key: "ben",
+    label: "BEN · neural",
+    blurb: "Plays like a person, mistakes included — but takes seconds per card, so a board is a long sit.",
+  },
+];
+
 const FORMATS = new Set<string>(FORMAT_OPTIONS.map((f) => f.key));
 const SCORINGS = new Set<string>(SCORING_OPTIONS.map((s) => s.key));
 const STANDINGS = new Set<string>(STANDINGS_OPTIONS.map((s) => s.key));
@@ -307,6 +332,9 @@ export function normalizeDraft(input: unknown): ChallengeDraft {
     boards,
     controlOverrides: overrides,
     invites,
+    // Only an explicit "ben" selects BEN; every other value, including a draft
+    // saved before the option existed, resolves to the solver.
+    engine: o.engine === "ben" ? "ben" : "dd",
     editorBadge: o.editorBadge === true,
   };
 }

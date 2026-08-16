@@ -89,11 +89,12 @@ export async function createChallengeAction(
   // record is byte-identical to one created before the option existed — which
   // is what makes this additive with no migration owed.
   const format = challengeFormat(draft);
-  // New challenges face the solver: a board takes seconds instead of the
-  // minutes BEN needs, and being deterministic it gives every entrant a
-  // genuinely identical opponent. Existing challenges are untouched — an
-  // absent `engine` still means BEN (see challengeEngine).
-  const engine: ChallengeEngine = "dd";
+  // The creator's choice, defaulting to the solver: a board takes seconds
+  // instead of the minutes BEN needs, and being deterministic it gives every
+  // entrant a genuinely identical opponent. Existing challenges are untouched
+  // — an absent `engine` on a STORED record still means BEN (challengeEngine),
+  // which is what they were created against.
+  const engine: ChallengeEngine = draft.engine === "ben" ? "ben" : "dd";
 
   const challenge: Challenge = {
     challengeId,

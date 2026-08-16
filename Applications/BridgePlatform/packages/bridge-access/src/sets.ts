@@ -59,7 +59,7 @@ export const CAPABILITY_SETS: readonly CapabilitySet[] = [
     id: "challenges",
     name: "Challenges",
     description: "Group challenges: the challenges list (playing, results, comparisons) and assembling a new one.",
-    featureKeys: ["page.challenges", "challenge.create"],
+    featureKeys: ["page.challenges", "challenge.create", "challenge.advanced"],
   },
   {
     id: "player_roster",
