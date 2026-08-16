@@ -49,6 +49,8 @@ import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
 import { getMyProgramRole } from "@/services/api";
 import { SessionProvider, useSession } from "@/nexus/session";
+import { apiConfigError } from "@/services/apiBase";
+import { BootBoundary, BootFailure } from "@/nexus/BootFailure";
 
 /** Send an authenticated user to the surface their mode allows. */
 function RootRedirect() {
@@ -193,14 +195,25 @@ function Routed() {
 }
 
 export default function NexusApp() {
+  // Checked BEFORE anything else renders. A build with no API URL cannot do a
+  // single useful thing, and the honest answer is a sentence saying so — the
+  // alternative is every screen failing separately, or (when this used to throw
+  // at import) no screen at all. See services/apiBase.ts for why it goes missing.
+  const configError = apiConfigError();
+  if (configError) {
+    return <BootFailure title="The console is not configured" detail={configError} />;
+  }
+
   return (
-    <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
-      <SessionProvider>
-        <BrowserRouter>
-          <Routed />
-        </BrowserRouter>
-        <Toaster />
-      </SessionProvider>
-    </ThemeProvider>
+    <BootBoundary>
+      <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
+        <SessionProvider>
+          <BrowserRouter>
+            <Routed />
+          </BrowserRouter>
+          <Toaster />
+        </SessionProvider>
+      </ThemeProvider>
+    </BootBoundary>
   );
 }
