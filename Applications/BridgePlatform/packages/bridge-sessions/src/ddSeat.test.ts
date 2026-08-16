@@ -86,9 +86,11 @@ describe("the double dummy seat", () => {
     expect(plays.every((e) => /takes \d+ tricks? from here/.test(e.reason))).toBe(true);
     // Nothing fell back to the knowledge base for a card.
     expect(plays.some((e) => e.fallback)).toBe(false);
-    // ...and the auction is NOT the solver: it comes from the knowledge base,
-    // which is the whole reason a peeking engine is acceptable here.
+    // ...and the auction is NOT the solver — seeing all four hands is no help
+    // in bidding — nor the knowledge base, which must never be seated here. It
+    // comes from the seat's own natural bidder.
     expect(bids.every((e) => e.reason.startsWith("Double dummy"))).toBe(false);
+    expect(bids.every((e) => /HCP|passed|available/.test(e.reason))).toBe(true);
   });
 
   it("never plays an illegal card", async () => {

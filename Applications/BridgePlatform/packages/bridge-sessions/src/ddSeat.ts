@@ -14,19 +14,25 @@
 //   strong, and knowingly unfair: it knows where every card is. That is what
 //   "double dummy" means and it is the price of the speed.
 //
-//   BIDS — the knowledge base the session is already playing on, through the
-//   ordinary KB decider. Seeing all four hands is no help in an auction (a bid
-//   has to be readable by partner, and a robot that peeked would bid slams
-//   nobody could explain), so the auction stays honest: this seat bids from the
-//   same written rules a learner is being taught, and it does it instantly.
+//   BIDS — a small self-contained natural bidder (ddBidder.ts). Seeing all four
+//   hands is no help in an auction — a bid has to be readable by partner, and a
+//   robot that peeked would bid slams nobody could explain — so the solver is
+//   not consulted for calls at all.
 //
-// Unlike BEN this needs nothing injected — no endpoint, no key, no service — so
-// SessionService builds it directly and it works in tests and offline.
+//   IT DOES NOT USE THE KNOWLEDGE BASE. It used to, and that was a mistake: the
+//   KB house player is shelved, and challenges forbid seating it "not even as a
+//   fallback", so bidding through it quietly reintroduced the shelved player
+//   into scored boards. The KB is not to be used here at all (owner,
+//   2026-08-16).
+//
+// So this seat needs nothing injected and nothing configured — no endpoint, no
+// key, no service, and no compiled knowledge base. SessionService builds it
+// directly and it works in tests and offline.
 
-import { createKbDecider, legalPlays, type Decision, type GameState } from "@bridge/engine";
+import { legalCalls, legalPlays, type Decision, type GameState } from "@bridge/engine";
 import type { Call, Card, Seat } from "@bridge/events";
-import type { CompiledKb } from "@bridge/kb";
 
+import { chooseCall, fallbackCard } from "./ddBidder";
 import { solvePlay } from "./ddsSolver";
 import type { SeatDecider } from "./index";
 
@@ -39,9 +45,9 @@ const RANK_NAME: Record<number, string> = {
 const cardName = (c: Card) => `${c.suit}${RANK_NAME[c.rank] ?? c.rank}`;
 
 export interface DdDeciderOptions {
-  compiled: CompiledKb;
-  sessionId: string;
-  seat: Seat;
+  /** Only used to label traces; this seat has no per-session configuration. */
+  sessionId?: string;
+  seat?: Seat;
 }
 
 /**
@@ -52,20 +58,21 @@ export interface DdDeciderOptions {
  * here, because the solver is given the acting seat and can see every hand
  * either way.
  */
-export function createDdDecider(options: DdDeciderOptions): SeatDecider {
-  const { compiled, sessionId, seat } = options;
-  // The auction runs on the session's own KB. An empty pack list means "every
-  // pack this knowledge base has", which is what an unconfigured robot should
-  // know — see effectiveSurface().
-  const bidder = createKbDecider({
-    compiled,
-    player: { enabledPackIds: [], settingOverrides: {}, decisionPolicyId: "first_match" },
-    seed: `${sessionId}_${seat}_dd`,
-  });
-
+export function createDdDecider(_options: DdDeciderOptions = {}): SeatDecider {
   return {
-    decideBid: (state: GameState, actingSeat: Seat): Promise<Decision<Call>> =>
-      bidder.decideBid(state, actingSeat),
+    async decideBid(state: GameState, actingSeat: Seat): Promise<Decision<Call>> {
+      const chosen = chooseCall(state, actingSeat);
+      return {
+        action: chosen.call,
+        candidates: [...legalCalls(state.auction, actingSeat)],
+        trace: [],
+        citedSettings: [],
+        facts: { source: "natural-bidder" },
+        reason: chosen.why,
+        rejected: [],
+        fallback: false,
+      };
+    },
 
     async decidePlay(state: GameState, actingSeat: Seat): Promise<Decision<Card>> {
       // The engine's own view of what may be played is the guard on everything
@@ -73,10 +80,19 @@ export function createDdDecider(options: DdDeciderOptions): SeatDecider {
       const legal = legalPlays(state, actingSeat);
       const legalSet = new Set(legal.map((c) => `${c.suit}${c.rank}`));
 
-      const degrade = async (why: string): Promise<Decision<Card>> => {
-        const d = await bidder.decidePlay(state, actingSeat);
-        return { ...d, fallback: true, reason: `${why} — ${d.reason}` };
-      };
+      // The gap-filler is a rule, not another decider — reaching for the KB
+      // here would put the shelved house player back on the board by the side
+      // door, which is exactly what this seat must never do.
+      const degrade = (why: string): Decision<Card> => ({
+        action: fallbackCard(state, actingSeat, legal),
+        candidates: [...legal],
+        trace: [],
+        citedSettings: [],
+        facts: { source: "double-dummy", degraded: true },
+        reason: `${why} — played the lowest legal card`,
+        rejected: [],
+        fallback: true,
+      });
 
       let solved: Awaited<ReturnType<typeof solvePlay>>;
       try {

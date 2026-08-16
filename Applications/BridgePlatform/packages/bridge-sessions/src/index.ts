@@ -489,7 +489,8 @@ export class SessionService {
           : config.kind === "ben"
             ? this.benSeatDecider(record, compiled, seat)
           : config.kind === "dd"
-            ? createDdDecider({ compiled, sessionId: record.sessionId, seat })
+            // No `compiled` — the solver seat needs no knowledge base at all.
+            ? createDdDecider({ sessionId: record.sessionId, seat })
           : createKbDecider({
               compiled,
               player: {
