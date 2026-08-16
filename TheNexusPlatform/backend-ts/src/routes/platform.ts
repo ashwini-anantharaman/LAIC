@@ -28,6 +28,8 @@ import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
 import * as provisioning from "../accessCatalogue/provisioning";
+import * as clubAppAccess from "../accessCatalogue/clubAppAccess";
+import * as contentCaps from "../accessCatalogue/contentCapMap";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
@@ -1009,36 +1011,12 @@ platformRouter.get("/bridge/context", async (c) => {
     try {
       const clubProgram = await db.getProgram(access.partnerProgramId);
       const clubOrgId = (clubProgram?.org_id as string | undefined) ?? null;
-      const structuralTier =
-        !!clubOrgId &&
-        user.memberships.some(
-          (m) =>
-            m.org_id === clubOrgId &&
-            ["owner", "administrator"].includes(m.role) &&
-            (!m.program_id || m.program_id === access.partnerProgramId),
-        );
-      let clubRoleName: string | null = null;
-      let granted: string[] = [];
-      let clubAreaLevel: string | null = null;
-      if (!structuralTier && user.email) {
-        const role = await graph
-          .getProgramRoleForEmail(access.partnerProgramId, user.email)
-          .catch(() => null);
-        if (role) {
-          clubRoleName = (role.role_name as string | null) ?? null;
-          const perms = (role.perms as Record<string, unknown>) ?? {};
-          granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
-          // The role's grant level on the app's own area — "administrator"
-          // means the whole catalogue and stores no per-capability ids.
-          clubAreaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
-        }
-      }
-      const resolved = await appRoles.appAccessFor(access.partnerProgramId, {
-        structuralTier,
-        areaLevel: clubAreaLevel,
-        roleName: clubRoleName,
-        programRoleCapabilities: granted,
-      });
+      const resolved = await clubAppAccess.clubAppAccessFor(
+        user,
+        access.partnerProgramId,
+        clubOrgId,
+        (programId, email) => graph.getProgramRoleForEmail(programId, email),
+      );
       appCapabilities = resolved.capabilities;
       // The org's CEILING, separate from the role's grants — canCreateChallenge
       // falls back to a coarse "a mentor may create" rule when the grants are
@@ -1786,36 +1764,14 @@ async function _clubAppActor(c: Context) {
 }
 
 platformRouter.get("/club-app/context", async (c) => {
-  const { user, programId, programName, structuralTier } = await _clubAppActor(c);
+  const { user, programId, orgId, programName, structuralTier } = await _clubAppActor(c);
 
-  // The ONE role they hold in this club, and what it grants.
-  let roleName: string | null = null;
-  let granted: string[] = [];
-  let areaLevel: string | null = null;
-  if (!structuralTier && user.email) {
-    const role = await graph.getProgramRoleForEmail(programId, user.email).catch(() => null);
-    if (role) {
-      roleName = (role.role_name as string | null) ?? null;
-      const perms = (role.perms as Record<string, unknown>) ?? {};
-      granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
-      // The role's grant level on the app's own area — "administrator" means
-      // the whole catalogue and stores no per-capability ids.
-      areaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
-    }
-  }
-
-  let result: { roleName: string | null; capabilities: string[] } = { roleName, capabilities: [] };
-  try {
-    result = await appRoles.appAccessFor(programId, {
-      structuralTier,
-      areaLevel,
-      roleName,
-      programRoleCapabilities: granted,
-    });
-  } catch (e) {
-    // A bad role or catalogue must never lock someone out of the app entirely.
-    console.error("club-app/context capability computation failed (using empty set):", e);
-  }
+  // The ONE role they hold in this club, and what it grants. Shared with
+  // /bridge/context and the learning path so the three cannot disagree; it also
+  // absorbs the "a bad role must never lock someone out" guard that used to sit here.
+  const result = await clubAppAccess.clubAppAccessFor(user, programId, orgId, (pid, email) =>
+    graph.getProgramRoleForEmail(pid, email),
+  );
   // The org's CEILING, sent as its own fact. The app cannot derive it from
   // `capabilities` above: an empty set there means "no fine role" (and the app
   // falls back to coarse behaviour), while an admin skips capabilities entirely.
@@ -2410,6 +2366,32 @@ async function _learningEffective(
     ? await graph.getLearningRoleForEmail(access.partnerProgramId ?? access.programId, user.email)
     : null;
 
+  /**
+   * The club role's content grants, or null when this is not a club, the switch is
+   * off, or the role says nothing about content.
+   *
+   * `null` IS THE BACKWARD-COMPATIBILITY HINGE. A club that has never been granted an
+   * `app.content.*` id falls straight through to the branches below and gets exactly
+   * the answer it gets today. Absent is not denial, here as everywhere.
+   */
+  let clubContent: { roleName: string | null; capabilities: string[] } | null = null;
+  if (process.env.NEXUS_CLUB_CONTENT_CAPS !== "off" && access.partnerClub && access.partnerProgramId) {
+    try {
+      const clubProgram = await db.getProgram(access.partnerProgramId);
+      const resolved = await clubAppAccess.clubAppAccessFor(
+        user,
+        access.partnerProgramId,
+        (clubProgram?.org_id as string | undefined) ?? null,
+        (pid, email) => graph.getProgramRoleForEmail(pid, email),
+      );
+      if (contentCaps.hasContentCaps(resolved.capabilities)) clubContent = resolved;
+    } catch (e) {
+      // A club-app failure must not decide a learning question. Falls through to
+      // today's branches, which is the answer this person already had.
+      console.error("club content capability resolution failed (falling back):", e);
+    }
+  }
+
   let capabilities: string[] = [];
   let fineGrained = false;
   // Defensive: never let capability computation break context resolution.
@@ -2424,6 +2406,40 @@ async function _learningEffective(
     } else if (Array.isArray(roleCaps) && roleCaps.length) {
       capabilities = roleCaps as string[];
       fineGrained = true;
+    } else if (clubContent) {
+      // The club role governs CONTENT, the same way it already governs challenges
+      // and chat. See accessCatalogue/contentCapMap.ts for why this exists: without
+      // it, a club member's content authority is the club's PROVISIONING envelope,
+      // so every member of a provisioned club has identical authority and "who in
+      // this club may author?" has nowhere to be answered.
+      //
+      // UNION, not replacement. Only the ids in GOVERNED_LEARNING_CAPS are ever
+      // enforced here or drive a button; the rest of the catalogue is Studio screen
+      // gating, and taking it away would remove screens a member reaches today
+      // through their level — a silent revocation on surfaces nobody tests.
+      capabilities = contentCaps.unionWithLevel(
+        contentCaps.mapContentCaps(clubContent.capabilities),
+        _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view"),
+      );
+      // STILL FALSE in this phase, deliberately — this is the dry run. Turning it on
+      // is what makes _requireLearningCap start refusing, and it must not happen
+      // until the log below has shown who that would affect. One line, one flip.
+      fineGrained = false;
+      const wouldRefuse = [...contentCaps.GOVERNED_LEARNING_CAPS].filter(
+        (id) => !capabilities.includes(id),
+      );
+      if (wouldRefuse.length) {
+        console.log(
+          "[club-content dry-run]",
+          JSON.stringify({
+            club: access.partnerProgramId,
+            email: user.email ?? null,
+            role: clubContent.roleName,
+            appCaps: clubContent.capabilities.filter((c) => c.startsWith("app.content.")),
+            wouldRefuse,
+          }),
+        );
+      }
     } else if (programCaps.length) {
       capabilities = programCaps;
       fineGrained = true;
