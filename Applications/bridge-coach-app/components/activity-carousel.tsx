@@ -53,15 +53,33 @@ export type Activity = {
   onPress?: () => void;
 };
 
+/**
+ * `loading` and `error` mirror the Roster's prop contract on the same screen, so the
+ * two blocks on the Club tab report themselves the same way.
+ *
+ * NOT an early return on error, unlike Roster: the pinned challenge cards are still
+ * valid and still the row's primary entry points, so the note renders BENEATH them.
+ * `loading` deliberately renders nothing — its job is to suppress a premature error
+ * or empty line during the fetch, not to add a spinner under a row that already has
+ * cards in it.
+ *
+ * Why this exists at all: a club with the Content Studio switched off, an expired
+ * session, and a club that has genuinely published nothing were pixel-identical here.
+ * A tester could not tell a broken feature from an empty one.
+ */
 export function ActivityCarousel({
   activities,
   /** The screen's design-space scale — width / 390. */
   scale: s,
   onAdd,
+  loading = false,
+  error = null,
 }: {
   activities: Activity[];
   scale: number;
   onAdd?: () => void;
+  loading?: boolean;
+  error?: string | null;
 }) {
   const tile = D.tile * s;
   const gap = (D.pitch - D.tile) * s;
@@ -69,6 +87,7 @@ export function ActivityCarousel({
   const sideInset = ((390 - D.tile) / 2) * s;
 
   return (
+    <View>
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
@@ -111,6 +130,9 @@ export function ActivityCarousel({
         </Pressable>
       ) : null}
     </ScrollView>
+
+      {error && !loading ? <Text style={styles.note}>{error}</Text> : null}
+    </View>
   );
 }
 
@@ -167,5 +189,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   detail: { fontFamily: Fonts.body, color: Brand.ink },
+  /** The Roster's stateText treatment, so the club's two blocks speak alike. */
+  note: {
+    fontFamily: Fonts.body,
+    fontSize: 13,
+    color: "rgba(31,31,31,0.55)",
+    textAlign: "center",
+    paddingTop: 14,
+    paddingHorizontal: 24,
+  },
   pressed: { opacity: 0.75 },
 });

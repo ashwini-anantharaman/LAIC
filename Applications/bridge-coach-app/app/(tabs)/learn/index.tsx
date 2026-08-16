@@ -31,9 +31,8 @@ import {
 import { useAuth } from "../../../lib/auth-context";
 import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
-import { getLearningObjects, splitByOwner, primeLearningCache } from "../../../lib/learning";
-import { subscribeToLiveLearning } from "../../../lib/learning-live";
-import { LearningObject, NexusError } from "../../../lib/nexus";
+import { describeLearningError, getLearningObjects, splitByOwner } from "../../../lib/learning";
+import { LearningObject } from "../../../lib/nexus";
 
 /**
  * The shelves, top to bottom, and which Studio type ids belong on each.
@@ -121,16 +120,12 @@ export default function LearnScreen() {
         // here would make one club's material everyone's reading list.
         setCards(splitByOwner(all, clubId).curriculum);
       } catch (e) {
-        // Show the SERVER'S own 403 reason. It distinguishes "this feature is not
-        // enabled for the program" (a Features toggle on the club) from "your role
-        // does not grant access" (a role grant) — two different fixes that the old
-        // single message flattened into one, sending anyone who hit it looking in
-        // the wrong place.
-        setError(
-          e instanceof NexusError && e.status === 403
-            ? `${e.message} (learning access for this club)`
-            : "Couldn't load content. Check that the Nexus backend is running.",
-        );
+        // Shared with the Club tab so the two cannot drift. It keeps the SERVER'S own
+        // 403 reason — which distinguishes "this feature is not enabled for the
+        // program" from "your role does not grant access", two different fixes — and
+        // adds the 404 case this screen used to mistranslate as "check that the Nexus
+        // backend is running", sending anyone who hit it to look at the wrong thing.
+        setError(describeLearningError(e));
       }
     },
     [token, clubId],
@@ -139,26 +134,6 @@ export default function LearnScreen() {
   useEffect(() => {
     load();
   }, [load]);
-
-  /**
-   * Live updates: an author publishes elsewhere and this list changes under us.
-   *
-   * The subscription hands back the whole fresh list (see subscribeToLiveLearning),
-   * which is primed into the shared cache so the reader screen and a later focus
-   * both see the same rows rather than the tab holding a private newer copy.
-   *
-   * Does nothing when the direct path is unavailable — the foreground and focus
-   * refetches below are then the only liveness, which is the behaviour that shipped
-   * before this and remains the fallback.
-   */
-  useEffect(() => {
-    if (!token) return;
-    return subscribeToLiveLearning(token, (objects) => {
-      // Same split as the fetch above: a live push must not put club-authored
-      // content on the curriculum shelves that the initial load keeps off them.
-      setCards(splitByOwner(primeLearningCache(token, clubId ?? undefined, objects), clubId).curriculum);
-    });
-  }, [token, clubId]);
 
   /**
    * Refetch when the app comes back to the foreground.

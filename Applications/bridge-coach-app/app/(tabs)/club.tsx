@@ -56,9 +56,11 @@ import { useCan } from "../../lib/use-can";
 import type { LearningObject } from "../../lib/nexus";
 import {
   canAuthorLearning,
+  describeLearningError,
   getLearningContext,
   getLearningObjects,
   splitByOwner,
+  type LearningLoad,
 } from "../../lib/learning";
 import {
   fetchAppMembers,
@@ -287,8 +289,21 @@ export default function ClubScreen() {
   const [canAuthor, setCanAuthor] = useState(false);
   /** The club's OWN authored content, which the Activities row lists after the
    *  pinned challenges. The curriculum above the club is the Learn tab's, not this
-   *  row's — a club's row is about the club. */
-  const [clubContent, setClubContent] = useState<LearningObject[]>([]);
+   *  row's — a club's row is about the club.
+   *
+   *  A LOAD STATE, not a bare array: this used to swallow every failure into `[]`,
+   *  so a club with the Content Studio switched off looked exactly like a club that
+   *  had published nothing. */
+  const [clubContent, setClubContent] = useState<LearningLoad>({ state: "loading" });
+  /**
+   * The club the screen is CURRENTLY showing, readable from inside an async tail.
+   *
+   * `club?.id` captured in the closure is the club we started the read for; this is
+   * the club we are on when it lands. Comparing them is what stops a slow answer for
+   * a club we have left from painting over the one we switched to — the same
+   * discipline the pinned-challenge read uses with its `loaded.clubId` guard.
+   */
+  const clubRef = useRef<string | null>(null);
   /** Which "add" options to offer; null while closed. */
   const [addOpen, setAddOpen] = useState(false);
   const canChallenges = useCan("app.challenge.view", true);
@@ -489,23 +504,40 @@ export default function ClubScreen() {
    */
 // The club's own authored content, and whether this person may add more. Both
   // are per club, so both re-resolve on a club switch.
+  // Assigned during RENDER, not in an effect. An effect runs after the first
+  // useFocusEffect fires, so the ref would still be null when the very first load
+  // landed and the guard below would throw away the answer it was waiting for.
+  clubRef.current = club?.id ?? null;
+
   const loadClubContent = useCallback(
     async (opts: { refresh?: boolean } = {}) => {
       if (!token || !club?.id) {
         setCanAuthor(false);
-        setClubContent([]);
+        setClubContent({ state: "ready", objects: [] });
         return;
       }
-      const [ctx, objects] = await Promise.all([
-        getLearningContext(token, club.id),
-        // `refresh` matters: the module cache is one slot shared with the Learn tab,
-        // so without it a list warmed seconds ago by that tab is reused verbatim —
-        // and the whole point of coming back here is to see something new.
-        getLearningObjects(token, { programId: club.id, ...opts }).catch(() => []),
-      ]);
-      setCanAuthor(canAuthorLearning(ctx));
-      // Only the club's half: the parent's curriculum belongs to the Learn tab.
-      setClubContent(splitByOwner(objects, club.id).club);
+      const forClub = club.id;
+      try {
+        const [ctx, objects] = await Promise.all([
+          getLearningContext(token, forClub),
+          // `refresh` matters: the module cache is one slot shared with the Learn tab,
+          // so without it a list warmed seconds ago by that tab is reused verbatim —
+          // and the whole point of coming back here is to see something new.
+          getLearningObjects(token, { programId: forClub, ...opts }),
+        ]);
+        // Same discipline as the pinned-challenge read above: a slower answer for the
+        // club we have just left must not land on the club we are now looking at.
+        if (clubRef.current !== forClub) return;
+        setCanAuthor(canAuthorLearning(ctx));
+        // Only the club's half: the parent's curriculum belongs to the Learn tab.
+        setClubContent({ state: "ready", objects: splitByOwner(objects, forClub).club });
+      } catch (e) {
+        if (clubRef.current !== forClub) return;
+        // The `.catch(() => [])` that used to be here is the whole reason this screen
+        // could not tell a refusal from an empty club. Shared with the Learn tab so
+        // the two cannot drift.
+        setClubContent({ state: "failed", message: describeLearningError(e) });
+      }
     },
     [token, club?.id],
   );
@@ -571,7 +603,7 @@ export default function ClubScreen() {
     // boxes exist so a new challenge and one you are mid-way through are always
     // both visible, and content filling the front of the row would push the thing
     // you were doing out of sight — the exact problem the pinning solved.
-    ...clubContent.map((o) => ({
+    ...(clubContent.state === "ready" ? clubContent.objects : []).map((o) => ({
       id: `content-${o.id}`,
       kind: "document" as const,
       title: o.title,
@@ -714,6 +746,8 @@ export default function ClubScreen() {
               <ActivityCarousel
                 activities={activities}
                 scale={s}
+                loading={clubContent.state === "loading"}
+                error={clubContent.state === "failed" ? clubContent.message : null}
                 // No + at all for someone who may create neither: an inert button
                 // that opens an empty sheet is worse than no button.
                 {...(canCreateChallenge || canAuthor ? { onAdd: () => setAddOpen(true) } : {})}

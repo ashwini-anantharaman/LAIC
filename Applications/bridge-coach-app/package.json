@@ -10,14 +10,14 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "publish:preview": "dotenv -e .env.eas -- eas update --branch preview --clear-cache",
-    "publish:production": "dotenv -e .env.eas -- eas update --branch production --clear-cache"  },
+    "publish:production": "dotenv -e .env.eas -- eas update --branch production --clear-cache"
+  },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/material-top-tabs": "^7.6.13",
     "@react-navigation/native": "^7.1.8",
-    "@supabase/supabase-js": "^2.112.3",
     "expo": "~54.0.35",
     "expo-blur": "~15.0.8",
     "expo-constants": "~18.0.13",
