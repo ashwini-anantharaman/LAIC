@@ -15,11 +15,19 @@
 // stripped when it is a full-bleed <rect> — never from a path.
 //
 // The tree is additionally SPLIT so wind can move the leaves independently of
-// the trunk: the trunk is a single #421313 path and the leaves are 47 paths
-// (#618C52 green, #F389AC pink), all with coordinates baked in and no
-// transforms. Leaves are sorted by height and dealt into bands, so the home
-// screen can sway the upper canopy harder than the lower — which is what makes
-// it read as wind rather than a wobble.
+// the trunk: the trunk is a single #421313 path and the leaves are 57 paths
+// (#348E48 green, #F389AC pink), all with coordinates baked in and no
+// transforms.
+//
+// tree-back.svg is the SECOND canopy — 136 darker #286836 suits that sit BEHIND
+// the trunk and read as depth, the far side of a fuller tree. It stays one flat
+// SVG rather than being split into sprites: it never moves (a background layer
+// that drifts reads as the whole scene sliding), and 136 more animated views
+// would cost far more than the depth is worth.
+//
+// Both are exported in the FRAME's coordinate space (390x848) rather than a
+// tree-local box, so the trunk, both canopies, the hills and the nests all share
+// one origin and nothing needs a hand-tuned offset.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -32,6 +40,17 @@ const outFile = join(root, "constants", "brand-vectors.ts");
 /** file basename → exported const name. `tree.svg` is handled separately. */
 const NAMES = {
   "hills.svg": "HILLS_SVG",
+  // The far canopy. One flat SVG on purpose — see the header note.
+  "tree-back.svg": "TREE_BACK_SVG",
+  // The wordmark's two accents: a heart over the i of "Bridge", a bird over the
+  // i of "Bird". They replace the trailing ICON_BIRD_GLYPH the old lockup used.
+  // The bird arrives from Figma as a luminance mask over a filled rect; it is
+  // stored here as the mask's own path, stroked in the same colour it fills
+  // (the mask's stroke is what gives the glyph its weight), because
+  // react-native-svg's mask support is partial and a mask it cannot resolve
+  // would leave the bare 15x11 rectangle sitting on the wordmark.
+  "logo-heart.svg": "LOGO_HEART",
+  "logo-bird.svg": "LOGO_BIRD",
   "icon-challenge-card.svg": "ICON_CHALLENGE_CARD",
   "icon-bird-flight.svg": "ICON_BIRD_FLIGHT",
   "icon-learners.svg": "ICON_LEARNERS",
@@ -57,7 +76,6 @@ const NAMES = {
   "icon-cards.svg": "ICON_CARDS",
   "icon-gear.svg": "ICON_GEAR",
   "icon-menu.svg": "ICON_MENU",
-  "icon-birdglyph.svg": "ICON_BIRD_GLYPH",
   "icon-pin.svg": "ICON_PIN",
   // Friends (Figma 851:434). The bell is the notification glyph only — its
   // count badge is a live number, so it is drawn as a view, not baked in here.
@@ -89,7 +107,7 @@ const NAMES = {
 };
 
 const TRUNK_FILL = "#421313";
-const LEAF_FILLS = ["#618C52", "#F389AC"];
+const LEAF_FILLS = ["#348E48", "#F389AC"];
 /**
  * Breathing room around each leaf sprite, in design units.
  *
@@ -237,7 +255,11 @@ const lines = [
   "//",
   "// The tree arrives pre-split: TREE_TRUNK_SVG, plus TREE_LEAVES — one sprite",
   "// per leaf with its own tight viewBox and its position in design space, so",
-  "// each leaf can drift on its own without the branches moving.",
+  "// each leaf can drift on its own without the branches moving. TREE_BACK_SVG",
+  "// is the darker far canopy and stays whole, because it never moves.",
+  "//",
+  "// Tree space IS frame space (390x848): the trunk, both canopies, the hills",
+  "// and the nests all measure from the same origin.",
   "//",
   "// Re-run the script after re-exporting any SVG.",
   "",
@@ -255,7 +277,7 @@ const lines = [
     " */",
     `export const LEAF_PAD = ${LEAF_PAD};`,
     "",
-    "/** One leaf: its own SVG, and where it sits in the 390x720 design space. */",
+    "/** One leaf: its own SVG, and where it sits in the 390x848 design space. */",
     "export type LeafSprite = { svg: string; x: number; y: number; w: number; h: number };",
     "",
     "export const TREE_LEAVES: LeafSprite[] = [",
