@@ -125,6 +125,17 @@ export type EmbeddableObjectType =
   | 'scenario'
   | 'assignment'
   | 'reflection'
+  /**
+   * Tutorial V3 block types. Embeddable in a template recipe like the object
+   * types above, but they are blocks rather than standalone library objects —
+   * there is no `lesson-overview` sitting in the Object Library.
+   */
+  | 'lesson-overview'
+  | 'lesson-complete'
+  | 'reference-table'
+  | 'quick-decisions'
+  | 'matching'
+  | 'opening-question'
   | 'reused-from-library';
 
 export type EmbeddedObjectSourceMode =

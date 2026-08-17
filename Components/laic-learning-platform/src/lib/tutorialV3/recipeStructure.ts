@@ -322,6 +322,12 @@ export function embedTypeLabel(objectType: string): string {
     scenario: 'Scenario',
     assignment: 'Assignment',
     reflection: 'Reflection',
+    'lesson-overview': 'Lesson overview',
+    'lesson-complete': 'Lesson complete',
+    'reference-table': 'Reference table',
+    'quick-decisions': 'Quick decisions',
+    matching: 'Matching',
+    'opening-question': 'Opening question',
     'reused-from-library': 'Library content',
   };
   return map[objectType] || objectType;

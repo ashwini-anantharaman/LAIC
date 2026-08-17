@@ -52,6 +52,18 @@ export function defaultDefineConfig(
     if (s.cite != null) fromMeta.cite = s.cite !== false;
   } else if (objectType === 'reflection') {
     if (s.voi) fromMeta.voi = s.voi;
+  } else if (objectType === 'lesson-overview' || objectType === 'lesson-complete') {
+    fromMeta.obj = intent || String(s.title || '');
+    fromMeta.aud = 'High school';
+  } else if (
+    objectType === 'reference-table'
+    || objectType === 'quick-decisions'
+    || objectType === 'matching'
+    || objectType === 'opening-question'
+  ) {
+    // One field carries the intent for all four; the rest are counts with
+    // sensible defaults, seeded by seedDefineValues below.
+    fromMeta.what = intent || String(s.title || '');
   } else {
     fromMeta.objective = intent;
   }
@@ -68,6 +80,12 @@ export function objectTypeNoun(objectType: string): string {
     reflection: 'reflection',
     summary: 'summary',
     drill: 'drill',
+    'lesson-overview': 'lesson overview',
+    'lesson-complete': 'lesson complete',
+    'reference-table': 'reference table',
+    'quick-decisions': 'quick decisions',
+    matching: 'matching exercise',
+    'opening-question': 'opening question',
   };
   return map[objectType] || objectType;
 }

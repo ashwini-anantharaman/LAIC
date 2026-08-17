@@ -17,6 +17,7 @@ import {
   type GeneratedCard,
   type GeneratedConceptCard,
   type GeneratedQuizQuestion,
+  type StructuredObjectKind,
   type TutorialExtract,
 } from '../../../../lib/api';
 import { makeGeneratedEmbedPart } from '../../../../lib/libraryEmbed';
@@ -29,6 +30,20 @@ import {
 import type { TutorialV3Part, V3SourceRef, V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
 import type { Block, ClusteredKnowledgeBase, ContentUnit, ObjectType } from '../../../../lib/types';
 import { DefineStepForm } from '../DefineStepForm';
+
+/**
+ * The block types Tutorial V3 added. They share one generate branch because
+ * they share one contract: a Define group shaped to the prompt, a single JSON
+ * object back, and a block whose `type` is the slot's own objectType.
+ */
+const V3_BLOCK_TYPES = new Set([
+  'lesson-overview',
+  'lesson-complete',
+  'reference-table',
+  'quick-decisions',
+  'matching',
+  'opening-question',
+]);
 
 type Substep = 'pick' | 'markup' | 'extract' | 'define' | 'run';
 
@@ -346,6 +361,30 @@ export function TutorialV3ObjectGeneratePane({
         if (!content) throw new Error(`No ${noun} was generated.`);
         resultTitle = String((content as any).objective || (content as any).goal || title);
         blocks = [{ id: `blk-${objectType}-${slot.id}`, type: objectType as any, content }];
+      } else if (V3_BLOCK_TYPES.has(objectType)) {
+        /*
+          The six Tutorial V3 block types. Their Define groups are already
+          shaped to the prompt — one intent field and a count — so `define`
+          goes through as the config rather than being re-mapped field by
+          field the way the older object types are.
+        */
+        let content: Record<string, unknown> | null = null;
+        for await (const ev of generateStructuredObject(objectType as StructuredObjectKind, {
+          title,
+          config: { ...define },
+          extracts: pack,
+          knowledgeBase: knowledgeBase || undefined,
+          shapeIntent: shapeIntent || undefined,
+          prompt: define.instructions || undefined,
+        }, ctrl.signal)) {
+          if (ev.type === 'progress') setProgress(ev.message);
+          else if (ev.type === 'result') content = ev.content as Record<string, unknown>;
+          else if (ev.type === 'error') throw new Error(ev.message);
+          else if (ev.type === 'done') break;
+        }
+        if (!content) throw new Error(`No ${noun} was generated.`);
+        resultTitle = String((content as any).title || define.what || title);
+        blocks = [{ id: `blk-${objectType}-${slot.id}`, type: objectType as Block['type'], content: content as unknown as Block['content'] }];
       } else {
         throw new Error(`Generate pipeline for “${objectType}” is not wired yet.`);
       }

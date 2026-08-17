@@ -29,7 +29,9 @@ import {
 import {
   isNestedEditablePart,
   isNestedPartEmpty,
+  isV3BlockEmbedPart,
   nestedEditorKindForPart,
+  v3BlockEmbedLabel,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
 import type { TutorialV3Draft, TutorialV3Part, V3Section, V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
 import type { ContentUnit, TutorialSectionPlan, TutorialTemplate } from '../../../../lib/types';
@@ -685,6 +687,28 @@ function WritePane({
                   </button>
                 )}
               </div>
+            </div>
+          ) : isV3BlockEmbedPart(p) ? (
+            <div>
+              <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
+                {p.libraryTitle || p.label || v3BlockEmbedLabel(p)}
+                <span style={{ color: '#9AA3AF' }}> · {v3BlockEmbedLabel(p)}</span>
+              </p>
+              <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.5 }}>
+                Authored by generating it from your sources. There is no separate editor for this
+                block — regenerate to change it.
+              </p>
+              {onGeneratePart && (
+                <button
+                  type="button"
+                  onClick={() => onGeneratePart(p)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border"
+                  style={{ fontSize: 12.5, fontWeight: 650, color: '#4C1D95', borderColor: 'rgba(109,40,217,0.35)', background: 'rgba(109,40,217,0.06)' }}
+                >
+                  <Sparkles size={13} />
+                  {p.snapshotBlocks?.length ? 'Regenerate with AI' : 'Generate with AI'}
+                </button>
+              )}
             </div>
           ) : isMediaPart(p) ? (
             <MediaSlotEditor part={p} onChange={(patch) => onChangePart(p.id, patch)} />

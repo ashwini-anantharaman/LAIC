@@ -254,6 +254,33 @@ export function applyStructuredResult(
   return asLibraryEmbed(part, kind, title, blocks);
 }
 
+/**
+ * Tutorial V3 block types embedded in a tutorial.
+ *
+ * They have no dedicated object editor — there is no standalone `matching` to
+ * edit — so they are authored by generating them and refined by regenerating.
+ * The write pane needs to recognise them so they do not fall through to the
+ * plain-text branch and offer a body textarea for a block that has no body.
+ */
+const V3_BLOCK_EMBEDS = new Set<string>([
+  'lesson-overview',
+  'lesson-complete',
+  'reference-table',
+  'quick-decisions',
+  'matching',
+  'opening-question',
+]);
+
+export function isV3BlockEmbedPart(part: TutorialV3Part): boolean {
+  if (V3_BLOCK_EMBEDS.has(String(part.type))) return true;
+  return part.type === 'library-embed' && V3_BLOCK_EMBEDS.has(String(part.objectType));
+}
+
+export function v3BlockEmbedLabel(part: TutorialV3Part): string {
+  const t = V3_BLOCK_EMBEDS.has(String(part.type)) ? String(part.type) : String(part.objectType || '');
+  return t.replace(/-/g, ' ');
+}
+
 export function isNestedEditablePart(part: TutorialV3Part): boolean {
   return nestedEditorKindForPart(part) != null;
 }

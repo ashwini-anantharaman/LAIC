@@ -31,6 +31,14 @@ const ADD_GENERATE_TYPES: { type: string; label: string }[] = [
   { type: 'reflection', label: 'Reflection' },
   { type: 'assignment', label: 'Assignment' },
   { type: 'drill', label: 'Drill' },
+  // Tutorial V3 block types. Same slot, same sources → markup → generate run;
+  // they produce one block rather than a standalone library object.
+  { type: 'lesson-overview', label: 'Lesson overview' },
+  { type: 'lesson-complete', label: 'Lesson complete' },
+  { type: 'reference-table', label: 'Reference table' },
+  { type: 'quick-decisions', label: 'Quick decisions' },
+  { type: 'matching', label: 'Matching' },
+  { type: 'opening-question', label: 'Opening question' },
 ];
 
 export function TutorialV3StructurePanel({

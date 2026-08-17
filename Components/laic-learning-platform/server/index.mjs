@@ -4071,23 +4071,410 @@ function buildDrillPrompt(body) {
   return { system, user };
 }
 
+/* ─── Tutorial V3 block types: prompts + normalizers ──────────────
+   Six shapes the Block Atlas specified. Each follows the same contract as
+   summary/reflection/assignment/drill above: build → callAnthropic →
+   extractJson → normalize, and the normalizer is the only thing that decides
+   what reaches a learner. A model that returns something unusable returns
+   null here and the route reports a parse failure rather than shipping half
+   an exercise into a tutorial.                                            */
+
+function strList(v, cap = 12) {
+  if (!Array.isArray(v)) return [];
+  return v.map((x) => String(x || '').trim()).filter(Boolean).slice(0, cap);
+}
+
+/* ---- lesson-overview ---- */
+
+function normalizeLessonOverview(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const want = Math.max(3, Math.min(8, Number(config.nobj) || 5));
+  const objectives = strList(raw.objectives, want);
+  if (!objectives.length) return null;
+  return {
+    intro: String(raw.intro || '').trim() || undefined,
+    objectives,
+    coreIdea: String(raw.coreIdea || '').trim() || undefined,
+    coreRule: String(raw.coreRule || '').trim() || undefined,
+    ctaLabel: String(prev.ctaLabel || '').trim() || undefined,
+  };
+}
+
+function buildLessonOverviewPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const nobj = Math.max(3, Math.min(8, Number(c.nobj) || 5));
+  const system = [
+    'You write the FRONT COVER of one lesson as STRUCTURED JSON.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define (what the lesson teaches, audience) and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"intro":string,"objectives":string[],"coreIdea":string,"coreRule":string}',
+    `Exactly ${nobj} objectives. Each is one line, learner-facing, and names something the learner will be able to DO — not a topic heading.`,
+    'coreIdea is the single idea the whole lesson turns on, two or three sentences.',
+    'coreRule is ONE sentence a learner could carry away and apply. It must be a rule, not a summary.',
+    'intro is two sentences that make the lesson worth starting. Do not greet the reader.',
+    `Audience "${c.aud || 'High school'}" — reading level only, never mention it.`,
+  ].join('\n');
+  const user = [
+    `Lesson title: ${title || '(untitled)'}`,
+    `What the lesson teaches: ${c.obj || title || '(from source)'}`,
+    `Audience: ${c.aud || 'High school'}`,
+    `Objectives wanted: ${nobj}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the lesson overview JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
+/* ---- lesson-complete ---- */
+
+function normalizeLessonComplete(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const want = Math.max(3, Math.min(8, Number(config.nchk) || 5));
+  const checklist = strList(raw.checklist, want);
+  if (!checklist.length) return null;
+  return {
+    heading: String(raw.heading || '').trim() || undefined,
+    subheading: String(raw.subheading || '').trim() || undefined,
+    checklist,
+    whatNext: String(raw.whatNext || '').trim() || undefined,
+    ctaLabel: String(prev.ctaLabel || '').trim() || undefined,
+  };
+}
+
+function buildLessonCompletePrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const nchk = Math.max(3, Math.min(8, Number(c.nchk) || 5));
+  const system = [
+    'You write the BACK COVER of one lesson as STRUCTURED JSON.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define (what the lesson taught) and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"heading":string,"subheading":string,"checklist":string[],"whatNext":string}',
+    'heading congratulates without gushing and names what was understood, not that the lesson ended.',
+    `checklist has exactly ${nchk} entries, each written in the learner's own voice and starting "I can" or "I know".`,
+    'Every checklist entry must be checkable — something the learner could test on the next hand or problem.',
+    'whatNext names the next thing to learn and why it follows from this one. Two sentences.',
+    `Audience "${c.aud || 'High school'}" — reading level only.`,
+  ].join('\n');
+  const user = [
+    `Lesson title: ${title || '(untitled)'}`,
+    `What the lesson taught: ${c.obj || title || '(from source)'}`,
+    `Audience: ${c.aud || 'High school'}`,
+    `Checklist entries wanted: ${nchk}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the lesson complete JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
+/* ---- reference-table ---- */
+
+function normalizeReferenceTable(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const columns = strList(raw.columns, 5);
+  if (columns.length < 2) return null;
+  const rows = (Array.isArray(raw.rows) ? raw.rows : [])
+    .map((r) => strList(r, columns.length))
+    .filter((r) => r.length === columns.length)
+    .slice(0, 12);
+  if (!rows.length) return null;
+  return {
+    label: String(raw.label || '').trim() || undefined,
+    title: String(raw.title || config.what || '').trim() || undefined,
+    columns,
+    rows,
+    caption: String(raw.caption || '').trim() || undefined,
+  };
+}
+
+function buildReferenceTablePrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const nrows = Math.max(2, Math.min(12, Number(c.nrows) || 4));
+  const system = [
+    'You build ONE reference table as STRUCTURED JSON — the key a learner reads against.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"label":string,"title":string,"columns":string[],"rows":string[][],"caption":string}',
+    'Two or three columns. The FIRST column is the key being looked up — short, and the same kind of thing on every row.',
+    'Every row must have exactly as many cells as there are columns.',
+    `Aim for ${nrows} rows. Rows must be mutually exclusive: a learner looking something up lands on exactly one.`,
+    'columns are short headers, not sentences. caption is one line, or omit it.',
+    'label is a short uppercase eyebrow, or omit it.',
+  ].join('\n');
+  const user = [
+    `Title: ${title || '(untitled)'}`,
+    `What the table keys: ${c.what || title || '(from source)'}`,
+    `Rows wanted: ${nrows}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the reference table JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
+/* ---- quick-decisions ---- */
+
+function normalizeQuickDecisions(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const want = Math.max(2, Math.min(8, Number(config.nd) || 3));
+  const decisions = (Array.isArray(raw.decisions) ? raw.decisions : [])
+    .map((d, i) => {
+      const promptText = String(d?.prompt || d?.hand || '').trim();
+      const answer = String(d?.answer || '').trim();
+      if (!promptText || !answer) return null;
+      return {
+        label: String(d?.label || '').trim() || `Quick decision ${String.fromCharCode(65 + i)}`,
+        tag: String(d?.tag || '').trim() || undefined,
+        prompt: promptText,
+        answer,
+        explanation: String(d?.explanation || '').trim(),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, want);
+  if (!decisions.length) return null;
+  return {
+    label: String(raw.label || '').trim() || undefined,
+    title: String(raw.title || config.what || 'Quick decisions').trim(),
+    intro: String(raw.intro || '').trim() || undefined,
+    decisions,
+    closing: String(raw.closing || '').trim() || undefined,
+  };
+}
+
+function buildQuickDecisionsPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const nd = Math.max(2, Math.min(8, Number(c.nd) || 3));
+  const system = [
+    'You write a QUICK DECISIONS drill as STRUCTURED JSON.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"label":string,"title":string,"intro":string,"decisions":[{"label":string,"tag":string,"prompt":string,"answer":string,"explanation":string}],"closing":string}',
+    'This is NOT a quiz. There are no options and nothing is marked. The learner decides privately, then reveals.',
+    `Exactly ${nd} decisions.`,
+    'prompt is the situation itself, shown in a monospaced block. Use newlines for layout. No question mark, no instruction.',
+    'answer is what the reveal button becomes — the decision, in as few characters as possible.',
+    'tag is the one-line classification the answer turns on, e.g. what makes this case different from its neighbours.',
+    'explanation says why, in one or two sentences, and must name the feature the tag points at.',
+    'The set must discriminate: two decisions with the same answer for the same reason are one decision.',
+    'closing is the question a learner should ask themselves before every case. One or two sentences, or omit.',
+  ].join('\n');
+  const user = [
+    `Title: ${title || '(untitled)'}`,
+    `What the learner is deciding: ${c.what || title || '(from source)'}`,
+    `Decisions wanted: ${nd}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the quick decisions JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
+/* ---- matching ---- */
+
+function normalizeMatching(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const options = strList(raw.options, 6);
+  if (options.length < 2) return null;
+  const cards = (Array.isArray(raw.cards) ? raw.cards : [])
+    .map((card, i) => {
+      const lines = strList(card?.lines, 8);
+      const correct = String(card?.correct || '').trim();
+      // A card whose answer is not one of the options is unanswerable.
+      if (!lines.length || !options.includes(correct)) return null;
+      return {
+        label: String(card?.label || '').trim() || `Card ${String.fromCharCode(65 + i)}`,
+        lines,
+        correct,
+        explanation: String(card?.explanation || '').trim() || undefined,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 6);
+  if (cards.length < 2) return null;
+
+  const refRaw = raw.reference && typeof raw.reference === 'object' ? raw.reference : null;
+  let reference;
+  if (refRaw) {
+    const columns = strList(refRaw.columns, 4);
+    const rows = (Array.isArray(refRaw.rows) ? refRaw.rows : [])
+      .map((r) => strList(r, columns.length))
+      .filter((r) => r.length === columns.length);
+    if (columns.length >= 2 && rows.length) reference = { columns, rows };
+  }
+
+  return {
+    label: String(raw.label || '').trim() || undefined,
+    title: String(raw.title || config.what || 'Match each one').trim(),
+    intro: String(raw.intro || '').trim() || undefined,
+    reference,
+    prompt: String(raw.prompt || '').trim() || undefined,
+    options,
+    cards,
+    closing: String(raw.closing || '').trim() || undefined,
+  };
+}
+
+function buildMatchingPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const nc = Math.max(2, Math.min(6, Number(c.nc) || 3));
+  const system = [
+    'You write a MATCHING exercise as STRUCTURED JSON.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"label":string,"title":string,"intro":string,"reference":{"columns":string[],"rows":string[][]},"prompt":string,"options":string[],"cards":[{"label":string,"lines":string[],"correct":string,"explanation":string}],"closing":string}',
+    `Exactly ${nc} cards and ${nc} options — a one-to-one matching, every option used exactly once.`,
+    'Every card\'s "correct" MUST be one of the strings in "options", character for character.',
+    'lines are the card body, one short monospaced line each.',
+    'Each card must be decidable from its own lines. If two cards could take the same option, rewrite one.',
+    'reference is the key the learner reads against — the same options down the first column, what each means in the second. Omit if the options are self-explanatory.',
+    'prompt is the instruction above the cards, e.g. "Try it: match each hand to the reply".',
+    'closing states what the exercise was really testing. One or two sentences.',
+  ].join('\n');
+  const user = [
+    `Title: ${title || '(untitled)'}`,
+    `What is being matched: ${c.what || title || '(from source)'}`,
+    `Cards wanted: ${nc}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the matching JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
+/* ---- opening-question ---- */
+
+function normalizeOpeningQuestion(raw, prev = {}, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const options = strList(raw.options, 6);
+  if (options.length < 2) return null;
+  const correct = Number(raw.correct);
+  if (!Number.isInteger(correct) || correct < 0 || correct >= options.length) return null;
+
+  const hand = (Array.isArray(raw.hand) ? raw.hand : [])
+    .map((r) => ({
+      suit: String(r?.suit || '').trim(),
+      cards: String(r?.cards || '').trim(),
+    }))
+    .filter((r) => r.suit)
+    .slice(0, 4);
+  const auction = (Array.isArray(raw.auction) ? raw.auction : [])
+    .map((b) => ({
+      seat: String(b?.seat || '').trim(),
+      bid: String(b?.bid || '').trim(),
+    }))
+    .filter((b) => b.seat && b.bid)
+    .slice(0, 12);
+
+  const feedback = String(raw.feedback || '').trim();
+  const keyIdea = String(raw.keyIdea || '').trim();
+  // Both payloads are the point of this block type; one without the other is a
+  // plain multiple-choice question wearing the wrong template.
+  if (!feedback || !keyIdea) return null;
+
+  return {
+    label: String(raw.label || '').trim() || undefined,
+    title: String(raw.title || config.what || '').trim() || 'What is your call?',
+    context: String(raw.context || '').trim() || undefined,
+    hand,
+    auction,
+    prompt: String(raw.prompt || 'What is your call?').trim(),
+    options,
+    correct,
+    feedback,
+    keyIdea,
+  };
+}
+
+function buildOpeningQuestionPrompt(body) {
+  const { title, config, extracts, prompt } = body || {};
+  const c = config || {};
+  const system = [
+    'You write ONE positional question as STRUCTURED JSON — a hand, the auction so far, and the call to find.',
+    groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"label":string,"title":string,"context":string,"hand":[{"suit":string,"cards":string}],"auction":[{"seat":string,"bid":string}],"prompt":string,"options":string[],"correct":number,"feedback":string,"keyIdea":string}',
+    'hand has one entry per suit in the order ♠ ♥ ♦ ♣. "suit" is the glyph alone; "cards" are the ranks separated by single spaces, e.g. "K 8 6 3". Use an empty string for a void.',
+    'auction runs in seat order and ends with the seat to speak, whose "bid" is exactly "?".',
+    'correct is the zero-based index into options.',
+    'feedback says why THIS call is right on THIS hand — it may name the specific cards.',
+    'keyIdea states the rule that carries to the next hand. It must NOT mention this hand. If the two would say the same thing, rewrite keyIdea more generally.',
+    'Wrong options must each be a call a real learner would consider, not filler.',
+    'title is the question the position asks, phrased as a question.',
+  ].join('\n');
+  const user = [
+    `Title: ${title || '(untitled)'}`,
+    `What the learner must decide: ${c.what || title || '(from source)'}`,
+    `Seat to act: ${c.seat || 'You'}`,
+    prompt ? `\nAuthor prompt:\n${prompt}` : '',
+    formatAuthorDirectivesBlock(collectAuthorDirectives(body)),
+    '',
+    '--- Source units ---',
+    extractLinesFrom(extracts),
+    '',
+    'Return the opening question JSON now.',
+  ].filter(Boolean).join('\n');
+  return { system, user };
+}
+
 async function generateStructuredObject(kind, body) {
   const builders = {
     summary: buildSummaryPrompt,
     reflection: buildReflectionPrompt,
     assignment: buildAssignmentPrompt,
     drill: buildDrillPrompt,
+    'lesson-overview': buildLessonOverviewPrompt,
+    'lesson-complete': buildLessonCompletePrompt,
+    'reference-table': buildReferenceTablePrompt,
+    'quick-decisions': buildQuickDecisionsPrompt,
+    matching: buildMatchingPrompt,
+    'opening-question': buildOpeningQuestionPrompt,
   };
   const normalizers = {
     summary: normalizeSummary,
     reflection: normalizeReflection,
     assignment: normalizeAssignment,
     drill: normalizeDrill,
+    'lesson-overview': normalizeLessonOverview,
+    'lesson-complete': normalizeLessonComplete,
+    'reference-table': normalizeReferenceTable,
+    'quick-decisions': normalizeQuickDecisions,
+    matching: normalizeMatching,
+    'opening-question': normalizeOpeningQuestion,
   };
   const build = builders[kind];
   const normalize = normalizers[kind];
   const { system, user } = build(body);
-  const raw = await callAnthropic({ system, user, maxTokens: kind === 'drill' ? 8192 : 4096 });
+  // Drills, matchings and quick decisions carry several complete items in one
+  // response; the rest are a single object and 4096 is ample.
+  const roomy = kind === 'drill' || kind === 'matching' || kind === 'quick-decisions';
+  const raw = await callAnthropic({ system, user, maxTokens: roomy ? 8192 : 4096 });
   const parsed = extractJson(raw);
   const obj = Array.isArray(parsed) ? parsed[0] : parsed;
   const content = normalize(obj, {}, body?.config || {});
@@ -4502,6 +4889,13 @@ export async function handler(req, res) {
     '/api/reflections/generate': 'reflection',
     '/api/assignments/generate': 'assignment',
     '/api/drills/generate': 'drill',
+    // Tutorial V3 block types — same contract, same SSE shape.
+    '/api/lesson-overviews/generate': 'lesson-overview',
+    '/api/lesson-completes/generate': 'lesson-complete',
+    '/api/reference-tables/generate': 'reference-table',
+    '/api/quick-decisions/generate': 'quick-decisions',
+    '/api/matchings/generate': 'matching',
+    '/api/opening-questions/generate': 'opening-question',
   };
   if (method === 'POST' && structuredGenRoutes[path]) {
     const kind = structuredGenRoutes[path];

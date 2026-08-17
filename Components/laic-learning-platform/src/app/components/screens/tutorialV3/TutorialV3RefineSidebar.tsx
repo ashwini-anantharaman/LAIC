@@ -41,7 +41,12 @@ import { TutorialV3ObjectGeneratePane } from './TutorialV3ObjectGeneratePane';
 
 type Tab = 'hoot' | 'sources' | 'add';
 
-const GEN_TYPES: { type: ObjectType; label: string }[] = [
+/**
+ * Everything the Refine sidebar can generate into an existing tutorial.
+ * Typed as string rather than ObjectType because the last six are block types,
+ * not library objects — nothing puts a `matching` in the Object Library.
+ */
+const GEN_TYPES: { type: string; label: string }[] = [
   { type: 'flashcard-set', label: 'Flashcards' },
   { type: 'quiz', label: 'Quiz' },
   { type: 'concept-card', label: 'Concept card' },
@@ -49,6 +54,12 @@ const GEN_TYPES: { type: ObjectType; label: string }[] = [
   { type: 'reflection', label: 'Reflection' },
   { type: 'assignment', label: 'Assignment' },
   { type: 'drill', label: 'Drill' },
+  { type: 'lesson-overview', label: 'Lesson overview' },
+  { type: 'lesson-complete', label: 'Lesson complete' },
+  { type: 'reference-table', label: 'Reference table' },
+  { type: 'quick-decisions', label: 'Quick decisions' },
+  { type: 'matching', label: 'Matching' },
+  { type: 'opening-question', label: 'Opening question' },
 ];
 
 export function TutorialV3RefineSidebar({
@@ -80,7 +91,7 @@ export function TutorialV3RefineSidebar({
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [library, setLibrary] = useState<LibraryObjectChoice[]>([]);
   const [libraryStatus, setLibraryStatus] = useState<'idle' | 'loading' | 'empty' | 'error'>('idle');
-  const [genType, setGenType] = useState<ObjectType | null>(null);
+  const [genType, setGenType] = useState<string | null>(null);
   const [genSlot, setGenSlot] = useState<V3TopLevelSlot | null>(null);
   const [sourcePanel, setSourcePanel] = useState<'pdf' | 'text' | 'youtube' | null>(null);
   const [pasteText, setPasteText] = useState('');
@@ -391,7 +402,7 @@ export function TutorialV3RefineSidebar({
     onSelectPart(added[added.length - 1].id);
   };
 
-  const startGenerate = (type: ObjectType) => {
+  const startGenerate = (type: string) => {
     setGenType(type);
     setGenSlot({
       id: `gen-refine-${Date.now().toString(36)}`,

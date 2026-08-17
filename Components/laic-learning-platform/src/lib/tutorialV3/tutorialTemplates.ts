@@ -56,6 +56,12 @@ export const EMBEDDED_OBJECT_OPTIONS: { type: EmbeddableObjectType; label: strin
   { type: 'scenario', label: 'Scenario' },
   { type: 'assignment', label: 'Assignment' },
   { type: 'reflection', label: 'Reflection' },
+  { type: 'lesson-overview', label: 'Lesson overview' },
+  { type: 'lesson-complete', label: 'Lesson complete' },
+  { type: 'reference-table', label: 'Reference table' },
+  { type: 'quick-decisions', label: 'Quick decisions' },
+  { type: 'matching', label: 'Matching' },
+  { type: 'opening-question', label: 'Opening question' },
   { type: 'reused-from-library', label: 'Any library content (slot)' },
 ];
 
@@ -518,9 +524,20 @@ export interface LibraryObjectChoice {
 }
 
 /** Map an embedded-slot type to Content Library type filter (null = any type). */
+/**
+ * The embed types that exist as objects in the Content Library. The Tutorial V3
+ * block types deliberately do not: nothing puts a `matching` on a shelf, so
+ * there is nothing for a library slot to point at and the picker has no
+ * candidates to offer.
+ */
+const LIBRARY_PICKABLE = new Set<string>([
+  'quiz', 'flashcard-set', 'concept-card', 'scenario', 'assignment', 'reflection',
+]);
+
 export function embedTypeToLibraryTypes(objectType: EmbeddableObjectType): ObjectType[] | null {
   if (objectType === 'reused-from-library') return null;
-  return [objectType];
+  if (!LIBRARY_PICKABLE.has(objectType)) return [];
+  return [objectType as ObjectType];
 }
 
 function versionsForObject(obj: LearningObject): LibraryObjectVersionChoice[] {

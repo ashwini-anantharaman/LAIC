@@ -189,7 +189,58 @@ export const DEFINE_CFG: Record<string, DefineGroupDef[]> = {
       { id: 'enableChat', label: 'AI chatbot available (answers about the video)', type: 'bool', default: true },
     ]},
   ],
+
+  /* ── Tutorial V3 block types ─────────────────────────────────────
+     Deliberately short. These are one block each, not a whole object, so
+     the Define step asks only what the prompt cannot infer from the marked-up
+     source: what it is about, how many of the thing, and who is reading. */
+
+  'lesson-overview': [
+    { title: 'Intent', note: 'The front cover of the lesson — what the learner is about to be able to do.', fields: [
+      { id: 'obj', label: 'What this lesson teaches', type: 'area', hint: 'After this lesson, the learner can…' },
+      { id: 'nobj', label: 'Objectives', type: 'num', min: 3, max: 8, default: 5 },
+      { id: 'aud', label: 'Audience', type: 'pick', options: ['Beginner', 'High school', 'Undergraduate', 'Professional'], default: 'High school' },
+    ]},
+  ],
+
+  'lesson-complete': [
+    { title: 'Intent', note: 'The back cover — what the learner should now be able to check off.', fields: [
+      { id: 'obj', label: 'What this lesson taught', type: 'area' },
+      { id: 'nchk', label: 'Checklist entries', type: 'num', min: 3, max: 8, default: 5 },
+      { id: 'aud', label: 'Audience', type: 'pick', options: ['Beginner', 'High school', 'Undergraduate', 'Professional'], default: 'High school' },
+    ]},
+  ],
+
+  'reference-table': [
+    { title: 'Intent', note: 'The key a learner reads against — one row per case, no overlap.', fields: [
+      { id: 'what', label: 'What the table keys', type: 'text', hint: 'e.g. what each of opener\u2019s rebids promises' },
+      { id: 'nrows', label: 'Rows', type: 'num', min: 2, max: 12, default: 4 },
+    ]},
+  ],
+
+  'quick-decisions': [
+    { title: 'Intent', note: 'Judgement practice. Nothing is marked — the learner commits, then reveals.', fields: [
+      { id: 'what', label: 'What the learner is deciding', type: 'area', hint: 'e.g. whether this hand is worth a Stayman enquiry' },
+      { id: 'nd', label: 'Decisions', type: 'num', min: 2, max: 8, default: 3 },
+    ]},
+  ],
+
+  matching: [
+    { title: 'Intent', note: 'One-to-one: every option is used exactly once.', fields: [
+      { id: 'what', label: 'What is being matched', type: 'area', hint: 'e.g. each opener hand to the reply it calls for' },
+      { id: 'nc', label: 'Cards', type: 'num', min: 2, max: 6, default: 3 },
+    ]},
+  ],
+
+  'opening-question': [
+    { title: 'Intent', note: 'A position rather than a sentence: a hand, the auction so far, and the call to find.', fields: [
+      { id: 'what', label: 'What the learner must decide', type: 'area' },
+      { id: 'seat', label: 'Seat to act', type: 'pick', options: ['You', 'North', 'East', 'South', 'West'], default: 'You' },
+    ]},
+  ],
 };
+
+
 
 /** Seed field values from CFG defaults (plus any seed overrides). */
 export function seedDefineValues(

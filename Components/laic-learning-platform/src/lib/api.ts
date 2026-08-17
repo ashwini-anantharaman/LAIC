@@ -710,7 +710,18 @@ export function editConceptCard(
 
 /* ─── Summary / Reflection / Assignment / Drill ─────────────────── */
 
-export type StructuredObjectKind = 'summary' | 'reflection' | 'assignment' | 'drill';
+export type StructuredObjectKind =
+  | 'summary'
+  | 'reflection'
+  | 'assignment'
+  | 'drill'
+  /** Tutorial V3 block types — same generate contract, same SSE shape. */
+  | 'lesson-overview'
+  | 'lesson-complete'
+  | 'reference-table'
+  | 'quick-decisions'
+  | 'matching'
+  | 'opening-question';
 
 export type StructuredGenEvent<T> =
   | { type: 'progress'; message: string }
@@ -724,6 +735,12 @@ function structuredGeneratePath(kind: StructuredObjectKind): string {
     reflection: '/api/reflections/generate',
     assignment: '/api/assignments/generate',
     drill: '/api/drills/generate',
+    'lesson-overview': '/api/lesson-overviews/generate',
+    'lesson-complete': '/api/lesson-completes/generate',
+    'reference-table': '/api/reference-tables/generate',
+    'quick-decisions': '/api/quick-decisions/generate',
+    matching: '/api/matchings/generate',
+    'opening-question': '/api/opening-questions/generate',
   })[kind];
 }
 
