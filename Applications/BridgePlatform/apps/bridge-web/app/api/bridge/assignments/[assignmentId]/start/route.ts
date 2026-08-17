@@ -11,6 +11,7 @@ import { AccessError, apiError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { ensureSeeds } from "@/lib/kb";
+import { withCuratedOverlayFrom } from "@/lib/libraryComponent";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
 import { assignmentStore, libraryStore, sessionIsGone, sessionService } from "@/lib/sessions";
@@ -54,13 +55,18 @@ export async function POST(
       );
     }
 
-    const entry = await libraryStore().getEntry(assignment.entryId);
-    if (!entry?.hands) {
+    const stored = await libraryStore().getEntry(assignment.entryId);
+    if (!stored?.hands) {
       return NextResponse.json(
         { error: "This assignment's board no longer exists." },
         { status: 400, headers: CORS },
       );
     }
+    // Last chance to pick the coach's words up. An assignment issued before
+    // the board was curated carries a copy with no overlay, and the `curated`
+    // stamp below is decided off exactly this entry — without the refresh the
+    // learner gets an ordinary table and no coach, however curated the deal.
+    const entry = await withCuratedOverlayFrom(stored, assignment.sourceEntryId);
 
     await ensureSeeds();
     await assertAiAllowed(context);

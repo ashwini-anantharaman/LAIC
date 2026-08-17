@@ -8,6 +8,7 @@ import { resolveEntryLineup } from "@/app/bridge/library/actions";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds } from "@/lib/kb";
+import { withCuratedOverlayFrom } from "@/lib/libraryComponent";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
 import { assignmentStore, libraryStore, sessionIsGone, sessionService } from "@/lib/sessions";
@@ -40,8 +41,12 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     redirect(`/bridge/table2/${assignment.sessionId}`);
   }
 
-  const entry = await libraryStore().getEntry(assignment.entryId);
-  if (!entry?.hands) throw new Error("This assignment's board no longer exists");
+  const stored = await libraryStore().getEntry(assignment.entryId);
+  if (!stored?.hands) throw new Error("This assignment's board no longer exists");
+  // Last chance to pick the coach's words up — see the API route's twin. An
+  // assignment issued before the board was curated carries a copy with no
+  // overlay, and the `curated` stamp below is decided off exactly this entry.
+  const entry = await withCuratedOverlayFrom(stored, assignment.sourceEntryId);
 
   await ensureSeeds();
   await assertAiAllowed(context);

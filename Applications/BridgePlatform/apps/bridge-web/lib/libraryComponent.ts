@@ -394,9 +394,34 @@ export async function copyForAssign(
       provenance: "assigned",
     }),
   );
+  return withCuratedOverlayFrom(copy, sourceId);
+}
+
+/**
+ * Bring the coach's overlay from `sourceId` onto `entry`, if it is missing or
+ * has moved on. Returns the entry to use.
+ *
+ * Called at ASSIGN time (copyForAssign, above) and again at START time, and
+ * it has to be both. Assign-time alone only ever repairs assignments made
+ * from now on: every assignment issued before the coach curated the board —
+ * or before this code existed — keeps a copy with no overlay, so the session
+ * built from it is never stamped `curated`, the overlay API answers
+ * `{ overlay: null }`, and the learner opens an ordinary table with no coach
+ * in it. Start time is the last moment before that stamp is decided, which
+ * makes it the one place that can rescue an assignment already out there.
+ *
+ * Only the coach's WORDS move. The entryId is untouched (assignment rows
+ * point at it) and so is curatedProgressJson, which is the learner's own
+ * record of the ladders they opened.
+ */
+export async function withCuratedOverlayFrom(
+  entry: LibraryEntry,
+  sourceId: string | undefined,
+): Promise<LibraryEntry> {
+  if (!sourceId || sourceId === entry.entryId) return entry;
   const source = await libraryStore().getEntry(sourceId);
-  if (!source?.curatedJson || source.curatedJson === copy.curatedJson) return copy;
-  const refreshed: LibraryEntry = { ...copy, curatedJson: source.curatedJson };
+  if (!source?.curatedJson || source.curatedJson === entry.curatedJson) return entry;
+  const refreshed: LibraryEntry = { ...entry, curatedJson: source.curatedJson };
   await libraryStore().putEntry(refreshed);
   return refreshed;
 }
