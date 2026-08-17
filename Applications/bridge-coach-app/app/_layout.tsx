@@ -32,13 +32,23 @@ function AuthGate({ children }: { children: ReactNode }) {
   // can sign in as them — and into their other clubs — so nothing else opens.
   const mustSetPassword = status === "signedIn" && user?.must_set_password === true;
 
+  // `set-password` USED to be bounced here alongside the public routes, on the
+  // reasoning that a signed-in person has no business on it. That was true while it
+  // was only the forced screen; it is wrong now that the profile sheet offers a
+  // voluntary password change, because the bounce fired the instant the screen
+  // mounted and sent them straight back to /home.
+  //
+  // Nothing is lost by dropping it: the forced flow's own submit() replaces to /home
+  // once the flag clears, so completion still lands in the right place — and it lands
+  // there because the screen finished, not because a gate swept it away.
+
   useEffect(() => {
     if (status === "loading") return;
     if (mustSetPassword) {
       if (root !== "set-password") router.replace("/set-password");
       return;
     }
-    if (status === "signedIn" && (onPublicRoute || root === "set-password")) {
+    if (status === "signedIn" && onPublicRoute) {
       // Fresh registrations go through onboarding once; sign-ins go home.
       router.replace(needsOnboarding ? "/onboarding" : "/home");
     } else if (status === "signedOut" && !onPublicRoute) {

@@ -1,14 +1,22 @@
-// Choose your own password — the first thing after signing in with one an admin
-// handed you (backend 0046).
+// Your password — set for the first time, or changed later.
 //
-// This is not a nag screen; it is where ownership of the credential changes hands.
-// One credential is shared across every club a person belongs to, so while the
-// password is still the one a club typed, that club can sign in as them — and
-// into their OTHER clubs. Choosing their own ends that, and the console refuses
-// admin resets from then on.
+// TWO MODES, and the FACT decides which, not a route parameter:
 //
-// It has no back arrow and no dismiss for the same reason. Sign out is the only
-// way past it.
+//   FORCED (`user.must_set_password`) — the first thing after signing in with a
+//     password an admin handed you (backend 0046). Not a nag screen; it is where
+//     ownership of the credential changes hands. One credential is shared across
+//     every club a person belongs to, so while the password is still the one a club
+//     typed, that club can sign in as them — and into their OTHER clubs. Choosing
+//     their own ends that, and the console refuses admin resets from then on. No
+//     back arrow, no dismiss: sign out is the only way past it.
+//
+//   VOLUNTARY — reached from the profile sheet, because a password you can set once
+//     and never change is not really yours. Has a back arrow, returns where it came
+//     from, and does not offer sign-out (the profile sheet already does).
+//
+// Keying the difference off `must_set_password` rather than a `?mode=` parameter is
+// deliberate: a parameter would let anything navigate to a DISMISSIBLE copy of the
+// forced screen, which is the one thing this screen must never be.
 
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,12 +35,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Brand, Fonts, Radius, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
+import { notify } from "../lib/dialogs";
 import { changeMyPassword } from "../lib/nexus";
 
 const MIN_LENGTH = 8;
 
 export default function SetPasswordScreen() {
   const { token, user, signOut, refreshUser } = useAuth();
+  /** The gate sent us here and will not let us leave until this is done. */
+  const forced = user?.must_set_password === true;
   const insets = useSafeAreaInsets();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
@@ -54,7 +65,15 @@ export default function SetPasswordScreen() {
       // The claim is server-side now; refreshing the session clears the flag that
       // sent us here, and the gate lets us through.
       await refreshUser();
-      router.replace("/home");
+      if (forced) {
+        router.replace("/home");
+      } else {
+        // Back where they came from, with the change confirmed — a silent return
+        // from a security screen leaves someone wondering whether it took.
+        notify("Password changed", "Use your new password next time you sign in.");
+        if (router.canGoBack()) router.back();
+        else router.replace("/home");
+      }
     } catch (e) {
       setError(
         e instanceof Error && e.message
@@ -77,17 +96,31 @@ export default function SetPasswordScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Choose a password</Text>
+          {/* The arrow exists only when there is somewhere to go. */}
+          {!forced ? (
+            <Pressable
+              onPress={() => (router.canGoBack() ? router.back() : router.replace("/home"))}
+              hitSlop={16}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              style={({ pressed }) => [styles.back, pressed && styles.pressed]}
+            >
+              <Ionicons name="chevron-back" size={26} color={Brand.cream} />
+            </Pressable>
+          ) : null}
+
+          <Text style={styles.title}>{forced ? "Choose a password" : "Change your password"}</Text>
           <Text style={styles.blurb}>
-            Your club set a temporary one so you could get in. Pick your own now — after
-            this, only you can change it.
+            {forced
+              ? "Your club set a temporary one so you could get in. Pick your own now — after this, only you can change it."
+              : "You'll need your current password. The new one takes effect the next time you sign in."}
           </Text>
 
           <Field
-            label="Temporary password"
+            label={forced ? "Temporary password" : "Current password"}
             value={current}
             onChange={setCurrent}
-            placeholder="The one your club gave you"
+            placeholder={forced ? "The one your club gave you" : "The one you use now"}
           />
           <Field
             label="New password"
@@ -120,15 +153,19 @@ export default function SetPasswordScreen() {
             <Text style={styles.saveText}>{busy ? "Saving…" : "Save password"}</Text>
           </Pressable>
 
-          {/* The only way past this screen other than setting one. */}
-          <Pressable
-            onPress={() => void signOut()}
-            hitSlop={8}
-            accessibilityRole="button"
-            style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
-          >
-            <Text style={styles.signOutText}>Sign out{user?.email ? ` (${user.email})` : ""}</Text>
-          </Pressable>
+          {/* The only way past the FORCED screen other than setting one. Absent in
+              the voluntary case, where the profile sheet already offers it and a
+              second sign-out beside a back arrow only invites a misclick. */}
+          {forced ? (
+            <Pressable
+              onPress={() => void signOut()}
+              hitSlop={8}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
+            >
+              <Text style={styles.signOutText}>Sign out{user?.email ? ` (${user.email})` : ""}</Text>
+            </Pressable>
+          ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>
@@ -188,6 +225,8 @@ function Field({
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: Brand.cream },
+  /** Sits above the title, on the same left margin as the fields. */
+  back: { alignSelf: "flex-start", paddingHorizontal: 22, paddingBottom: 6 },
   title: {
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,
