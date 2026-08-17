@@ -39,6 +39,9 @@ import {
 
 export { benAvailable };
 
+const RANK_NAME: Record<number, string> = { 10: "T", 11: "J", 12: "Q", 13: "K", 14: "A" };
+const cardName = (c: Card) => `${c.suit}${RANK_NAME[c.rank] ?? c.rank}`;
+
 /** The label a BEN seat carries — the plate and traces show it. */
 export const BEN_SEAT_LABEL = "BEN · neural";
 
@@ -254,6 +257,26 @@ export function benSeatDecider(
         // Engine-legal cards for the hand on play — the guard on everything.
         const legal = legalPlays(state, actingSeat);
         const legalSet = new Set(legal.map((c) => `${c.suit}${c.rank}`));
+
+        // ONE LEGAL CARD IS NOT A DECISION. BEN already knows this — api.conf
+        // sets autoplaysingleton — but it can only tell us after a request has
+        // crossed the network and come back, and we pay that on a forced follow
+        // as surely as on a real choice. A board is 39 robot cards and a fair
+        // share of them are forced, so this is the cheapest speed-up available:
+        // no sampling skipped, no strength given up, just a round trip not made.
+        if (legal.length === 1) {
+          const only = legal[0]!;
+          return {
+            action: only,
+            candidates: [only],
+            trace: [],
+            citedSettings: [],
+            facts: bidFacts,
+            reason: `Only ${cardName(only)} is legal — played without asking BEN`,
+            rejected: [],
+            fallback: false,
+          };
+        }
 
         const degrade = async (why: string): Promise<Decision<Card>> => {
           const d = await fallback.decidePlay(state, actingSeat);
