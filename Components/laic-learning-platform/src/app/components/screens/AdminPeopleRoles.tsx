@@ -41,7 +41,7 @@ const ROLE_LABELS: Record<Role, string> = {
 /* ─── which content types a granted capability covers ─────────── */
 
 const OBJECT_TYPE_ICONS: Record<string, string> = {
-  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', quiz: '✅',
+  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', 'tutorial-v3': '🎓', quiz: '✅',
   'flashcard-set': '🃏', 'concept-card': '💡', summary: '📋', reflection: '🪞',
   scenario: '🎭', assignment: '📝', drill: '🔁', 'video-script': '🎬',
 };

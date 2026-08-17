@@ -27,14 +27,23 @@ import {
   listTutorialTemplates as listTutorialV2Templates,
 } from '../../../lib/tutorialV2/tutorialTemplates';
 import {
+  deleteCustomTutorialTemplate as deleteCustomTutorialV3Template,
+  duplicateTutorialTemplate as duplicateTutorialV3Template,
+  isBuiltinOverride as isBuiltinV3Override,
+  isBuiltinTemplateId as isBuiltinV3TemplateId,
+  listTutorialTemplates as listTutorialV3Templates,
+} from '../../../lib/tutorialV3/tutorialTemplates';
+import {
   getDefaultTemplateId,
   isDefaultTemplate,
   setDefaultTemplateId,
 } from '../../../lib/templateDefaults';
 import { setTutorialV2LaunchTemplate } from '../../../lib/tutorialV2/launchTemplate';
+import { setTutorialV3LaunchTemplate } from '../../../lib/tutorialV3/launchTemplate';
 import { pastelChipFromHex, pastelFromHex } from '../../../lib/pastel';
 import { TutorialTemplateEditor } from './TutorialTemplateEditor';
 import { TutorialTemplateEditorV2 } from './tutorialV2/TutorialTemplateEditorV2';
+import { TutorialTemplateEditorV3 } from './tutorialV3/TutorialTemplateEditorV3';
 import { ObjectTemplateEditor } from './ObjectTemplateEditor';
 import { useConfirm } from '../ConfirmDialog';
 
@@ -42,6 +51,7 @@ import { useConfirm } from '../ConfirmDialog';
 const TYPE_COLOR: Record<TemplateObjectType, string> = {
   tutorial: '#7C3AED',
   'tutorial-v2': '#6D28D9',
+  'tutorial-v3': '#5B21B6',
   lesson: '#1D4ED8',
   quiz: '#059669',
   'flashcard-set': '#D97706',
@@ -57,10 +67,11 @@ const TYPE_COLOR: Record<TemplateObjectType, string> = {
 type ListItem =
   | { kind: 'tutorial'; t: TutorialTemplate }
   | { kind: 'tutorial-v2'; t: TutorialTemplate }
+  | { kind: 'tutorial-v3'; t: TutorialTemplate }
   | { kind: 'object'; t: ObjectTemplate };
 
-function isTutorialKind(kind: ListItem['kind']): kind is 'tutorial' | 'tutorial-v2' {
-  return kind === 'tutorial' || kind === 'tutorial-v2';
+function isTutorialKind(kind: ListItem['kind']): kind is 'tutorial' | 'tutorial-v2' | 'tutorial-v3' {
+  return kind === 'tutorial' || kind === 'tutorial-v2' || kind === 'tutorial-v3';
 }
 
 export function TemplateLibrary() {
@@ -82,6 +93,9 @@ export function TemplateLibrary() {
     if (typeFilter === 'tutorial-v2') {
       return listTutorialV2Templates().map((t) => ({ kind: 'tutorial-v2' as const, t }));
     }
+    if (typeFilter === 'tutorial-v3') {
+      return listTutorialV3Templates().map((t) => ({ kind: 'tutorial-v3' as const, t }));
+    }
     return listObjectTemplates(typeFilter).map((t) => ({ kind: 'object' as const, t }));
   }, [typeFilter, tick]);
 
@@ -97,6 +111,9 @@ export function TemplateLibrary() {
     const templateId = item.t.id;
     if (objectType === 'tutorial-v2') {
       setTutorialV2LaunchTemplate(templateId);
+    }
+    if (objectType === 'tutorial-v3') {
+      setTutorialV3LaunchTemplate(templateId);
     }
     clearEditingObject?.();
     setPendingTemplateId(templateId);
@@ -115,7 +132,9 @@ export function TemplateLibrary() {
       ? isBuiltinOverride(item.t.id)
       : item.kind === 'tutorial-v2'
         ? isBuiltinV2Override(item.t.id)
-        : isObjectTemplateOverride(item.t.id);
+        : item.kind === 'tutorial-v3'
+          ? isBuiltinV3Override(item.t.id)
+          : isObjectTemplateOverride(item.t.id);
     const ok = await confirm({
       title: overridden ? 'Are you sure you want to reset?' : 'Are you sure you want to delete?',
       description: overridden
@@ -129,6 +148,8 @@ export function TemplateLibrary() {
       deleteCustomTutorialTemplate(item.t.id);
     } else if (item.kind === 'tutorial-v2') {
       deleteCustomTutorialV2Template(item.t.id);
+    } else if (item.kind === 'tutorial-v3') {
+      deleteCustomTutorialV3Template(item.t.id);
     } else {
       deleteCustomObjectTemplate(item.t.id);
     }
@@ -143,14 +164,16 @@ export function TemplateLibrary() {
   const handleDuplicateTutorial = (id: string) => {
     const copy = typeFilter === 'tutorial-v2'
       ? duplicateTutorialV2Template(id)
-      : duplicateTutorialTemplate(id);
+      : typeFilter === 'tutorial-v3'
+        ? duplicateTutorialV3Template(id)
+        : duplicateTutorialTemplate(id);
     if (!copy) return;
     refresh();
     setEditingTutorial(copy);
   };
 
   const startCreate = () => {
-    if (typeFilter === 'tutorial' || typeFilter === 'tutorial-v2') setEditingTutorial('new');
+    if (typeFilter === 'tutorial' || typeFilter === 'tutorial-v2' || typeFilter === 'tutorial-v3') setEditingTutorial('new');
     else setEditingObject('new');
   };
 
@@ -211,7 +234,15 @@ export function TemplateLibrary() {
             onCancel={closeFocus}
           />
         )}
-        {typeFilter !== 'tutorial' && typeFilter !== 'tutorial-v2' && editingObject !== null && (
+        {typeFilter === 'tutorial-v3' && editingTutorial !== null && (
+          <TutorialTemplateEditorV3
+            key={editingTutorial === 'new' ? 'new-v3' : editingTutorial.id}
+            initial={editingTutorial === 'new' ? null : editingTutorial}
+            onSave={() => { refresh(); closeFocus(); }}
+            onCancel={closeFocus}
+          />
+        )}
+        {typeFilter !== 'tutorial' && typeFilter !== 'tutorial-v2' && typeFilter !== 'tutorial-v3' && editingObject !== null && (
           <ObjectTemplateEditor
             key={editingObject === 'new' ? 'new' : editingObject.id}
             objectType={typeFilter}
@@ -239,7 +270,9 @@ export function TemplateLibrary() {
       ? !item.t.builtin && !isBuiltinTemplateId(id)
       : item.kind === 'tutorial-v2'
         ? !item.t.builtin && !isBuiltinV2TemplateId(id)
-        : !item.t.builtin && !isBuiltinObjectTemplateId(id);
+        : item.kind === 'tutorial-v3'
+          ? !item.t.builtin && !isBuiltinV3TemplateId(id)
+          : !item.t.builtin && !isBuiltinObjectTemplateId(id);
     const recommendedBadge = false;
     const isDefault = isDefaultTemplate(typeFilter, id);
     const base = TYPE_COLOR[typeFilter] || '#7C3AED';
@@ -376,7 +409,9 @@ export function TemplateLibrary() {
                 ? listTutorialTemplates().find((t) => t.id === defId)?.name
                 : typeFilter === 'tutorial-v2'
                   ? listTutorialV2Templates().find((t) => t.id === defId)?.name
-                  : listObjectTemplates(typeFilter).find((t) => t.id === defId)?.name;
+                  : typeFilter === 'tutorial-v3'
+                    ? listTutorialV3Templates().find((t) => t.id === defId)?.name
+                    : listObjectTemplates(typeFilter).find((t) => t.id === defId)?.name;
               return defName
                 ? ` Current default: ${defName}.`
                 : '';

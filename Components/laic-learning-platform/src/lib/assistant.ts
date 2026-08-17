@@ -129,7 +129,7 @@ export function buildAssistantContext(snap: AssistantHostSnapshot): AssistantCon
         chks: fv.chks,
         prog: fv.prog,
         // Tutorials: AI extras are force-Off (define-first); ignore legacy fv.aiExtra.
-        aiExtra: snap.objectType === 'tutorial' || snap.objectType === 'tutorial-v2' ? false : fv.aiExtra === true,
+        aiExtra: snap.objectType === 'tutorial' || snap.objectType === 'tutorial-v2' || snap.objectType === 'tutorial-v3' ? false : fv.aiExtra === true,
         // words retired — length follows units + depth
       },
     },

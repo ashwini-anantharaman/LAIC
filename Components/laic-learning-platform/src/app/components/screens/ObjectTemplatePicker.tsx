@@ -8,7 +8,7 @@ import {
 import { ObjectTemplateEditor } from './ObjectTemplateEditor';
 
 interface Props {
-  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>;
+  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2' | 'tutorial-v3'>;
   value?: string;
   onChange: (template: ObjectTemplate) => void;
 }

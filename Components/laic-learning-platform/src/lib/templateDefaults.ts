@@ -9,6 +9,10 @@ import {
   DEFAULT_TUTORIAL_TEMPLATE_ID as DEFAULT_TUTORIAL_V2_TEMPLATE_ID,
   listTutorialTemplates as listTutorialV2Templates,
 } from './tutorialV2/tutorialTemplates';
+import {
+  DEFAULT_TUTORIAL_TEMPLATE_ID as DEFAULT_TUTORIAL_V3_TEMPLATE_ID,
+  listTutorialTemplates as listTutorialV3Templates,
+} from './tutorialV3/tutorialTemplates';
 
 const STORAGE_KEY = 'laic-default-template-ids';
 
@@ -16,6 +20,7 @@ const STORAGE_KEY = 'laic-default-template-ids';
 const FALLBACKS: Partial<Record<TemplateObjectType, string>> = {
   tutorial: DEFAULT_TUTORIAL_TEMPLATE_ID,
   'tutorial-v2': DEFAULT_TUTORIAL_V2_TEMPLATE_ID,
+  'tutorial-v3': DEFAULT_TUTORIAL_V3_TEMPLATE_ID,
   quiz: 'quiz-formative',
   'flashcard-set': 'fc-key-terms',
   'concept-card': 'cc-standard-sheet',
@@ -56,6 +61,12 @@ function resolveFallback(objectType: TemplateObjectType): string {
     if (preferred && all.some((t) => t.id === preferred)) return preferred;
     return all[0]?.id || DEFAULT_TUTORIAL_V2_TEMPLATE_ID;
   }
+  if (objectType === 'tutorial-v3') {
+    const all = listTutorialV3Templates();
+    const preferred = FALLBACKS['tutorial-v3'];
+    if (preferred && all.some((t) => t.id === preferred)) return preferred;
+    return all[0]?.id || DEFAULT_TUTORIAL_V3_TEMPLATE_ID;
+  }
   const all = listObjectTemplates(objectType);
   const preferred = FALLBACKS[objectType];
   if (preferred && all.some((t) => t.id === preferred)) return preferred;
@@ -71,6 +82,8 @@ export function getDefaultTemplateId(objectType: TemplateObjectType): string {
       if (listTutorialTemplates().some((t) => t.id === stored)) return stored;
     } else if (objectType === 'tutorial-v2') {
       if (listTutorialV2Templates().some((t) => t.id === stored)) return stored;
+    } else if (objectType === 'tutorial-v3') {
+      if (listTutorialV3Templates().some((t) => t.id === stored)) return stored;
     } else if (listObjectTemplates(objectType).some((t) => t.id === stored)) {
       return stored;
     }

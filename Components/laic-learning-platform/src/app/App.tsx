@@ -63,6 +63,9 @@ function sharedRowToObject(row: any): LearningObject {
     ...(row.pipeline_draft?.tutorialV2Draft
       ? { tutorialV2Draft: row.pipeline_draft.tutorialV2Draft }
       : {}),
+    ...(row.pipeline_draft?.tutorialV3Draft
+      ? { tutorialV3Draft: row.pipeline_draft.tutorialV3Draft }
+      : {}),
   } as LearningObject;
 }
 import {
@@ -732,6 +735,9 @@ function StudioApp() {
         tutorialV2Draft: (partial as any).tutorialV2Draft !== undefined
           ? (partial as any).tutorialV2Draft
           : (existing as any)?.tutorialV2Draft,
+        tutorialV3Draft: (partial as any).tutorialV3Draft !== undefined
+          ? (partial as any).tutorialV3Draft
+          : (existing as any)?.tutorialV3Draft,
         structuredV2Draft: (partial as any).structuredV2Draft !== undefined
           ? (partial as any).structuredV2Draft
           : (existing as any)?.structuredV2Draft,

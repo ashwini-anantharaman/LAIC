@@ -22,6 +22,12 @@ import {
   getTutorialTemplate,
 } from '../../../lib/tutorialV2/tutorialTemplates';
 import { setTutorialV2LaunchTemplate } from '../../../lib/tutorialV2/launchTemplate';
+import {
+  BLANK_CANVAS_TUTORIAL_TEMPLATE_ID as BLANK_CANVAS_TUTORIAL_V3_TEMPLATE_ID,
+  DEFAULT_TUTORIAL_TEMPLATE_ID as DEFAULT_TUTORIAL_V3_TEMPLATE_ID,
+  getTutorialTemplate as getTutorialV3Template,
+} from '../../../lib/tutorialV3/tutorialTemplates';
+import { setTutorialV3LaunchTemplate } from '../../../lib/tutorialV3/launchTemplate';
 import type { RecipeItem, TutorialTemplate } from '../../../lib/types';
 import { getObjectTemplate, type TemplateObjectType } from '../../../lib/objectTemplates';
 import {
@@ -33,7 +39,7 @@ import { useApp } from '../../App';
 import { GlassFolderTile, tintForKey } from '../GlassFolder';
 
 /** Types that get the "How do you want to build this?" authoring-path modal. */
-const PATH_PICKER_TYPES = ['tutorial-v2', 'quiz', 'flashcard-set', 'concept-card', 'video-script'];
+const PATH_PICKER_TYPES = ['tutorial-v2', 'tutorial-v3', 'quiz', 'flashcard-set', 'concept-card', 'video-script'];
 
 interface ObjectTile {
   id: string;
@@ -48,6 +54,7 @@ const TILES: ObjectTile[] = [
   { id: 'lesson', label: 'Lesson', desc: 'Focused unit around a single concept or skill', icon: <BookOpen size={22} />, color: '#1D4ED8' },
   { id: 'tutorial', label: 'Tutorial', desc: 'Step-by-step guided walkthrough', icon: <Layers size={22} />, color: '#7C3AED' },
   { id: 'tutorial-v2', label: 'Tutorial V2', desc: 'Same as Tutorial today — section-by-section flow later', icon: <Layers size={22} />, color: '#6D28D9' },
+  { id: 'tutorial-v3', label: 'Tutorial V3', desc: 'Section-by-section tutorial — the V3 authoring line', icon: <Layers size={22} />, color: '#5B21B6' },
   { id: 'quiz', label: 'Quiz', desc: 'Multiple-choice questions with instant feedback', icon: <HelpCircle size={22} />, color: '#059669' },
   { id: 'flashcard-set', label: 'Flashcard set', desc: 'Term–definition pairs for active recall', icon: <Copy size={22} />, color: '#D97706' },
   { id: 'concept-card', label: 'Concept card', desc: 'One idea, many views — definition, analogy, example, misconception', icon: <Lightbulb size={22} />, color: '#0284C7' },
@@ -667,7 +674,7 @@ function AuthoringPathModal({
   onClose,
 }: {
   objectLabel: string;
-  /** 'tutorial-v2' or a structured type (quiz / flashcard-set / concept-card / video-script). */
+  /** 'tutorial-v2' / 'tutorial-v3', or a structured type (quiz / flashcard-set / concept-card / video-script). */
   objectType: string;
   /** Org-assigned / Template Library default template. */
   defaultTemplateName: string;
@@ -682,6 +689,10 @@ function AuthoringPathModal({
   const preview = useMemo(() => {
     if (objectType === 'tutorial-v2') {
       const tpl = getTutorialTemplate(defaultTemplateId);
+      return { name: tpl.name, outline: buildTemplateOutline(tpl) };
+    }
+    if (objectType === 'tutorial-v3') {
+      const tpl = getTutorialV3Template(defaultTemplateId);
       return { name: tpl.name, outline: buildTemplateOutline(tpl) };
     }
     return buildStructuredOutline(objectType, defaultTemplateId);
@@ -841,7 +852,7 @@ function AuthoringPathModal({
                 )}
               </div>
             </button>
-            {objectType === 'tutorial-v2' && (
+            {(objectType === 'tutorial-v2' || objectType === 'tutorial-v3') && (
               <button
                 type="button"
                 onClick={() => onChange('blank')}
@@ -958,6 +969,8 @@ export function CDCreate() {
     : null;
   const orgDefaultTutorialV2Id = getDefaultTemplateId('tutorial-v2') || DEFAULT_TUTORIAL_TEMPLATE_ID;
   const orgDefaultTutorialV2Name = getTutorialTemplate(orgDefaultTutorialV2Id).name;
+  const orgDefaultTutorialV3Id = getDefaultTemplateId('tutorial-v3') || DEFAULT_TUTORIAL_V3_TEMPLATE_ID;
+  const orgDefaultTutorialV3Name = getTutorialV3Template(orgDefaultTutorialV3Id).name;
 
   const openCollectionPicker = (typeId: string) => {
     setPendingType(typeId);
@@ -1001,7 +1014,11 @@ export function CDCreate() {
     if (!pathChoice || !pendingType || !PATH_PICKER_TYPES.includes(pendingType)) return;
     if (pathChoice === 'blank') {
       // Blank canvas rides the template path with the blank-canvas template.
-      setTutorialV2LaunchTemplate(BLANK_CANVAS_TUTORIAL_TEMPLATE_ID);
+      if (pendingType === 'tutorial-v3') {
+        setTutorialV3LaunchTemplate(BLANK_CANVAS_TUTORIAL_V3_TEMPLATE_ID);
+      } else {
+        setTutorialV2LaunchTemplate(BLANK_CANVAS_TUTORIAL_TEMPLATE_ID);
+      }
       setPendingAuthoringPath('template');
     } else {
       setPendingAuthoringPath(pathChoice);
@@ -1106,10 +1123,14 @@ export function CDCreate() {
           objectType={pendingType}
           defaultTemplateName={pendingType === 'tutorial-v2'
             ? orgDefaultTutorialV2Name
-            : (getObjectTemplate(getDefaultTemplateId(pendingType as TemplateObjectType), pendingType as TemplateObjectType)?.name || 'Default template')}
+            : pendingType === 'tutorial-v3'
+              ? orgDefaultTutorialV3Name
+              : (getObjectTemplate(getDefaultTemplateId(pendingType as TemplateObjectType), pendingType as TemplateObjectType)?.name || 'Default template')}
           defaultTemplateId={pendingType === 'tutorial-v2'
             ? orgDefaultTutorialV2Id
-            : (getDefaultTemplateId(pendingType as TemplateObjectType) || '')}
+            : pendingType === 'tutorial-v3'
+              ? orgDefaultTutorialV3Id
+              : (getDefaultTemplateId(pendingType as TemplateObjectType) || '')}
           value={pathChoice}
           onChange={setPathChoice}
           onContinue={proceedWithAuthoringPath}

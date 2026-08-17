@@ -50,6 +50,9 @@ export function snapshotFromObject(obj: LearningObject): ObjectVersionSnapshot {
     tutorialV2Draft: obj.tutorialV2Draft
       ? JSON.parse(JSON.stringify(obj.tutorialV2Draft))
       : undefined,
+    tutorialV3Draft: obj.tutorialV3Draft
+      ? JSON.parse(JSON.stringify(obj.tutorialV3Draft))
+      : undefined,
   };
 }
 
@@ -75,6 +78,17 @@ export function contentFingerprint(snap: ObjectVersionSnapshot | LearningObject)
     delete tutorialV2Draft.createdAt;
     delete tutorialV2Draft.assistantMessages;
   }
+  let tutorialV3Draft = (snap as any).tutorialV3Draft
+    ? JSON.parse(JSON.stringify((snap as any).tutorialV3Draft))
+    : undefined;
+  if (tutorialV3Draft && typeof tutorialV3Draft === 'object') {
+    delete tutorialV3Draft.phase;
+    delete tutorialV3Draft.activeSectionId;
+    delete tutorialV3Draft.activeSlotId;
+    delete tutorialV3Draft.updatedAt;
+    delete tutorialV3Draft.createdAt;
+    delete tutorialV3Draft.assistantMessages;
+  }
   return JSON.stringify({
     title,
     description,
@@ -86,6 +100,7 @@ export function contentFingerprint(snap: ObjectVersionSnapshot | LearningObject)
     sourceIds,
     pipelineDraft: pipelineDraft || null,
     tutorialV2Draft: tutorialV2Draft || null,
+    tutorialV3Draft: tutorialV3Draft || null,
   });
 }
 
@@ -129,6 +144,7 @@ export function objectFromVersion(
     sourceIds: snap.sourceIds,
     pipelineDraft: snap.pipelineDraft,
     tutorialV2Draft: snap.tutorialV2Draft,
+    tutorialV3Draft: snap.tutorialV3Draft,
     updatedAt: version.createdAt,
   };
 }

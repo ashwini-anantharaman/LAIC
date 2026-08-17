@@ -19,6 +19,7 @@ export const TEMPLATE_TYPE_LABELS: Record<TemplateObjectType, string> = {
   lesson: 'Lesson',
   tutorial: 'Tutorial',
   'tutorial-v2': 'Tutorial V2',
+  'tutorial-v3': 'Tutorial V3',
   quiz: 'Quiz',
   'flashcard-set': 'Flashcard set',
   'concept-card': 'Concept card',
@@ -33,6 +34,7 @@ export const TEMPLATE_TYPE_LABELS: Record<TemplateObjectType, string> = {
 export const TEMPLATE_OBJECT_TYPES: TemplateObjectType[] = [
   'tutorial',
   'tutorial-v2',
+  'tutorial-v3',
   'quiz',
   'flashcard-set',
   'concept-card',
@@ -341,7 +343,7 @@ function normalizeCustom(raw: unknown): ObjectTemplate | null {
   const t = raw as Partial<ObjectTemplate>;
   if (typeof t.id !== 'string' || typeof t.name !== 'string') return null;
   if (!t.objectType || !TEMPLATE_OBJECT_TYPES.includes(t.objectType as TemplateObjectType)) return null;
-  if (t.objectType === 'tutorial' || t.objectType === 'tutorial-v2') return null; // tutorials use dedicated template modules
+  if (t.objectType === 'tutorial' || t.objectType === 'tutorial-v2' || t.objectType === 'tutorial-v3') return null; // tutorials use dedicated template modules
   return {
     id: t.id,
     objectType: t.objectType as TemplateObjectType,
@@ -404,7 +406,7 @@ export function getObjectTemplate(id?: string | null, objectType?: TemplateObjec
 export function saveCustomObjectTemplate(
   input: Omit<ObjectTemplate, 'id' | 'builtin' | 'recommended'> & { id?: string },
 ): ObjectTemplate {
-  if (input.objectType === 'tutorial' || input.objectType === 'tutorial-v2') {
+  if (input.objectType === 'tutorial' || input.objectType === 'tutorial-v2' || input.objectType === 'tutorial-v3') {
     throw new Error('Use tutorial template APIs for tutorials.');
   }
   const customs = loadCustomObjectTemplates();
@@ -442,7 +444,7 @@ export function blankObjectTemplateDraft(objectType: TemplateObjectType): Omit<O
 
 /** Editable Define knobs shown in the simple template editor (per type). */
 export const TEMPLATE_EDITOR_FIELDS: Record<
-  Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>,
+  Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2' | 'tutorial-v3'>,
   { id: string; label: string; type: 'text' | 'num' | 'bool' | 'sel'; options?: string[] }[]
 > = {
   quiz: [

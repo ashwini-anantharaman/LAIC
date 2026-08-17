@@ -1657,7 +1657,7 @@ export function LearnerReader({
   const passMark = passOpts.passMark ?? 70;
   const passRequired = passOpts.passRequired;
   const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(obj.blocks)) as Block[];
-  const useCumulative = (obj.type === 'tutorial' || obj.type === 'tutorial-v2') && countQuizQuestionsInBlocks(numbered) > 0;
+  const useCumulative = (obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3') && countQuizQuestionsInBlocks(numbered) > 0;
   const glossaryEntries = buildGlossary({
     knowledgeBase: draft?.knowledgeBase,
     blocks: numbered,
@@ -1761,7 +1761,7 @@ export function LearnerReader({
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
             <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
-              {obj.type === 'tutorial' || obj.type === 'tutorial-v2' ? 'Tutorial'
+              {obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3' ? 'Tutorial'
                 : obj.type === 'flashcard-set' ? 'Flashcard set'
                   : obj.type === 'quiz' ? 'Quiz'
                     : obj.type === 'concept-card' ? 'Concept card'
@@ -1794,7 +1794,7 @@ export function LearnerReader({
             hintsEnabled={hintOpts.enabled}
             animate
             sourceUnits={draft?.knowledgeBase?.units}
-            paginate={!embedded && (obj.type === 'tutorial' || obj.type === 'tutorial-v2')}
+            paginate={!embedded && (obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3')}
           />
         ) : (
           <div className="flex flex-col items-center py-12 text-center">

@@ -13,6 +13,7 @@ export type ObjectType =
   | 'lesson'
   | 'tutorial'
   | 'tutorial-v2'
+  | 'tutorial-v3'
   | 'quiz'
   | 'flashcard-set'
   | 'concept-card'
@@ -1039,6 +1040,11 @@ export interface LearningObject {
    */
   tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
   /**
+   * Tutorial V3 skeleton + per-section authoring state.
+   * Only used when type === 'tutorial-v3'; ignored by the V1/V2 tutorial paths.
+   */
+  tutorialV3Draft?: import('./tutorialV3/types').TutorialV3Draft;
+  /**
    * Structured V2 authoring state (Plan → Structure → Author → Review) for
    * quiz / flashcard-set / concept-card / video-script objects.
    */
@@ -1129,6 +1135,7 @@ export interface ObjectVersionSnapshot {
   sourceIds: string[];
   pipelineDraft?: CreatorPipelineDraft;
   tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
+  tutorialV3Draft?: import('./tutorialV3/types').TutorialV3Draft;
 }
 
 export interface Version {

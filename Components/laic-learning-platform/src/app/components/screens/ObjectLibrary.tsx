@@ -45,6 +45,7 @@ const TYPE_ICONS: Record<ObjectType, React.ReactNode> = {
   lesson: <BookOpen size={14} />,
   tutorial: <Layers size={14} />,
   'tutorial-v2': <Layers size={14} />,
+  'tutorial-v3': <Layers size={14} />,
   quiz: <HelpCircle size={14} />,
   'flashcard-set': <Copy size={14} />,
   'concept-card': <Lightbulb size={14} />,
@@ -458,6 +459,7 @@ export function ObjectLibrary() {
     !!item.type && (
       item.type === 'tutorial'
       || item.type === 'tutorial-v2'
+      || item.type === 'tutorial-v3'
       || item.type === 'flashcard-set'
       || item.type === 'quiz'
       || item.type === 'concept-card'

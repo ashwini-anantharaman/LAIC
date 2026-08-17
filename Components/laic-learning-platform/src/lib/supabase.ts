@@ -74,11 +74,12 @@ export function objectToPublishRow(
   // Carry the authoring draft so reopening synced content resumes where it
   // left off instead of showing only the rendered blocks. pipeline_draft is
   // the one free-form jsonb column on the row.
-  const authoring = (obj as any).tutorialV2Draft || (obj as any).structuredV2Draft;
+  const authoring = (obj as any).tutorialV2Draft || (obj as any).tutorialV3Draft || (obj as any).structuredV2Draft;
   if (authoring) {
     row.pipeline_draft = {
       ...(obj.pipelineDraft as any || {}),
       ...((obj as any).tutorialV2Draft ? { tutorialV2Draft: (obj as any).tutorialV2Draft } : {}),
+      ...((obj as any).tutorialV3Draft ? { tutorialV3Draft: (obj as any).tutorialV3Draft } : {}),
       ...((obj as any).structuredV2Draft ? { structuredV2Draft: (obj as any).structuredV2Draft } : {}),
     };
   }
