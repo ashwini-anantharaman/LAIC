@@ -39,7 +39,7 @@ import type { LearningObject } from "./nexus";
  *  it is the renderable payload and can run to megabytes per row — the reader
  *  fetches it for ONE object when someone opens it. */
 const LIST_COLUMNS =
-  "id,type,title,description,estimated_time,owner_name,tags,status," +
+  "id,type,title,description,estimated_time,owner_name,tags,status,program_id," +
   "collection_ids,collection_names,version_number,published_at,updated_at";
 
 export const liveLearningConfigured = (): boolean =>
@@ -85,6 +85,12 @@ function fromRow(r: Record<string, unknown>): LearningObject {
     tags: arr(r.tags),
     // The list read does not carry content; the reader fetches it per object.
     blocks: null,
+    // Who OWNS the row. splitByOwner (lib/learning) sorts the Learn tab's
+    // curriculum from a club's own authored content by this field alone, and
+    // dropping it from the projection made every row read as curriculum: the
+    // Learn tab showed a club's private work to every club, and the Club tab's
+    // own shelf came back empty. The API path has always carried it.
+    program_id: (r.program_id as string | null) ?? null,
     updated_at: (r.updated_at as string | null) ?? null,
     collection_ids: arr(r.collection_ids),
     collection_names: arr(r.collection_names),
