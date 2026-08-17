@@ -9,6 +9,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useCoachHolding } from "./coachHold";
 import { useTrickHold } from "./trickHold";
 
 /** The step endpoint's honest failure shape (see the route). */
@@ -101,7 +102,12 @@ export function AutoAdvance({
   // would sweep it away, which is the one thing the hold exists to stop. The
   // default context reads "not holding", so tables without the provider (the
   // legacy page, the demo) are untouched.
-  const { holding } = useTrickHold();
+  const { holding: trickHolding } = useTrickHold();
+  // The coach has asked the learner a question ("take it back?") and is
+  // waiting on the answer. Stepping now answers the board for them — and
+  // every robot card is one more the take-back has to unwind.
+  const coachHolding = useCoachHolding();
+  const holding = trickHolding || coachHolding;
   const [thinking, setThinking] = useState(false);
   const [benError, setBenError] = useState<string | null>(null);
   const inFlight = useRef(false);

@@ -45,6 +45,7 @@ import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
 import { useRouter } from "next/navigation";
 
+import { useHoldTable } from "../coachHold";
 import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
 import { BenWhatIf, CoachHints, CoachTell, SpeechBubble } from "./CoachHintsTell";
 import { CoachTakeaway } from "./CoachTakeaway";
@@ -1401,6 +1402,10 @@ function CuratedCoachVoice({
       alive = false;
     };
   }, [sessionId, epoch]);
+
+  // THE ROBOTS WAIT WHILE THE QUESTION STANDS (owner report 2026-08-17).
+  // Before the early return below — a hook may not sit behind a condition.
+  useHoldTable(Boolean(overlay?.nudge) && !nudgeKept);
 
   if (!overlay) return null;
 

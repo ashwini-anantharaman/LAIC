@@ -16,6 +16,7 @@ import { useEffect, useMemo, useOptimistic, useState, useTransition } from "reac
 import type { ActionEvent, Call, Card, Seat, Suit } from "@bridge/events";
 import { applyEvent, trickWinner, type GameState } from "@bridge/engine";
 import { TRICK_PAUSE_MS, type TrickPause } from "@bridge/table-config";
+import { CoachHoldProvider, useCoachHoldState } from "../coachHold";
 import { TrickHoldProvider } from "../trickHold";
 import { bidAction, playCardAction } from "@/app/bridge/table/actions";
 import NextLink from "next/link";
@@ -150,6 +151,10 @@ export function LivePlayTable({
   const waitsForTap = seated && holdMs == null;
   const holding = trickDone && released !== trickKey;
   const release = useMemo(() => () => setReleased(trickKey), [trickKey]);
+  // The OTHER hold: the coach's take-back offer, owned here for the same
+  // reason the trick's is — the panel that raises it and the driver that must
+  // obey it are siblings, and both render under this provider.
+  const coachHold = useCoachHoldState();
   /**
    * Who took it — computed with the ENGINE's own trick law, not read off the
    * state. `winner` is set when a trick completes but the session store does
@@ -185,6 +190,7 @@ export function LivePlayTable({
         replace ? router.replace(href, { scroll: false }) : router.push(href)
       }
     >
+    <CoachHoldProvider value={coachHold}>
     <TrickHoldProvider value={{ holding, release }}>
     {/* `display: contents` — the wrapper catches the tap that lets a finished
         trick go WITHOUT becoming a box. <PlayTable/> measures its own container
@@ -226,6 +232,7 @@ export function LivePlayTable({
     />
     </div>
     </TrickHoldProvider>
+    </CoachHoldProvider>
     </TableHostProvider>
   );
 }
