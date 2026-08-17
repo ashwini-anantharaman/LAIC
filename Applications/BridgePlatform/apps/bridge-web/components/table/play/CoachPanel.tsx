@@ -1990,6 +1990,15 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         // so the button — and with it the grid row — grows to hold whatever
         // the face says, and nothing clips.
         position: "relative", minHeight: 60,
+        // WIDTH IS EXPLICIT because this is a <button>. A grid item stretches
+        // to its column by default, but iOS Safari does not stretch form
+        // controls — it shrink-wraps them to their content. So on the phone
+        // each envelope sized itself to its own label: "HCP" narrow, then a
+        // gap, then a wide "DISTRIBUTION", then "SHAPE" starting a ragged new
+        // row. The same markup is a tidy grid in Chrome, which is why it read
+        // as fine on the desktop and messed up on the phone (owner report
+        // 2026-08-17). 100% + border-box fills the cell in every engine.
+        width: "100%", boxSizing: "border-box",
         display: "flex", flexDirection: "column",
         ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
