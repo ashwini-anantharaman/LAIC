@@ -381,10 +381,21 @@ export function TutorialV3SectionWorkspace({
             authorMode: bumpAuthorMode(section.authorMode, 'written'),
           });
           if (isSlot && onChangeSlot) {
+            /*
+              Done means there is something in it, not that the editor was
+              opened. `applyOnSaveDraft` fires this on the way out even when
+              nothing was authored, which used to mark a slot Ready while it
+              still held an empty scaffold — and Ready is what the outline, the
+              re-open shortcut and "required remaining" all read.
+            */
+            const applied = nextParts.find((p) => p.id === editingPart.id) || nextParts[0];
+            const appliedKind = applied ? nestedEditorKindForPart(applied) : null;
+            const hasContent = !!applied
+              && (!appliedKind || !isNestedPartEmpty(applied, appliedKind));
             onChangeSlot({
               parts: nextParts,
               part: nextParts[0],
-              done: true,
+              ...(hasContent ? { done: true } : {}),
               libraryTitle: nextParts[0]?.libraryTitle || nextParts[0]?.label,
             });
           }
