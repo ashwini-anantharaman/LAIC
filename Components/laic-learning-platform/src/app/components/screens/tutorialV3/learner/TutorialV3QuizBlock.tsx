@@ -1,17 +1,18 @@
 /**
- * Tutorial V3 quiz.
+ * Tutorial V3 quiz — the reference export's `GenericQuizBlock`, wired to the
+ * platform's own quiz data.
  *
- * Everything the reader's quiz already does is kept as it is — multi-select,
- * adaptive ordering, the pass mark, the author's explanation policy, the
- * progressive hints capped by the tutorial's hintN, question media, the score
- * banner and cumulative pooling. The explanation policy stays an author
- * setting; there is deliberately no learner-facing toggle for it.
+ * The look is fixed and comes from the Figma reference: rounded-2xl cards on a
+ * soft shadow, two-column options with a letter prefix, sage submit pills, an
+ * amber hint row, a per-question strip and a closing score panel. What varies is
+ * only the content the course developer wrote.
  *
- * Four things are new:
- *   · self-marking for short answer, replacing substring grading
- *   · FROM YOUR SOURCES, which the reader collected but never rendered
- *   · review-wrong mode after completion
- *   · a per-question progress strip
+ * Behaviour is the platform's, not the reference's, and nothing was dropped to
+ * get the look: multi-select, short answer with learner self-marking, adaptive
+ * ordering, the author's explanation policy, progressive hints capped by the
+ * tutorial's hintN, question media, FROM YOUR SOURCES, review-wrong mode, the
+ * pass mark and cumulative pooling all still work. Each one is drawn in the
+ * reference's own idiom rather than in the one it had before.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -20,6 +21,8 @@ import { QuestionMedia } from '../../QuestionMedia';
 import { hintsForQuestion } from '../../../../../lib/questionHints.js';
 import type { QuizResolveStatus } from '../../McqClusterExperience';
 import { useLearnerProgress } from './LearnerProgressContext';
+import { SAGE } from './warm/theme';
+import { WarmStrip } from './warm/WarmPrimitives';
 
 /** How the learner judged their own free-text answer. */
 type SelfMark = 'correct' | 'partial' | 'missed';
@@ -97,25 +100,34 @@ function pickAdaptiveNext(
   return unused[0];
 }
 
+/** The reference's own wording for a question type. */
+function typeLabel(t: string | undefined): string {
+  if (t === 'multi-select') return 'Select all that apply';
+  if (t === 'short-answer') return 'Short answer';
+  if (t === 'true-false') return 'True or false';
+  if (t === 'scenario') return 'Scenario';
+  return 'Choose one';
+}
+
+function typeChipClass(t: string | undefined): string {
+  if (t === 'multi-select') return 'bg-blue-50 text-blue-600';
+  if (t === 'short-answer') return 'bg-purple-50 text-purple-600';
+  return 'bg-stone-100 text-stone-500';
+}
+
 /* ── FROM YOUR SOURCES ────────────────────────────────────────── */
 
 function SourcesPanel({ sources }: { sources: QuizSource[] }) {
   return (
-    <div className="mt-3 rounded-xl overflow-hidden" style={{ border: '1px solid rgba(0,0,0,0.09)', background: 'rgba(0,0,0,0.02)' }}>
-      <div style={{ padding: '8px 14px', borderBottom: '1px solid rgba(0,0,0,0.07)' }}>
-        <span style={{ fontSize: 10, letterSpacing: '0.14em', color: '#6B7280', fontWeight: 700 }}>
-          FROM YOUR SOURCES
-        </span>
+    <div className="mt-3 rounded-2xl bg-stone-50 overflow-hidden">
+      <div className="px-4 py-2.5 border-b border-stone-100">
+        <span className="text-xs font-bold text-stone-500 tracking-wide">FROM YOUR SOURCES</span>
       </div>
       <div>
         {sources.map((s, i) => (
-          <div key={i} style={{ padding: '11px 14px', borderTop: i ? '1px solid rgba(0,0,0,0.05)' : undefined }}>
-            <p style={{ fontSize: 13, color: '#374151', fontStyle: 'italic', lineHeight: 1.55, marginBottom: 4 }}>
-              “{s.quote}”
-            </p>
-            {citeOf(s) && (
-              <p style={{ fontSize: 10.5, color: '#9AA3AF' }}>{citeOf(s)}</p>
-            )}
+          <div key={i} className={`px-4 py-3 ${i ? 'border-t border-stone-100' : ''}`}>
+            <p className="text-sm text-stone-700 italic leading-relaxed mb-1">“{s.quote}”</p>
+            {citeOf(s) && <p className="text-xs text-stone-400 font-semibold">{citeOf(s)}</p>}
           </div>
         ))}
       </div>
@@ -301,206 +313,220 @@ export function TutorialV3QuizBlock({
     const shortAnswer = q.type === 'short-answer';
     const mark = selfMarks[qi];
     const sources = sourcesOf(q);
+    const right = isRight(qi);
 
     // The card tints to the outcome once there is one to show.
-    let cardBg = 'white';
-    let cardBorder = 'transparent';
-    if (done && shortAnswer && mark) {
-      cardBg = mark === 'correct' ? 'rgba(5,150,105,0.06)' : mark === 'missed' ? 'rgba(239,68,68,0.05)' : 'rgba(217,119,6,0.06)';
-      cardBorder = mark === 'correct' ? 'rgba(5,150,105,0.22)' : mark === 'missed' ? 'rgba(239,68,68,0.2)' : 'rgba(217,119,6,0.22)';
-    } else if (done && !shortAnswer) {
-      cardBg = status === 'correct' ? 'rgba(5,150,105,0.06)' : 'rgba(239,68,68,0.05)';
-      cardBorder = status === 'correct' ? 'rgba(5,150,105,0.22)' : 'rgba(239,68,68,0.2)';
+    let cardBg = 'bg-white';
+    if (done && shortAnswer) {
+      cardBg = mark === 'correct' ? 'bg-green-50' : mark === 'missed' ? 'bg-red-50' : 'bg-amber-50';
+    } else if (done) {
+      cardBg = status === 'correct' ? 'bg-green-50' : 'bg-red-50';
     }
 
     return (
-      <div
-        key={qi}
-        className="rounded-[22px] p-5"
-        style={{ background: cardBg, border: `1.5px solid ${cardBorder}`, boxShadow: '0 4px 16px -6px rgba(30,50,80,0.1)' }}
-      >
-        <div className="flex items-center gap-2 mb-2 flex-wrap">
-          <p style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF' }}>{opts.label}</p>
-          {q.type && q.type !== 'multiple-choice' && (
-            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: '#F3F4F6', color: '#6B7280' }}>{q.type}</span>
-          )}
+      <div key={qi} className={`rounded-2xl p-5 shadow-sm transition-colors ${cardBg}`}>
+        <div className="flex items-center gap-2 mb-4 flex-wrap">
+          <span className="text-xs text-stone-400 font-bold">{opts.label}</span>
+          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${typeChipClass(q.type)}`}>
+            {typeLabel(q.type)}
+          </span>
           {q.cognitiveLevel && (
-            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: 'rgba(37,99,235,0.08)', color: '#2563EB' }}>{q.cognitiveLevel}</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">{q.cognitiveLevel}</span>
           )}
           {adaptive && q.difficulty && (
-            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: 'rgba(217,119,6,0.1)', color: '#D97706' }}>{q.difficulty}</span>
-          )}
-          {status === 'correct' && (
-            <span className="px-2 py-0.5 rounded-full" style={{ fontSize: 10.5, fontWeight: 600, background: 'rgba(5,150,105,0.12)', color: '#059669' }}>Correct</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">{q.difficulty}</span>
           )}
         </div>
-        <p style={{ fontSize: 14.5, fontWeight: 600, color: '#0B1220', marginBottom: 14, lineHeight: 1.4 }}>{q.question}</p>
+
+        <p className="text-stone-900 text-[15px] leading-relaxed mb-4 font-medium">{q.question}</p>
         <QuestionMedia q={q} />
 
-        {shortAnswer ? (
-          <textarea
-            rows={4}
-            value={typeof answers[qi] === 'string' ? String(answers[qi]) : ''}
-            disabled={opts.disabled || done}
-            onChange={(e) => {
-              setAnswers((prev) => ({ ...prev, [qi]: e.target.value }));
-              setFlashWrong((p) => ({ ...p, [qi]: false }));
-            }}
-            placeholder="Write your answer…"
-            className="w-full rounded-xl px-4 py-3 resize-none"
-            style={{ fontSize: 13.5, border: '1px solid rgba(0,0,0,0.1)', outline: 'none', background: 'rgba(0,0,0,0.03)' }}
-          />
-        ) : (
-          <div className="space-y-2">
-            {options.map((opt, oi) => {
-              const multi = q.type === 'multi-select';
-              const chosen = multi
-                ? Array.isArray(answers[qi]) && (answers[qi] as number[]).includes(oi)
-                : answers[qi] === oi;
-              const right = multi ? (q.correctIndices || []).includes(oi) : oi === q.correct;
-              const correct = reveal && right;
-              const wrong = reveal && chosen && !right;
-              return (
-                <button
-                  key={oi}
-                  disabled={opts.disabled || done}
-                  onClick={() => {
-                    if (multi) toggleMulti(qi, oi);
-                    else {
-                      setAnswers((prev) => ({ ...prev, [qi]: oi }));
-                      setFlashWrong((p) => ({ ...p, [qi]: false }));
-                    }
-                  }}
-                  className="w-full text-left px-4 py-2.5 rounded-xl transition-all"
-                  style={{
-                    fontSize: 13.5,
-                    background: correct ? 'rgba(5,150,105,0.1)' : wrong ? 'rgba(239,68,68,0.08)' : chosen ? 'rgba(11,15,26,0.07)' : 'rgba(0,0,0,0.04)',
-                    border: correct ? '1.5px solid rgba(5,150,105,0.3)' : wrong ? '1.5px solid rgba(239,68,68,0.25)' : chosen ? '1.5px solid rgba(11,15,26,0.15)' : '1.5px solid transparent',
-                    color: '#0B1220',
-                    fontWeight: chosen ? 600 : 400,
-                  }}
-                >
-                  {multi ? (chosen ? '☑ ' : '☐ ') : ''}{opt}
-                </button>
-              );
-            })}
-            {reveal && q.type === 'multi-select' && (
-              <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 4 }}>
-                {(q.correctIndices || []).length} correct option{(q.correctIndices || []).length === 1 ? '' : 's'}
-              </p>
-            )}
-          </div>
-        )}
-
-        {flashWrong[qi] && !done && (
-          <p style={{ fontSize: 12.5, color: '#DC2626', marginTop: 10, fontWeight: 600 }}>
-            Not quite{maxHints > 0 && shown ? ` — hint ${shown} of ${maxHints}` : ''}. Try again.
-          </p>
-        )}
-
+        {/* Progressive hints — the reference draws one; the platform may have
+            several, so they stack in the same amber row. */}
         {shown > 0 && hints.length > 0 && (
-          <div className="mt-3 space-y-2">
+          <div className="mb-4 space-y-2">
             {hints.slice(0, shown).map((h: string, hi: number) => (
-              <div
-                key={hi}
-                className="rounded-xl px-3 py-2.5"
-                style={{
-                  background: hi === shown - 1 ? 'rgba(37,99,235,0.08)' : 'rgba(0,0,0,0.03)',
-                  border: hi === shown - 1 ? '1px solid rgba(37,99,235,0.2)' : '1px solid transparent',
-                }}
-              >
-                <p style={{ fontSize: 10.5, fontWeight: 700, color: '#2563EB', marginBottom: 2 }}>Hint {hi + 1} of {maxHints}</p>
-                <p style={{ fontSize: 12.5, color: '#1E3A8A', lineHeight: 1.45 }}>{h}</p>
+              <div key={hi} className="flex items-start gap-2 bg-amber-50 rounded-xl px-3 py-2.5">
+                <span className="text-amber-500 shrink-0 text-xs mt-0.5">💡</span>
+                <div>
+                  {maxHints > 1 && (
+                    <p className="text-xs text-amber-600 font-bold mb-0.5">Hint {hi + 1} of {maxHints}</p>
+                  )}
+                  <p className="text-amber-800 text-sm">{h}</p>
+                </div>
               </div>
             ))}
           </div>
         )}
 
-        {/* Self-marking: the sample answer is evidence for the learner's own
-            judgement, not a string to be matched against. */}
-        {shortAnswer && done && mark == null && (
-          <div className="mt-4">
-            <p style={{ fontSize: 13, color: '#374151', fontWeight: 600, marginBottom: 8 }}>
-              Compare with the sample answer — how did you do?
-            </p>
-            {q.sampleAnswer && (
-              <div className="rounded-xl px-4 py-3 mb-3" style={{ background: 'rgba(0,0,0,0.03)', border: '1px solid rgba(0,0,0,0.08)' }}>
-                <p style={{ fontSize: 10, letterSpacing: '0.14em', color: '#9AA3AF', fontWeight: 700, marginBottom: 4 }}>SAMPLE ANSWER</p>
-                <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.55 }}>{q.sampleAnswer}</p>
+        {shortAnswer ? (
+          <div className="mb-4">
+            <textarea
+              rows={4}
+              value={typeof answers[qi] === 'string' ? String(answers[qi]) : ''}
+              disabled={opts.disabled || done}
+              onChange={(e) => {
+                setAnswers((prev) => ({ ...prev, [qi]: e.target.value }));
+                setFlashWrong((p) => ({ ...p, [qi]: false }));
+              }}
+              placeholder="Write your answer here…"
+              className="w-full text-sm text-stone-800 border-2 border-stone-200 rounded-xl p-3 resize-none focus:outline-none focus:border-amber-400 disabled:bg-stone-50 font-medium"
+            />
+
+            {/* Self-marking: the sample answer is evidence for the learner's own
+                judgement, not a string to be matched against. */}
+            {done && mark == null && (
+              <div className="mt-3">
+                <p className="text-sm text-stone-600 mb-2 font-bold">How did you do? Compare with the sample answer:</p>
+                {q.sampleAnswer && (
+                  <div className="rounded-xl bg-stone-50 px-4 py-3 mb-3 text-sm text-stone-700 leading-relaxed">
+                    {q.sampleAnswer}
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'correct' }))}
+                    className="px-4 py-2 rounded-full border-2 border-green-300 bg-green-50 text-green-700 text-sm font-bold hover:bg-green-100"
+                  >
+                    Got it ✓
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'partial' }))}
+                    className="px-4 py-2 rounded-full border-2 border-amber-300 bg-amber-50 text-amber-700 text-sm font-bold hover:bg-amber-100"
+                  >
+                    Partly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'missed' }))}
+                    className="px-4 py-2 rounded-full border-2 border-red-300 bg-red-50 text-red-700 text-sm font-bold hover:bg-red-100"
+                  >
+                    Missed it
+                  </button>
+                </div>
               </div>
             )}
-            <div className="flex flex-wrap gap-2">
-              {([
-                { key: 'correct' as const, label: 'Got it ✓', fg: '#047857', bg: 'rgba(5,150,105,0.08)', bd: 'rgba(5,150,105,0.3)' },
-                { key: 'partial' as const, label: 'Partly', fg: '#B45309', bg: 'rgba(217,119,6,0.08)', bd: 'rgba(217,119,6,0.3)' },
-                { key: 'missed' as const, label: 'Missed it', fg: '#B91C1C', bg: 'rgba(239,68,68,0.07)', bd: 'rgba(239,68,68,0.28)' },
-              ]).map((b) => (
+            {done && mark != null && (
+              <div
+                className={`mt-3 rounded-xl px-3 py-2 text-sm font-bold flex items-center justify-between gap-3 ${
+                  mark === 'correct'
+                    ? 'bg-green-100 text-green-800'
+                    : mark === 'missed'
+                      ? 'bg-red-100 text-red-800'
+                      : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                <span>
+                  {mark === 'correct' ? '✓ Marked as correct' : mark === 'missed' ? '✗ Marked as missed' : '~ Marked as partial'}
+                </span>
                 <button
-                  key={b.key}
                   type="button"
-                  onClick={() => setSelfMarks((p) => ({ ...p, [qi]: b.key }))}
-                  className="px-4 py-2 rounded-full"
-                  style={{ fontSize: 12.5, fontWeight: 650, color: b.fg, background: b.bg, border: `1px solid ${b.bd}` }}
+                  onClick={() => setSelfMarks((p) => {
+                    const n = { ...p };
+                    delete n[qi];
+                    return n;
+                  })}
+                  className="text-xs font-bold text-stone-500 underline"
                 >
-                  {b.label}
+                  change
                 </button>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
-        )}
-        {shortAnswer && done && mark != null && (
-          <div
-            className="mt-3 rounded-xl px-3 py-2 flex items-center justify-between gap-3"
-            style={{
-              fontSize: 12.5,
-              fontWeight: 650,
-              color: mark === 'correct' ? '#047857' : mark === 'missed' ? '#B91C1C' : '#B45309',
-              background: mark === 'correct' ? 'rgba(5,150,105,0.1)' : mark === 'missed' ? 'rgba(239,68,68,0.08)' : 'rgba(217,119,6,0.1)',
-            }}
-          >
-            <span>
-              {mark === 'correct' ? '✓ Marked as correct' : mark === 'missed' ? '✗ Marked as missed' : '~ Marked as partial'}
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelfMarks((p) => {
-                const n = { ...p };
-                delete n[qi];
-                return n;
-              })}
-              style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280', textDecoration: 'underline' }}
-            >
-              change
-            </button>
+        ) : q.type === 'multi-select' ? (
+          <div className="space-y-2 mb-4">
+            {options.map((opt, oi) => {
+              const chosen = Array.isArray(answers[qi]) && (answers[qi] as number[]).includes(oi);
+              const isCorrectOpt = (q.correctIndices || []).includes(oi);
+              let cls = 'flex items-start gap-3 w-full text-left rounded-xl border-2 px-4 py-3 text-sm font-semibold transition-all ';
+              if (!reveal) {
+                cls += chosen
+                  ? 'border-amber-400 bg-amber-50 text-amber-900'
+                  : 'border-stone-200 bg-white hover:border-stone-400 text-stone-700 cursor-pointer';
+              } else if (isCorrectOpt) cls += 'border-green-400 bg-green-50 text-green-900';
+              else if (chosen) cls += 'border-red-300 bg-red-50 text-red-800';
+              else cls += 'border-stone-100 text-stone-400 cursor-default';
+              return (
+                <button
+                  key={oi}
+                  disabled={opts.disabled || done}
+                  onClick={() => toggleMulti(qi, oi)}
+                  className={cls}
+                >
+                  <span
+                    className={`mt-0.5 flex items-center justify-center w-4 h-4 rounded border-2 shrink-0 ${
+                      reveal && isCorrectOpt
+                        ? 'border-green-500 bg-green-500'
+                        : reveal && chosen && !isCorrectOpt
+                          ? 'border-red-400 bg-red-400'
+                          : chosen
+                            ? 'border-amber-400 bg-amber-400'
+                            : 'border-stone-300'
+                    }`}
+                  >
+                    {(chosen || (reveal && isCorrectOpt)) && <span className="text-white text-[9px] font-bold">✓</span>}
+                    {reveal && chosen && !isCorrectOpt && <span className="text-white text-[9px] font-bold">✗</span>}
+                  </span>
+                  <span>{opt}</span>
+                </button>
+              );
+            })}
+            {reveal && (
+              <p className="text-xs text-stone-400 font-semibold">
+                {(q.correctIndices || []).length} correct option{(q.correctIndices || []).length === 1 ? '' : 's'}
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+            {options.map((opt, oi) => {
+              const chosen = answers[qi] === oi;
+              const isCorrectOpt = oi === q.correct;
+              let cls = 'rounded-xl border-2 px-4 py-3 text-sm text-left font-semibold transition-all ';
+              if (!reveal) {
+                cls += chosen
+                  ? 'border-amber-400 bg-amber-50 text-amber-900 cursor-pointer'
+                  : 'border-stone-200 bg-white hover:border-stone-400 text-stone-700 cursor-pointer';
+              } else if (isCorrectOpt) cls += 'border-green-400 bg-green-100 text-green-900 cursor-default';
+              else if (chosen) cls += 'border-red-300 bg-red-100 text-red-800 cursor-default';
+              else cls += 'border-stone-100 bg-white/60 text-stone-400 cursor-default';
+              return (
+                <button
+                  key={oi}
+                  disabled={opts.disabled || done}
+                  onClick={() => {
+                    setAnswers((prev) => ({ ...prev, [qi]: oi }));
+                    setFlashWrong((p) => ({ ...p, [qi]: false }));
+                  }}
+                  className={cls}
+                >
+                  <span className="text-stone-400 font-bold mr-2">{String.fromCharCode(65 + oi)}.</span>{opt}
+                </button>
+              );
+            })}
           </div>
         )}
 
-        {opts.showCheck && !done && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={!hasAnswer(answers[qi])}
-              onClick={() => checkAnswer(qi)}
-              className="px-4 py-2 rounded-full text-white text-xs font-semibold"
-              style={{ background: '#0B0F1A', opacity: hasAnswer(answers[qi]) ? 1 : 0.45 }}
-            >
-              {shortAnswer ? 'Submit' : 'Check answer'}
-            </button>
-            {!shortAnswer && canShowAnswer && (
-              <button
-                type="button"
-                onClick={() => revealAndLock(qi)}
-                className="px-4 py-2 rounded-full text-xs font-semibold border"
-                style={{ borderColor: 'rgba(0,0,0,0.12)', color: '#6B7280' }}
-              >
-                Show answer
-              </button>
-            )}
-          </div>
+        {flashWrong[qi] && !done && (
+          <p className="text-sm text-red-600 font-bold mb-3">
+            Not quite{maxHints > 0 && shown ? ` — hint ${shown} of ${maxHints}` : ''}. Try again.
+          </p>
         )}
 
         {opts.showExp && q.explanation && (
-          <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 10, lineHeight: 1.5 }}>{q.explanation}</p>
+          <div
+            className={`text-sm rounded-xl px-4 py-3 mb-2 font-medium ${
+              shortAnswer
+                ? 'text-stone-700 bg-stone-100'
+                : right
+                  ? 'text-green-800 bg-green-100'
+                  : 'text-red-800 bg-red-100'
+            }`}
+          >
+            <span className="font-bold">{shortAnswer ? 'Note: ' : right ? '✓ ' : '✗ '}</span>{q.explanation}
+          </div>
         )}
 
         {/* Grounded quotes — collected by the pipeline all along, shown at last. */}
@@ -509,8 +535,7 @@ export function TutorialV3QuizBlock({
             <button
               type="button"
               onClick={() => setSourcesOpen((p) => ({ ...p, [qi]: !p[qi] }))}
-              className="flex items-center gap-1.5"
-              style={{ fontSize: 11.5, fontWeight: 600, color: '#6B7280' }}
+              className="flex items-center gap-1.5 text-sm text-stone-500 font-bold hover:text-stone-700"
               aria-expanded={!!sourcesOpen[qi]}
             >
               <span>{sourcesOpen[qi] ? '▾' : '▸'}</span>
@@ -519,60 +544,111 @@ export function TutorialV3QuizBlock({
             {sourcesOpen[qi] && <SourcesPanel sources={sources} />}
           </div>
         )}
+
+        {opts.showCheck && !done && (
+          <div className="flex items-center gap-3 mt-4 pt-4 border-t border-stone-100">
+            <button
+              type="button"
+              disabled={!hasAnswer(answers[qi])}
+              onClick={() => checkAnswer(qi)}
+              className="px-6 py-2 rounded-full text-white text-sm font-bold disabled:opacity-30 transition-opacity"
+              style={{ background: SAGE }}
+            >
+              Submit
+            </button>
+            {!shortAnswer && canShowAnswer && (
+              <button
+                type="button"
+                onClick={() => revealAndLock(qi)}
+                className="text-sm text-stone-500 hover:text-stone-800 font-bold"
+              >
+                show answer
+              </button>
+            )}
+            {maxHints > 0 && hints.length > 0 && shown < Math.min(maxHints, hints.length) && (
+              <button
+                type="button"
+                onClick={() => setHintsShown((p) => ({ ...p, [qi]: Math.min(maxHints, (p[qi] || 0) + 1) }))}
+                className="text-sm text-amber-600 hover:text-amber-800 font-bold ml-auto"
+              >
+                💡 hint
+              </button>
+            )}
+          </div>
+        )}
       </div>
     );
   };
 
-  /* ── per-question progress strip ─────────────────────────────── */
+  /* ── header, strip and score panel ───────────────────────────── */
 
-  const progressStrip = questions.length > 1 && (
-    <div className="flex gap-1" aria-hidden>
-      {questions.map((_q, qi) => {
-        const finished = isFinished(qi);
-        const right = isRight(qi);
-        const partial = questions[qi].type === 'short-answer' && selfMarks[qi] === 'partial';
-        return (
-          <div
-            key={qi}
-            style={{
-              height: 4,
-              flex: 1,
-              borderRadius: 99,
-              transition: 'background 200ms ease',
-              background: !finished
-                ? 'rgba(0,0,0,0.09)'
-                : partial
-                  ? '#F59E0B'
-                  : right
-                    ? '#059669'
-                    : '#F87171',
-            }}
-          />
-        );
-      })}
-    </div>
-  );
+  const heading = questions.length === 1 ? 'Quick check' : 'Knowledge check';
+  const doneCount = questions.filter((_q, qi) => isFinished(qi)).length;
 
-  const scoreBanner = !deferPassScore && submitted && (
-    <div
-      className="rounded-[22px] p-5 text-center"
-      style={{
-        background: !passRequired ? 'rgba(5,150,105,0.06)' : passed ? 'rgba(5,150,105,0.08)' : 'rgba(239,68,68,0.06)',
-        border: `1.5px solid ${!passRequired ? 'rgba(5,150,105,0.2)' : passed ? 'rgba(5,150,105,0.25)' : 'rgba(239,68,68,0.2)'}`,
-      }}
-    >
-      <p style={{ fontSize: 18, fontWeight: 750, color: '#0B1220', marginBottom: 4 }}>
-        {pct}% · {correctCount}/{attempted || questions.length} correct
-      </p>
-      {passRequired ? (
-        <p style={{ fontSize: 13.5, fontWeight: 600, color: passed ? '#059669' : '#DC2626' }}>
-          {passed ? `Passed (mark ${passMark}%)` : `Not yet — need ${passMark}% to pass`}
-        </p>
-      ) : (
-        <p style={{ fontSize: 13.5, fontWeight: 600, color: '#059669' }}>Practice complete — no pass mark</p>
+  const header = (
+    <div className="flex items-start justify-between mb-5 gap-4">
+      <h2 className="text-2xl font-bold text-stone-900">{heading}</h2>
+      {allDone && (
+        <div
+          className={`text-sm font-bold px-3 py-1 rounded-full shrink-0 ${
+            correctCount === questions.length ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
+          }`}
+        >
+          {correctCount}/{questions.length} correct
+        </div>
       )}
     </div>
   );
+
+  const intro = (content.purpose || !deferPassScore) && (
+    <p className="text-stone-600 text-[15px] leading-relaxed mb-5">
+      {content.purpose}
+      {content.purpose && !deferPassScore ? ' ' : ''}
+      {!deferPassScore && (passRequired ? `Pass mark ${passMark}%.` : 'Practice only — no pass mark.')}
+    </p>
+  );
+
+  const progressStrip = questions.length > 1 && (
+    <div className="mb-5">
+      <WarmStrip
+        items={questions.map((q, qi) => {
+          if (!isFinished(qi)) return adaptive && qi === currentQi ? 'current' : 'todo';
+          if (q.type === 'short-answer' && selfMarks[qi] === 'partial') return 'partial';
+          return isRight(qi) ? 'done' : 'missed';
+        })}
+      />
+    </div>
+  );
+
+  const scorePanel = !deferPassScore && submitted && (
+    <div
+      className={`mt-5 rounded-2xl px-5 py-4 flex items-center justify-between gap-4 ${
+        !passRequired ? 'bg-green-50' : passed ? 'bg-green-50' : 'bg-amber-50'
+      }`}
+    >
+      <div>
+        <p className={`text-lg font-bold ${!passRequired || passed ? 'text-green-800' : 'text-amber-800'}`}>
+          {!passRequired
+            ? 'Practice complete'
+            : passed
+              ? (correctCount === (attempted || questions.length) ? 'Perfect score!' : 'Passed')
+              : `${correctCount} of ${attempted || questions.length} correct`}
+        </p>
+        <p className={`text-sm font-medium ${!passRequired || passed ? 'text-green-600' : 'text-amber-700'}`}>
+          {!passRequired
+            ? 'No pass mark on this one.'
+            : passed
+              ? `At or above the ${passMark}% mark.`
+              : `Needs ${passMark}% — review the missed questions, then continue.`}
+        </p>
+      </div>
+      <div className="text-2xl font-black shrink-0" style={{ color: !passRequired || passed ? '#16a34a' : '#d97706' }}>
+        {pct}%
+      </div>
+    </div>
+  );
+
+  if (!questions.length) return null;
 
   /* ── adaptive path ───────────────────────────────────────────── */
 
@@ -595,34 +671,36 @@ export function TutorialV3QuizBlock({
     };
 
     return (
-      <div className="space-y-5">
-        <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-          {content.purpose ? `${content.purpose} · ` : ''}Adaptive
-          {passRequired ? ` · Pass mark ${passMark}%` : ' · No pass mark'}
-          {!submitted && q ? ` · Question ${path.length} of ${questions.length}` : ''}
+      <div>
+        {header}
+        <p className="text-stone-600 text-[15px] leading-relaxed mb-5">
+          {content.purpose ? `${content.purpose} ` : ''}
+          Adaptive — each question follows from the last.
+          {!submitted && q ? ` Question ${path.length} of ${questions.length}.` : ''}
         </p>
         {progressStrip}
         {!submitted && q && (
-          <>
+          <div className="space-y-4">
             {renderQuestion(q, currentQi, {
               reveal: !!resolved[currentQi],
               showExp: !!showExp,
               disabled: !!resolved[currentQi] || submitted,
-              label: q.label || `Question ${path.length}`,
+              label: q.label || `Q${path.length}`,
               showCheck: true,
             })}
             {done && (
               <button
+                type="button"
                 onClick={advance}
-                className="w-full py-3 rounded-full text-white"
-                style={{ background: '#059669', fontSize: 14, fontWeight: 600 }}
+                className="w-full py-3 rounded-full text-white text-sm font-bold hover:opacity-90 transition-opacity"
+                style={{ background: SAGE }}
               >
                 {path.length >= questions.length ? 'See results' : 'Next question →'}
               </button>
             )}
-          </>
+          </div>
         )}
-        {scoreBanner}
+        {scorePanel}
       </div>
     );
   }
@@ -634,70 +712,64 @@ export function TutorialV3QuizBlock({
     : questions.map((q, qi) => ({ q, qi }));
 
   return (
-    <div className="space-y-5">
-      {!deferPassScore && (
-        <p style={{ fontSize: 12.5, color: '#6B7280' }}>
-          {content.purpose ? `${content.purpose} · ` : ''}
-          {passRequired ? `Pass mark ${passMark}%` : 'No pass mark — practice only'}
-          {!submitted && maxHints > 0 ? ` · Wrong answers unlock up to ${maxHints} hint${maxHints === 1 ? '' : 's'}` : ''}
-          {!submitted && maxHints <= 0 ? ' · Check each answer' : ''}
-        </p>
-      )}
-
+    <div>
+      {header}
+      {intro}
       {progressStrip}
 
       {/* Review-wrong: only offered once there is something to review. */}
       {allDone && wrongIndices.length > 0 && (
-        <div className="flex items-center gap-3 flex-wrap">
+        <div className="flex items-center gap-3 mb-5 flex-wrap">
           <button
             type="button"
             onClick={() => setReviewWrong((v) => !v)}
-            className="px-3.5 py-1.5 rounded-full"
-            style={{
-              fontSize: 12,
-              fontWeight: 650,
-              color: reviewWrong ? '#B91C1C' : '#6B7280',
-              background: reviewWrong ? 'rgba(239,68,68,0.07)' : 'transparent',
-              border: `1px solid ${reviewWrong ? 'rgba(239,68,68,0.3)' : 'rgba(0,0,0,0.12)'}`,
-            }}
+            className={`text-sm font-bold px-4 py-2 rounded-full border-2 transition-colors ${
+              reviewWrong
+                ? 'border-red-300 text-red-600 bg-red-50'
+                : 'border-stone-200 text-stone-500 hover:border-stone-400'
+            }`}
           >
-            {reviewWrong ? '← Show all questions' : `Review ${wrongIndices.length} missed`}
+            {reviewWrong ? '← Show all' : `Review ${wrongIndices.length} missed`}
           </button>
-          {reviewWrong && (
-            <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>
-              Showing the {wrongIndices.length} you did not get.
-            </span>
-          )}
         </div>
       )}
 
-      {shownQuestions.map(({ q, qi }) => {
-        const done = !!resolved[qi];
-        const showExp = shouldShowExplanation(showMode, { submitted: submitted || done, answered: done }) && !!q.explanation;
-        return (
-          <div key={qi}>
-            {renderQuestion(q, qi, {
-              reveal: submitted || done,
-              showExp: !!showExp,
-              disabled: submitted || done,
-              label: q.label || `Question ${qi + 1}`,
-              showCheck: !submitted,
-            })}
-          </div>
-        );
-      })}
+      <div className="space-y-4">
+        {shownQuestions.map(({ q, qi }) => {
+          const done = !!resolved[qi];
+          const showExp = shouldShowExplanation(showMode, { submitted: submitted || done, answered: done }) && !!q.explanation;
+          return (
+            <React.Fragment key={qi}>
+              {renderQuestion(q, qi, {
+                reveal: submitted || done,
+                showExp: !!showExp,
+                disabled: submitted || done,
+                label: q.label || `Q${qi + 1}`,
+                showCheck: !submitted,
+              })}
+            </React.Fragment>
+          );
+        })}
+      </div>
 
       {!deferPassScore && !submitted && allDone && !reviewWrong && (
         <button
+          type="button"
           onClick={() => setSubmitted(true)}
-          className="w-full py-3 rounded-full text-white"
-          style={{ background: '#0B0F1A', fontSize: 14, fontWeight: 600 }}
+          className="w-full mt-5 py-3 rounded-full text-white text-sm font-bold hover:opacity-90 transition-opacity"
+          style={{ background: SAGE }}
         >
           See results
         </button>
       )}
 
-      {scoreBanner}
+      {deferPassScore && allDone && (
+        <p className="mt-4 text-sm text-stone-400 font-semibold text-center">
+          {doneCount}/{questions.length} answered · counted toward the tutorial total
+        </p>
+      )}
+
+      {scorePanel}
     </div>
   );
 }

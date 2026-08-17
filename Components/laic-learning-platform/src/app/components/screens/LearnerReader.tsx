@@ -65,6 +65,12 @@ function questionsFromMcqBlocks(cluster: Block[], sourceUnits?: { text?: string;
 function buildPreviewSegments(
   blocks: Block[],
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[],
+  /**
+   * Tutorial V3 draws its own quiz and must see one segment per block. Every
+   * other reader keeps the cluster, which is what turns a run of MCQ blocks
+   * into a single "Enter MCQ" experience.
+   */
+  cluster = true,
 ): Array<
   | { kind: 'block'; block: Block }
   | { kind: 'cluster'; key: string; title: string; fromLabel?: string; questions: McqClusterQuestion[]; blocks: Block[] }
@@ -82,7 +88,7 @@ function buildPreviewSegments(
 
     const quiz = b.type === 'quiz' ? (b.content as QuizContent) : null;
     const adaptive = !!quiz?.adaptive;
-    if (!isMcqPreviewBlock(b) || adaptive) {
+    if (!cluster || !isMcqPreviewBlock(b) || adaptive) {
       segments.push({ kind: 'block', block: b });
       i += 1;
       continue;
@@ -1360,6 +1366,7 @@ function AssessedBlocks({
   onPageChange,
   onPageCountChange,
   hidePager = false,
+  clusterMcqs = true,
 }: {
   blocks: Block[];
   objectId: string;
@@ -1383,6 +1390,13 @@ function AssessedBlocks({
   onPageCountChange?: (count: number) => void;
   /** Hide the built-in pager when the surrounding chrome provides its own. */
   hidePager?: boolean;
+  /**
+   * When false, consecutive MCQ blocks are NOT merged into one cluster
+   * experience — each quiz block renders through `BlockRenderer`, so a
+   * per-type override can replace it. Tutorial V3 is the only caller that
+   * turns this off.
+   */
+  clusterMcqs?: boolean;
 }) {
   const total = countQuizQuestionsInBlocks(blocks);
   const [byBlock, setByBlock] = useState<Record<string, Record<number, QuizResolveStatus>>>({});
@@ -1460,7 +1474,7 @@ function AssessedBlocks({
       style={{ display: visible ? 'flex' : 'none' }}
       aria-hidden={!visible}
     >
-      {buildPreviewSegments(pageBlocks, sourceUnits).map((seg, i) => {
+      {buildPreviewSegments(pageBlocks, sourceUnits, clusterMcqs).map((seg, i) => {
         const wrap = (key: string, node: React.ReactNode) => {
           if (!animate || !visible) {
             return <div key={key} data-block-id={key} className="w-full">{node}</div>;
@@ -1612,6 +1626,7 @@ export function LearningBlocksPreview({
   onPageChange,
   onPageCountChange,
   hidePager = false,
+  clusterMcqs = true,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1634,6 +1649,8 @@ export function LearningBlocksPreview({
   onPageChange?: (index: number) => void;
   onPageCountChange?: (count: number) => void;
   hidePager?: boolean;
+  /** Off for Tutorial V3, which draws its own quiz per block. */
+  clusterMcqs?: boolean;
 }) {
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1669,6 +1686,7 @@ export function LearningBlocksPreview({
           onPageChange={onPageChange}
           onPageCountChange={onPageCountChange}
           hidePager={hidePager}
+          clusterMcqs={clusterMcqs}
         />
       </div>
       <GlossarySidebar

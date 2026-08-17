@@ -1,52 +1,25 @@
 /**
- * Tutorial V3 bidding sequence.
+ * Tutorial V3 bidding sequence — the reference export's `BiddingSequenceSection`.
  *
- * The V1 block could only step forward or reset, showed seats as single
- * letters, had nowhere to put the hands the auction is about, and no room for
- * the point the auction makes but never states.
+ * Hands the auction is about across the top, the auction itself as a four-column
+ * grid, a Show-all / Step-through pair, the explanation for the call just made,
+ * and the contract the auction arrived at.
  *
- * Seat naming: `BidItem.seat` stays 'N' | 'E' | 'S' | 'W' — the stored shape
- * does not change. Full names and per-seat colour are display only, so an
- * auction authored before this renders identically to one authored after.
+ * Seat naming: `BidItem.seat` stays 'N' | 'E' | 'S' | 'W' — the stored shape does
+ * not change. Full names and per-seat colour are display only, so an auction
+ * authored before this renders identically to one authored after.
  */
 
 import React, { useEffect, useState } from 'react';
 import type { BiddingSequenceContent, BridgeHandRow } from '../../../../../lib/types';
 import { useLearnerProgress } from './LearnerProgressContext';
+import { SEAT_NAME, SEAT_TEXT } from './warm/theme';
+import { GhostPill, HandRows, WarmCard } from './warm/WarmPrimitives';
 
 type Seat = 'N' | 'E' | 'S' | 'W';
 
+/** Reading order round the table. */
 const SEAT_ORDER: Seat[] = ['W', 'N', 'E', 'S'];
-
-const SEAT_NAME: Record<Seat, string> = { N: 'North', E: 'East', S: 'South', W: 'West' };
-
-/** One colour per seat, so a learner can follow one player down the auction. */
-const SEAT_COLOR: Record<Seat, string> = {
-  W: '#2563EB',
-  N: '#DC2626',
-  E: '#059669',
-  S: '#7C3AED',
-};
-
-const RED_SUITS = new Set(['♥', '♦']);
-
-function HandPanel({ seat, rows }: { seat: Seat; rows: BridgeHandRow[] }) {
-  return (
-    <div className="rounded-xl" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)', padding: 14 }}>
-      <p style={{ fontSize: 10, letterSpacing: '0.13em', color: SEAT_COLOR[seat], fontWeight: 700, marginBottom: 10 }}>
-        {SEAT_NAME[seat].toUpperCase()}
-      </p>
-      <div className="space-y-1.5">
-        {rows.map((row, i) => (
-          <div key={i} className="flex items-center gap-2" style={{ fontSize: 13.5 }}>
-            <span style={{ color: RED_SUITS.has(row.suit) ? '#DC2626' : '#1c1917', fontWeight: 700 }}>{row.suit}</span>
-            <span style={{ color: '#292524', letterSpacing: '0.04em' }}>{row.cards || '—'}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
 
 export function TutorialV3BiddingSequence({
   content,
@@ -56,7 +29,7 @@ export function TutorialV3BiddingSequence({
   blockId: string;
 }) {
   const bids = content.bids || [];
-  /** -1 is show-all; 0..n-1 is step-through, pointing at the newest bid. */
+  /** -1 is show-all; 0..n-1 is step-through, pointing at the newest call. */
   const [step, setStep] = useState<number>(-1);
   const stepping = step !== -1;
   const visible = stepping ? bids.slice(0, step + 1) : bids;
@@ -73,93 +46,52 @@ export function TutorialV3BiddingSequence({
 
   const hands = content.hands || {};
   const handSeats = SEAT_ORDER.filter((s) => (hands[s]?.length || 0) > 0);
-  const rows = Math.max(1, Math.ceil(visible.length / 4));
+  const rowCount = Math.max(1, Math.ceil(visible.length / 4));
+
+  if (!bids.length && !handSeats.length) return null;
 
   return (
-    <div className="rounded-[22px] p-5" style={{ background: '#F5F7FA', border: '1.5px solid rgba(0,0,0,0.07)' }}>
-      <p style={{ fontSize: 11, fontWeight: 600, color: '#6B7280', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 6 }}>
-        Bidding Sequence
-      </p>
-      <p style={{ fontSize: 15, fontWeight: 700, color: '#0B1220', marginBottom: 14 }}>{content.title}</p>
-
-      {/* Hands the auction is about, when the author supplied them. */}
+    <div>
       {handSeats.length > 0 && (
-        <div
-          className="grid gap-2.5 mb-4"
-          style={{ gridTemplateColumns: `repeat(${Math.min(handSeats.length, 2)}, minmax(0, 1fr))` }}
-        >
-          {handSeats.map((s) => <HandPanel key={s} seat={s} rows={hands[s] || []} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-7">
+          {handSeats.map((s) => (
+            <WarmCard key={s} className="p-4 border-2 border-transparent">
+              <p className={`text-xs font-bold tracking-wide mb-3 ${SEAT_TEXT[SEAT_NAME[s]] || 'text-stone-400'}`}>
+                {SEAT_NAME[s].toUpperCase()}
+              </p>
+              <HandRows rows={(hands[s] || []) as BridgeHandRow[]} />
+            </WarmCard>
+          ))}
         </div>
       )}
 
-      {/* Mode switch — an author who wants the finished auction on the page can
-          now have it without clicking through every call. */}
-      <div className="flex gap-2 mb-3">
-        <button
-          type="button"
-          onClick={() => setStep(-1)}
-          className="px-3 py-1.5 rounded-full"
-          style={{
-            fontSize: 12,
-            fontWeight: 650,
-            color: !stepping ? '#B45309' : '#6B7280',
-            background: !stepping ? 'rgba(217,119,6,0.08)' : 'transparent',
-            border: `1px solid ${!stepping ? 'rgba(217,119,6,0.35)' : 'rgba(0,0,0,0.12)'}`,
-          }}
-        >
-          Show all
-        </button>
-        <button
-          type="button"
-          onClick={() => setStep(0)}
-          className="px-3 py-1.5 rounded-full"
-          style={{
-            fontSize: 12,
-            fontWeight: 650,
-            color: stepping ? '#B45309' : '#6B7280',
-            background: stepping ? 'rgba(217,119,6,0.08)' : 'transparent',
-            border: `1px solid ${stepping ? 'rgba(217,119,6,0.35)' : 'rgba(0,0,0,0.12)'}`,
-          }}
-        >
-          Step through
-        </button>
+      <h2 className="text-xl font-bold text-stone-900 mb-4">{content.title || 'The auction'}</h2>
+
+      <div className="flex gap-2 mb-4">
+        <GhostPill active={!stepping} onClick={() => setStep(-1)}>Show all</GhostPill>
+        <GhostPill active={stepping} onClick={() => setStep(0)}>Step-through</GhostPill>
       </div>
 
-      <div className="rounded-xl overflow-x-auto" style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.08)' }}>
-        <div style={{ minWidth: 260 }}>
-          <div className="grid grid-cols-4" style={{ background: 'rgba(0,0,0,0.02)', borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
+      <div className="rounded-2xl bg-white shadow-sm overflow-x-auto mb-3">
+        <div className="min-w-[260px]">
+          <div className="grid grid-cols-4 border-b border-stone-100 bg-stone-50">
             {SEAT_ORDER.map((s) => (
-              <div key={s} className="text-center" style={{ padding: '8px 6px', fontSize: 11.5, fontWeight: 700, color: SEAT_COLOR[s] }}>
+              <div key={s} className={`px-3 sm:px-4 py-2.5 text-xs font-bold text-center ${SEAT_TEXT[SEAT_NAME[s]]}`}>
                 {SEAT_NAME[s]}
               </div>
             ))}
           </div>
-          {Array.from({ length: rows }).map((_, rowIdx) => (
-            <div key={rowIdx} className="grid grid-cols-4" style={{ borderBottom: rowIdx === rows - 1 ? undefined : '1px solid rgba(0,0,0,0.05)' }}>
-              {SEAT_ORDER.map((_s, colIdx) => {
-                const idx = rowIdx * 4 + colIdx;
-                const bid = visible[idx];
-                const isCurrent = stepping && idx === step;
+          {Array.from({ length: rowCount }).map((_, ri) => (
+            <div key={ri} className="grid grid-cols-4 border-b border-stone-100 last:border-0">
+              {SEAT_ORDER.map((_s, ci) => {
+                const bid = visible[ri * 4 + ci];
                 return (
-                  <div key={colIdx} className="text-center" style={{ padding: '10px 6px' }}>
-                    {bid ? (
-                      <span
-                        className="inline-block px-2.5 py-1 rounded-lg"
-                        style={{
-                          fontSize: 13,
-                          fontWeight: 650,
-                          background: isCurrent
-                            ? 'rgba(217,119,6,0.14)'
-                            : bid.bid === 'Pass' ? 'rgba(0,0,0,0.04)' : '#0B0F1A',
-                          color: isCurrent
-                            ? '#B45309'
-                            : bid.bid === 'Pass' ? '#9AA3AF' : '#fff',
-                          border: isCurrent ? '1px solid rgba(217,119,6,0.4)' : '1px solid transparent',
-                        }}
-                      >
+                  <div key={ci} className="px-3 sm:px-4 py-3 text-center border-r border-stone-100 last:border-0">
+                    {bid && (
+                      <span className={`font-mono font-bold text-sm ${bid.bid === 'Pass' ? 'text-stone-400' : 'text-stone-900'}`}>
                         {bid.bid}
                       </span>
-                    ) : null}
+                    )}
                   </div>
                 );
               })}
@@ -171,56 +103,46 @@ export function TutorialV3BiddingSequence({
       {/* In step mode the explanation belongs to the call just made; showing all
           at once has no single "current" call to explain. */}
       {stepping && bids[step] && (
-        <div
-          className="flex items-start gap-3 rounded-xl mt-3"
-          style={{ background: 'rgba(217,119,6,0.07)', border: '1px solid rgba(217,119,6,0.22)', padding: '11px 14px' }}
-        >
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: SEAT_COLOR[bids[step].seat as Seat] || '#6B7280', marginTop: 1 }}>
+        <div className="px-4 py-3 rounded-2xl bg-amber-50 flex items-start gap-3 mb-3">
+          <span className={`font-bold text-xs mt-0.5 shrink-0 ${SEAT_TEXT[SEAT_NAME[bids[step].seat as Seat]] || 'text-stone-500'}`}>
             {SEAT_NAME[bids[step].seat as Seat] || bids[step].seat}
           </span>
-          <p style={{ fontSize: 13, color: '#92400E', lineHeight: 1.5, flex: 1 }}>
+          <p className="text-stone-700 text-sm flex-1 font-medium">
             {bids[step].explanation || 'Auction closes — all pass.'}
           </p>
         </div>
       )}
 
       {stepping && (
-        <div className="flex items-center gap-2 mt-3">
+        <div className="flex gap-2 mb-4">
           <button
             type="button"
             disabled={step <= 0}
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            className="px-4 py-1.5 rounded-full"
-            style={{ fontSize: 12.5, fontWeight: 650, color: '#374151', border: '1px solid rgba(0,0,0,0.12)', background: '#fff', opacity: step <= 0 ? 0.35 : 1 }}
+            className="px-5 py-2 text-sm font-bold border-2 border-stone-200 rounded-full hover:bg-stone-50 disabled:opacity-30 text-stone-600"
           >
-            ← Prev
+            ← prev
           </button>
           <button
             type="button"
             disabled={step >= bids.length - 1}
             onClick={() => setStep((s) => Math.min(bids.length - 1, s + 1))}
-            className="px-4 py-1.5 rounded-full text-white"
-            style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A', opacity: step >= bids.length - 1 ? 0.35 : 1 }}
+            className="px-5 py-2 text-sm font-bold border-2 border-stone-200 rounded-full hover:bg-stone-50 disabled:opacity-30 text-stone-600"
           >
-            Next →
+            next →
           </button>
-          <span className="ml-auto" style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 650 }}>
-            {step + 1} / {bids.length}
-          </span>
+          <div className="ml-auto text-xs text-stone-400 font-bold self-center">{step + 1}/{bids.length}</div>
         </div>
       )}
 
-      <div className="mt-3">
-        <span style={{ fontSize: 10, letterSpacing: '0.13em', color: '#9AA3AF', fontWeight: 700, marginRight: 8 }}>
-          FINAL CONTRACT
-        </span>
-        <span style={{ fontSize: 13.5, fontWeight: 700, color: '#059669' }}>{content.finalContract || '—'}</span>
-      </div>
+      <p className="text-sm text-stone-600 px-1 mb-6 font-medium">
+        <span className="font-bold text-stone-900">Final contract: </span>{content.finalContract || '—'}
+      </p>
 
       {content.footnote && (
-        <p style={{ fontSize: 12.5, color: '#6B7280', lineHeight: 1.55, marginTop: 8, fontStyle: 'italic' }}>
-          {content.footnote}
-        </p>
+        <div className="rounded-2xl bg-stone-50 px-5 py-4">
+          <p className="text-stone-600 text-sm leading-relaxed font-medium">{content.footnote}</p>
+        </div>
       )}
     </div>
   );
