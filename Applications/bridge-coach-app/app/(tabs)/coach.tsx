@@ -3,8 +3,8 @@
 // Both are launchers into the platform surfaces that already exist.
 //
 // The LEARNER view is Figma 869:597: "My Coaches" as a row of faces with a green
-// + Hire at its end, then two stacked-card tiles — Assignments from Coach, and
-// Feedback. It used to be one card stack, four to six rows of title-and-subtitle
+// + Hire at its end, then two stacked-card tiles — From Coach, and Send for
+// Review. It used to be one card stack, four to six rows of title-and-subtitle
 // that all looked alike; the faces are what make "who coaches me" answerable at
 // a glance, and the two tiles are the only two places anyone actually goes.
 //
@@ -237,7 +237,7 @@ export default function CoachScreen() {
   const tiles: TileSpec[] = [
     {
       key: "assignments",
-      label: "Assignments from Coach",
+      label: "From Coach",
       icon: ICON_COACH_ASSIGNMENTS,
       glyph: CO.glyph.assignments,
       badge: s && s.assignments_open > 0 ? s.assignments_open : undefined,
@@ -245,7 +245,7 @@ export default function CoachScreen() {
     },
     {
       key: "feedback",
-      label: "Feedback",
+      label: "Send for Review",
       icon: ICON_FEEDBACK_BUBBLE,
       glyph: CO.glyph.feedback,
       badge: s && s.plays_reviewed > 0 ? s.plays_reviewed : undefined,
@@ -441,9 +441,10 @@ export default function CoachScreen() {
     (CO.tile.height +
       CO.tile.offset.y +
       CO.tileLabelGap +
-      // Two lines reserved: "Assignments from Coach" wraps at this width and
-      // "Feedback" does not, and a row whose height depended on the longest
-      // label would jog as the copy changed.
+      // Two lines reserved, ALWAYS — not measured from the labels. It was
+      // justified by the copy once ("Assignments from Coach" wrapped, "Feedback"
+      // did not), and that copy has since changed twice; a row whose height
+      // depended on the longest label would jog every time the words did.
       2 * CO.tileLabelSize * 1.25) *
     sc;
 
