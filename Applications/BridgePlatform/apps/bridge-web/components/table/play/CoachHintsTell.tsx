@@ -39,6 +39,38 @@ const FELT_DEEP = "#541015"; // Brand.maroon
 const FELT_MID = "#105431"; // Brand.green — actions
 const FELT_SOFT = "#f6ead0";
 const FELT_LINE = "#e0d7c2";
+
+/**
+ * What to say when BEN returns no tell.
+ *
+ * The ben-tell route distinguishes eleven reasons and the panel showed one
+ * sentence for nearly all of them, so a SERVICE OUTAGE wore the same words as
+ * a quiet position: "BEN has no answer for this one right now" reads like a
+ * considered verdict about the cards. When BEN went down entirely it said
+ * exactly that, at every decision, and telling the two apart took a log tail
+ * and an environment read (owner report 2026-08-17).
+ *
+ * Unreachable is not "no answer". Say which.
+ */
+function benEmptyMessage(reason: string | undefined): string {
+  switch (reason) {
+    // The service, not the position: BEN is a remote neural player, and when
+    // it is down or unconfigured nothing about the cards is being judged.
+    case "unreachable":
+    case "unconfigured":
+      return "BEN isn't reachable right now — Owlee's read stands.";
+    case "not your turn":
+      return "Not your turn — BEN answers when the next decision is yours.";
+    case "board still live":
+      return "BEN replays a spot only once the board is over.";
+    // BEN answered, but with something the engine rejects as illegal here —
+    // an answer that cannot be shown, which is not the same as none.
+    case "no answer":
+      return "BEN's answer didn't fit this position.";
+    default:
+      return "BEN has no answer for this one right now.";
+  }
+}
 /** The stacked-edge shadow behind the app's playing cards. */
 const CARD_EDGE = "0 2px 0 rgba(42,5,6,.75)";
 /** BEN's badge blue — the same one CoachPanel's note badges wear. */
@@ -535,9 +567,7 @@ export function BenWhatIf({
       {state.kind === "loading" && <BenWorking long={kind === "card"} verb="replaying the position" />}
       {state.kind === "empty" && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
-          {state.reason === "board still live"
-            ? "BEN replays a spot only once the board is over."
-            : "BEN has no answer for this one right now."}
+          {benEmptyMessage(state.reason)}
         </p>
       )}
       {state.kind === "done" && (
@@ -907,9 +937,7 @@ export function CoachTell({
             {ben.kind === "loading" && <BenWorking long={phase === "play"} verb="simulating the play" />}
             {ben.kind === "empty" && (
               <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
-                {ben.reason === "not your turn"
-                  ? "Not your turn — BEN answers when the next decision is yours."
-                  : "BEN has no answer for this one right now."}
+                {benEmptyMessage(ben.reason)}
               </p>
             )}
             {ben.kind === "done" && (
