@@ -28,6 +28,7 @@ import {
 } from '../../../../lib/tutorialV3/draftModel';
 import {
   isNestedEditablePart,
+  isNestedPartEmpty,
   nestedEditorKindForPart,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
 import type { TutorialV3Draft, TutorialV3Part, V3Section, V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
@@ -96,15 +97,30 @@ export function TutorialV3SectionWorkspace({
     if (!allowAiGenerate && tab === 'generate') setTab('write');
   }, [allowAiGenerate, tab]);
 
-  // Re-opening a generated learning-object slot: jump straight into student preview.
+  /**
+   * Re-opening a generated learning-object slot jumps straight into student
+   * preview — but only when there is something generated to look at.
+   *
+   * A "generate after Sources" slot is created on Structure already holding a
+   * scaffolded, empty part. That part is nested-editable, so it used to satisfy
+   * this check and send the author into an empty editor, past the very tabs the
+   * Structure card told them to use. An empty slot lands on Generate instead,
+   * which is what "pick sources → mark up → generate" means.
+   */
   useEffect(() => {
     if (!isSlot || autoOpenedRef.current || editingPartId) return;
     const existing = (section.parts || []).find((p) => isNestedEditablePart(p))
       || (slot?.part && isNestedEditablePart(slot.part) ? slot.part : null);
     if (!existing) return;
+    const kind = nestedEditorKindForPart(existing);
+    if (kind && isNestedPartEmpty(existing, kind)) {
+      autoOpenedRef.current = true;
+      if (allowAiGenerate) setTab('generate');
+      return;
+    }
     autoOpenedRef.current = true;
     setEditingPartId(existing.id);
-  }, [isSlot, section.parts, slot?.part, editingPartId]);
+  }, [isSlot, section.parts, slot?.part, editingPartId, allowAiGenerate]);
 
   const ensureWriteParts = () => {
     if (section.parts.length) return;
