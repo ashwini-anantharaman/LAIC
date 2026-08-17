@@ -50,7 +50,7 @@ async function handle(request: Request): Promise<NextResponse> {
   } catch {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
-  const { record, state } = view;
+  const { record, state, actingIsHuman } = view;
   if (!record.curated) return NextResponse.json({ overlay: null });
 
   const seat = (Object.entries(record.seats) as [string, (typeof record.seats)["N"]][]).find(
@@ -130,9 +130,20 @@ async function handle(request: Request): Promise<NextResponse> {
 
   // The current annotation — only while the line still holds.
   const here = currentAt(state);
-  const current =
+  const annotation =
     status.onPath && here ? (annotations.find((a) => sameAt(a.at, here)) ?? null) : null;
-  const chartedHere = status.onPath && here ? pretty(here) : null;
+  /**
+   * THE ROAD IS OFFERED AT EVERY DECISION OF THE LEARNER'S OWN (owner pick B,
+   * 2026-08-17), annotated or not — they can always ask what their coach did
+   * here. It stays behind the panel's disclosure, so asking remains a choice:
+   * handing the charted card over unprompted would turn a curated deal into
+   * copying, which is the one thing the hint ladders exist to avoid.
+   *
+   * THEIR OWN only. At a robot's turn there is nothing for the learner to
+   * choose and the line's next card is not theirs to be told; actingIsHuman
+   * already folds in declarer-plays-dummy, so a card out of dummy counts.
+   */
+  const chartedHere = status.onPath && here && actingIsHuman ? pretty(here) : null;
 
   return NextResponse.json({
     overlay: {
@@ -142,12 +153,14 @@ async function handle(request: Request): Promise<NextResponse> {
       ...(finished ? { finished } : {}),
       ...(left ? { left } : {}),
       ...(nudge && !finished ? { nudge } : {}),
-      ...(current
+      // Sent when the coach WROTE something here, or when there is simply a
+      // road to show at this decision — either alone is worth a bubble.
+      ...(annotation || chartedHere
         ? {
             current: {
-              ...(current.note ? { note: current.note } : {}),
-              ...(current.why ? { why: current.why } : {}),
-              ...(current.hints ? { hints: current.hints } : {}),
+              ...(annotation?.note ? { note: annotation.note } : {}),
+              ...(annotation?.why ? { why: annotation.why } : {}),
+              ...(annotation?.hints ? { hints: annotation.hints } : {}),
               ...(chartedHere ? { charted: chartedHere } : {}),
             },
           }

@@ -1492,7 +1492,14 @@ function CuratedCoachVoice({
         </SpeechBubble>
       )}
 
-      {!nudgeOnly && overlay.current && (overlay.current.note || overlay.current.why) && (
+      {/* A ROAD ALONE IS ENOUGH (owner pick B, 2026-08-17). The coach used to
+          appear only where they had written something, so at an un-annotated
+          decision they were silent even though the line knew perfectly well
+          what they played. The card stays behind the disclosure below, so the
+          learner still has to ask for it. */}
+      {!nudgeOnly &&
+        overlay.current &&
+        (overlay.current.note || overlay.current.why || overlay.current.charted) && (
         <SpeechBubble avatar={<CoachBadge />}>
           {coachLabel}
           {overlay.current.note && (
