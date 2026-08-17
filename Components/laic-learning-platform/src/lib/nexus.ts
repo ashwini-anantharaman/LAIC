@@ -29,6 +29,17 @@ const TOKEN_KEY = "laic_nexus_token";
 const PROGRAM_KEY = "laic_nexus_program";
 const RETURN_KEY = "laic_nexus_return";
 const MOBILE_KEY = "laic_nexus_mobile";
+/**
+ * Whose content this session is authoring — "user" for "just for me", absent for the
+ * club's.
+ *
+ * Stored beside the launch rather than kept in React state because the launch params
+ * are stripped from the address bar immediately after the exchange (a launch token is
+ * single-use, so a reload must not look like a fresh launch), and the publish happens
+ * several screens later. The SERVER decides whether the scope is permitted; this only
+ * carries the intent.
+ */
+const CONTENT_SCOPE_KEY = "laic_nexus_content_scope";
 
 export interface LearningRole {
   id: string;
@@ -68,6 +79,15 @@ export function getToken(): string | null {
 export function setToken(token: string): void {
   localStorage.setItem(TOKEN_KEY, token);
 }
+/** "user" when this launch asked to author privately, else null. */
+export function getContentScope(): "user" | null {
+  try {
+    return localStorage.getItem(CONTENT_SCOPE_KEY) === "user" ? "user" : null;
+  } catch {
+    return null;
+  }
+}
+
 export function getProgramId(): string | null {
   return localStorage.getItem(PROGRAM_KEY);
 }
@@ -96,6 +116,7 @@ export async function consumeLaunchFromUrl(): Promise<boolean> {
   const programId = params.get("program_id");
   const returnUrl = params.get("return_url");
   const mobileUi = params.get("mobile") === "1" || params.get("ui") === "mobile";
+  const contentScope = params.get("content_scope") === "user" ? "user" : null;
   // Strip the launch params from the address bar regardless of outcome.
   const clean = window.location.pathname + window.location.hash;
 
@@ -112,6 +133,10 @@ export async function consumeLaunchFromUrl(): Promise<boolean> {
     if (returnUrl && /^https?:\/\//i.test(returnUrl)) localStorage.setItem(RETURN_KEY, returnUrl);
     if (mobileUi) localStorage.setItem(MOBILE_KEY, "1");
     else localStorage.removeItem(MOBILE_KEY);
+    // Set on every launch, cleared when absent: a previous session's "just for me"
+    // must not silently make the next club publish private.
+    if (contentScope) localStorage.setItem(CONTENT_SCOPE_KEY, contentScope);
+    else localStorage.removeItem(CONTENT_SCOPE_KEY);
     window.history.replaceState({}, "", clean);
     return true;
   } catch (e) {

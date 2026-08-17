@@ -106,16 +106,34 @@ export async function getLearningObjects(
  *
  * Rows from a server that predates `program_id` have none, and count as
  * curriculum — which is what they were before clubs could author anything.
+ *
+ * A THIRD half, since 0006: personal content. The server has already decided we may
+ * see it (ours, or shared with us by name or by role), so this only has to keep it
+ * off the shelf that reads as "the club's".
  */
 export function splitByOwner(
   objects: LearningObject[],
   clubProgramId: string | null | undefined,
-): { curriculum: LearningObject[]; club: LearningObject[] } {
-  if (!clubProgramId) return { curriculum: objects, club: [] };
+): { curriculum: LearningObject[]; club: LearningObject[]; mine: LearningObject[] } {
+  if (!clubProgramId) return { curriculum: objects, club: [], mine: [] };
   const club: LearningObject[] = [];
   const curriculum: LearningObject[] = [];
-  for (const o of objects) (o.program_id === clubProgramId ? club : curriculum).push(o);
-  return { curriculum, club };
+  const mine: LearningObject[] = [];
+  for (const o of objects) {
+    if (o.program_id !== clubProgramId) {
+      curriculum.push(o);
+    } else if ((o.scope_level ?? "program") === "user") {
+      // Personal content the server already decided we may see: ours, or shared with
+      // us. A THIRD bucket rather than folding it into `club`, because the two are
+      // different promises — putting a private draft on the shelf everyone reads,
+      // under a heading that says the club's name, is the visible-bug version of
+      // this feature.
+      mine.push(o);
+    } else {
+      club.push(o);
+    }
+  }
+  return { curriculum, club, mine };
 }
 
 export function getCachedObject(id: string): LearningObject | null {
@@ -242,4 +260,27 @@ export function canAuthorLearning(ctx: LearningContext | null): boolean {
   if (ctx.is_admin) return true;
   const caps = ctx.capabilities ?? [];
   return caps.includes("learning.object.create") || caps.includes("learning.composition.create");
+}
+
+/**
+ * Can they author something just for themselves?
+ *
+ * A separate question from `canAuthorLearning`, and deliberately not derived from it:
+ * a club may want members who keep private notes without publishing to the club, and
+ * a club may want the opposite. `app.content.create.personal` is the id that says so.
+ *
+ * It reads the club-app capabilities the learning context now carries, falling back
+ * to "if you can author at all, you can author for yourself" — the more permissive
+ * reading, because refusing someone their own private draft is a strange denial and
+ * the club already decided they may create.
+ */
+export function canAuthorPersonal(ctx: LearningContext | null): boolean {
+  if (!ctx) return false;
+  const appCaps = ctx.app_content_capabilities ?? null;
+  if (appCaps?.length) {
+    return (
+      appCaps.includes("app.content.create.personal") || appCaps.includes("app.content.create")
+    );
+  }
+  return canAuthorLearning(ctx);
 }

@@ -1992,6 +1992,11 @@ platformRouter.get("/learning/context", async (c) => {
     permissions: [`learning:${access.level}`],
     accessLevel: prebuiltLearning ?? mapped.accessLevel,
     capabilities, // effective learning-catalogue capability ids (screen gating)
+    // The club role's raw app.content.* grants, sent as their own fact. One of them
+    // — app.content.create.personal — has NO learning image on purpose: "for myself
+    // or for the club" is a scope question and the learning catalogue has no id for
+    // it, so faking one would be inventing a permission that governs nothing.
+    app_content_capabilities: eff.appContentCaps,
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
     role_name: access.roleName,
@@ -2288,6 +2293,12 @@ platformRouter.post("/learning/objects/publish", async (c) => {
         });
 
   if (!wrote) throw new HttpError(409, "That object belongs to another program");
+  // The compose flow creates through THIS route, not only through autosave, so the
+  // scope choice has to be honoured in both places or "Just me" silently means "the
+  // club" whenever publishing happens to be the first write.
+  if (!probe && String(row.scope_level ?? "") === "user") {
+    await graph.setLearningObjectPersonal(access.orgId, String(row.id), access.profileId);
+  }
   return c.json({ ok: true, id: row.id });
 });
 

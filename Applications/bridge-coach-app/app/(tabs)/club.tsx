@@ -56,6 +56,7 @@ import { useCan } from "../../lib/use-can";
 import type { LearningObject } from "../../lib/nexus";
 import {
   canAuthorLearning,
+  canAuthorPersonal,
   describeLearningError,
   getLearningContext,
   getLearningObjects,
@@ -287,6 +288,9 @@ export default function ClubScreen() {
   // one, from the Studio's own catalogue — two catalogues, so two questions.
   const canCreateChallenge = useCan("app.challenge.create", true);
   const [canAuthor, setCanAuthor] = useState(false);
+  /** May they keep something to themselves? A separate grant from authoring for the
+   *  club — see canAuthorPersonal. */
+  const [canAuthorMine, setCanAuthorMine] = useState(false);
   /** The club's OWN authored content, which the Activities row lists after the
    *  pinned challenges. The curriculum above the club is the Learn tab's, not this
    *  row's — a club's row is about the club.
@@ -513,6 +517,7 @@ export default function ClubScreen() {
     async (opts: { refresh?: boolean } = {}) => {
       if (!token || !club?.id) {
         setCanAuthor(false);
+        setCanAuthorMine(false);
         setClubContent({ state: "ready", objects: [] });
         return;
       }
@@ -529,8 +534,14 @@ export default function ClubScreen() {
         // club we have just left must not land on the club we are now looking at.
         if (clubRef.current !== forClub) return;
         setCanAuthor(canAuthorLearning(ctx));
+        setCanAuthorMine(canAuthorPersonal(ctx));
         // Only the club's half: the parent's curriculum belongs to the Learn tab.
-        setClubContent({ state: "ready", objects: splitByOwner(objects, forClub).club });
+        // The club's shelf, then this person's own. `mine` is content the server
+        // already decided we may see — ours, or shared with us — and it is kept
+        // apart from the club's so a private draft never appears under a heading
+        // that says the club's name.
+        const split = splitByOwner(objects, forClub);
+        setClubContent({ state: "ready", objects: [...split.club, ...split.mine] });
       } catch (e) {
         if (clubRef.current !== forClub) return;
         // The `.catch(() => [])` that used to be here is the whole reason this screen
@@ -607,7 +618,15 @@ export default function ClubScreen() {
       id: `content-${o.id}`,
       kind: "document" as const,
       title: o.title,
-      ...(o.estimated_time ? { detail: o.estimated_time } : {}),
+      // "Just you" WINS over the running time on a personal card. Of the two facts
+      // the caption can hold, who can see it is the one worth the space — a private
+      // draft sitting on a club's row with nothing to distinguish it is the mistake
+      // this scope exists to prevent.
+      ...((o.scope_level ?? "program") === "user"
+        ? { detail: "Just you" }
+        : o.estimated_time
+          ? { detail: o.estimated_time }
+          : {}),
       onPress: () => router.push({ pathname: "/learn-object/[id]", params: { id: o.id } }),
     })),
   ];
@@ -750,7 +769,9 @@ export default function ClubScreen() {
                 error={clubContent.state === "failed" ? clubContent.message : null}
                 // No + at all for someone who may create neither: an inert button
                 // that opens an empty sheet is worse than no button.
-                {...(canCreateChallenge || canAuthor ? { onAdd: () => setAddOpen(true) } : {})}
+                {...(canCreateChallenge || canAuthor || canAuthorMine
+                  ? { onAdd: () => setAddOpen(true) }
+                  : {})}
               />
             </View>
 
@@ -973,11 +994,32 @@ export default function ClubScreen() {
                 router.push("/studio");
               }}
               accessibilityRole="button"
-              accessibilityLabel="New content in the Content Studio"
+              accessibilityLabel="New content for the club"
               style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
             >
               <Ionicons name="document-text-outline" size={20} color={Brand.cream} />
-              <Text style={styles.checkLabel}>Tutorial or other content</Text>
+              <Text style={styles.checkLabel}>
+                {canAuthorMine ? "For the club" : "Tutorial or other content"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {/* The scope choice is made HERE, before the Studio opens, rather than as a
+              toggle inside it. Whose content this is decides who can ever see it, and
+              a decision that consequential should not be a setting someone can miss
+              on a screen they came to for something else. Only shown when the two are
+              actually different grants. */}
+          {canAuthorMine ? (
+            <Pressable
+              onPress={() => {
+                setAddOpen(false);
+                router.push({ pathname: "/studio", params: { scope: "user" } });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="New content just for you"
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons name="lock-closed-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>Just for me</Text>
             </Pressable>
           ) : null}
         </ScrollView>
