@@ -113,7 +113,15 @@ export function TutorialV3SectionWorkspace({
     if (!isSlot || autoOpenedRef.current || editingPartId) return;
     const existing = (section.parts || []).find((p) => isNestedEditablePart(p))
       || (slot?.part && isNestedEditablePart(slot.part) ? slot.part : null);
-    if (!existing) return;
+
+    // Nothing authored at all — the usual state of a slot straight off
+    // Structure, whose own card says to pick sources and generate. Land there.
+    if (!existing) {
+      autoOpenedRef.current = true;
+      if (allowAiGenerate) setTab('generate');
+      return;
+    }
+
     const kind = nestedEditorKindForPart(existing);
     if (kind && isNestedPartEmpty(existing, kind)) {
       autoOpenedRef.current = true;
@@ -369,6 +377,13 @@ export function TutorialV3SectionWorkspace({
   if (editingPart) {
     return (
       <TutorialV3NestedEditor
+        /*
+          Keyed on the part so moving between parts remounts the object editor.
+          The per-type editors seed their Edit/Preview state with useState at
+          mount, so a reused instance would carry the previous part's mode over
+          — and open an empty object in a preview that shows nothing.
+        */
+        key={editingPart.id}
         part={editingPart}
         initialMode="preview"
         onBack={returnToEditingContent}
