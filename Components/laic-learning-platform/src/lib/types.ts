@@ -882,11 +882,74 @@ export interface LibraryEmbedContent {
   generated?: boolean;
 }
 
+/**
+ * One "commit to an answer, then check yourself" item.
+ *
+ * Distinct from a question: there are no options to choose between and nothing
+ * is marked. The learner decides privately, reveals, and compares — which is
+ * what makes it a drill in judgement rather than in recall.
+ */
+export interface QuickDecisionItem {
+  /** "Quick decision A" — the item's own name. */
+  label: string;
+  /** The one-line classification the answer turns on. */
+  tag?: string;
+  /** The situation, monospaced; newlines are preserved as written. */
+  prompt: string;
+  /** What the button becomes once revealed. */
+  answer: string;
+  explanation: string;
+}
+
+export interface QuickDecisionsContent {
+  /** Small eyebrow above the title. */
+  label?: string;
+  title: string;
+  intro?: string;
+  decisions: QuickDecisionItem[];
+  /** Shown once every item has been revealed. */
+  closing?: string;
+}
+
+/** The key a matching exercise is checked against, shown above it. */
+export interface MatchingReference {
+  columns: string[];
+  rows: string[][];
+}
+
+export interface MatchingCard {
+  /** "Hand A" */
+  label: string;
+  /** Monospaced lines making up the card's body. */
+  lines: string[];
+  /** Which option is the right one for this card. */
+  correct: string;
+  explanation?: string;
+}
+
+/**
+ * Match each card to one option. Every option is used at most once, so
+ * assigning one to a second card takes it off the first.
+ */
+export interface MatchingContent {
+  label?: string;
+  title: string;
+  intro?: string;
+  reference?: MatchingReference;
+  /** The instruction above the cards. */
+  prompt?: string;
+  options: string[];
+  cards: MatchingCard[];
+  closing?: string;
+}
+
 export type BlockContent =
   | RichTextContent
   | ConceptCardContent
   | QuestionContent
   | QuizContent
+  | QuickDecisionsContent
+  | MatchingContent
   | FlashcardSetContent
   | BridgePlayContent
   | BiddingSequenceContent
@@ -942,6 +1005,10 @@ export interface Block {
     | 'source-excerpt'
     | 'question'
     | 'quiz'
+    /** Reveal-and-compare judgement items (Tutorial V3). */
+    | 'quick-decisions'
+    /** Match each card to one option (Tutorial V3). */
+    | 'matching'
     | 'flashcard-set'
     | 'reflection'
     | 'summary'

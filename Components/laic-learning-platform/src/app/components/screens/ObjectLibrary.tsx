@@ -27,6 +27,7 @@ import { StatusPill } from './StatusPill';
 import type { LearningObject, ObjectType, ObjectStatus } from '../../../lib/types';
 import { useApp } from '../../App';
 import { exportLibrarySnapshot } from '../../../lib/librarySnapshotSeed';
+import { WarmTutorialCatalogue, isTutorialObject } from './tutorialV3/learner/warm/WarmTutorialCatalogue';
 import { objectEmbedUrl } from '../../../lib/objectUrls';
 import { objectToPublishRow, saveObject, setObjectShared } from '../../../lib/supabase';
 import { applyObjectOrder, setObjectOrder, subscribeObjectOrder } from '../../../lib/objectOrderStore';
@@ -403,6 +404,15 @@ export function ObjectLibrary() {
       return matchSearch && matchStatus;
     });
   }, [orderedCollectionObjects, search, filterStatus]);
+
+  /**
+   * The tutorials on this shelf, in the author's own order, after the same
+   * search and status filter the rows below obey.
+   */
+  const folderTutorials = useMemo(
+    () => listObjects.filter(isTutorialObject),
+    [listObjects],
+  );
 
   /**
    * Reordering is only offered on the unfiltered list: a partial view cannot
@@ -1026,8 +1036,29 @@ export function ObjectLibrary() {
             </select>
           </div>
 
+          {/*
+            A folder holding tutorials is a shelf a learner would recognise, so
+            it is drawn as one: the reference catalogue, above whatever else the
+            folder contains. Nothing is hidden — objects that are not tutorials
+            keep their ordinary rows underneath.
+          */}
+          {folderTutorials.length > 0 && (
+            <div className="mb-6">
+              <WarmTutorialCatalogue
+                title={opened.name}
+                subtitle={
+                  folderTutorials.length === 1
+                    ? 'One interactive lesson in this folder.'
+                    : `${folderTutorials.length} interactive lessons in this folder.`
+                }
+                tutorials={folderTutorials}
+                onOpen={openReader}
+              />
+            </div>
+          )}
+
           <p style={{ fontSize: 12, fontWeight: 700, color: '#6B7280', letterSpacing: '.04em', marginBottom: 8 }}>
-            OBJECTS IN THIS FOLDER
+            {folderTutorials.length > 0 ? 'EVERYTHING IN THIS FOLDER' : 'OBJECTS IN THIS FOLDER'}
           </p>
           {listObjects.length === 0 ? (
             <div className="flex flex-col items-center py-12 text-center rounded-[22px]" style={{ background: 'rgba(255,255,255,0.55)', border: '1px dashed rgba(0,0,0,0.1)' }}>

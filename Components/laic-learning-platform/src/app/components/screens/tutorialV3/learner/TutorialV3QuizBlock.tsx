@@ -1,18 +1,19 @@
 /**
- * Tutorial V3 quiz — the reference export's `GenericQuizBlock`, wired to the
- * platform's own quiz data.
+ * Tutorial V3 quiz — the reference export's `QuizBlock` from `blocks.tsx`.
  *
- * The look is fixed and comes from the Figma reference: rounded-2xl cards on a
- * soft shadow, two-column options with a letter prefix, sage submit pills, an
- * amber hint row, a per-question strip and a closing score panel. What varies is
- * only the content the course developer wrote.
+ * The look is fixed by the reference: a mono QUIZ chip, a settings bar carrying
+ * the explanation policy and the adaptive switch, a thin per-question strip,
+ * bordered cards that tint to their outcome, two-column options with a mono
+ * letter prefix, a navy Submit and a mono amber hint.
  *
- * Behaviour is the platform's, not the reference's, and nothing was dropped to
- * get the look: multi-select, short answer with learner self-marking, adaptive
- * ordering, the author's explanation policy, progressive hints capped by the
- * tutorial's hintN, question media, FROM YOUR SOURCES, review-wrong mode, the
- * pass mark and cumulative pooling all still work. Each one is drawn in the
- * reference's own idiom rather than in the one it had before.
+ * The settings bar is live, not decorative. The author's Define settings seed
+ * it — `showExplanations` and `adaptive` are where it starts — but the learner
+ * may change both, which is what the reference does and what was asked for.
+ *
+ * Behaviour underneath is the platform's, and nothing was dropped to get the
+ * look: multi-select, short answer with learner self-marking, adaptive
+ * ordering, progressive hints capped by the tutorial's hintN, question media,
+ * FROM YOUR SOURCES, review-wrong mode, the pass mark and cumulative pooling.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -21,11 +22,28 @@ import { QuestionMedia } from '../../QuestionMedia';
 import { hintsForQuestion } from '../../../../../lib/questionHints.js';
 import type { QuizResolveStatus } from '../../McqClusterExperience';
 import { useLearnerProgress } from './LearnerProgressContext';
-import { SAGE } from './warm/theme';
-import { WarmStrip } from './warm/WarmPrimitives';
+import { NAVY } from './warm/theme';
 
 /** How the learner judged their own free-text answer. */
 type SelfMark = 'correct' | 'partial' | 'missed';
+
+/** The reference's four policies, in its own order. */
+type Policy = 'immediately' | 'after-attempt' | 'after-completion' | 'never';
+
+const POLICIES: Policy[] = ['immediately', 'after-attempt', 'after-completion', 'never'];
+
+const POLICY_LABEL: Record<Policy, string> = {
+  immediately: 'Immediately',
+  'after-attempt': 'After attempt',
+  'after-completion': 'After completion',
+  never: 'Never',
+};
+
+/** Define writes "After attempt"; the reference's ids are kebab-case. */
+function policyFromAuthor(authored?: string): Policy {
+  const k = String(authored || 'After attempt').toLowerCase().replace(/\s+/g, '-');
+  return (POLICIES as string[]).includes(k) ? (k as Policy) : 'after-attempt';
+}
 
 /**
  * A grounded quote under a question. The reader's own questions carry `cite`;
@@ -63,16 +81,6 @@ function isObjectivelyCorrect(q: QuestionContent, answer: unknown): boolean {
   return Number(answer) === Number(q.correct);
 }
 
-function shouldShowExplanation(
-  show: string | undefined,
-  { submitted, answered }: { submitted: boolean; answered: boolean },
-): boolean {
-  const mode = show || 'After attempt';
-  if (mode === 'Never') return false;
-  if (mode === 'Immediately') return answered;
-  return submitted;
-}
-
 function diffRank(d?: string): number {
   const x = String(d || 'medium').toLowerCase();
   if (x === 'easy') return 0;
@@ -100,16 +108,16 @@ function pickAdaptiveNext(
   return unused[0];
 }
 
-/** The reference's own wording for a question type. */
-function typeLabel(t: string | undefined): string {
-  if (t === 'multi-select') return 'Select all that apply';
-  if (t === 'short-answer') return 'Short answer';
-  if (t === 'true-false') return 'True or false';
-  if (t === 'scenario') return 'Scenario';
-  return 'Choose one';
+/** The reference's short type tag. */
+function typeTag(t: string | undefined): string {
+  if (t === 'multi-select') return 'SELECT ALL';
+  if (t === 'short-answer') return 'SHORT ANSWER';
+  if (t === 'true-false') return 'TRUE / FALSE';
+  if (t === 'scenario') return 'SCENARIO';
+  return 'MCQ';
 }
 
-function typeChipClass(t: string | undefined): string {
+function typeTagClass(t: string | undefined): string {
   if (t === 'multi-select') return 'bg-blue-50 text-blue-600';
   if (t === 'short-answer') return 'bg-purple-50 text-purple-600';
   return 'bg-stone-100 text-stone-500';
@@ -119,15 +127,15 @@ function typeChipClass(t: string | undefined): string {
 
 function SourcesPanel({ sources }: { sources: QuizSource[] }) {
   return (
-    <div className="mt-3 rounded-2xl bg-stone-50 overflow-hidden">
-      <div className="px-4 py-2.5 border-b border-stone-100">
-        <span className="text-xs font-bold text-stone-500 tracking-wide">FROM YOUR SOURCES</span>
+    <div className="mt-3 rounded-lg border border-stone-200 bg-stone-50 overflow-hidden">
+      <div className="px-4 py-2 border-b border-stone-200 flex items-center gap-2">
+        <span className="font-mono text-[10px] tracking-widest text-stone-500">FROM YOUR SOURCES</span>
       </div>
-      <div>
+      <div className="divide-y divide-stone-100">
         {sources.map((s, i) => (
-          <div key={i} className={`px-4 py-3 ${i ? 'border-t border-stone-100' : ''}`}>
-            <p className="text-sm text-stone-700 italic leading-relaxed mb-1">“{s.quote}”</p>
-            {citeOf(s) && <p className="text-xs text-stone-400 font-semibold">{citeOf(s)}</p>}
+          <div key={i} className="px-4 py-3">
+            <p className="text-sm text-stone-700 italic leading-relaxed mb-1">"{s.quote}"</p>
+            {citeOf(s) && <p className="font-mono text-[10px] text-stone-400">{citeOf(s)}</p>}
           </div>
         ))}
       </div>
@@ -140,6 +148,7 @@ function SourcesPanel({ sources }: { sources: QuizSource[] }) {
 export function TutorialV3QuizBlock({
   content,
   blockId,
+  title = 'Knowledge check',
   deferPassScore = false,
   maxHints: maxHintsProp,
   hintsEnabled: hintsEnabledProp,
@@ -149,6 +158,7 @@ export function TutorialV3QuizBlock({
   content: QuizContent;
   /** Reported to the learner-progress channel when every question is resolved. */
   blockId: string;
+  title?: string;
   deferPassScore?: boolean;
   maxHints?: number;
   hintsEnabled?: boolean;
@@ -162,10 +172,8 @@ export function TutorialV3QuizBlock({
   resultKeyPrefix?: string;
 }) {
   const questions = content.questions || [];
-  const adaptive = !!content.adaptive;
   const passRequired = content.passRequired !== false;
   const passMark = typeof content.passMark === 'number' ? content.passMark : 70;
-  const showMode = content.showExplanations || 'After attempt';
   const hintsEnabled = hintsEnabledProp !== false;
   const maxHints = !hintsEnabled
     ? 0
@@ -173,9 +181,13 @@ export function TutorialV3QuizBlock({
       ? Math.max(0, maxHintsProp)
       : Math.max(0, ...questions.map((q) => (Array.isArray(q.hints) ? q.hints.length : 0)), 4);
 
+  /** Seeded from Define, then the learner's to change. */
+  const [policy, setPolicy] = useState<Policy>(() => policyFromAuthor(content.showExplanations));
+  const [adaptive, setAdaptive] = useState<boolean>(() => !!content.adaptive);
+
   const [answers, setAnswers] = useState<Record<number, number | number[] | string>>({});
   const [submitted, setSubmitted] = useState(false);
-  const [path, setPath] = useState<number[]>(() => (adaptive && questions.length ? [pickAdaptiveStart(questions)] : []));
+  const [path, setPath] = useState<number[]>(() => (content.adaptive && questions.length ? [pickAdaptiveStart(questions)] : []));
   const [hintsShown, setHintsShown] = useState<Record<number, number>>({});
   const [resolved, setResolved] = useState<Record<number, QuizResolveStatus>>({});
   const [flashWrong, setFlashWrong] = useState<Record<number, boolean>>({});
@@ -184,6 +196,8 @@ export function TutorialV3QuizBlock({
   const [selfMarks, setSelfMarks] = useState<Record<number, SelfMark>>({});
   /** Which questions have their sources panel open. */
   const [sourcesOpen, setSourcesOpen] = useState<Record<number, boolean>>({});
+  /** Per-question override for the after-completion policy. */
+  const [explanationShown, setExplanationShown] = useState<Record<number, boolean>>({});
   /** After completion: show only the ones that were missed. */
   const [reviewWrong, setReviewWrong] = useState(false);
 
@@ -199,19 +213,6 @@ export function TutorialV3QuizBlock({
     return resolved[qi] === 'correct';
   };
 
-  const resolvedCount = Object.keys(resolved).length;
-  const correctCount = questions.reduce((n, _q, qi) => n + (isRight(qi) ? 1 : 0), 0);
-  const attempted = submitted
-    ? (adaptive ? path.length : questions.length)
-    : Math.max(resolvedCount, Object.keys(answers).filter((k) => hasAnswer(answers[Number(k)])).length);
-  const scoreBase = submitted ? (adaptive ? path.length : questions.length) : Math.max(resolvedCount, 1);
-  const pct = submitted && scoreBase
-    ? Math.round((correctCount / scoreBase) * 100)
-    : resolvedCount
-      ? Math.round((correctCount / resolvedCount) * 100)
-      : 0;
-  const passed = pct >= passMark;
-
   /** Short answer is only finished once the learner has judged it. */
   const isFinished = (qi: number): boolean => {
     const q = questions[qi];
@@ -220,7 +221,13 @@ export function TutorialV3QuizBlock({
     if (q.type === 'short-answer') return selfMarks[qi] != null;
     return true;
   };
-  const allDone = questions.length > 0 && questions.every((_q, qi) => isFinished(qi));
+
+  const doneCount = questions.filter((_q, qi) => isFinished(qi)).length;
+  const allDone = questions.length > 0 && doneCount === questions.length;
+  const correctCount = questions.reduce((n, _q, qi) => n + (isRight(qi) ? 1 : 0), 0);
+  const scoreBase = adaptive && submitted ? path.length : questions.length;
+  const pct = scoreBase ? Math.round((correctCount / scoreBase) * 100) : 0;
+  const passed = pct >= passMark;
 
   const wrongIndices = useMemo(
     () => questions.map((_q, qi) => qi).filter((qi) => isFinished(qi) && !isRight(qi)),
@@ -245,6 +252,17 @@ export function TutorialV3QuizBlock({
     else markBlockUndone(blockId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allDone, blockId]);
+
+  /** Turning the switch on mid-quiz starts a path from what is still unanswered. */
+  const toggleAdaptive = () => {
+    setAdaptive((on) => {
+      if (!on) {
+        const unused = questions.map((_q, i) => i).filter((i) => !isFinished(i));
+        setPath([unused.length ? unused[0] : pickAdaptiveStart(questions)]);
+      }
+      return !on;
+    });
+  };
 
   const toggleMulti = (qi: number, oi: number) => {
     setAnswers((prev) => {
@@ -273,8 +291,7 @@ export function TutorialV3QuizBlock({
     }
     setWrongTries((p) => ({ ...p, [qi]: (p[qi] || 0) + 1 }));
     if (maxHints > 0) {
-      const nextShown = Math.min(maxHints, (hintsShown[qi] || 0) + 1);
-      setHintsShown((p) => ({ ...p, [qi]: nextShown }));
+      setHintsShown((p) => ({ ...p, [qi]: Math.min(maxHints, (p[qi] || 0) + 1) }));
     }
     setFlashWrong((p) => ({ ...p, [qi]: true }));
     setAnswers((prev) => {
@@ -294,13 +311,9 @@ export function TutorialV3QuizBlock({
     else if (q.type !== 'short-answer') setAnswers((p) => ({ ...p, [qi]: q.correct ?? 0 }));
   };
 
-  const renderQuestion = (q: QuestionContent, qi: number, opts: {
-    reveal: boolean;
-    showExp: boolean;
-    disabled: boolean;
-    label: string;
-    showCheck?: boolean;
-  }) => {
+  /* ── one question card ───────────────────────────────────────── */
+
+  const renderQuestion = (q: QuestionContent, qi: number, label: string) => {
     const options = q.options || [];
     const hints = maxHints > 0
       ? hintsForQuestion(q, { count: maxHints, enabled: true }).slice(0, maxHints)
@@ -308,49 +321,64 @@ export function TutorialV3QuizBlock({
     const shown = hintsShown[qi] || 0;
     const status = resolved[qi];
     const done = !!status;
-    const reveal = opts.reveal || status === 'revealed' || status === 'correct';
+    const reveal = done || submitted;
     const canShowAnswer = maxHints > 0 ? shown >= maxHints : (wrongTries[qi] || 0) >= 1;
     const shortAnswer = q.type === 'short-answer';
     const mark = selfMarks[qi];
     const sources = sourcesOf(q);
     const right = isRight(qi);
 
-    // The card tints to the outcome once there is one to show.
-    let cardBg = 'bg-white';
+    const showExpl = done && (
+      policy === 'immediately'
+      || policy === 'after-attempt'
+      || (policy === 'after-completion' && (allDone || explanationShown[qi]))
+    );
+
+    let cardBg = 'bg-white border-stone-200';
     if (done && shortAnswer) {
-      cardBg = mark === 'correct' ? 'bg-green-50' : mark === 'missed' ? 'bg-red-50' : 'bg-amber-50';
+      cardBg = mark === 'correct'
+        ? 'bg-green-50 border-green-200'
+        : mark === 'missed' ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200';
     } else if (done) {
-      cardBg = status === 'correct' ? 'bg-green-50' : 'bg-red-50';
+      cardBg = status === 'correct' ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200';
     }
 
+    const canSubmit = hasAnswer(answers[qi]);
+
     return (
-      <div key={qi} className={`rounded-2xl p-5 shadow-sm transition-colors ${cardBg}`}>
-        <div className="flex items-center gap-2 mb-4 flex-wrap">
-          <span className="text-xs text-stone-400 font-bold">{opts.label}</span>
-          <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${typeChipClass(q.type)}`}>
-            {typeLabel(q.type)}
-          </span>
-          {q.cognitiveLevel && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-stone-100 text-stone-500">{q.cognitiveLevel}</span>
-          )}
-          {adaptive && q.difficulty && (
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">{q.difficulty}</span>
-          )}
+      <div className={`rounded-lg border p-5 transition-colors ${cardBg}`}>
+        <div className="flex items-start gap-3 mb-4">
+          <div className="flex items-center gap-2 shrink-0 mt-0.5 flex-wrap">
+            <span className="font-mono text-[10px] text-stone-400">{label}</span>
+            <span className={`font-mono text-[9px] px-1.5 py-0.5 rounded tracking-wider ${typeTagClass(q.type)}`}>
+              {typeTag(q.type)}
+            </span>
+            {adaptive && (
+              <span className="font-mono text-[9px] px-1.5 py-0.5 rounded tracking-wider bg-amber-50 text-amber-600">
+                ADAPTIVE
+              </span>
+            )}
+            {q.cognitiveLevel && (
+              <span className="font-mono text-[9px] px-1.5 py-0.5 rounded tracking-wider bg-stone-100 text-stone-500">
+                {String(q.cognitiveLevel).toUpperCase()}
+              </span>
+            )}
+          </div>
         </div>
 
-        <p className="text-stone-900 text-[15px] leading-relaxed mb-4 font-medium">{q.question}</p>
+        <p className="text-stone-900 text-[15px] leading-relaxed mb-4">{q.question}</p>
         <QuestionMedia q={q} />
 
-        {/* Progressive hints — the reference draws one; the platform may have
-            several, so they stack in the same amber row. */}
         {shown > 0 && hints.length > 0 && (
           <div className="mb-4 space-y-2">
             {hints.slice(0, shown).map((h: string, hi: number) => (
-              <div key={hi} className="flex items-start gap-2 bg-amber-50 rounded-xl px-3 py-2.5">
+              <div key={hi} className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded px-3 py-2">
                 <span className="text-amber-500 shrink-0 text-xs mt-0.5">💡</span>
                 <div>
                   {maxHints > 1 && (
-                    <p className="text-xs text-amber-600 font-bold mb-0.5">Hint {hi + 1} of {maxHints}</p>
+                    <p className="font-mono text-[9px] text-amber-600 tracking-wider mb-0.5">
+                      HINT {hi + 1} OF {maxHints}
+                    </p>
                   )}
                   <p className="text-amber-800 text-sm">{h}</p>
                 </div>
@@ -364,22 +392,21 @@ export function TutorialV3QuizBlock({
             <textarea
               rows={4}
               value={typeof answers[qi] === 'string' ? String(answers[qi]) : ''}
-              disabled={opts.disabled || done}
+              disabled={done}
               onChange={(e) => {
                 setAnswers((prev) => ({ ...prev, [qi]: e.target.value }));
                 setFlashWrong((p) => ({ ...p, [qi]: false }));
               }}
               placeholder="Write your answer here…"
-              className="w-full text-sm text-stone-800 border-2 border-stone-200 rounded-xl p-3 resize-none focus:outline-none focus:border-amber-400 disabled:bg-stone-50 font-medium"
+              className="w-full text-sm text-stone-800 border border-stone-200 rounded p-3 resize-none focus:outline-none focus:border-amber-400 disabled:bg-stone-50 disabled:text-stone-600"
             />
 
-            {/* Self-marking: the sample answer is evidence for the learner's own
-                judgement, not a string to be matched against. */}
             {done && mark == null && (
               <div className="mt-3">
-                <p className="text-sm text-stone-600 mb-2 font-bold">How did you do? Compare with the sample answer:</p>
+                <p className="text-sm text-stone-600 mb-2 font-medium">Compare with the sample answer — how did you do?</p>
                 {q.sampleAnswer && (
-                  <div className="rounded-xl bg-stone-50 px-4 py-3 mb-3 text-sm text-stone-700 leading-relaxed">
+                  <div className="rounded bg-stone-50 border border-stone-200 px-4 py-3 mb-3 text-sm text-stone-700 leading-relaxed">
+                    <span className="font-mono text-[10px] text-stone-400 block mb-1">SAMPLE ANSWER</span>
                     {q.sampleAnswer}
                   </div>
                 )}
@@ -387,21 +414,21 @@ export function TutorialV3QuizBlock({
                   <button
                     type="button"
                     onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'correct' }))}
-                    className="px-4 py-2 rounded-full border-2 border-green-300 bg-green-50 text-green-700 text-sm font-bold hover:bg-green-100"
+                    className="px-4 py-1.5 rounded border border-green-300 bg-green-50 text-green-700 text-sm font-medium hover:bg-green-100"
                   >
                     Got it ✓
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'partial' }))}
-                    className="px-4 py-2 rounded-full border-2 border-amber-300 bg-amber-50 text-amber-700 text-sm font-bold hover:bg-amber-100"
+                    className="px-4 py-1.5 rounded border border-amber-300 bg-amber-50 text-amber-700 text-sm font-medium hover:bg-amber-100"
                   >
                     Partly
                   </button>
                   <button
                     type="button"
                     onClick={() => setSelfMarks((p) => ({ ...p, [qi]: 'missed' }))}
-                    className="px-4 py-2 rounded-full border-2 border-red-300 bg-red-50 text-red-700 text-sm font-bold hover:bg-red-100"
+                    className="px-4 py-1.5 rounded border border-red-300 bg-red-50 text-red-700 text-sm font-medium hover:bg-red-100"
                   >
                     Missed it
                   </button>
@@ -410,12 +437,10 @@ export function TutorialV3QuizBlock({
             )}
             {done && mark != null && (
               <div
-                className={`mt-3 rounded-xl px-3 py-2 text-sm font-bold flex items-center justify-between gap-3 ${
+                className={`mt-3 rounded px-3 py-2 text-sm font-medium flex items-center justify-between gap-3 ${
                   mark === 'correct'
                     ? 'bg-green-100 text-green-800'
-                    : mark === 'missed'
-                      ? 'bg-red-100 text-red-800'
-                      : 'bg-amber-100 text-amber-800'
+                    : mark === 'missed' ? 'bg-red-100 text-red-800' : 'bg-amber-100 text-amber-800'
                 }`}
               >
                 <span>
@@ -428,7 +453,7 @@ export function TutorialV3QuizBlock({
                     delete n[qi];
                     return n;
                   })}
-                  className="text-xs font-bold text-stone-500 underline"
+                  className="font-mono text-[10px] text-stone-500 underline"
                 >
                   change
                 </button>
@@ -438,71 +463,69 @@ export function TutorialV3QuizBlock({
         ) : q.type === 'multi-select' ? (
           <div className="space-y-2 mb-4">
             {options.map((opt, oi) => {
-              const chosen = Array.isArray(answers[qi]) && (answers[qi] as number[]).includes(oi);
+              const checked = Array.isArray(answers[qi]) && (answers[qi] as number[]).includes(oi);
               const isCorrectOpt = (q.correctIndices || []).includes(oi);
-              let cls = 'flex items-start gap-3 w-full text-left rounded-xl border-2 px-4 py-3 text-sm font-semibold transition-all ';
-              if (!reveal) {
-                cls += chosen
-                  ? 'border-amber-400 bg-amber-50 text-amber-900'
-                  : 'border-stone-200 bg-white hover:border-stone-400 text-stone-700 cursor-pointer';
-              } else if (isCorrectOpt) cls += 'border-green-400 bg-green-50 text-green-900';
-              else if (chosen) cls += 'border-red-300 bg-red-50 text-red-800';
-              else cls += 'border-stone-100 text-stone-400 cursor-default';
+              let border = 'border-stone-200';
+              let bg = 'bg-white';
+              let text = 'text-stone-700';
+              if (!reveal && checked) { border = 'border-amber-500'; bg = 'bg-amber-50'; text = 'text-amber-900'; }
+              if (reveal && isCorrectOpt) { border = 'border-green-500'; bg = 'bg-green-50'; text = 'text-green-900'; }
+              if (reveal && checked && !isCorrectOpt) { border = 'border-red-400'; bg = 'bg-red-50'; text = 'text-red-800'; }
+              if (reveal && !isCorrectOpt && !checked) { border = 'border-stone-100'; text = 'text-stone-400'; }
               return (
                 <button
                   key={oi}
-                  disabled={opts.disabled || done}
                   onClick={() => toggleMulti(qi, oi)}
-                  className={cls}
+                  disabled={done}
+                  className={`flex items-start gap-3 w-full text-left rounded border px-3 py-2.5 text-sm transition-all ${border} ${bg} ${text} ${
+                    !done ? 'cursor-pointer hover:border-stone-400' : 'cursor-default'
+                  }`}
                 >
                   <span
-                    className={`mt-0.5 flex items-center justify-center w-4 h-4 rounded border-2 shrink-0 ${
+                    className={`mt-0.5 flex items-center justify-center w-4 h-4 rounded border-2 shrink-0 transition-all ${
                       reveal && isCorrectOpt
                         ? 'border-green-500 bg-green-500'
-                        : reveal && chosen && !isCorrectOpt
+                        : reveal && checked && !isCorrectOpt
                           ? 'border-red-400 bg-red-400'
-                          : chosen
-                            ? 'border-amber-400 bg-amber-400'
-                            : 'border-stone-300'
+                          : checked ? 'border-amber-500 bg-amber-500' : 'border-stone-300'
                     }`}
                   >
-                    {(chosen || (reveal && isCorrectOpt)) && <span className="text-white text-[9px] font-bold">✓</span>}
-                    {reveal && chosen && !isCorrectOpt && <span className="text-white text-[9px] font-bold">✗</span>}
+                    {(checked || (reveal && isCorrectOpt)) && <span className="text-white text-[9px] font-bold">✓</span>}
+                    {reveal && checked && !isCorrectOpt && <span className="text-white text-[9px] font-bold">✗</span>}
                   </span>
                   <span>{opt}</span>
                 </button>
               );
             })}
             {reveal && (
-              <p className="text-xs text-stone-400 font-semibold">
+              <p className="text-xs font-mono text-stone-400 mt-1">
                 {(q.correctIndices || []).length} correct option{(q.correctIndices || []).length === 1 ? '' : 's'}
               </p>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+          <div className="grid grid-cols-2 gap-2 mb-4">
             {options.map((opt, oi) => {
               const chosen = answers[qi] === oi;
-              const isCorrectOpt = oi === q.correct;
-              let cls = 'rounded-xl border-2 px-4 py-3 text-sm text-left font-semibold transition-all ';
+              let cls = 'rounded border px-3 py-2 text-sm text-left transition-all ';
               if (!reveal) {
                 cls += chosen
-                  ? 'border-amber-400 bg-amber-50 text-amber-900 cursor-pointer'
+                  ? 'border-amber-500 bg-amber-50 text-amber-900 font-medium cursor-pointer'
                   : 'border-stone-200 bg-white hover:border-stone-400 text-stone-700 cursor-pointer';
-              } else if (isCorrectOpt) cls += 'border-green-400 bg-green-100 text-green-900 cursor-default';
-              else if (chosen) cls += 'border-red-300 bg-red-100 text-red-800 cursor-default';
+              } else if (oi === q.correct) cls += 'border-green-500 bg-green-100 text-green-900 font-medium cursor-default';
+              else if (chosen) cls += 'border-red-400 bg-red-100 text-red-800 cursor-default';
               else cls += 'border-stone-100 bg-white/60 text-stone-400 cursor-default';
               return (
                 <button
                   key={oi}
-                  disabled={opts.disabled || done}
+                  className={cls}
+                  disabled={done}
                   onClick={() => {
                     setAnswers((prev) => ({ ...prev, [qi]: oi }));
                     setFlashWrong((p) => ({ ...p, [qi]: false }));
                   }}
-                  className={cls}
                 >
-                  <span className="text-stone-400 font-bold mr-2">{String.fromCharCode(65 + oi)}.</span>{opt}
+                  <span className="font-mono text-[10px] text-stone-400 mr-2">{String.fromCharCode(65 + oi)}.</span>{opt}
                 </button>
               );
             })}
@@ -510,68 +533,79 @@ export function TutorialV3QuizBlock({
         )}
 
         {flashWrong[qi] && !done && (
-          <p className="text-sm text-red-600 font-bold mb-3">
+          <p className="text-sm text-red-600 mb-3">
             Not quite{maxHints > 0 && shown ? ` — hint ${shown} of ${maxHints}` : ''}. Try again.
           </p>
         )}
 
-        {opts.showExp && q.explanation && (
-          <div
-            className={`text-sm rounded-xl px-4 py-3 mb-2 font-medium ${
-              shortAnswer
-                ? 'text-stone-700 bg-stone-100'
-                : right
-                  ? 'text-green-800 bg-green-100'
-                  : 'text-red-800 bg-red-100'
-            }`}
-          >
-            <span className="font-bold">{shortAnswer ? 'Note: ' : right ? '✓ ' : '✗ '}</span>{q.explanation}
+        {done && (
+          <div className="space-y-2">
+            {policy === 'never' ? null
+              : policy === 'after-completion' && !allDone && !explanationShown[qi] ? (
+                <button
+                  type="button"
+                  onClick={() => setExplanationShown((p) => ({ ...p, [qi]: true }))}
+                  className="text-xs text-stone-500 font-mono hover:text-stone-700 underline"
+                >
+                  Unlock explanation
+                </button>
+              ) : showExpl && q.explanation ? (
+                <div
+                  className={`text-sm rounded px-3 py-2 ${
+                    shortAnswer && mark == null
+                      ? 'text-stone-700 bg-stone-100'
+                      : right ? 'text-green-800 bg-green-100' : 'text-red-800 bg-red-100'
+                  }`}
+                >
+                  <span className="font-medium">{right ? '✓ ' : '✗ '}</span>{q.explanation}
+                </div>
+              ) : null}
+
+            {sources.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSourcesOpen((p) => ({ ...p, [qi]: !p[qi] }))}
+                className="text-xs text-stone-500 font-mono hover:text-stone-700 flex items-center gap-1"
+                aria-expanded={!!sourcesOpen[qi]}
+              >
+                <span>{sourcesOpen[qi] ? '▾' : '▸'}</span>
+                {sourcesOpen[qi] ? 'Hide sources' : 'From your sources'}
+              </button>
+            )}
+            {sourcesOpen[qi] && sources.length > 0 && <SourcesPanel sources={sources} />}
           </div>
         )}
 
-        {/* Grounded quotes — collected by the pipeline all along, shown at last. */}
-        {done && sources.length > 0 && (
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => setSourcesOpen((p) => ({ ...p, [qi]: !p[qi] }))}
-              className="flex items-center gap-1.5 text-sm text-stone-500 font-bold hover:text-stone-700"
-              aria-expanded={!!sourcesOpen[qi]}
-            >
-              <span>{sourcesOpen[qi] ? '▾' : '▸'}</span>
-              {sourcesOpen[qi] ? 'Hide sources' : 'From your sources'}
-            </button>
-            {sourcesOpen[qi] && <SourcesPanel sources={sources} />}
-          </div>
-        )}
-
-        {opts.showCheck && !done && (
+        {!done && (
           <div className="flex items-center gap-3 mt-4 pt-4 border-t border-stone-100">
             <button
               type="button"
-              disabled={!hasAnswer(answers[qi])}
               onClick={() => checkAnswer(qi)}
-              className="px-6 py-2 rounded-full text-white text-sm font-bold disabled:opacity-30 transition-opacity"
-              style={{ background: SAGE }}
+              disabled={!canSubmit}
+              className="px-4 py-1.5 rounded text-sm font-medium text-white disabled:opacity-30 transition-opacity"
+              style={{ background: NAVY }}
             >
               Submit
             </button>
-            {!shortAnswer && canShowAnswer && (
+            {hints.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setHintsShown((p) => ({
+                  ...p,
+                  [qi]: shown > 0 ? 0 : Math.min(maxHints, 1),
+                }))}
+                className="text-sm text-amber-600 hover:text-amber-800 font-mono"
+              >
+                {shown > 0 ? 'hide hint' : '💡 hint'}
+              </button>
+            )}
+            {canShowAnswer && !shortAnswer && (
               <button
                 type="button"
                 onClick={() => revealAndLock(qi)}
-                className="text-sm text-stone-500 hover:text-stone-800 font-bold"
+                className="text-xs text-stone-500 font-mono hover:text-stone-700 underline ml-auto"
               >
-                show answer
-              </button>
-            )}
-            {maxHints > 0 && hints.length > 0 && shown < Math.min(maxHints, hints.length) && (
-              <button
-                type="button"
-                onClick={() => setHintsShown((p) => ({ ...p, [qi]: Math.min(maxHints, (p[qi] || 0) + 1) }))}
-                className="text-sm text-amber-600 hover:text-amber-800 font-bold ml-auto"
-              >
-                💡 hint
+                Show answer
               </button>
             )}
           </div>
@@ -580,17 +614,21 @@ export function TutorialV3QuizBlock({
     );
   };
 
-  /* ── header, strip and score panel ───────────────────────────── */
+  if (!questions.length) return null;
 
-  const heading = questions.length === 1 ? 'Quick check' : 'Knowledge check';
-  const doneCount = questions.filter((_q, qi) => isFinished(qi)).length;
+  /* ── header, settings bar, strip ─────────────────────────────── */
 
   const header = (
-    <div className="flex items-start justify-between mb-5 gap-4">
-      <h2 className="text-2xl font-bold text-stone-900">{heading}</h2>
+    <div className="flex items-start justify-between mb-4 gap-4">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="font-mono text-[10px] tracking-widest text-stone-500 bg-stone-100 px-2 py-0.5 rounded shrink-0">
+          QUIZ
+        </span>
+        <h2 className="text-xl text-stone-900 truncate">{content.purpose?.trim() || title}</h2>
+      </div>
       {allDone && (
         <div
-          className={`text-sm font-bold px-3 py-1 rounded-full shrink-0 ${
+          className={`font-mono text-sm px-3 py-1 rounded-full shrink-0 ${
             correctCount === questions.length ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
           }`}
         >
@@ -600,69 +638,96 @@ export function TutorialV3QuizBlock({
     </div>
   );
 
-  const intro = (content.purpose || !deferPassScore) && (
-    <p className="text-stone-600 text-[15px] leading-relaxed mb-5">
-      {content.purpose}
-      {content.purpose && !deferPassScore ? ' ' : ''}
-      {!deferPassScore && (passRequired ? `Pass mark ${passMark}%.` : 'Practice only — no pass mark.')}
-    </p>
-  );
-
-  const progressStrip = questions.length > 1 && (
-    <div className="mb-5">
-      <WarmStrip
-        items={questions.map((q, qi) => {
-          if (!isFinished(qi)) return adaptive && qi === currentQi ? 'current' : 'todo';
-          if (q.type === 'short-answer' && selfMarks[qi] === 'partial') return 'partial';
-          return isRight(qi) ? 'done' : 'missed';
-        })}
-      />
+  const settingsBar = (
+    <div className="flex flex-wrap items-center gap-3 mb-5 pb-4 border-b border-stone-100">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[10px] text-stone-400 tracking-wider">EXPLANATIONS</span>
+        <div className="flex gap-1 flex-wrap">
+          {POLICIES.map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => setPolicy(p)}
+              aria-pressed={policy === p}
+              className={`px-2.5 py-1 rounded text-xs font-mono transition-colors ${
+                policy === p ? 'text-white' : 'bg-stone-100 text-stone-500 hover:bg-stone-200'
+              }`}
+              style={policy === p ? { background: NAVY } : undefined}
+            >
+              {POLICY_LABEL[p]}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 ml-auto">
+        <span className="font-mono text-[10px] text-stone-400">ADAPTIVE</span>
+        <button
+          type="button"
+          onClick={toggleAdaptive}
+          role="switch"
+          aria-checked={adaptive}
+          aria-label="Adaptive questions"
+          className={`relative w-8 h-4 rounded-full transition-colors ${adaptive ? 'bg-amber-500' : 'bg-stone-200'}`}
+        >
+          <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all ${adaptive ? 'left-4' : 'left-0.5'}`} />
+        </button>
+      </div>
     </div>
   );
 
-  const scorePanel = !deferPassScore && submitted && (
+  const strip = (
+    <div className="flex gap-1 mb-5" aria-hidden>
+      {questions.map((q, qi) => {
+        const finished = isFinished(qi);
+        const partial = q.type === 'short-answer' && selfMarks[qi] === 'partial';
+        return (
+          <div
+            key={qi}
+            className={`h-1 flex-1 rounded-full transition-colors ${
+              !finished
+                ? 'bg-stone-200'
+                : partial ? 'bg-amber-400' : isRight(qi) ? 'bg-green-500' : 'bg-red-400'
+            }`}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const scorePanel = !deferPassScore && allDone && (
     <div
-      className={`mt-5 rounded-2xl px-5 py-4 flex items-center justify-between gap-4 ${
-        !passRequired ? 'bg-green-50' : passed ? 'bg-green-50' : 'bg-amber-50'
+      className={`mt-5 rounded-lg px-5 py-4 flex items-center justify-between gap-4 ${
+        !passRequired || passed ? 'bg-green-50 border border-green-200' : 'bg-amber-50 border border-amber-200'
       }`}
     >
       <div>
-        <p className={`text-lg font-bold ${!passRequired || passed ? 'text-green-800' : 'text-amber-800'}`}>
+        <p className={`text-lg ${!passRequired || passed ? 'text-green-800' : 'text-amber-800'}`}>
           {!passRequired
             ? 'Practice complete'
-            : passed
-              ? (correctCount === (attempted || questions.length) ? 'Perfect score!' : 'Passed')
-              : `${correctCount} of ${attempted || questions.length} correct`}
+            : correctCount === questions.length ? 'Perfect score!' : `${correctCount} of ${questions.length} correct`}
         </p>
-        <p className={`text-sm font-medium ${!passRequired || passed ? 'text-green-600' : 'text-amber-700'}`}>
+        <p className={`text-sm ${!passRequired || passed ? 'text-green-600' : 'text-amber-700'}`}>
           {!passRequired
             ? 'No pass mark on this one.'
-            : passed
-              ? `At or above the ${passMark}% mark.`
-              : `Needs ${passMark}% — review the missed questions, then continue.`}
+            : passed ? 'All concepts nailed.' : `Needs ${passMark}% — review the missed questions, then move on.`}
         </p>
       </div>
-      <div className="text-2xl font-black shrink-0" style={{ color: !passRequired || passed ? '#16a34a' : '#d97706' }}>
+      <div className="text-right font-mono text-2xl font-bold shrink-0" style={{ color: !passRequired || passed ? '#16a34a' : '#d97706' }}>
         {pct}%
       </div>
     </div>
   );
 
-  if (!questions.length) return null;
-
   /* ── adaptive path ───────────────────────────────────────────── */
 
   if (adaptive) {
     const q = questions[currentQi];
-    const answered = hasAnswer(answers[currentQi]);
     const done = isFinished(currentQi);
-    const showExp = shouldShowExplanation(showMode, { submitted: done || submitted, answered: done || answered }) && !!q?.explanation;
 
     const advance = () => {
       if (currentQi == null || currentQi < 0 || !q) return;
-      const ok = isRight(currentQi);
       const used = new Set(path);
-      const next = pickAdaptiveNext(questions, used, ok, diffRank(q.difficulty));
+      const next = pickAdaptiveNext(questions, used, isRight(currentQi), diffRank(q.difficulty));
       if (next == null) {
         setSubmitted(true);
         return;
@@ -673,27 +738,17 @@ export function TutorialV3QuizBlock({
     return (
       <div>
         {header}
-        <p className="text-stone-600 text-[15px] leading-relaxed mb-5">
-          {content.purpose ? `${content.purpose} ` : ''}
-          Adaptive — each question follows from the last.
-          {!submitted && q ? ` Question ${path.length} of ${questions.length}.` : ''}
-        </p>
-        {progressStrip}
+        {settingsBar}
+        {strip}
         {!submitted && q && (
           <div className="space-y-4">
-            {renderQuestion(q, currentQi, {
-              reveal: !!resolved[currentQi],
-              showExp: !!showExp,
-              disabled: !!resolved[currentQi] || submitted,
-              label: q.label || `Q${path.length}`,
-              showCheck: true,
-            })}
+            {renderQuestion(q, currentQi, `Q${path.length}/${questions.length}`)}
             {done && (
               <button
                 type="button"
                 onClick={advance}
-                className="w-full py-3 rounded-full text-white text-sm font-bold hover:opacity-90 transition-opacity"
-                style={{ background: SAGE }}
+                className="w-full py-2.5 rounded text-white text-sm font-medium transition-opacity hover:opacity-90"
+                style={{ background: NAVY }}
               >
                 {path.length >= questions.length ? 'See results' : 'Next question →'}
               </button>
@@ -714,19 +769,18 @@ export function TutorialV3QuizBlock({
   return (
     <div>
       {header}
-      {intro}
-      {progressStrip}
+      {settingsBar}
+      {strip}
 
-      {/* Review-wrong: only offered once there is something to review. */}
       {allDone && wrongIndices.length > 0 && (
-        <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <div className="flex items-center gap-3 mb-4">
           <button
             type="button"
             onClick={() => setReviewWrong((v) => !v)}
-            className={`text-sm font-bold px-4 py-2 rounded-full border-2 transition-colors ${
+            className={`text-xs font-mono px-3 py-1 rounded border transition-colors ${
               reviewWrong
-                ? 'border-red-300 text-red-600 bg-red-50'
-                : 'border-stone-200 text-stone-500 hover:border-stone-400'
+                ? 'border-red-400 text-red-600 bg-red-50'
+                : 'border-stone-200 text-stone-500 hover:border-red-300 hover:text-red-500'
             }`}
           >
             {reviewWrong ? '← Show all' : `Review ${wrongIndices.length} missed`}
@@ -734,38 +788,17 @@ export function TutorialV3QuizBlock({
         </div>
       )}
 
-      <div className="space-y-4">
-        {shownQuestions.map(({ q, qi }) => {
-          const done = !!resolved[qi];
-          const showExp = shouldShowExplanation(showMode, { submitted: submitted || done, answered: done }) && !!q.explanation;
-          return (
-            <React.Fragment key={qi}>
-              {renderQuestion(q, qi, {
-                reveal: submitted || done,
-                showExp: !!showExp,
-                disabled: submitted || done,
-                label: q.label || `Q${qi + 1}`,
-                showCheck: !submitted,
-              })}
-            </React.Fragment>
-          );
-        })}
+      <div className="space-y-5">
+        {shownQuestions.map(({ q, qi }) => (
+          <React.Fragment key={qi}>
+            {renderQuestion(q, qi, q.label || `Q${qi + 1}/${questions.length}`)}
+          </React.Fragment>
+        ))}
       </div>
 
-      {!deferPassScore && !submitted && allDone && !reviewWrong && (
-        <button
-          type="button"
-          onClick={() => setSubmitted(true)}
-          className="w-full mt-5 py-3 rounded-full text-white text-sm font-bold hover:opacity-90 transition-opacity"
-          style={{ background: SAGE }}
-        >
-          See results
-        </button>
-      )}
-
       {deferPassScore && allDone && (
-        <p className="mt-4 text-sm text-stone-400 font-semibold text-center">
-          {doneCount}/{questions.length} answered · counted toward the tutorial total
+        <p className="mt-4 font-mono text-[10px] text-stone-400 text-center tracking-wider">
+          COUNTED TOWARD THE TUTORIAL TOTAL
         </p>
       )}
 

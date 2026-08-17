@@ -29,7 +29,9 @@ import type {
   DrillContent,
   FlashcardSetContent,
   ImageContent,
+  MatchingContent,
   QuestionContent,
+  QuickDecisionsContent,
   QuizContent,
   ReflectionContent,
   SummaryContent,
@@ -64,6 +66,7 @@ import {
   WarmVideoScript,
 } from './warm/WarmBlocks';
 import { WarmLessonComplete, WarmLessonOverview } from './warm/WarmLessonPages';
+import { WarmMatching, WarmQuickDecisions } from './warm/WarmExercises';
 
 type SourceUnits = Parameters<typeof LearningBlocksPreview>[0]['sourceUnits'];
 
@@ -120,6 +123,14 @@ function buildOverrides(
         onResolvedChange={quizProps?.onResolvedChange}
         resultKeyPrefix={block.id}
       />
+    ),
+
+    'quick-decisions': ({ block }) => (
+      <WarmQuickDecisions content={block.content as QuickDecisionsContent} blockId={block.id} />
+    ),
+
+    matching: ({ block }) => (
+      <WarmMatching content={block.content as MatchingContent} blockId={block.id} />
     ),
 
     'concept-card': ({ block }) => (
@@ -360,13 +371,10 @@ function ReaderInner({
             </div>
           </div>
 
-          {/* The section this page belongs to. */}
-          {currentSection && !onCover && (
-            <div className="mb-6 flex items-center gap-2 flex-wrap">
+          {/* The section this page belongs to — named on every page, covers included. */}
+          {currentSection && (
+            <div className="mb-6">
               <p className="text-sm font-semibold text-stone-500">{currentSection.title}</p>
-              {currentSection.required && (
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">Required</span>
-              )}
             </div>
           )}
 

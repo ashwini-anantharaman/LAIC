@@ -14,6 +14,16 @@
 /** The one brand colour the reference introduces. Not a Tailwind scale value. */
 export const SAGE = '#4d7c5a';
 
+/**
+ * The reference's control colour — the active pill in a settings row, a block's
+ * Submit, the selected mode in a toggle group. Distinct from SAGE, which is
+ * page-level navigation and the one action that moves the learner forward.
+ */
+export const NAVY = '#0e1c35';
+
+/** Author-ish accents: the amber the reference uses for hints and Test-yourself. */
+export const AMBER = '#d97706';
+
 /** Page ground behind the reading column and the sidebar rail. */
 export const WARM_BG = '#f8f6f1';
 

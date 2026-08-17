@@ -1,9 +1,10 @@
 /**
- * Tutorial V3 bidding sequence — the reference export's `BiddingSequenceSection`.
+ * Tutorial V3 bidding sequence — the reference export's `BiddingSequenceBlock`
+ * from `App.tsx`.
  *
- * Hands the auction is about across the top, the auction itself as a four-column
- * grid, a Show-all / Step-through pair, the explanation for the call just made,
- * and the contract the auction arrived at.
+ * A mono-ish BIDDING SEQUENCE chip beside the title, a Show-all / Step-through
+ * pair in amber, the auction as a four-column grid with one colour per seat, the
+ * explanation for the call just made, and the contract it arrived at.
  *
  * Seat naming: `BidItem.seat` stays 'N' | 'E' | 'S' | 'W' — the stored shape does
  * not change. Full names and per-seat colour are display only, so an auction
@@ -13,13 +14,30 @@
 import React, { useEffect, useState } from 'react';
 import type { BiddingSequenceContent, BridgeHandRow } from '../../../../../lib/types';
 import { useLearnerProgress } from './LearnerProgressContext';
-import { SEAT_NAME, SEAT_TEXT } from './warm/theme';
-import { GhostPill, HandRows, WarmCard } from './warm/WarmPrimitives';
+import { SEAT_NAME, SEAT_TEXT, suitColor } from './warm/theme';
 
 type Seat = 'N' | 'E' | 'S' | 'W';
 
 /** Reading order round the table. */
 const SEAT_ORDER: Seat[] = ['W', 'N', 'E', 'S'];
+
+function HandPanel({ seat, rows }: { seat: Seat; rows: BridgeHandRow[] }) {
+  return (
+    <div className="rounded-lg border border-stone-200 bg-white p-4">
+      <p className={`text-xs font-bold tracking-wide mb-3 ${SEAT_TEXT[SEAT_NAME[seat]] || 'text-stone-400'}`}>
+        {SEAT_NAME[seat].toUpperCase()}
+      </p>
+      <div className="space-y-1.5">
+        {rows.map((row, i) => (
+          <div key={i} className="flex items-center gap-2 font-mono text-sm">
+            <span style={{ color: suitColor(row.suit) }}>{row.suit}</span>
+            <span className="text-stone-800">{row.cards || '—'}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function TutorialV3BiddingSequence({
   content,
@@ -52,31 +70,45 @@ export function TutorialV3BiddingSequence({
 
   return (
     <div>
+      <div className="flex items-center gap-3 mb-5 flex-wrap">
+        <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded shrink-0">
+          BIDDING SEQUENCE
+        </span>
+        <h2 className="text-xl text-stone-900">{content.title || 'The auction'}</h2>
+      </div>
+
       {handSeats.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-7">
-          {handSeats.map((s) => (
-            <WarmCard key={s} className="p-4 border-2 border-transparent">
-              <p className={`text-xs font-bold tracking-wide mb-3 ${SEAT_TEXT[SEAT_NAME[s]] || 'text-stone-400'}`}>
-                {SEAT_NAME[s].toUpperCase()}
-              </p>
-              <HandRows rows={(hands[s] || []) as BridgeHandRow[]} />
-            </WarmCard>
-          ))}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-5">
+          {handSeats.map((s) => <HandPanel key={s} seat={s} rows={(hands[s] || []) as BridgeHandRow[]} />)}
         </div>
       )}
 
-      <h2 className="text-xl font-bold text-stone-900 mb-4">{content.title || 'The auction'}</h2>
-
-      <div className="flex gap-2 mb-4">
-        <GhostPill active={!stepping} onClick={() => setStep(-1)}>Show all</GhostPill>
-        <GhostPill active={stepping} onClick={() => setStep(0)}>Step-through</GhostPill>
+      <div className="flex gap-3 mb-4">
+        <button
+          type="button"
+          onClick={() => setStep(-1)}
+          className={`text-xs font-bold px-4 py-2 rounded-full border-2 transition-colors ${
+            !stepping ? 'border-amber-400 text-amber-700 bg-amber-50' : 'border-stone-200 text-stone-500 hover:border-stone-400'
+          }`}
+        >
+          Show all
+        </button>
+        <button
+          type="button"
+          onClick={() => setStep(0)}
+          className={`text-xs font-bold px-4 py-2 rounded-full border-2 transition-colors ${
+            stepping ? 'border-amber-400 text-amber-700 bg-amber-50' : 'border-stone-200 text-stone-500 hover:border-stone-400'
+          }`}
+        >
+          Step-through
+        </button>
       </div>
 
-      <div className="rounded-2xl bg-white shadow-sm overflow-x-auto mb-3">
+      <div className="rounded-lg border border-stone-200 bg-white overflow-x-auto">
         <div className="min-w-[260px]">
           <div className="grid grid-cols-4 border-b border-stone-100 bg-stone-50">
             {SEAT_ORDER.map((s) => (
-              <div key={s} className={`px-3 sm:px-4 py-2.5 text-xs font-bold text-center ${SEAT_TEXT[SEAT_NAME[s]]}`}>
+              <div key={s} className={`px-3 sm:px-4 py-2 text-xs font-bold text-center ${SEAT_TEXT[SEAT_NAME[s]]}`}>
                 {SEAT_NAME[s]}
               </div>
             ))}
@@ -86,9 +118,9 @@ export function TutorialV3BiddingSequence({
               {SEAT_ORDER.map((_s, ci) => {
                 const bid = visible[ri * 4 + ci];
                 return (
-                  <div key={ci} className="px-3 sm:px-4 py-3 text-center border-r border-stone-100 last:border-0">
+                  <div key={ci} className="px-4 py-3 text-center border-r border-stone-100 last:border-0">
                     {bid && (
-                      <span className={`font-mono font-bold text-sm ${bid.bid === 'Pass' ? 'text-stone-400' : 'text-stone-900'}`}>
+                      <span className={`font-mono font-medium text-sm ${bid.bid === 'Pass' ? 'text-stone-400' : 'text-stone-900'}`}>
                         {bid.bid}
                       </span>
                     )}
@@ -103,25 +135,25 @@ export function TutorialV3BiddingSequence({
       {/* In step mode the explanation belongs to the call just made; showing all
           at once has no single "current" call to explain. */}
       {stepping && bids[step] && (
-        <div className="px-4 py-3 rounded-2xl bg-amber-50 flex items-start gap-3 mb-3">
-          <span className={`font-bold text-xs mt-0.5 shrink-0 ${SEAT_TEXT[SEAT_NAME[bids[step].seat as Seat]] || 'text-stone-500'}`}>
+        <div className="mt-3 px-4 py-3 rounded-lg bg-amber-50 border border-amber-200 flex items-start gap-3">
+          <span className={`text-xs font-bold mt-0.5 shrink-0 ${SEAT_TEXT[SEAT_NAME[bids[step].seat as Seat]] || 'text-stone-500'}`}>
             {SEAT_NAME[bids[step].seat as Seat] || bids[step].seat}
           </span>
-          <p className="text-stone-700 text-sm flex-1 font-medium">
+          <p className="text-amber-900 text-sm flex-1">
             {bids[step].explanation || 'Auction closes — all pass.'}
           </p>
         </div>
       )}
 
       {stepping && (
-        <div className="flex gap-2 mb-4">
+        <div className="flex gap-2 mt-3">
           <button
             type="button"
             disabled={step <= 0}
             onClick={() => setStep((s) => Math.max(0, s - 1))}
             className="px-5 py-2 text-sm font-bold border-2 border-stone-200 rounded-full hover:bg-stone-50 disabled:opacity-30 text-stone-600"
           >
-            ← prev
+            ←
           </button>
           <button
             type="button"
@@ -129,19 +161,20 @@ export function TutorialV3BiddingSequence({
             onClick={() => setStep((s) => Math.min(bids.length - 1, s + 1))}
             className="px-5 py-2 text-sm font-bold border-2 border-stone-200 rounded-full hover:bg-stone-50 disabled:opacity-30 text-stone-600"
           >
-            next →
+            →
           </button>
-          <div className="ml-auto text-xs text-stone-400 font-bold self-center">{step + 1}/{bids.length}</div>
+          <div className="ml-auto text-xs text-stone-400 font-semibold self-center">{step + 1} / {bids.length}</div>
         </div>
       )}
 
-      <p className="text-sm text-stone-600 px-1 mb-6 font-medium">
-        <span className="font-bold text-stone-900">Final contract: </span>{content.finalContract || '—'}
+      <p className="mt-3 text-sm text-stone-600 px-1">
+        <span className="text-xs font-bold text-stone-400 mr-2">FINAL CONTRACT</span>
+        <span className="font-medium">{content.finalContract || '—'}</span>
       </p>
 
       {content.footnote && (
-        <div className="rounded-2xl bg-stone-50 px-5 py-4">
-          <p className="text-stone-600 text-sm leading-relaxed font-medium">{content.footnote}</p>
+        <div className="mt-3 rounded-lg bg-stone-50 border border-stone-200 px-5 py-4">
+          <p className="text-stone-600 text-sm leading-relaxed">{content.footnote}</p>
         </div>
       )}
     </div>
