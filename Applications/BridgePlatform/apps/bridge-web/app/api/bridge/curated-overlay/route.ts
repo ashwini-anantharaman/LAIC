@@ -102,6 +102,32 @@ async function handle(request: Request): Promise<NextResponse> {
     if (charted) nudge = { charted };
   }
 
+  // WHERE the line was left, and what was played there instead of the charted
+  // move. "You're off the line" on its own is an accusation with no evidence —
+  // a learner who believes they followed the coach has nothing to check it
+  // against, and neither did we (owner report 2026-08-17: "even if I click on
+  // the correct playing card, it still says I am off the line").
+  let left: { where: string; charted: string; played: string } | null = null;
+  if (!status.onPath && status.divergedAt) {
+    const at = status.divergedAt;
+    const chartedMove = pretty(at);
+    const actual =
+      at.kind === "call"
+        ? (() => {
+            const c = state.auction[at.auctionIndex];
+            return c ? `${c.seat} ${callLabel(c.call)}` : null;
+          })()
+        : (() => {
+            const p = state.tricks.flatMap((t) => t.plays)[at.trickIndex * 4 + at.playIndex];
+            return p ? `${p.seat} ${cardLabel(p.card)}` : null;
+          })();
+    const where =
+      at.kind === "call"
+        ? `bid ${at.auctionIndex + 1}`
+        : `trick ${at.trickIndex + 1}, card ${at.playIndex + 1}`;
+    if (chartedMove && actual) left = { where, charted: chartedMove, played: actual };
+  }
+
   // The current annotation — only while the line still holds.
   const here = currentAt(state);
   const current =
@@ -114,6 +140,7 @@ async function handle(request: Request): Promise<NextResponse> {
       diverged: !status.onPath,
       ...(coachName ? { coachName } : {}),
       ...(finished ? { finished } : {}),
+      ...(left ? { left } : {}),
       ...(nudge && !finished ? { nudge } : {}),
       ...(current
         ? {

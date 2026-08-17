@@ -1568,6 +1568,17 @@ function CuratedCoachVoice({
       {!nudgeOnly && overlay.diverged && !overlay.nudge && !overlay.finished && (
         <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: FAINT, fontStyle: "italic" }}>
           You're off {coachName}&rsquo;s line now — Owlee continues live.
+          {/* WITH THE EVIDENCE. Naming the move that actually left the line is
+              what lets a learner who believes they followed the coach check
+              it — the difference between a verdict and a lesson. */}
+          {overlay.left && (
+            <>
+              {" "}
+              The line was left at {overlay.left.where}:{" "}
+              <RedSuits>{overlay.left.played}</RedSuits> where {coachName} charted{" "}
+              <RedSuits>{overlay.left.charted}</RedSuits>.
+            </>
+          )}
         </p>
       )}
     </>

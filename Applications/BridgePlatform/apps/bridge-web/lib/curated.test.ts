@@ -97,6 +97,35 @@ describe("pathStatus — on the coach's line, or off it", () => {
     expect(pathStatus(s, line, "S").divergedJustNow).toBe(false);
   });
 
+  /**
+   * DECLARER PLAYS DUMMY. The card is recorded at the seat it came FROM, so a
+   * wrong card out of dummy is stamped North while the learner sits South.
+   * Judged against their own seat alone it was "not theirs": no nudge, no
+   * take-back, just a notice that they were off the line (owner report
+   * 2026-08-17).
+   */
+  it("counts a wrong card from DUMMY as the declarer's own", () => {
+    const off = {
+      auction: line.auction.map((a) => ({ ...a })),
+      contract: { declarer: "S" as const, strain: "S" as const, level: 2, doubled: 0 as const },
+      // The line charts S's H2 second; N (dummy) puts up a card instead.
+      tricks: [{ plays: [card("E", "H", 14), card("N", "H", 9)] }],
+    };
+    const st = pathStatus(off as never, line, "S");
+    expect(st.onPath).toBe(false);
+    expect(st.divergedAtOwn).toBe(true);
+    expect(st.divergedJustNow).toBe(true);
+  });
+
+  it("still does not blame the learner for an opponent's card", () => {
+    const off = {
+      auction: line.auction.map((a) => ({ ...a })),
+      contract: { declarer: "S" as const, strain: "S" as const, level: 2, doubled: 0 as const },
+      tricks: [{ plays: [card("E", "H", 14), card("W", "H", 9)] }],
+    };
+    expect(pathStatus(off as never, line, "S").divergedAtOwn).toBe(false);
+  });
+
   it("addresses a play divergence at its own position, not the last card", () => {
     const off = {
       auction: line.auction.map((a) => ({ ...a })),

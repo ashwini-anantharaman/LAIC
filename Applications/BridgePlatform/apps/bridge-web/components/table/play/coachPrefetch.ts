@@ -122,6 +122,9 @@ export interface CuratedOverlay {
   finished?: { stayedOnLine: boolean };
   /** The learner's last action was the first step off the coach's line. */
   nudge?: { charted: string };
+  /** WHERE the line was left, and what was played there instead — so "off the
+   *  line" carries its evidence rather than being an unarguable verdict. */
+  left?: { where: string; charted: string; played: string };
   /** The annotation at the decision the learner is at (on-path only). */
   current?: { note?: string; why?: string; hints?: string[]; charted?: string };
 }

@@ -13,6 +13,7 @@
 // still ON the coach's line, and which decision is the learner at.
 
 import type { GameState } from "@bridge/engine";
+import { partnerOf } from "@bridge/events";
 import type { Call, Card, Seat } from "@bridge/events";
 import type { LibraryEntry } from "@bridge/sessions";
 
@@ -125,7 +126,7 @@ const sameCard = (a: Card, b: Card) => a.suit === b.suit && a.rank === b.rank;
  * nudge honest under takeovers and edge cases.
  */
 export function pathStatus(
-  state: Pick<GameState, "auction" | "tricks">,
+  state: Pick<GameState, "auction" | "tricks"> & Partial<Pick<GameState, "contract">>,
   line: CuratedLine,
   seat: Seat,
 ): {
@@ -135,6 +136,23 @@ export function pathStatus(
   /** WHERE the line was first left — the address the nudge speaks about. */
   divergedAt: CuratedAt | null;
 } {
+  /**
+   * Seats this learner ACTS FOR — their own, and DUMMY while they declare.
+   *
+   * Declarer plays dummy's cards; the engine says so itself (controllingSeat
+   * hands dummy's turn to declarer). But the event is recorded at the seat the
+   * card came FROM, so a wrong card out of dummy is stamped North while the
+   * learner sits South. Comparing against their own seat alone made that "not
+   * theirs": no nudge, no take-back offered, and the panel just announced they
+   * were off the line with nothing to do about it (owner report 2026-08-17 —
+   * "take it back during play doesn't really work").
+   */
+  const isOwn = (actor: Seat): boolean =>
+    actor === seat ||
+    (state.contract != null &&
+      state.contract.declarer === seat &&
+      actor === partnerOf(state.contract.declarer));
+
   // The auction prefix.
   for (let i = 0; i < state.auction.length; i++) {
     const played = state.auction[i]!;
@@ -142,7 +160,7 @@ export function pathStatus(
     if (!charted || charted.seat !== played.seat || charted.call !== played.call) {
       return {
         onPath: false,
-        divergedAtOwn: played.seat === seat,
+        divergedAtOwn: isOwn(played.seat),
         // STILL OFFERABLE UNTIL THE LEARNER MOVES ON. This used to mean "the
         // divergence is the last action on the board", which the robots close
         // within the same second — they reply the moment the learner acts, so
@@ -151,7 +169,7 @@ export function pathStatus(
         // acting AGAIN is, and that is what ends the offer now. (The take-back
         // itself rewinds to the line, so however many replies landed in
         // between, accepting still lands in the right place.)
-        divergedJustNow: !laterActionBy(state, seat, { auctionFrom: i + 1, playsFrom: 0 }),
+        divergedJustNow: !laterActionBy(state, isOwn, { auctionFrom: i + 1, playsFrom: 0 }),
         divergedAt: { kind: "call", auctionIndex: i },
       };
     }
@@ -164,8 +182,8 @@ export function pathStatus(
     if (!charted || charted.seat !== p.seat || !sameCard(charted.card, p.card)) {
       return {
         onPath: false,
-        divergedAtOwn: p.seat === seat,
-        divergedJustNow: !played.slice(i + 1).some((q) => q.seat === seat),
+        divergedAtOwn: isOwn(p.seat),
+        divergedJustNow: !played.slice(i + 1).some((q) => isOwn(q.seat)),
         // From the FLAT index: every trick before this one is complete, so
         // four plays per trick holds.
         divergedAt: { kind: "play", trickIndex: Math.floor(i / 4), playIndex: i % 4 },
@@ -178,14 +196,14 @@ export function pathStatus(
 /** Has `seat` acted at or after the given point? */
 function laterActionBy(
   state: Pick<GameState, "auction" | "tricks">,
-  seat: Seat,
+  isOwn: (seat: Seat) => boolean,
   from: { auctionFrom: number; playsFrom: number },
 ): boolean {
-  if (state.auction.slice(from.auctionFrom).some((c) => c.seat === seat)) return true;
+  if (state.auction.slice(from.auctionFrom).some((c) => isOwn(c.seat))) return true;
   return state.tricks
     .flatMap((t) => t.plays)
     .slice(from.playsFrom)
-    .some((p) => p.seat === seat);
+    .some((p) => isOwn(p.seat));
 }
 
 /** The decision address the session is AT right now (the next action to be
