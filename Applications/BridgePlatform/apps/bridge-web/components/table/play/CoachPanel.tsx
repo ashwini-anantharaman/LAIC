@@ -45,7 +45,7 @@ import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
 import { useRouter } from "next/navigation";
 
-import { useHoldTable } from "../coachHold";
+import { useCoachQuestion, useHoldTable } from "../coachHold";
 import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
 import { BenWhatIf, CoachHints, CoachTell, SpeechBubble } from "./CoachHintsTell";
 import { CoachTakeaway } from "./CoachTakeaway";
@@ -1383,7 +1383,10 @@ function CuratedCoachVoice({
   const router = useRouter();
   const [overlay, setOverlay] = useState<CuratedOverlay | null>(null);
   const [roadOpen, setRoadOpen] = useState(false);
-  const [nudgeKept, setNudgeKept] = useState(false);
+  // Answered-ness is SHARED across both copies of this bubble and keyed by the
+  // decision, so "keep my move" frees the table wherever it was pressed.
+  const { answeredEpoch, answer } = useCoachQuestion();
+  const nudgeKept = answeredEpoch === epoch;
   const [undoing, setUndoing] = useState(false);
   const [undoFailed, setUndoFailed] = useState(false);
 
@@ -1391,7 +1394,7 @@ function CuratedCoachVoice({
     let alive = true;
     setOverlay(null);
     setRoadOpen(false);
-    setNudgeKept(false);
+    // No nudgeKept reset — it is keyed by epoch and expires on its own.
     setUndoFailed(false);
     fetchCuratedOverlay(sessionId, epoch)
       .then((o) => {
@@ -1402,6 +1405,14 @@ function CuratedCoachVoice({
       alive = false;
     };
   }, [sessionId, epoch]);
+
+  // The question has gone — taken back, or the board moved past it. Forget
+  // the answer, because epochs REPEAT across a rewind (`auction#5` can be a
+  // bid, then its replacement) and a remembered one would suppress the nudge
+  // for a divergence that has not been answered at all.
+  useEffect(() => {
+    if (overlay && !overlay.nudge && answeredEpoch !== null) answer(null);
+  }, [overlay, answeredEpoch, answer]);
 
   // THE ROBOTS WAIT WHILE THE QUESTION STANDS (owner report 2026-08-17).
   // Before the early return below — a hook may not sit behind a condition.
@@ -1431,6 +1442,11 @@ function CuratedCoachVoice({
         setUndoFailed(true);
         return;
       }
+      // NOT marked answered. A rewind makes epochs repeat — `auction#5` for
+      // the bid taken back, `auction#4` after it, `auction#5` again for the
+      // next one — so remembering this epoch would silently suppress the
+      // nudge for a genuinely new divergence. The refetch below clears the
+      // question by itself, because the board is back on the line.
       router.refresh();
     } catch {
       setUndoFailed(true);
@@ -1474,7 +1490,7 @@ function CuratedCoachVoice({
             </button>
             <button
               type="button"
-              onClick={() => setNudgeKept(true)}
+              onClick={() => answer(epoch)}
               style={{
                 minHeight: 32, padding: "5px 13px",
                 background: "transparent", borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
