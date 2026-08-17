@@ -128,14 +128,32 @@ export function pathStatus(
   state: Pick<GameState, "auction" | "tricks">,
   line: CuratedLine,
   seat: Seat,
-): { onPath: boolean; divergedAtOwn: boolean; divergedJustNow: boolean } {
+): {
+  onPath: boolean;
+  divergedAtOwn: boolean;
+  divergedJustNow: boolean;
+  /** WHERE the line was first left — the address the nudge speaks about. */
+  divergedAt: CuratedAt | null;
+} {
   // The auction prefix.
   for (let i = 0; i < state.auction.length; i++) {
     const played = state.auction[i]!;
     const charted = line.auction[i];
     if (!charted || charted.seat !== played.seat || charted.call !== played.call) {
-      const isLast = i === state.auction.length - 1 && !state.tricks.some((t) => t.plays.length > 0);
-      return { onPath: false, divergedAtOwn: played.seat === seat, divergedJustNow: isLast };
+      return {
+        onPath: false,
+        divergedAtOwn: played.seat === seat,
+        // STILL OFFERABLE UNTIL THE LEARNER MOVES ON. This used to mean "the
+        // divergence is the last action on the board", which the robots close
+        // within the same second — they reply the moment the learner acts, so
+        // the take-back was offered for a window nobody could ever click in.
+        // Their replies are not the learner changing their mind; the learner
+        // acting AGAIN is, and that is what ends the offer now. (The take-back
+        // itself rewinds to the line, so however many replies landed in
+        // between, accepting still lands in the right place.)
+        divergedJustNow: !laterActionBy(state, seat, { auctionFrom: i + 1, playsFrom: 0 }),
+        divergedAt: { kind: "call", auctionIndex: i },
+      };
     }
   }
   // The play prefix, flattened in table order.
@@ -144,11 +162,30 @@ export function pathStatus(
     const p = played[i]!;
     const charted = line.play[i];
     if (!charted || charted.seat !== p.seat || !sameCard(charted.card, p.card)) {
-      const isLast = i === played.length - 1;
-      return { onPath: false, divergedAtOwn: p.seat === seat, divergedJustNow: isLast };
+      return {
+        onPath: false,
+        divergedAtOwn: p.seat === seat,
+        divergedJustNow: !played.slice(i + 1).some((q) => q.seat === seat),
+        // From the FLAT index: every trick before this one is complete, so
+        // four plays per trick holds.
+        divergedAt: { kind: "play", trickIndex: Math.floor(i / 4), playIndex: i % 4 },
+      };
     }
   }
-  return { onPath: true, divergedAtOwn: false, divergedJustNow: false };
+  return { onPath: true, divergedAtOwn: false, divergedJustNow: false, divergedAt: null };
+}
+
+/** Has `seat` acted at or after the given point? */
+function laterActionBy(
+  state: Pick<GameState, "auction" | "tricks">,
+  seat: Seat,
+  from: { auctionFrom: number; playsFrom: number },
+): boolean {
+  if (state.auction.slice(from.auctionFrom).some((c) => c.seat === seat)) return true;
+  return state.tricks
+    .flatMap((t) => t.plays)
+    .slice(from.playsFrom)
+    .some((p) => p.seat === seat);
 }
 
 /** The decision address the session is AT right now (the next action to be

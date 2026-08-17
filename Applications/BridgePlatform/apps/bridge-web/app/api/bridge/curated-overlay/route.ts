@@ -91,19 +91,14 @@ async function handle(request: Request): Promise<NextResponse> {
     return charted.call ? callLabel(charted.call) : charted.card ? cardLabel(charted.card) : null;
   };
 
-  // The nudge: the learner's own last action was the FIRST step off the
-  // line. Its address is the last action's own position.
+  // The nudge: the learner's own action stepped off the line, and they have
+  // not moved on since. It speaks about the DIVERGENCE's own address, which
+  // pathStatus now hands back — this used to address "the last play on the
+  // board", and the robots reply within the same second, so the charted move
+  // it printed was the one for a robot's position rather than the learner's.
   let nudge: { charted: string } | null = null;
-  if (!status.onPath && status.divergedAtOwn && status.divergedJustNow) {
-    const flatPlays = state.tricks.flatMap((t) => t.plays);
-    const at: CuratedAt = flatPlays.length
-      ? {
-          kind: "play",
-          trickIndex: Math.floor((flatPlays.length - 1) / 4),
-          playIndex: (flatPlays.length - 1) % 4,
-        }
-      : { kind: "call", auctionIndex: state.auction.length - 1 };
-    const charted = pretty(at);
+  if (!status.onPath && status.divergedAtOwn && status.divergedJustNow && status.divergedAt) {
+    const charted = pretty(status.divergedAt);
     if (charted) nudge = { charted };
   }
 

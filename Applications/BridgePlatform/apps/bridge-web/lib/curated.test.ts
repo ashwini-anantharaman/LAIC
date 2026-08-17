@@ -74,14 +74,40 @@ describe("pathStatus — on the coach's line, or off it", () => {
     expect(st.divergedJustNow).toBe(true);
   });
 
-  it("an earlier divergence is not just-now once more actions follow", () => {
+  // The offer survives the ROBOTS' replies. They answer within the same
+  // second the learner acts, so a window that closed on any following action
+  // was one nobody could ever click in — the take-back was unreachable in
+  // practice, which is exactly how it was reported.
+  it("stays offerable while only other seats have answered", () => {
     const s = {
       auction: [call("N", "1S"), call("E", "P"), call("S", "3S"), call("W", "P")],
       tricks: [],
     };
     const st = pathStatus(s, line, "S");
     expect(st.onPath).toBe(false);
-    expect(st.divergedJustNow).toBe(false);
+    expect(st.divergedJustNow).toBe(true);
+    expect(st.divergedAt).toEqual({ kind: "call", auctionIndex: 2 });
+  });
+
+  it("stops being offerable once the learner acts again", () => {
+    const s = {
+      auction: [call("N", "1S"), call("E", "P"), call("S", "3S"), call("W", "P"), call("N", "P"), call("E", "P"), call("S", "P")],
+      tricks: [],
+    };
+    expect(pathStatus(s, line, "S").divergedJustNow).toBe(false);
+  });
+
+  it("addresses a play divergence at its own position, not the last card", () => {
+    const off = {
+      auction: line.auction.map((a) => ({ ...a })),
+      // S leaves the line, then W and N answer — the nudge must still speak
+      // about S's card, at S's position.
+      tricks: [{ plays: [card("E", "H", 14), card("S", "H", 9), card("W", "H", 3), card("N", "H", 4)] }],
+    };
+    const st = pathStatus(off as never, line, "S");
+    expect(st.divergedAtOwn).toBe(true);
+    expect(st.divergedJustNow).toBe(true);
+    expect(st.divergedAt).toEqual({ kind: "play", trickIndex: 0, playIndex: 1 });
   });
 
   it("the play prefix counts too, in table order", () => {
