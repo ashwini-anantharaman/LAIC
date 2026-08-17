@@ -34,6 +34,8 @@ export function ChallengeTile({
   /** The tile's side, already scaled to the screen. */
   size,
   onPress,
+  /** Held down rather than tapped — the Activities row uses it to offer delete. */
+  onLongPress,
   /**
    * Which mark the face carries. "challenge" (the default, so every existing
    * caller is unchanged) is the two offset cards; "document" is the single
@@ -43,6 +45,7 @@ export function ChallengeTile({
 }: {
   size: number;
   onPress?: () => void;
+  onLongPress?: () => void;
   variant?: "challenge" | "document";
 }) {
   const faceInset = size * R.faceInset;
@@ -89,10 +92,16 @@ export function ChallengeTile({
     </View>
   );
 
-  if (!onPress) return tile;
+  // A long-press-only tile is still interactive, so the wrapper is needed whenever
+  // EITHER handler is given.
+  if (!onPress && !onLongPress) return tile;
   return (
     <Pressable
-      onPress={onPress}
+      {...(onPress ? { onPress } : {})}
+      {...(onLongPress ? { onLongPress } : {})}
+      // 400ms rather than the ~500 default: long enough that a scroll of the
+      // carousel does not trip it, short enough that it does not feel broken.
+      delayLongPress={400}
       accessibilityRole="button"
       style={({ pressed }) => pressed && styles.pressed}
     >

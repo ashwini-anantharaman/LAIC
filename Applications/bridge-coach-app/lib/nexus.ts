@@ -825,3 +825,22 @@ export async function removeLearningGrant(
     { method: "DELETE", token },
   );
 }
+
+/**
+ * Erase a learning object, for good.
+ *
+ * Authority is the SERVER's: `learning.object.delete` (or the club role's
+ * `app.content.delete`, which maps to it), and for a personal row, ownership. A
+ * refusal comes back as a NexusError whose message is worth showing — "That content
+ * belongs to someone else" is actionable in a way "couldn't delete" is not.
+ */
+export async function deleteLearningObject(
+  token: string,
+  objectId: string,
+  programId: string,
+): Promise<void> {
+  await request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}?program_id=${programId}`,
+    { method: "DELETE", token },
+  );
+}

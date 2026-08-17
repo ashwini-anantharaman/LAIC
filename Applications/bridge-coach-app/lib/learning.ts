@@ -284,3 +284,21 @@ export function canAuthorPersonal(ctx: LearningContext | null): boolean {
   }
   return canAuthorLearning(ctx);
 }
+
+/**
+ * May they erase content here?
+ *
+ * The server checks `learning.object.delete` and, for a personal row, ownership. This
+ * asks only the first half — the half that decides whether the option is worth
+ * offering at all. Ownership is the server's to enforce and its refusal is legible,
+ * so a shared-with-me row shows the option and then says whose it is, rather than
+ * hiding a control for a reason the person cannot see.
+ *
+ * No permissive fallback, unlike `can()` for the app's own capabilities: deleting is
+ * the one act where guessing wrong destroys something.
+ */
+export function canDeleteLearning(ctx: LearningContext | null): boolean {
+  if (!ctx) return false;
+  if (ctx.is_admin) return true;
+  return (ctx.capabilities ?? []).includes("learning.object.delete");
+}

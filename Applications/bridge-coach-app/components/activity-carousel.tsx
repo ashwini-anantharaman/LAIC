@@ -51,6 +51,14 @@ export type Activity = {
   title: string;
   detail?: string;
   onPress?: () => void;
+  /**
+   * Held down rather than tapped. The caller decides what that offers — today, a
+   * sheet with Delete in it.
+   *
+   * Omitted means the card has no long-press, which is how an activity nobody may
+   * remove reads: nothing happens, rather than a menu whose only entry is refused.
+   */
+  onLongPress?: () => void;
 };
 
 /**
@@ -152,6 +160,7 @@ function ActivityCard({
         size={size}
         variant={activity.kind === "document" ? "document" : "challenge"}
         {...(activity.onPress ? { onPress: activity.onPress } : {})}
+        {...(activity.onLongPress ? { onLongPress: activity.onLongPress } : {})}
       />
       <View
         style={[
