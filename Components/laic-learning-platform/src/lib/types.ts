@@ -883,6 +883,79 @@ export interface LibraryEmbedContent {
 }
 
 /**
+ * The lesson's front cover.
+ *
+ * `objectives`, `coreIdea` and `coreRule` are the lesson's, not a card's — do
+ * not confuse `coreIdea` here with `ConceptCardContent.coreIdea`, which belongs
+ * to one concept. The reader holds this page until the learner presses start,
+ * so it gates the lesson rather than merely opening it.
+ */
+export interface LessonOverviewContent {
+  intro?: string;
+  objectives: string[];
+  coreIdea?: string;
+  /** The single sentence the whole lesson turns on. */
+  coreRule?: string;
+  /** Defaults to "Start lesson →". */
+  ctaLabel?: string;
+}
+
+/** The lesson's back cover: what was covered, and where to go next. */
+export interface LessonCompleteContent {
+  heading?: string;
+  subheading?: string;
+  /** Learner-voice statements — "I can …". */
+  checklist: string[];
+  whatNext?: string;
+  /** Defaults to "Continue →". */
+  ctaLabel?: string;
+}
+
+/** One row of a bridge hand: the suit glyph, then the cards in it. */
+export interface HandRow {
+  suit: string;
+  cards: string;
+}
+
+/** One call in an auction shown beside a hand. */
+export interface AuctionCall {
+  seat: string;
+  /** "?" marks the call the learner is being asked for. */
+  bid: string;
+}
+
+/**
+ * A hand, the auction so far, and the call the learner has to find.
+ *
+ * Distinct from a quiz question: the stem is a position rather than a sentence,
+ * and the answer carries two payloads — `feedback` says why this call is right
+ * here, `keyIdea` states the rule that transfers to the next hand.
+ */
+export interface OpeningQuestionContent {
+  /** Small eyebrow above the title. */
+  label?: string;
+  title: string;
+  context?: string;
+  hand: HandRow[];
+  auction: AuctionCall[];
+  /** "What is your call?" */
+  prompt: string;
+  options: string[];
+  correct: number;
+  feedback: string;
+  keyIdea: string;
+}
+
+/** A key the learner reads against — opener's rebids, a point-count scale. */
+export interface ReferenceTableContent {
+  label?: string;
+  title?: string;
+  columns: string[];
+  rows: string[][];
+  caption?: string;
+}
+
+/**
  * One "commit to an answer, then check yourself" item.
  *
  * Distinct from a question: there are no options to choose between and nothing
@@ -948,6 +1021,10 @@ export type BlockContent =
   | ConceptCardContent
   | QuestionContent
   | QuizContent
+  | LessonOverviewContent
+  | LessonCompleteContent
+  | OpeningQuestionContent
+  | ReferenceTableContent
   | QuickDecisionsContent
   | MatchingContent
   | FlashcardSetContent
@@ -1005,6 +1082,14 @@ export interface Block {
     | 'source-excerpt'
     | 'question'
     | 'quiz'
+    /** The lesson's front cover; gates the reader until the learner starts. */
+    | 'lesson-overview'
+    /** The lesson's back cover. */
+    | 'lesson-complete'
+    /** A hand, an auction, and the call to find (Tutorial V3). */
+    | 'opening-question'
+    /** A key the learner reads against (Tutorial V3). */
+    | 'reference-table'
     /** Reveal-and-compare judgement items (Tutorial V3). */
     | 'quick-decisions'
     /** Match each card to one option (Tutorial V3). */

@@ -14,6 +14,7 @@
  */
 
 import React from 'react';
+import type { LessonCompleteContent, LessonOverviewContent } from '../../../../../../lib/types';
 import type { TutorialV3Draft } from '../../../../../../lib/tutorialV3/types';
 import type { LearnerProgressState, LearnerSection } from '../progress';
 import { SAGE } from './theme';
@@ -34,14 +35,24 @@ export function WarmLessonOverview({
   draft,
   duration,
   onStart,
+  content,
 }: {
   draft: TutorialV3Draft;
   duration: string;
   onStart: () => void;
+  /**
+   * An authored `lesson-overview` block, when the tutorial has one. Its fields
+   * win over anything derived from the draft — an author who wrote objectives
+   * meant those, not the section intents.
+   */
+  content?: LessonOverviewContent;
 }) {
-  const intro = String(draft.metadata?.objective || draft.tutorialDefinition?.objective || '').trim();
-  const objectives = objectivesOf(draft);
-  const coreIdea = String(draft.metadata?.notes || '').trim();
+  const intro = String(
+    content?.intro || draft.metadata?.objective || draft.tutorialDefinition?.objective || '',
+  ).trim();
+  const objectives = content?.objectives?.length ? content.objectives : objectivesOf(draft);
+  const coreIdea = String(content?.coreIdea || draft.metadata?.notes || '').trim();
+  const coreRule = String(content?.coreRule || '').trim();
   const audience = [draft.metadata?.audience, draft.metadata?.level]
     .map((x) => String(x || '').trim())
     .filter(Boolean)
@@ -70,10 +81,17 @@ export function WarmLessonOverview({
         </div>
       )}
 
-      {coreIdea && (
+      {(coreIdea || coreRule) && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 mb-5">
           <h2 className="text-xl text-stone-900 mb-3">Core idea</h2>
-          <p className="text-stone-700 text-[15px] leading-relaxed whitespace-pre-wrap">{coreIdea}</p>
+          {coreIdea && (
+            <p className="text-stone-700 text-[15px] leading-relaxed whitespace-pre-wrap mb-3">{coreIdea}</p>
+          )}
+          {coreRule && (
+            <p className="text-stone-700 text-[15px] leading-relaxed">
+              <strong>The rule: </strong>{coreRule}
+            </p>
+          )}
         </div>
       )}
 
@@ -93,7 +111,7 @@ export function WarmLessonOverview({
             className="sm:shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-sm font-medium transition-opacity hover:opacity-90 self-start"
             style={{ background: SAGE }}
           >
-            Start lesson →
+            {content?.ctaLabel || 'Start lesson →'}
           </button>
         </div>
       </div>
@@ -107,6 +125,7 @@ export function WarmLessonComplete({
   progress,
   pageCount,
   onBack,
+  content,
 }: {
   draft: TutorialV3Draft;
   /** The content sections only — the two cover pages are not lesson work. */
@@ -114,6 +133,8 @@ export function WarmLessonComplete({
   progress: LearnerProgressState;
   pageCount: number;
   onBack?: () => void;
+  /** An authored `lesson-complete` block, when the tutorial has one. */
+  content?: LessonCompleteContent;
 }) {
   const work = sections.flatMap((s) => s.interactiveBlockIds);
   const finished = work.filter((id) => progress.doneBlocks.includes(id));
@@ -131,24 +152,32 @@ export function WarmLessonComplete({
     { val: `${read.length}/${sections.length}`, label: 'sections read' },
   ];
 
-  const checklist = sections
-    .filter((s) => (s.interactiveBlockIds.length
-      ? s.interactiveBlockIds.every((id) => progress.doneBlocks.includes(id))
-      : progress.visitedSections.includes(s.id)))
-    .map((s) => s.title);
+  /**
+   * An authored checklist is the learner-voice one the course developer wrote;
+   * without it, the sections actually got through stand in for it.
+   */
+  const checklist = content?.checklist?.length
+    ? content.checklist
+    : sections
+      .filter((s) => (s.interactiveBlockIds.length
+        ? s.interactiveBlockIds.every((id) => progress.doneBlocks.includes(id))
+        : progress.visitedSections.includes(s.id)))
+      .map((s) => s.title);
 
-  const whatNext = String(draft.structure?.endWith || '').trim();
+  const whatNext = String(content?.whatNext || draft.structure?.endWith || '').trim();
   const allDone = work.length > 0 && finished.length >= work.length;
 
   return (
     <div>
       <h2 className="text-3xl text-stone-900 mb-1">
-        {allDone ? 'Nice work — you finished the lesson' : 'That is the end of the lesson'}
+        {content?.heading
+          || (allDone ? 'Nice work — you finished the lesson' : 'That is the end of the lesson')}
       </h2>
       <p className="text-stone-600 text-[15px] mb-8">
-        {allDone
-          ? `You completed ${draft.title || 'this tutorial'} and every exercise in it.`
-          : 'You reached the last page. Anything still open is listed below — the sidebar will take you back to it.'}
+        {content?.subheading
+          || (allDone
+            ? `You completed ${draft.title || 'this tutorial'} and every exercise in it.`
+            : 'You reached the last page. Anything still open is listed below — the sidebar will take you back to it.')}
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-7">
@@ -162,7 +191,9 @@ export function WarmLessonComplete({
 
       {checklist.length > 0 && (
         <div className="rounded-xl border border-stone-200 bg-white p-6 mb-5">
-          <h3 className="text-lg text-stone-900 mb-4">What you got through</h3>
+          <h3 className="text-lg text-stone-900 mb-4">
+            {content?.checklist?.length ? 'Your checklist' : 'What you got through'}
+          </h3>
           <ul className="space-y-3">
             {checklist.map((item, i) => (
               <li key={i} className="flex items-start gap-3">
@@ -191,7 +222,7 @@ export function WarmLessonComplete({
               className="sm:shrink-0 flex items-center gap-2 px-5 py-2.5 rounded-full text-white text-sm font-medium hover:opacity-90 self-start"
               style={{ background: SAGE }}
             >
-              Continue →
+              {content?.ctaLabel || 'Continue →'}
             </button>
           )}
         </div>

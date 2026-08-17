@@ -18,6 +18,7 @@ import { paginateTutorialBlocks, TUTORIAL_WORDS_PER_PAGE } from '../../../../../
 const INTERACTIVE_TYPES = new Set([
   'quiz',
   'question',
+  'opening-question',
   'quick-decisions',
   'matching',
   'flashcard-set',

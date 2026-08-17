@@ -13,9 +13,11 @@
  * pagination, cumulative pooling, library-embed expansion, the glossary — and
  * V1 and V2 tutorials are untouched by all of it.
  *
- * Two pages exist here that are not blocks: the lesson overview on the front and
- * the lesson complete on the back. The reference wraps every tutorial in them,
- * and they are assembled from the draft in `warm/WarmLessonPages`.
+ * Two pages sit outside the block stream: the lesson overview on the front and
+ * the lesson complete on the back. Both are `lesson-overview` /
+ * `lesson-complete` blocks when the author wrote them — lifted out of the
+ * stream so the overview gates the lesson rather than scrolling past as its
+ * first paragraph — and are derived from the draft when they did not.
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -29,10 +31,14 @@ import type {
   DrillContent,
   FlashcardSetContent,
   ImageContent,
+  LessonCompleteContent,
+  LessonOverviewContent,
   MatchingContent,
+  OpeningQuestionContent,
   QuestionContent,
   QuickDecisionsContent,
   QuizContent,
+  ReferenceTableContent,
   ReflectionContent,
   SummaryContent,
   VideoEmbedContent,
@@ -66,7 +72,12 @@ import {
   WarmVideoScript,
 } from './warm/WarmBlocks';
 import { WarmLessonComplete, WarmLessonOverview } from './warm/WarmLessonPages';
-import { WarmMatching, WarmQuickDecisions } from './warm/WarmExercises';
+import {
+  WarmMatching,
+  WarmOpeningQuestion,
+  WarmQuickDecisions,
+  WarmReferenceTable,
+} from './warm/WarmExercises';
 
 type SourceUnits = Parameters<typeof LearningBlocksPreview>[0]['sourceUnits'];
 
@@ -123,6 +134,14 @@ function buildOverrides(
         onResolvedChange={quizProps?.onResolvedChange}
         resultKeyPrefix={block.id}
       />
+    ),
+
+    'opening-question': ({ block }) => (
+      <WarmOpeningQuestion content={block.content as OpeningQuestionContent} blockId={block.id} />
+    ),
+
+    'reference-table': ({ block }) => (
+      <WarmReferenceTable content={block.content as ReferenceTableContent} />
     ),
 
     'quick-decisions': ({ block }) => (
@@ -214,9 +233,29 @@ function ReaderInner({
 }) {
   const { progress, visitSection } = useLearnerProgress();
 
+  /**
+   * The two covers are pages of their own, not blocks in the stream. When the
+   * author has written them, their content drives the covers and the blocks are
+   * lifted out of the stream — otherwise the overview would render twice, once
+   * as the cover and once inline on page one, and the start gate would mean
+   * nothing.
+   */
+  const overviewContent = useMemo(
+    () => blocks.find((b) => b.type === 'lesson-overview')?.content as LessonOverviewContent | undefined,
+    [blocks],
+  );
+  const completeContent = useMemo(
+    () => blocks.find((b) => b.type === 'lesson-complete')?.content as LessonCompleteContent | undefined,
+    [blocks],
+  );
+  const streamBlocks = useMemo(
+    () => blocks.filter((b) => b.type !== 'lesson-overview' && b.type !== 'lesson-complete'),
+    [blocks],
+  );
+
   // The sidebar has to agree with the pager about where each page begins, and
   // the pager runs on the expanded stream — so this does too.
-  const expanded = useMemo(() => expandTutorialBlocks(blocks), [blocks]);
+  const expanded = useMemo(() => expandTutorialBlocks(streamBlocks), [streamBlocks]);
   const contentSections = useMemo(() => buildLearnerSections(draft, expanded), [draft, expanded]);
   const [contentPages, setContentPages] = useState(() => countPages(expanded));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -379,7 +418,12 @@ function ReaderInner({
           )}
 
           {page === 1 && (
-            <WarmLessonOverview draft={draft} duration={duration} onStart={() => goToPage(2)} />
+            <WarmLessonOverview
+              draft={draft}
+              duration={duration}
+              onStart={() => goToPage(2)}
+              content={overviewContent}
+            />
           )}
 
           {page === total && (
@@ -389,6 +433,7 @@ function ReaderInner({
               progress={progress}
               pageCount={contentPages}
               onBack={onBack}
+              content={completeContent}
             />
           )}
 
@@ -398,7 +443,7 @@ function ReaderInner({
           */}
           <div style={{ display: onCover ? 'none' : 'block' }} aria-hidden={onCover}>
             <LearningBlocksPreview
-              blocks={blocks}
+              blocks={streamBlocks}
               objectId={objectId}
               cumulativePassMark={cumulativePassMark}
               passRequired={passRequired}
