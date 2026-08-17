@@ -78,6 +78,14 @@ export function TutorialV3SectionWorkspace({
   const [query, setQuery] = useState('');
   const [markupFlags, setMarkupFlags] = useState<any[]>(section.markupFlags || []);
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
+  /**
+   * The per-type generate pipeline, opened against a part that lives inside a
+   * section rather than in a top-level slot. `TutorialV3ObjectGeneratePane`
+   * only knows how to drive a `V3TopLevelSlot`, so the part borrows one —
+   * exactly what the Refine sidebar does on Review.
+   */
+  const [generatingPartId, setGeneratingPartId] = useState<string | null>(null);
+  const [partGenSlot, setPartGenSlot] = useState<V3TopLevelSlot | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const autoOpenedRef = useRef(false);
 
@@ -269,6 +277,77 @@ export function TutorialV3SectionWorkspace({
     onBack();
   };
 
+  /** Open sources → markup → generate for one part inside this section. */
+  const startPartGenerate = (part: TutorialV3Part) => {
+    const kind = nestedEditorKindForPart(part);
+    if (!kind) return;
+    setPartGenSlot({
+      id: `gen-part-${part.id}`,
+      kind: 'generate',
+      objectType: kind,
+      required: false,
+      recipeIndex: -1,
+      done: false,
+      // The section's own picks are the sensible starting point; the pane still
+      // lets the author change them before markup.
+      pickedSourceIds: section.pickedSourceIds?.length
+        ? section.pickedSourceIds
+        : pool.map((s) => s.id),
+      highlights: section.highlights || [],
+    });
+    setGeneratingPartId(part.id);
+  };
+
+  const cancelPartGenerate = () => {
+    setGeneratingPartId(null);
+    setPartGenSlot(null);
+  };
+
+  const generatingPart = generatingPartId
+    ? writeParts.find((p) => p.id === generatingPartId) || null
+    : null;
+
+  if (generatingPart && partGenSlot) {
+    return (
+      <div className="max-w-4xl mx-auto px-4 py-5">
+        <button
+          type="button"
+          onClick={cancelPartGenerate}
+          className="inline-flex items-center gap-1.5 mb-3"
+          style={{ fontSize: 13, color: '#6B7280' }}
+        >
+          ‹ Back to editing content
+        </button>
+        <TutorialV3ObjectGeneratePane
+          slot={partGenSlot}
+          pool={pool}
+          tutorialTitle={draft.title}
+          tutorialObjective={String(draft.metadata.objective || '')}
+          onChangeSlot={(patch) => setPartGenSlot((s) => (s ? { ...s, ...patch } : s))}
+          onGenerated={(generated) => {
+            // The generated object replaces the part's content, not the part:
+            // its id is what the section's recipe and the page map refer to.
+            const base = section.parts.length ? section.parts : writeParts;
+            const nextParts = base.map((p) => (
+              p.id === generatingPart.id ? { ...p, ...generated, id: p.id } : p
+            ));
+            onChangeSection({
+              parts: nextParts,
+              authorMode: bumpAuthorMode(section.authorMode, 'generated'),
+              done: true,
+            });
+            if (isSlot && onChangeSlot) {
+              onChangeSlot({ parts: nextParts, part: nextParts[0], done: true });
+            }
+            cancelPartGenerate();
+            // Straight into the editor on what was just made.
+            setEditingPartId(generatingPart.id);
+          }}
+        />
+      </div>
+    );
+  }
+
   if (editingPart) {
     return (
       <TutorialV3NestedEditor
@@ -397,6 +476,7 @@ export function TutorialV3SectionWorkspace({
           onRefine={runRefine}
           busy={busy}
           onOpenNestedEditor={(id) => setEditingPartId(id)}
+          onGeneratePart={allowAiGenerate ? startPartGenerate : undefined}
         />
       )}
 
@@ -481,6 +561,7 @@ function WritePane({
   parts, onEnsure, onChangePart, onAddPart, onRemovePart,
   refineId, setRefineId, refineInstr, setRefineInstr, onRefine, busy,
   onOpenNestedEditor,
+  onGeneratePart,
 }: {
   parts: TutorialV3Part[];
   onEnsure: () => void;
@@ -494,6 +575,8 @@ function WritePane({
   onRefine: (p: TutorialV3Part) => void;
   busy: boolean;
   onOpenNestedEditor: (partId: string) => void;
+  /** Absent on the write-yourself path, where there is no AI generate step. */
+  onGeneratePart?: (part: TutorialV3Part) => void;
 }) {
   React.useEffect(() => { onEnsure(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -564,15 +647,28 @@ function WritePane({
                 {p.libraryTitle || p.label || nestedEditorKindForPart(p) || p.type}
                 {p.objectType ? <span style={{ color: '#9AA3AF' }}> · {p.objectType}</span> : null}
               </p>
-              <button
-                type="button"
-                onClick={() => onOpenNestedEditor(p.id)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
-                style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
-              >
-                <ExternalLink size={13} />
-                Open {nestedEditorKindForPart(p)?.replace(/-/g, ' ') || 'content'} editor
-              </button>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onOpenNestedEditor(p.id)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
+                  style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
+                >
+                  <ExternalLink size={13} />
+                  Open {nestedEditorKindForPart(p)?.replace(/-/g, ' ') || 'content'} editor
+                </button>
+                {onGeneratePart && (
+                  <button
+                    type="button"
+                    onClick={() => onGeneratePart(p)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border"
+                    style={{ fontSize: 12.5, fontWeight: 650, color: '#4C1D95', borderColor: 'rgba(109,40,217,0.35)', background: 'rgba(109,40,217,0.06)' }}
+                  >
+                    <Sparkles size={13} />
+                    Generate with AI
+                  </button>
+                )}
+              </div>
             </div>
           ) : isMediaPart(p) ? (
             <MediaSlotEditor part={p} onChange={(patch) => onChangePart(p.id, patch)} />

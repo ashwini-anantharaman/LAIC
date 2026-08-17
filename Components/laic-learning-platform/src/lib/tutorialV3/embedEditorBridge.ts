@@ -132,6 +132,24 @@ export function extractStructuredPayload(part: TutorialV3Part, kind: NestedEdito
   return null;
 }
 
+/**
+ * Whether a part has anything in it yet.
+ *
+ * A scaffolded recipe slot — "Section quiz 1" before anything is written or
+ * generated — is a real part with a real id and no content. Opening it in
+ * student preview shows a blank page, which reads as a broken editor rather
+ * than an empty one, so the nested editor uses this to land on Edit instead.
+ */
+export function isNestedPartEmpty(part: TutorialV3Part, kind: NestedEditorKind): boolean {
+  if (kind === 'quiz') return extractQuizPayload(part).questions.length === 0;
+  if (kind === 'flashcard-set') return extractFlashcardPayload(part).cards.length === 0;
+  if (kind === 'concept-card') {
+    const c = extractConceptCardPayload(part);
+    return !['term', 'oneSentenceMeaning', 'definition'].some((k) => String(c[k] || '').trim());
+  }
+  return extractStructuredPayload(part, kind) == null;
+}
+
 function asLibraryEmbed(
   part: TutorialV3Part,
   objectType: ObjectType,

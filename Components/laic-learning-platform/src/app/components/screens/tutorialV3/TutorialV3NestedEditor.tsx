@@ -22,6 +22,7 @@ import {
   extractFlashcardPayload,
   extractQuizPayload,
   extractStructuredPayload,
+  isNestedPartEmpty,
   nestedEditorKindForPart,
   nestedEditorTitle,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
@@ -67,11 +68,19 @@ export function TutorialV3NestedEditor({
   const close = () => onBack();
   const finish = () => (onDone ? onDone() : onBack());
 
+  /**
+   * Preview is the right landing for content that exists — a course developer
+   * reopening a generated quiz wants to see it as a student does. An empty part
+   * has nothing to preview, so it opens on Edit instead; the alternative is a
+   * blank page that reads as a broken editor.
+   */
+  const mode = initialMode === 'preview' && isNestedPartEmpty(part, kind) ? 'edit' : initialMode;
+
   const common = {
     backLabel: BACK,
     doneLabel: DONE,
     saveDraftLabel: DONE,
-    initialMode,
+    initialMode: mode,
     applyOnSaveDraft: true,
     onDone: finish,
   };
