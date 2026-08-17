@@ -31,7 +31,7 @@ import {
   removeClubHeader,
   subscribeToClubHeader,
 } from "../lib/avatar-store";
-import { can, clearAppContext, getAppContext } from "../lib/bridge-role";
+import { can, getAppContext, refreshRoleContext } from "../lib/bridge-role";
 import { useSelectedClubId } from "../lib/club-context";
 import { useClubScopedContext } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
@@ -252,9 +252,11 @@ function ClubDescriptionRow() {
       await setClubDescription(token, programId, next);
       setCurrent(next);
       setEditing(false);
-      // The club-app context carries the old value; drop it so the next read — and
-      // anything else keyed on this club — sees the new one.
-      clearAppContext(token, programId);
+      // refreshRoleContext, NOT clearAppContext: clearing empties the cache and tells
+      // nobody, so the Club tab — which reads this line under the club's name — kept
+      // showing the old text until something else happened to refetch. This clears
+      // and then notifies every mounted gate, which is what makes the header repaint.
+      await refreshRoleContext(token, programId).catch(() => {});
     } catch (e) {
       notify("Couldn't save that", e instanceof Error ? e.message : "Please try again.");
     } finally {

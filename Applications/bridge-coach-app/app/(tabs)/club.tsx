@@ -54,7 +54,7 @@ import {
 } from "../../lib/challenges";
 import { confirmDestructive, notify } from "../../lib/dialogs";
 import { useClubs } from "../../lib/club-context";
-import { useCan } from "../../lib/use-can";
+import { useCan, useClubScopedContext } from "../../lib/use-can";
 import { deleteLearningObject, type LearningObject } from "../../lib/nexus";
 import {
   canAuthorLearning,
@@ -303,6 +303,16 @@ export default function ClubScreen() {
   // Creating a CHALLENGE is a club-app capability; creating CONTENT is a learning
   // one, from the Studio's own catalogue — two catalogues, so two questions.
   const canCreateChallenge = useCan("app.challenge.create", true);
+  /**
+   * The club's own line, under its name.
+   *
+   * Off the club-scoped context the capability gates on this screen already fetch, so
+   * this costs no extra round-trip. Falls back to the ORGANISATION's name, which is
+   * what this line said before a club could write its own — a club that has set no
+   * description keeps exactly the header it had.
+   */
+  const clubScoped = useClubScopedContext();
+  const clubDescription = clubScoped?.app?.program_description?.trim() || null;
   const [canAuthor, setCanAuthor] = useState(false);
   /** May they keep something to themselves? A separate grant from authoring for the
    *  club — see canAuthorPersonal. */
@@ -849,15 +859,29 @@ export default function ClubScreen() {
             <Text
               style={[
                 styles.blurb,
-                { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s, color: headText },
+                {
+                  marginLeft: HEAD.left * s,
+                  marginTop: HEAD.blurbGap * s,
+                  color: headText,
+                  // Room to the right so a long description does not run under the
+                  // Members pill on the title's line.
+                  marginRight: (HEAD.pillRight + 44) * s,
+                },
               ]}
+              numberOfLines={1}
             >
-              {/* The organisation's name on its own. It read "Under Life in AI Center"
-                  before — the preposition added nothing a reader needed, and the line
-                  is a label rather than a sentence. Still suppressed when the club and
-                  the org share a name, where it would just repeat the title, and the
-                  space keeps the header's height fixed either way. */}
-              {club && club.org !== club.name ? club.org : " "}
+              {/* The club's OWN description when it has written one, else the
+                  organisation's name. That fallback is what this line always said —
+                  "Under Life in AI Center" once, until the preposition was dropped as
+                  adding nothing — and it is suppressed when the club and the org share
+                  a name, where it would just repeat the title. The space keeps the
+                  header's height fixed when there is nothing to say.
+
+                  ONE LINE, and that is a constraint rather than a preference: the
+                  banner's height is computed from the safe area plus the title's line
+                  plus this one (see BANNER above), so a second line would overflow the
+                  artwork behind it. The full text is readable where it is edited. */}
+              {clubDescription ?? (club && club.org !== club.name ? club.org : " ")}
             </Text>
           </View>
 
