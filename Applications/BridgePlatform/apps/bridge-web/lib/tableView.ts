@@ -30,6 +30,7 @@ import {
   type ChallengeTableContext,
 } from "@/app/bridge/table2/[sessionId]/challengeTable";
 import { getAppearance } from "@/lib/appearance";
+import { HOUSE_PREFIX } from "@/lib/arena";
 import { sessionService } from "@/lib/sessions";
 
 export interface TableViewOptions {
@@ -232,7 +233,12 @@ export async function loadTableView(
 
   const seatName = (seat: Seat) => {
     const c = record.seats[seat];
-    return c.kind === "human" ? (c.nexusUserId === context.nexusUserId ? "you" : "human") : c.label;
+    if (c.kind === "human") return c.nexusUserId === context.nexusUserId ? "you" : "human";
+    // The house player's stored name ("House · Full teaching deck") is
+    // find-or-create PROVENANCE, not a nameplate (owner direction 2026-08-15:
+    // hide it) — a house chair shows no name; the plate keeps its seat badge,
+    // strip and DEALER mark. BEN keeps its label: that identity is meaningful.
+    return c.label.startsWith(HOUSE_PREFIX) ? "" : c.label;
   };
   const seatNames = Object.fromEntries(
     (["N", "E", "S", "W"] as Seat[]).map((seat) => [seat, seatName(seat)]),

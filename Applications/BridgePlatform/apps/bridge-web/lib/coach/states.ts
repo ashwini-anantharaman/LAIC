@@ -17,7 +17,7 @@
 import { hcp } from "@bridge/engine";
 import type { Call, Card, Seat, Suit } from "@bridge/events";
 
-import { callLabel, GLYPH, partnerOf, SUIT_WORD, SUITS } from "./position";
+import { callLabel, GLYPH, partnerOf, Relative, step, SUIT_WORD, SUITS } from "./position";
 import type { KnownCard } from "./think";
 
 /** What the page already computed for the bidding grid — one per call. */
@@ -199,6 +199,88 @@ export function partnershipStates(opts: {
       value: `${fit.count}+ ${GLYPH[fit.suit]}`,
       detail: `Partner's promised ${SUIT_WORD[fit.suit]}s plus yours make at least ${fit.count} — an eight-card fit is the usual bar.`,
     });
+  }
+
+  return out;
+}
+
+/**
+ * The THEIRS view (owner direction 2026-08-15): the opponents' picture,
+ * mirrored from the partner inference above — what each opponent's bids have
+ * promised, read from the same replayed KB meanings. Per SEAT rather than
+ * combined: two opponents bidding independently don't intersect the way a
+ * partnership's conversation does, and "East 12–21, West 6+" is more usable
+ * than a blurred sum. Same honesty rule: a meaning that doesn't parse still
+ * surfaces as the bid's own words, and nothing is ever invented.
+ */
+export function opponentStates(opts: {
+  auction: readonly { seat: Seat; call: Call }[];
+  seat: Seat;
+  meanings: ReadonlyArray<BidMeaning | undefined>;
+}): KnownCard[] {
+  const { auction, seat, meanings } = opts;
+  const out: KnownCard[] = [];
+
+  for (const opp of [step(seat, 1), step(seat, 3)]) {
+    const who = Relative(opp, seat);
+    const bids = auction
+      .map((a, i) => ({ ...a, i }))
+      .filter((a) => a.seat === opp && a.call !== "P");
+    if (!bids.length) continue;
+
+    const texts = bids.map((b) => {
+      const m = meanings[b.i];
+      return m ? `${m.label}${m.shows ? ` — ${m.shows}` : ""}` : "";
+    });
+
+    const last = bids[bids.length - 1]!;
+    out.push({
+      group: "theirs",
+      title: `${who} bid`,
+      value: callLabel(last.call),
+      detail: texts[texts.length - 1] || "Your system notes don't read the opponents' methods.",
+    });
+
+    const range: Range = {};
+    for (const text of texts) {
+      const r = text ? pointsIn(text) : null;
+      if (!r) continue;
+      if (r.min !== undefined) range.min = Math.max(range.min ?? r.min, r.min);
+      if (r.max !== undefined) range.max = Math.min(range.max ?? r.max, r.max);
+    }
+    if (range.min !== undefined || range.max !== undefined) {
+      const shown =
+        range.min !== undefined && range.max !== undefined
+          ? `${range.min}–${range.max}`
+          : range.min !== undefined
+            ? `${range.min}+`
+            : `≤${range.max}`;
+      out.push({
+        group: "theirs",
+        title: `${who}'s points`,
+        value: shown,
+        detail: `${who}'s bidding suggests ${shown} points, reading their calls by your system's vocabulary.`,
+      });
+    }
+
+    const promised: Partial<Record<Suit, number>> = {};
+    for (const text of texts) {
+      if (!text) continue;
+      for (const [s, n] of Object.entries(suitsIn(text)) as [Suit, number][]) {
+        promised[s] = Math.max(promised[s] ?? 0, n);
+      }
+    }
+    const suitBits = SUITS.filter((s) => promised[s]).map((s) => `${promised[s]}+ ${GLYPH[s]}`);
+    if (suitBits.length) {
+      out.push({
+        group: "theirs",
+        title: `${who}'s suits`,
+        value: suitBits.join("  "),
+        detail: `${who}'s bidding shows ${SUITS.filter((s) => promised[s])
+          .map((s) => `${promised[s]}+ ${SUIT_WORD[s]}s`)
+          .join(" and ")}.`,
+      });
+    }
   }
 
   return out;

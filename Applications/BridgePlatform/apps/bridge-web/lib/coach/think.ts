@@ -44,11 +44,14 @@ export interface ThinkCandidate {
 }
 
 /**
- * Which of the Game State's three views a fact belongs to (owner direction
- * 2026-08-14): the learner's own hand, what partner's bids have shown, or
- * what the two hands add up to. Absent means "me".
+ * Which of the Position views a fact belongs to (owner directions 2026-08-14
+ * and 2026-08-15): OURS splits into the learner's own hand ("me"), what
+ * partner's bids have shown ("partner"), and what the two add up to
+ * ("partnership"); THEIRS is the opponents' picture; ADVANCED is the
+ * counting layer that spans both sides — points out there, suits still out,
+ * who holds the trick. Absent means "me".
  */
-export type StateGroup = "me" | "partner" | "partnership";
+export type StateGroup = "me" | "partner" | "partnership" | "theirs" | "advanced";
 
 /**
  * One worked-out fact as a two-sided card: a glanceable front (a short title
@@ -173,11 +176,13 @@ function knownInAuction(state: ThinkState, seat: Seat): KnownCard[] {
   const out: KnownCard[] = [];
   const mine = dealtHand(state, seat);
 
-  // 40 points in a deck. Yours are yours; the rest are somewhere.
+  // 40 points in a deck. Yours are yours; the rest are somewhere. Counting
+  // across all three hidden hands is table arithmetic — the ADVANCED view.
   out.push({
     title: "Points out there",
     value: String(40 - hcp(mine)),
     detail: `${40 - hcp(mine)} of the 40 points sit in the other three hands.`,
+    group: "advanced",
   });
 
   // "IF YOU PASS" and "THE AUCTION" retired (owner direction 2026-08-14):
@@ -239,6 +244,7 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
     title: "Points hidden",
     value: String(missing),
     detail: `${missing} points sit ${between}.`,
+    group: "advanced",
   });
 
   // SHOWING OUT IS PROOF. If a seat failed to follow a led suit, they hold none
@@ -257,8 +263,9 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
         title: Relative(s, seat),
         value: `no ${GLYPH[v]}s`,
         detail: `${Relative(s, seat)} has no ${SUIT_WORD[v]}s — they couldn't follow suit.`,
-        // A proof about PARTNER's hand files under the partner view.
-        ...(s === partnerOf(seat) ? { group: "partner" as const } : {}),
+        // A proof about a hand files under that hand's SIDE: partner's under
+        // Ours › My partner, an opponent's under Theirs.
+        group: s === partnerOf(seat) ? ("partner" as const) : ("theirs" as const),
       });
     }
   }
@@ -275,11 +282,13 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
             title: "Still out",
             value: `no ${GLYPH[focus]}s`,
             detail: `No ${SUIT_WORD[focus]}s are left in the hidden hands.`,
+            group: "advanced",
           }
         : {
             title: "Still out",
             value: `${outstanding} ${GLYPH[focus]}`,
             detail: `${outstanding} ${GLYPH[focus]} ${outstanding === 1 ? "is" : "are"} still in the hidden hands.`,
+            group: "advanced",
           },
     );
   }
@@ -294,6 +303,7 @@ function knownInPlay(state: ThinkState, seat: Seat): KnownCard[] {
       title: "Winning so far",
       value: best.seat === seat ? "you" : Relative(best.seat, seat),
       detail: `${Relative(best.seat, seat)} ${best.seat === seat ? "are" : "is"} winning it with the ${cardLabel(best.card)}.`,
+      group: "advanced",
     });
   }
 

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Call, Card, Seat } from "@bridge/events";
 
-import { partnershipStates } from "./states";
+import { opponentStates, partnershipStates } from "./states";
 
 /** A 10-point hand (A K Q J) with five spades — the "my half" of every sum here. */
 const HAND: Card[] = [
@@ -100,6 +100,31 @@ describe("partnershipStates — inference from the bids", () => {
     expect(titles).toContain("Partner bid");
     expect(titles).not.toContain("Partner's points");
     expect(titles).not.toContain("Partner's suits");
+  });
+
+  it("reads each OPPONENT per seat for the Theirs view, and skips silent ones", () => {
+    // East overcalled with a parsed meaning; West only passed. One seat's
+    // cards, all grouped "theirs", named by seat.
+    const out = opponentStates({
+      auction: [call("N", "1H"), call("E", "1S"), call("S", "P"), call("W", "P")],
+      seat: "S",
+      meanings: [undefined, { label: "Overcall", shows: "8-16 HCP, 5+ ♠" }, undefined, undefined],
+    });
+    const byTitle = new Map(out.map((c) => [c.title, c]));
+    expect(byTitle.get("East bid")?.value).toBe("1♠");
+    expect(byTitle.get("East's points")?.value).toBe("8–16");
+    expect(byTitle.get("East's suits")?.value).toContain("5+ ♠");
+    expect(out.every((c) => c.group === "theirs")).toBe(true);
+    expect(out.some((c) => c.title.startsWith("West"))).toBe(false);
+  });
+
+  it("is empty for Theirs while the opponents have only passed", () => {
+    const out = opponentStates({
+      auction: [call("N", "1H"), call("E", "P")],
+      seat: "S",
+      meanings: [undefined, undefined],
+    });
+    expect(out).toEqual([]);
   });
 
   it("says the system doesn't cover an unmapped call, and invents nothing", () => {

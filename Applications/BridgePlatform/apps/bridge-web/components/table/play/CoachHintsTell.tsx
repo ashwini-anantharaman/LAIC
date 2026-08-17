@@ -26,7 +26,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { OWLEE_DISCLAIMER, WhatShouldIPlay } from "./CoachEventAsk";
-import { fetchBenTell, fetchBenWhatIf, fetchHints, type BenTell } from "./coachPrefetch";
+import { fetchBenTell, fetchBenWhatIf, fetchCuratedOverlay, fetchHints, type BenTell } from "./coachPrefetch";
 import { OwleeFace } from "./OwleeFace";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
@@ -160,19 +160,25 @@ const rungName = (i: number, total: number): string =>
 type HintsState =
   | { kind: "idle" }
   | { kind: "loading" }
-  | { kind: "ready"; hints: string[] }
+  /** authoredBy set = the rungs are the COACH'S, not Owlee's — the header
+   *  says so ("from Coach Sarah"), because whose voice it is IS the lesson. */
+  | { kind: "ready"; hints: string[]; authoredBy?: string }
   | { kind: "empty"; reason: string };
 
 export function CoachHints({
   sessionId,
   epoch,
   active,
+  curated,
 }: Readonly<{
   sessionId: string;
   /** The board's current section — the prefetch cache's key for this decision. */
   epoch: string;
   /** It is the learner's decision right now — hints exist only then. */
   active: boolean;
+  /** A curated session: the coach may have authored THIS decision's ladder,
+   *  which replaces Owlee's whole (no model call) while on the line. */
+  curated?: boolean;
 }>) {
   const [state, setState] = useState<HintsState>({ kind: "idle" });
   // How many rungs are open. The ladder only goes down: opening hint 3 means
@@ -185,6 +191,26 @@ export function CoachHints({
   // key — and the rungs show the writing state until it lands.
   const load = useCallback(async () => {
     setState({ kind: "loading" });
+    // The COACH'S ladder first (curated deals, owner design 2026-08-15):
+    // an authored ladder for this decision replaces Owlee's whole — same
+    // rungs UI, zero model calls. Off the line, or unannotated, Owlee's
+    // generation proceeds as ever.
+    if (curated) {
+      try {
+        const overlay = await fetchCuratedOverlay(sessionId, epoch);
+        const authored = overlay?.onPath ? overlay.current?.hints : undefined;
+        if (authored && authored.length >= HINT_MIN && authored.length <= HINT_COUNT) {
+          setState({
+            kind: "ready",
+            hints: authored,
+            authoredBy: overlay?.coachName ?? "your coach",
+          });
+          return;
+        }
+      } catch {
+        // The overlay not answering must not cost the learner the ladder.
+      }
+    }
     try {
       const r = await fetchHints(sessionId, epoch);
       if (r.hints && r.hints.length >= HINT_MIN && r.hints.length <= HINT_COUNT) {
@@ -195,14 +221,25 @@ export function CoachHints({
     } catch {
       setState({ kind: "empty", reason: "unreachable" });
     }
-  }, [sessionId, epoch]);
+  }, [sessionId, epoch, curated]);
 
   useEffect(() => {
     if (active) void load();
   }, [active, load]);
 
-  // Revealing never fetches any more — it only turns over the next rung.
-  const reveal = () => setRevealed((n) => Math.min(n + 1, HINT_COUNT));
+  // Revealing never fetches any more — it only turns over the next rung. On a
+  // CURATED board the FIRST rung also stamps the learner's progress (review
+  // loop, owner pick #5) — fire-and-forget: a lost stamp costs a statistic.
+  const reveal = () => {
+    if (curated && revealed === 0) {
+      void fetch("/api/bridge/curated-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      }).catch(() => {});
+    }
+    setRevealed((n) => Math.min(n + 1, HINT_COUNT));
+  };
 
   if (!active) {
     return (
@@ -218,10 +255,16 @@ export function CoachHints({
 
   return (
     <div style={SECTION}>
-      <SectionLabel>Incremental Hints</SectionLabel>
+      <SectionLabel>
+        {state.kind === "ready" && state.authoredBy
+          ? `Incremental Hints · from ${state.authoredBy}`
+          : "Incremental Hints"}
+      </SectionLabel>
       <p style={{ margin: "0 0 10px", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-        Up to five hints for this decision, each giving away a little more — a simple
-        decision gets fewer. Open them one at a time — stopping early is the win.
+        {state.kind === "ready" && state.authoredBy
+          ? "Your coach wrote these rungs for this exact decision — each gives away a little more."
+          : "Up to five hints for this decision, each giving away a little more — a simple decision gets fewer."}{" "}
+        Open them one at a time — stopping early is the win.
       </p>
 
       {/* the writing shimmer — five face-down rungs settling in, instead of a
@@ -575,6 +618,42 @@ export function BenWhatIf({
    TELL — the answers, side by side, each labelled with who is talking
    ════════════════════════════════════════════════════════════════════════════ */
 
+/**
+ * A character speaking (owner ask 2026-08-15: "an avatar character displaying
+ * those content"): the avatar sits beside a paper bubble with a tail pointing
+ * back at it, so each answer reads as SAID by its speaker rather than filed
+ * in a box. The tail is a rotated square wearing the bubble's own border on
+ * its two lit edges — no SVG, no clip-path, survives any bubble height.
+ */
+export function SpeechBubble({
+  avatar,
+  children,
+}: Readonly<{ avatar: React.ReactNode; children: React.ReactNode }>) {
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+      <span style={{ flex: "none", marginTop: 3 }}>{avatar}</span>
+      <div
+        style={{
+          position: "relative", flex: 1, minWidth: 0,
+          background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3",
+          borderRadius: 12, padding: "10px 12px",
+        }}
+      >
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", left: -5.5, top: 15, width: 10, height: 10,
+            background: PAPER,
+            borderLeft: "1px solid #e8ddc3", borderBottom: "1px solid #e8ddc3",
+            transform: "rotate(45deg)",
+          }}
+        />
+        {children}
+      </div>
+    </div>
+  );
+}
+
 /** The call named inside a hint's prose — "1♠", "1NT", "Pass" — for the chip. */
 function callIn(text: string): string | null {
   const bid = /([1-7])\s?(NT|♠|♥|♦|♣)/.exec(text);
@@ -624,7 +703,7 @@ function OwleeBids({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        <OwleeFace size={20} mood={state.kind === "loading" ? "working" : "idle"} />
+        {/* No mini-face — the speech bubble's avatar carries the identity. */}
         <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>Owlee bids</span>
         <button
           type="button"
@@ -767,26 +846,24 @@ export function CoachTell({
 
   const benVerb = phase === "auction" ? "bid" : "play";
 
-  // ONE CARD, TWO SPEAKERS (owner direction 2026-08-14: the stacked boxes
-  // read as packed) — Owlee's answer above, a hairline, then BEN's. Each
-  // speaker is a couple of lines; the box count is what made it heavy.
+  // SPEECH BUBBLES (owner ask 2026-08-15, replacing the shared card): each
+  // answer is SAID by its character — the avatar beside a tailed paper
+  // bubble — so who-is-talking is a face before it is a label.
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-      <div style={SECTION}>
-        {active && (phase === "play" || phase === "auction") && (
-          <>
-            {phase === "play" ? (
-              <WhatShouldIPlay sessionId={sessionId} epoch={epoch} />
-            ) : (
-              // A bidding decision: Owlee's answer is the hint ladder's
-              // final rung — the same one the Hints tab reveals last.
-              <OwleeBids sessionId={sessionId} epoch={epoch} />
-            )}
-            <div aria-hidden style={{ height: 1, background: "#f0e7d2", margin: "12px 0" }} />
-          </>
-        )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {active && (phase === "play" || phase === "auction") && (
+        <SpeechBubble avatar={<OwleeFace size={38} />}>
+          {phase === "play" ? (
+            <WhatShouldIPlay sessionId={sessionId} epoch={epoch} />
+          ) : (
+            // A bidding decision: Owlee's answer is the hint ladder's
+            // final rung — the same one the Hints tab reveals last.
+            <OwleeBids sessionId={sessionId} epoch={epoch} />
+          )}
+        </SpeechBubble>
+      )}
+      <SpeechBubble avatar={<BenFace size={38} />}>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 7 }}>
-          <BenFace size={20} />
           <span
             style={{
               fontSize: 12, fontWeight: 700, color: FELT_DEEP,
@@ -911,7 +988,7 @@ export function CoachTell({
             )}
           </>
         )}
-      </div>
+      </SpeechBubble>
 
       {/* ── BEN's ⓘ popup: the same one line of small print Owlee's carries ── */}
       {benInfoOpen && (

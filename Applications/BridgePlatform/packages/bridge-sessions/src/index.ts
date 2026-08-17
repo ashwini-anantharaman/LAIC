@@ -28,6 +28,7 @@ import {
   applyEvent,
   createGame,
   createKbDecider,
+  hcp,
   initialState,
   legalCalls,
   legalPlays,
@@ -120,6 +121,18 @@ export interface SessionRecord {
      * against the challenge — no play record, no pointer, no lock.
      */
     practice?: boolean;
+  };
+  /**
+   * CURATED DEAL stamp (owner design 2026-08-15) — this session replays a
+   * coach's annotated board. Same pattern as `challenge` above: the stamp is
+   * how the host picks per-session behavior with no store round-trip — the
+   * robots follow the coach's recorded line until the learner diverges
+   * (SessionServiceOptions.curatedDecider), and the coach-overlay API finds
+   * the annotations from the sessionId. `entryId` is the LEARNER'S copy of
+   * the curated library entry (copy-on-assign).
+   */
+  curated?: {
+    entryId: string;
   };
 }
 
@@ -360,6 +373,28 @@ export interface SessionServiceOptions {
     compiled: CompiledKb;
     seat: Seat;
   }) => SeatDecider;
+  /**
+   * A KB seat's CARD, from the host's double-dummy solver (owner direction
+   * 2026-08-15: robots bid the KB but play DDS). Injected because the WASM
+   * solver lives in the app, not this package. Return null to decline a
+   * position; throwing is treated the same. Never consulted for the opening
+   * lead — see withKbPlayOverride's rails.
+   */
+  kbPlayOverride?: (state: GameState, seat: Seat) => Promise<Card | null>;
+  /**
+   * CURATED-DEAL robots (owner design 2026-08-15): when a session carries
+   * `record.curated`, every robot seat's decider is built by the HOST
+   * through this factory instead — the host follows the coach's recorded
+   * line while the learner stays on it, and hands control to `fallback`
+   * (the seat's ordinary decider) the moment the line is left. Injected
+   * because the line lives in the library store, which this package
+   * cannot read.
+   */
+  curatedDecider?: (args: {
+    record: SessionRecord;
+    seat: Seat;
+    fallback: SeatDecider;
+  }) => SeatDecider;
 }
 
 /**
@@ -440,6 +475,8 @@ export class SessionService {
     status?: SessionStatus;
     /** Challenge stamp — see SessionRecord.challenge. */
     challenge?: SessionRecord["challenge"];
+    /** Curated-deal stamp — see SessionRecord.curated. */
+    curated?: SessionRecord["curated"];
   }): Promise<SessionRecord> {
     const record: SessionRecord = {
       sessionId: newId("bs"),
@@ -462,6 +499,7 @@ export class SessionService {
       programOrganizationId: input.programOrganizationId,
       nexusProgramId: input.nexusProgramId,
       ...(input.challenge ? { challenge: input.challenge } : {}),
+      ...(input.curated ? { curated: input.curated } : {}),
     };
     await this.store.putSession(record);
     return record;
@@ -516,6 +554,57 @@ export class SessionService {
     return compiled;
   }
 
+  /**
+   * GUARD-RAILED DOUBLE-DUMMY PLAY (owner direction 2026-08-15): a KB seat's
+   * CALLS stay with the KB — the system the coach teaches — but its CARDS
+   * come from the host-injected solver. Two rails keep the solver honest:
+   *   · the OPENING LEAD stays with the KB's lead rules — a solver's lead is
+   *     chosen by peeking at the whole deal, which no human lead is;
+   *   · any solver miss (null, or a throw) falls back to the KB whole, so a
+   *     table never stalls on its robots.
+   */
+  private withKbPlayOverride(kb: SeatDecider): SeatDecider {
+    const override = this.options.kbPlayOverride;
+    if (!override) return kb;
+    return {
+      decideBid: (state, seat) => kb.decideBid(state, seat),
+      decidePlay: async (state, seat) => {
+        const openingLead = !state.tricks.some((t) => t.plays.length > 0);
+        if (!openingLead) {
+          try {
+            const card = await override(state, seat);
+            if (card) {
+              return {
+                action: card,
+                candidates: [card],
+                trace: [],
+                citedSettings: [],
+                facts: { hcp: hcp(state.hands[seat] ?? []) },
+                reason: "Double-dummy: keeps the maximum tricks from here.",
+                rejected: [],
+                fallback: false,
+              };
+            }
+          } catch {
+            // Solver unavailable — the KB plays on rather than the table stalling.
+          }
+        }
+        return kb.decidePlay(state, seat);
+      },
+    };
+  }
+
+  /**
+   * A curated session's robots follow the COACH'S RECORDED LINE first
+   * (owner design 2026-08-15) — the host's curatedDecider wraps the seat's
+   * ordinary decider and defers to it once the learner leaves the line.
+   * Ordinary sessions (no stamp, or no injected factory) pass through.
+   */
+  private withCuratedLine(record: SessionRecord, seat: Seat, fallback: SeatDecider): SeatDecider {
+    if (!record.curated || !this.options.curatedDecider) return fallback;
+    return this.options.curatedDecider({ record, seat, fallback });
+  }
+
   /** The injected BEN decider, or a loud failure if the host never wired one. */
   private benSeatDecider(record: SessionRecord, compiled: CompiledKb, seat: Seat): SeatDecider {
     if (this.options.benDecider) return this.options.benDecider({ record, compiled, seat });
@@ -548,17 +637,23 @@ export class SessionService {
         config.kind === "human"
           ? humanDecider
           : config.kind === "ben"
-            ? this.benSeatDecider(record, compiled, seat)
-          : createKbDecider({
-              compiled,
-              player: {
-                enabledPackIds: config.enabledPackIds,
-                settingOverrides: config.settingOverrides,
-                decisionPolicyId: config.decisionPolicyId,
-                levelOrdinal: config.levelOrdinal,
-              },
-              seed: `${record.sessionId}_${seat}`,
-            }),
+            ? this.withCuratedLine(record, seat, this.benSeatDecider(record, compiled, seat))
+          : this.withCuratedLine(
+              record,
+              seat,
+              this.withKbPlayOverride(
+                createKbDecider({
+                  compiled,
+                  player: {
+                    enabledPackIds: config.enabledPackIds,
+                    settingOverrides: config.settingOverrides,
+                    decisionPolicyId: config.decisionPolicyId,
+                    levelOrdinal: config.levelOrdinal,
+                  },
+                  seed: `${record.sessionId}_${seat}`,
+                }),
+              ),
+            ),
       ]),
     ) as Record<Seat, ReturnType<typeof createKbDecider>>;
 

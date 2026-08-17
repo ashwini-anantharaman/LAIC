@@ -43,10 +43,17 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { BoardTakeaway } from "@/lib/coach/takeaway";
 import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
+import { useRouter } from "next/navigation";
+
 import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
-import { BenWhatIf, CoachHints, CoachTell } from "./CoachHintsTell";
+import { BenWhatIf, CoachHints, CoachTell, SpeechBubble } from "./CoachHintsTell";
 import { CoachTakeaway } from "./CoachTakeaway";
-import { useCoachPrefetch } from "./coachPrefetch";
+import {
+  fetchCuratedOverlay,
+  fetchStateReads,
+  useCoachPrefetch,
+  type CuratedOverlay,
+} from "./coachPrefetch";
 import { OwleeFace } from "./OwleeFace";
 
 // ── the BirdBridge palette (owner direction 2026-08-06: the coach wears the
@@ -252,7 +259,7 @@ export interface CoachPanelData {
    * arithmetic the learner should arguably do themselves, so it wants gating on
    * level rather than being always on.
    */
-  facts?: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" }[];
+  facts?: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" | "theirs" | "advanced" }[];
   /** One line on what the coach is looking at, for the context card. */
   looking?: string;
   /**
@@ -291,6 +298,13 @@ export interface CoachPanelData {
    * a tap that carries no decision.
    */
   defaultOpen?: boolean;
+  /**
+   * A CURATED session (owner design 2026-08-15): the coach's annotated board.
+   * The panel adds the third voice — the "Your coach" bubble at annotated
+   * decisions, the nudge with take-it-back on divergence, the authored hint
+   * ladders — all fetched from /api/bridge/curated-overlay per decision.
+   */
+  curated?: boolean;
 }
 
 const KEYFRAMES = `@keyframes coachRise{from{transform:translateY(100%)}to{transform:translateY(0)}}
@@ -696,9 +710,8 @@ function CoachTabRow({
     <>
       {(
         [
-          // "Position" over "Game State" (owner ask 2026-08-14: a better
-          // one-word term) — it's the bridge word for exactly this.
-          ["now", "Position"],
+          // "State" (owner ask 2026-08-15, revising 2026-08-14's "Position").
+          ["now", "State"],
           ["hints", "Hints"],
           ["tell", "Tell"],
           ["history", "History"],
@@ -787,7 +800,7 @@ function CoachScreens({
   // the learner's — the screens that show them then open onto answers, not
   // spinners (owner direction 2026-08-11). Keyed per CARD, not per trick:
   // each play is its own decision with its own answers.
-  useCoachPrefetch(data.ask, decisionEpoch(data));
+  useCoachPrefetch(data.ask, decisionEpoch(data), data.curated);
   // Which history sections (the auction, the play) the learner has toggled.
   // Untouched, each falls back to where the board is: the play opens once a
   // card has been led, the auction opens while the bidding is the story.
@@ -811,6 +824,11 @@ function CoachScreens({
           {view === "now" &&
             (data.takeaway ? (
               <>
+                {/* The coach's finish word comes BEFORE Owlee's reflection —
+                    on a curated board the sitting was theirs to close. */}
+                {data.curated && data.ask && (
+                  <CuratedCoachVoice sessionId={data.ask.sessionId} epoch={decisionEpoch(data)} />
+                )}
                 <CoachTakeaway
                   takeaway={data.takeaway}
                   sessionId={data.ask?.sessionId}
@@ -842,6 +860,7 @@ function CoachScreens({
                   sessionId={data.ask.sessionId}
                   epoch={decisionEpoch(data)}
                   active={data.ask.active}
+                  curated={data.curated}
                 />
               ) : (
                 <p style={{ margin: 0, fontSize: 13, lineHeight: 1.5, color: MUTED }}>
@@ -860,6 +879,12 @@ function CoachScreens({
             <>
               {data.aid && (data.aid.candidates.length > 0 || data.aid.noChoice) && (
                 <ThinkCard aid={data.aid} />
+              )}
+              {/* The coach's bubble sits under the choices (owner direction
+                  2026-08-15) — the menu first, then the voices: coach,
+                  Owlee, BEN. */}
+              {data.curated && data.ask && (
+                <CuratedCoachVoice sessionId={data.ask.sessionId} epoch={decisionEpoch(data)} />
               )}
               {data.ask ? (
                 <CoachTell
@@ -1312,6 +1337,215 @@ function decisionEpoch(data: CoachPanelData): string {
   return g ? `${g.id}#${g.events.length}` : "start";
 }
 
+/** The coach's badge for the curated bubbles — the platform holds no avatar
+ *  images, so the identity is a maroon chip wearing a whistle-plain "C". */
+function CoachBadge({ size = 38 }: Readonly<{ size?: number }>) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        flex: "none", width: size, height: size, borderRadius: "50%",
+        background: FELT_DEEP, display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: "inset 0 0 0 2px rgba(255,244,215,.35)",
+        color: "#fff4d7", fontSize: size * 0.42, fontWeight: 700,
+        fontFamily: "Georgia, 'Times New Roman', serif",
+      }}
+    >
+      C
+    </span>
+  );
+}
+
+/**
+ * THE THIRD VOICE (owner design 2026-08-15, curated deals): the coach's own
+ * speech bubble, drawn automatically at annotated decisions —
+ *   · the NOTE the coach wrote for this exact decision, with the charted
+ *     move and its "why" folded behind "show the coach's road" (reading the
+ *     road before deciding is the learner's choice, like opening a hint);
+ *   · the NUDGE when the learner's last action stepped off the line — one
+ *     tap takes it back (the existing undo), or they keep their move and
+ *     play on free;
+ *   · the quiet notice once they are off the line for good.
+ */
+function CuratedCoachVoice({
+  sessionId,
+  epoch,
+  nudgeOnly = false,
+}: Readonly<{
+  sessionId: string;
+  epoch: string;
+  /** Render just the divergence nudge (the State screen keeps that
+   *  interruption); the full voice — note, road, notice — lives in TELL
+   *  beside Owlee and BEN (owner direction 2026-08-15). */
+  nudgeOnly?: boolean;
+}>) {
+  const router = useRouter();
+  const [overlay, setOverlay] = useState<CuratedOverlay | null>(null);
+  const [roadOpen, setRoadOpen] = useState(false);
+  const [nudgeKept, setNudgeKept] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    setOverlay(null);
+    setRoadOpen(false);
+    setNudgeKept(false);
+    fetchCuratedOverlay(sessionId, epoch)
+      .then((o) => {
+        if (alive) setOverlay(o);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [sessionId, epoch]);
+
+  if (!overlay) return null;
+
+  const takeBack = async () => {
+    if (undoing) return;
+    setUndoing(true);
+    try {
+      await fetch(`/api/bridge/sessions/${encodeURIComponent(sessionId)}/undo`, { method: "POST" });
+      router.refresh();
+    } catch {
+      // The table's own Undo still exists; a failed take-back just stays put.
+    } finally {
+      setUndoing(false);
+    }
+  };
+
+  // The coach's REAL name when the assignment knows it (owner pick #3,
+  // 2026-08-15: "Coach Sarah", not a nameless role) — the generic fallback
+  // covers a curated board opened outside an assignment.
+  const coachName = overlay.coachName ?? "your coach";
+  const coachLabel = (
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.7, textTransform: "uppercase", color: FELT_DEEP }}>
+      {overlay.coachName ?? "Your coach"}
+    </span>
+  );
+
+  return (
+    <>
+      {overlay.nudge && !nudgeKept && (
+        <SpeechBubble avatar={<CoachBadge />}>
+          {coachLabel}
+          <p style={{ margin: "5px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13.5, lineHeight: 1.5, color: INK }}>
+            That's off the road {coachName} charted — they played{" "}
+            <b><RedSuits>{overlay.nudge.charted}</RedSuits></b> here. Take it back and see why?
+          </p>
+          <div style={{ display: "flex", gap: 7, marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => void takeBack()}
+              disabled={undoing}
+              style={{
+                minHeight: 32, padding: "5px 13px",
+                background: undoing ? "#9db3a5" : FELT_MID, borderWidth: 0, borderRadius: 16,
+                color: "#fff", fontSize: 12, fontWeight: 700, fontFamily: "inherit",
+                cursor: undoing ? "default" : "pointer",
+              }}
+            >
+              {undoing ? "Taking it back…" : "Take it back"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setNudgeKept(true)}
+              style={{
+                minHeight: 32, padding: "5px 13px",
+                background: "transparent", borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+                borderRadius: 16, color: MUTED, fontSize: 12, fontWeight: 700,
+                fontFamily: "inherit", cursor: "pointer",
+              }}
+            >
+              Keep my move
+            </button>
+          </div>
+        </SpeechBubble>
+      )}
+
+      {!nudgeOnly && overlay.current && (overlay.current.note || overlay.current.why) && (
+        <SpeechBubble avatar={<CoachBadge />}>
+          {coachLabel}
+          {overlay.current.note && (
+            <p style={{ margin: "5px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13.5, lineHeight: 1.55, color: INK }}>
+              <RedSuits>{overlay.current.note}</RedSuits>
+            </p>
+          )}
+          {(overlay.current.charted || overlay.current.why) && (
+            <div style={{ marginTop: 7 }}>
+              <button
+                type="button"
+                aria-expanded={roadOpen}
+                onClick={() => setRoadOpen((v) => !v)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, padding: 0,
+                  background: "transparent", borderWidth: 0,
+                  fontSize: 10.5, fontWeight: 700, letterSpacing: 0.4,
+                  textTransform: "uppercase", color: FELT_MID,
+                  fontFamily: "inherit", cursor: "pointer",
+                }}
+              >
+                {roadOpen ? "The coach's road" : "Show the coach's road"}
+                <span aria-hidden style={{ fontSize: 7, transform: roadOpen ? "rotate(180deg)" : undefined }}>▼</span>
+              </button>
+              {roadOpen && (
+                <div style={{ marginTop: 6, display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+                  {overlay.current.charted && (
+                    <span
+                      style={{
+                        flex: "none", padding: "2px 8px", background: "#fff",
+                        borderWidth: 1, borderStyle: "solid", borderColor: "#d8d3bf", borderRadius: 4,
+                        boxShadow: CARD_EDGE, fontSize: 14, fontWeight: 700,
+                        color: /[♥♦]/.test(overlay.current.charted) ? "#c00" : "#20201a",
+                      }}
+                    >
+                      <RedSuits>{overlay.current.charted}</RedSuits>
+                    </span>
+                  )}
+                  {overlay.current.why && (
+                    <span style={{ fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                      <RedSuits>{overlay.current.why}</RedSuits>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+        </SpeechBubble>
+      )}
+
+      {/* THE FINISH (owner pick #4, 2026-08-15): the board is over — the
+          coach's voice closes the sitting the way it opened it, saying
+          honestly whether the learner held the charted line. */}
+      {!nudgeOnly && overlay.finished && (
+        <SpeechBubble avatar={<CoachBadge />}>
+          {coachLabel}
+          <p style={{ margin: "5px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13.5, lineHeight: 1.55, color: INK }}>
+            {overlay.finished.stayedOnLine ? (
+              <>
+                That's the board — you stayed on {coachName}&rsquo;s line the whole way through.
+                Well played.
+              </>
+            ) : (
+              <>
+                That's the board — you found your own road partway through. The History tab has
+                both journeys; compare where they parted.
+              </>
+            )}
+          </p>
+        </SpeechBubble>
+      )}
+
+      {!nudgeOnly && overlay.diverged && !overlay.nudge && !overlay.finished && (
+        <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: FAINT, fontStyle: "italic" }}>
+          You're off {coachName}&rsquo;s line now — Owlee continues live.
+        </p>
+      )}
+    </>
+  );
+}
+
 /**
  * The Now screen's content — the position and the chat. Exported standalone
  * for hosts that want just this screen; the dock no longer condenses it
@@ -1327,6 +1561,14 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
   const epoch = boardEpoch(data);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* THE DIVERGENCE NUDGE only (curated deals): "take it back?" must
+          interrupt wherever the learner is looking. The coach's teaching
+          voice lives in TELL, beside Owlee and BEN (owner direction
+          2026-08-15: "your coach should appear inside tell"). */}
+      {data.curated && data.ask && (
+        <CuratedCoachVoice sessionId={data.ask.sessionId} epoch={decisionEpoch(data)} nudgeOnly />
+      )}
+
       {/* THE GAME STATE (owner direction 2026-08-10): "What I'm looking at"
           and "What you can work out" merged into one section of small flip
           cards — sealed to a title first, the value one tap in, the full
@@ -1336,6 +1578,15 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
           facts={data.facts ?? []}
           known={data.aid?.knownCards ?? []}
           epoch={epoch}
+          {...(data.ask
+            ? {
+                reads: {
+                  sessionId: data.ask.sessionId,
+                  epoch: decisionEpoch(data),
+                  phase: data.ask.phase,
+                },
+              }
+            : {})}
         />
       )}
 
@@ -1371,7 +1622,7 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
  * them. Hosts whose coach is always mounted (the dock) don't need this.
  */
 export function CoachPrefetch({ data }: Readonly<{ data: CoachPanelData }>) {
-  useCoachPrefetch(data.ask, decisionEpoch(data));
+  useCoachPrefetch(data.ask, decisionEpoch(data), data.curated);
   return null;
 }
 
@@ -1460,21 +1711,31 @@ type StateCard = {
   title: string;
   value: string;
   detail?: string;
-  group?: "me" | "partner" | "partnership";
+  group?: "me" | "partner" | "partnership" | "theirs" | "advanced";
 };
 
-/** The three views, in reading order: you, then partner, then the pair. */
+/** The top-level sides (owner direction 2026-08-15): our side, their side,
+ *  and the counting layer that spans both. */
+const SIDE_VIEWS = [
+  ["ours", "Ours"],
+  ["theirs", "Theirs"],
+  ["advanced", "Advanced"],
+] as const;
+
+/** OURS breaks into the original three views, in reading order. */
 const STATE_VIEWS = [
   ["me", "My state"],
   ["partner", "My partner"],
   ["partnership", "Partnership"],
 ] as const;
 
-/** What each view says while it has no cards — honest, and different per view. */
-const STATE_EMPTY: Record<(typeof STATE_VIEWS)[number][0], string> = {
+/** What each pane says while it has no cards — honest, and different per pane. */
+const STATE_EMPTY: Record<(typeof STATE_VIEWS)[number][0] | "theirs" | "advanced", string> = {
   me: "Nothing to show for your hand yet.",
   partner: "Nothing inferred yet — partner's bids will fill this in.",
   partnership: "Nothing to combine yet — it takes partner's bids plus your hand.",
+  theirs: "Nothing on the opponents yet — their bids and plays will fill this in.",
+  advanced: "Nothing worked out yet — the counting starts once the board moves.",
 };
 
 /** The envelope coachmark's once-only flag — one browser, one showing. */
@@ -1550,28 +1811,28 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
   // face sizes the card — minHeight keeps the small ones even, and the grid
   // row grows for the tall ones instead of clipping them.
   const face: React.CSSProperties = {
-    position: "relative", width: "100%", minHeight: 54, boxSizing: "border-box",
+    position: "relative", width: "100%", minHeight: 60, boxSizing: "border-box",
     borderRadius: 9,
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
-  // A REAL ENVELOPE (owner direction 2026-08-14: "the text HCP and stuff
-  // should be hidden, as in like an envelope"): the sealed face names
-  // NOTHING — every closed card is the same closed letter, and what's inside
-  // is only known by opening it. The flap is its OWN element on top of the
-  // body, so the opening animation can lift just the flap before the whole
-  // envelope drops away.
+  // A LABELLED ENVELOPE (owner direction 2026-08-15, superseding 2026-08-14's
+  // nameless seal): the sealed face wears a short line naming what's inside —
+  // "HCP", "Distribution" — the way a real envelope wears its subject. The
+  // VALUE stays sealed; knowing the topic is what makes working-it-out-first
+  // possible at all. The flap is its OWN element on top of the body, so the
+  // opening animation can lift just the flap before the envelope drops away.
   const sealedFace = (flapOpen: boolean) => (
     <span style={{ ...face, alignItems: "center", background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-      <span style={{ position: "relative", width: 32, height: 23, display: "block", perspective: 130 }}>
-        <svg width={32} height={23} viewBox="0 0 32 23" aria-hidden style={{ display: "block" }}>
+      <span style={{ position: "relative", width: 36, height: 26, display: "block", perspective: 140 }}>
+        <svg width={36} height={26} viewBox="0 0 32 23" aria-hidden style={{ display: "block" }}>
           <rect x="1" y="1" width="30" height="21" rx="3" fill="#fbf5e3" stroke="#c9b98f" strokeWidth="1.4" />
           {/* the bottom fold — the body still reads as an envelope once the flap lifts */}
           <path d="M2 21.2 16 13 30 21.2" fill="none" stroke="#e8ddbb" strokeWidth="1.2" strokeLinejoin="round" />
         </svg>
         <svg
-          width={32}
-          height={14}
+          width={36}
+          height={16}
           viewBox="0 0 32 14"
           aria-hidden
           className={flapOpen ? "coach-flap" : undefined}
@@ -1580,26 +1841,73 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
           <path d="M1.5 1.5 H30.5 L16 12.5 Z" fill="#f3e7c8" stroke="#c9b98f" strokeWidth="1.4" strokeLinejoin="round" />
         </svg>
       </span>
-      <span style={{ marginTop: 3, fontSize: 7.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#b3a789" }}>
-        tap to open
+      <span
+        style={{
+          marginTop: 3, maxWidth: "100%", overflowWrap: "break-word",
+          color: "#6b5f50",
+          // A short LABEL ("HCP") wears small caps; a long CLUE ("West
+          // passed over 1♠…") stays sentence case and is clamped to two
+          // lines — uppercase paragraphs were ballooning the envelopes
+          // (owner report 2026-08-15: "why is it so much word?").
+          ...(card.title.length > 18
+            ? {
+                fontSize: 8.5, fontWeight: 600, lineHeight: 1.3,
+                display: "-webkit-box", WebkitBoxOrient: "vertical" as const,
+                WebkitLineClamp: 2, overflow: "hidden",
+              }
+            : {
+                fontSize: 8, fontWeight: 700, letterSpacing: ".06em",
+                textTransform: "uppercase" as const, lineHeight: 1.25,
+              }),
+        }}
+      >
+        {card.title}
       </span>
     </span>
   );
   const sealed = sealedFace(false);
   const front = (
     <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: INK, fontVariantNumeric: "tabular-nums", lineHeight: 1.2 }}>
+      <span
+        style={{
+          color: INK, fontVariantNumeric: "tabular-nums",
+          // A chip-sized value ("14", "5+ ♠") wears the headline size; a
+          // phrase ("void in clubs") steps down so an opened inference stays
+          // card-shaped instead of a bold paragraph (owner report
+          // 2026-08-15: "shouldn't be looking too packed").
+          ...(card.value.length > 12
+            ? { fontSize: 10.5, fontWeight: 600, lineHeight: 1.3 }
+            : { fontSize: 13, fontWeight: 700, lineHeight: 1.2 }),
+        }}
+      >
         <RedSuits>{card.value}</RedSuits>
       </span>
       {card.title && (
         // maxWidth + break-word: "DISTRIBUTION" is one unbreakable word and
-        // was overflowing the card's edge at grid width.
-        <span style={{ marginTop: 2, maxWidth: "100%", overflowWrap: "break-word", fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6b5f50" }}>
+        // was overflowing the card's edge at grid width. Long clue titles
+        // keep sentence case and clamp, same as on the seal.
+        <span
+          style={{
+            marginTop: 2, maxWidth: "100%", overflowWrap: "break-word", color: "#6b5f50",
+            ...(card.title.length > 18
+              ? {
+                  fontSize: 8, fontWeight: 600, lineHeight: 1.3,
+                  display: "-webkit-box", WebkitBoxOrient: "vertical" as const,
+                  WebkitLineClamp: 2, overflow: "hidden",
+                }
+              : {
+                  fontSize: 8.5, fontWeight: 600, letterSpacing: ".06em",
+                  textTransform: "uppercase" as const,
+                }),
+          }}
+        >
           {card.title}
         </span>
       )}
       {card.title && card.detail && (
-        <span aria-hidden style={{ position: "absolute", top: 3, right: 5, fontSize: 8, color: "#b3a789" }}>
+        // Black and legible (owner, 2026-08-15) — the faint 8px ghost read
+        // as dust, not as "this card flips".
+        <span aria-hidden style={{ position: "absolute", top: 2, right: 5, fontSize: 12, fontWeight: 700, color: INK }}>
           ⟳
         </span>
       )}
@@ -1626,7 +1934,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
       aria-pressed={stage !== "sealed"}
       aria-label={
         stage === "sealed"
-          ? "A sealed card — tap to open" // names nothing: the not-knowing is the point
+          ? `${card.title} — sealed, tap to open` // the topic is public; the value is the surprise
           : canFlip
             ? `${card.title || card.value} — tap to flip`
             : card.value
@@ -1635,7 +1943,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         // The CONTENT owns the footprint: the visible face renders in-flow,
         // so the button — and with it the grid row — grows to hold whatever
         // the face says, and nothing clips.
-        position: "relative", minHeight: 54,
+        position: "relative", minHeight: 60,
         display: "flex", flexDirection: "column",
         ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
@@ -1696,21 +2004,70 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
 }
 
 function GameState({
-  facts, known, epoch,
+  facts, known, epoch, reads,
 }: Readonly<{
-  facts: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" }[];
+  facts: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" | "theirs" | "advanced" }[];
   known: readonly KnownCard[];
   epoch: string;
+  /** Where to fetch Claude's read of the auction (boss direction 2026-08-15:
+   *  the partner/partnership/theirs cards come from the model, not the KB).
+   *  Absent for watchers and finished boards. */
+  reads?: { sessionId: string; epoch: string; phase: "auction" | "play" | "other" };
 }>) {
+  // CLAUDE'S READ of the auction — fetched through the shared prefetch cache
+  // (usually already resolved by the time this renders), composed into the
+  // same card shape as the arithmetic ones. Every card's back carries the
+  // model's own "because", so a read never impersonates a count.
+  const [readCards, setReadCards] = useState<StateCard[]>([]);
+  const [readsPending, setReadsPending] = useState(false);
+  const readsSession = reads?.sessionId;
+  const readsEpoch = reads?.epoch;
+  const readsPhase = reads?.phase;
+  useEffect(() => {
+    setReadCards([]);
+    if (!readsSession || !readsEpoch || readsPhase === "other") {
+      setReadsPending(false);
+      return;
+    }
+    let alive = true;
+    setReadsPending(true);
+    fetchStateReads(readsSession, readsEpoch)
+      .then((r) => {
+        if (!alive) return;
+        setReadsPending(false);
+        if (r.cards) {
+          setReadCards(
+            r.cards.map((c) => ({
+              title: c.title, value: c.value, detail: c.detail,
+              ...(c.group ? { group: c.group } : {}),
+            })),
+          );
+        }
+      })
+      .catch(() => {
+        if (alive) setReadsPending(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [readsSession, readsEpoch, readsPhase]);
+
   const cards: StateCard[] = [
     ...facts.map((f) => ({ title: f.label, value: f.value, ...(f.detail ? { detail: f.detail } : {}), ...(f.group ? { group: f.group } : {}) })),
     ...known.map((k) => ({ title: k.title, value: k.value, detail: k.detail, ...(k.group ? { group: k.group } : {}) })),
+    ...readCards,
   ];
-  // THREE VIEWS (owner direction 2026-08-14): my state, my partner, the
-  // partnership — partner and partnership INFERRED from the bids, so their
-  // cards appear and narrow as the auction grows.
+  // TWO TIERS (owner direction 2026-08-15): OURS / THEIRS / ADVANCED on top,
+  // and Ours breaks into my state / my partner / partnership below — the
+  // original three views, one level down. Theirs is the opponents' mirrored
+  // picture; Advanced is the counting that spans both sides.
+  const [side, setSide] = useState<"ours" | "theirs" | "advanced">("ours");
   const [view, setView] = useState<"me" | "partner" | "partnership">("me");
-  const shown = cards.filter((c) => (c.group ?? "me") === view);
+  const pane = side === "ours" ? view : side;
+  const shown = cards.filter((c) => {
+    const g = c.group ?? "me";
+    return side === "ours" ? g === view : g === side;
+  });
   // THE ENVELOPE COACHMARK (owner pick #4, 2026-08-14): identical sealed
   // envelopes don't explain themselves — one first-run strip says why they
   // are sealed, then never again. Retired by the ✕, or by the first real
@@ -1733,7 +2090,7 @@ function GameState({
     }
   };
   return (
-    <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "10px 12px" }}>
+    <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "13px 14px 15px", display: "flex", flexDirection: "column", gap: 11 }}>
       {/* the flip rotation, the letter-opening choreography, and their
           absence for those who asked motion to stop */}
       <style>{`.coach-flip{transition:transform .45s;display:block}
@@ -1744,21 +2101,33 @@ function GameState({
 @keyframes coachLetterUp{from{transform:translateY(16%) scale(.94);opacity:0}to{transform:none;opacity:1}}
 @keyframes coachEnvGone{from{opacity:1;transform:none}to{opacity:0;transform:translateY(24%)}}
 @media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}.coach-flap,.coach-letter,.coach-env{animation:none!important}}`}</style>
-      <Label color={FELT_DEEP}>Position</Label>
-      {/* the view switch — a quiet segmented row, same ink as the tabs */}
-      <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-        {STATE_VIEWS.map(([v, label]) => {
-          const on = view === v;
+      <Label color={FELT_DEEP}>State</Label>
+      {/* DECLUTTERED (owner ask 2026-08-15): ONE control per tier, two
+          different visual languages so they never compete. The sides are a
+          single segmented track — one soft capsule, the active side a green
+          pill inside it. Ours' three sub-views are quiet TEXT tabs beneath,
+          the active one underlined in the brand gold — no second row of
+          boxes fighting the first. */}
+      <div
+        role="tablist"
+        style={{
+          display: "inline-flex", alignSelf: "flex-start", gap: 3,
+          padding: 3, background: "#f3ead4", borderRadius: 16,
+        }}
+      >
+        {SIDE_VIEWS.map(([v, label]) => {
+          const on = side === v;
           return (
             <button
               key={v}
               type="button"
-              aria-pressed={on}
-              onClick={() => setView(v)}
+              role="tab"
+              aria-selected={on}
+              onClick={() => setSide(v)}
               style={{
-                flex: "none", minHeight: 26, padding: "3px 10px", borderRadius: 13,
+                flex: "none", minHeight: 25, padding: "3px 12px", borderRadius: 13,
                 background: on ? FELT_MID : "transparent",
-                borderWidth: 1, borderStyle: "solid", borderColor: on ? FELT_MID : FELT_LINE,
+                borderWidth: 0,
                 color: on ? "#fff" : "#8a8071",
                 fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
               }}
@@ -1768,10 +2137,39 @@ function GameState({
           );
         })}
       </div>
+      {side === "ours" && (
+        // Nudged by eye against the rendered capsule (owner, 2026-08-15):
+        // the arithmetic said 15 (3px track + 12px pill inset) but the
+        // pill's rounded cap makes the word read further left than its box —
+        // 7 is where "My state" sits visually under "Ours".
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingLeft: 7 }}>
+          {STATE_VIEWS.map(([v, label]) => {
+            const on = view === v;
+            return (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={on}
+                onClick={() => setView(v)}
+                style={{
+                  flex: "none", padding: "1px 0 3px",
+                  background: "transparent", borderWidth: 0,
+                  borderBottomWidth: 2, borderBottomStyle: "solid",
+                  borderBottomColor: on ? GOLD : "transparent",
+                  color: on ? FELT_DEEP : "#a49d8e",
+                  fontSize: 10.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      )}
       {envelopeHint && shown.some((c) => c.title) && (
         <div
           style={{
-            display: "flex", alignItems: "flex-start", gap: 8, marginTop: 8,
+            display: "flex", alignItems: "flex-start", gap: 8,
             background: TINT, borderRadius: 8, padding: "8px 10px",
             borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TINT_EDGE,
           }}
@@ -1797,17 +2195,27 @@ function GameState({
       {shown.length > 0 ? (
         <div
           style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(86px, 1fr))",
-            gap: 6, marginTop: 8,
+            // 122px floor (owner, 2026-08-15: "increase the size of the
+            // cards") — the dock gets two roomy columns instead of three
+            // cramped ones, and an opened inference's two lines fit without
+            // wrapping into a tower.
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(122px, 1fr))",
+            gap: 8,
           }}
         >
           {shown.map((c) => (
-            <FlipCard key={`${epoch}|${view}|${c.title}|${c.value}`} card={c} onOpen={dismissEnvelopeHint} />
+            <FlipCard key={`${epoch}|${pane}|${c.title}|${c.value}`} card={c} onOpen={dismissEnvelopeHint} />
           ))}
         </div>
+      ) : readsPending && (pane === "partner" || pane === "partnership" || pane === "theirs") ? (
+        // The read is still being written — say so rather than showing the
+        // honest-empty line for a beat and then contradicting it.
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: MUTED, fontStyle: "italic" }}>
+          Owlee is reading the table…
+        </p>
       ) : (
-        <p style={{ margin: "8px 0 0", fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-          {STATE_EMPTY[view]}
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
+          {STATE_EMPTY[pane]}
         </p>
       )}
     </div>

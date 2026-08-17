@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { dataDir, pgClient, storeBackend } from "./backend";
 import { benSeatDecider } from "./benSeat";
 import { challengeBenDecider } from "./challengeBen";
+import { curatedSeatDecider } from "./curatedDecider";
+import { ddsRobotCard } from "./ddsRobotPlay";
 import { kbStore } from "./kb";
 
 /**
@@ -90,7 +92,11 @@ export function sessionService(): SessionService {
     kbStore(),
     // BEN can sit at any table; the decider dials BEN_ENDPOINT lazily, so a
     // missing endpoint only errors if a BEN seat actually has to act.
-    { benDecider: benDeciderFor() },
+    // KB robots bid the system and PLAY double-dummy (owner direction
+    // 2026-08-15) — the guard-railed solver card, KB lead rules untouched.
+    // A CURATED session's robots follow the coach's recorded line first,
+    // falling back to the ordinary deciders on divergence.
+    { benDecider: benDeciderFor(), kbPlayOverride: ddsRobotCard, curatedDecider: curatedSeatDecider },
   );
   return sessionServiceInstance;
 }

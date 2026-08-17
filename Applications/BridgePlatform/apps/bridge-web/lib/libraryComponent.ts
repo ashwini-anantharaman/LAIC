@@ -52,6 +52,7 @@ export type BridgeLibraryContent = Pick<
   | "challengeStatus"
   | "challengeDraftJson"
   | "sourceChallengeId"
+  | "curatedJson"
 >;
 
 export const BRIDGE_LIBRARY_KINDS: readonly ContentKindSpec[] = [
@@ -104,6 +105,9 @@ export function entryToItem(e: LibraryEntry): LibraryItem<BridgeLibraryContent> 
       ...(e.challengeStatus ? { challengeStatus: e.challengeStatus } : {}),
       ...(e.challengeDraftJson ? { challengeDraftJson: e.challengeDraftJson } : {}),
       ...(e.sourceChallengeId ? { sourceChallengeId: e.sourceChallengeId } : {}),
+      // The curated overlay MUST survive copy-on-assign — the learner's copy
+      // is what their session reads the annotations from.
+      ...(e.curatedJson ? { curatedJson: e.curatedJson } : {}),
     },
   };
 }

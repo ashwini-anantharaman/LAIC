@@ -3,7 +3,7 @@
 // itself with the table, so it exists only for the moment the deal takes —
 // a felt-green beat instead of a webview booting a web app.
 
-import { router, Stack, useFocusEffect } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -18,6 +18,10 @@ import { quickPlay } from "../lib/library";
 
 export default function NewBoardScreen() {
   const { token } = useAuth();
+  // curate=1 (coaches, owner design 2026-08-15): the dealt board opens in
+  // curate mode — the platform table shows the annotation rail instead of
+  // the coach dock, and publishing saves the curated deal to the library.
+  const { curate } = useLocalSearchParams<{ curate?: string }>();
   const clubId = useSelectedClubId();
   const programId = clubId ?? PROGRAM_ID;
   const started = useRef(false);
@@ -30,7 +34,7 @@ export default function NewBoardScreen() {
       // fresh=1: the session was created THIS moment and nobody has played
       // it. If its open bounces (board gone), the table screen discards it on
       // the way out instead of stranding a ghost board in Resume.
-      router.replace(`/table/${sessionId}?fresh=1`);
+      router.replace(`/table/${sessionId}?fresh=1${curate === "1" ? "&curate=1" : ""}`);
     } catch (e) {
       const noLineup = e instanceof BridgeApiError && e.message === "no_lineup";
       setError({
@@ -43,7 +47,7 @@ export default function NewBoardScreen() {
       });
       started.current = false;
     }
-  }, [token, programId]);
+  }, [token, programId, curate]);
 
   useFocusEffect(
     useCallback(() => {

@@ -165,6 +165,27 @@ export interface LibraryEntry {
   /** The challenge this was saved from or published into, if it still exists. */
   sourceChallengeId?: string;
 
+  /**
+   * A CURATED DEAL's coaching overlay, verbatim, as JSON (owner design
+   * 2026-08-15): the coach's per-decision annotations — notes, reasons,
+   * custom hint ladders — keyed to positions on the recorded line this
+   * entry's `auction`/`play` layers already hold. A string and not a typed
+   * field for exactly challengeDraftJson's reason: the payload's shape
+   * belongs to the app, which owns a tolerant validator, so an entry saved
+   * before a field existed still opens. Additive jsonb — no migration.
+   */
+  curatedJson?: string;
+
+  /**
+   * The LEARNER'S progress through a curated deal (review loop, owner pick
+   * #5 2026-08-15) — today, which decisions they opened the hint ladder at.
+   * Only ever stamped on the learner's COPY of the entry (copy-on-assign),
+   * which nothing else writes after the assign — that is what makes this a
+   * race-free home where the session record is not. Same app-owned-JSON
+   * discipline as `curatedJson` above. Additive jsonb — no migration.
+   */
+  curatedProgressJson?: string;
+
   origin: "recorded" | "imported" | "authored";
   sourceSessionId?: string;
   importFileName?: string;

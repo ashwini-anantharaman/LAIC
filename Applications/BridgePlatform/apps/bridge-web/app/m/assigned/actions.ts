@@ -50,6 +50,10 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     // Without the program stamp the session is invisible to every
     // program-scoped read (My Games, Resume, summary counts).
     nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    // A curated entry's session carries the stamp (owner design 2026-08-15):
+    // the robots follow the coach's recorded line and the coach-overlay API
+    // finds the annotations from the sessionId.
+    ...(entry.curatedJson ? { curated: { entryId: entry.entryId } } : {}),
   });
 
   await store.putAssignment({

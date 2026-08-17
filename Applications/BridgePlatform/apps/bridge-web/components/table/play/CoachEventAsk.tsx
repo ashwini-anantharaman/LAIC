@@ -24,7 +24,6 @@
 import { useEffect, useState } from "react";
 
 import { fetchPlayAdvice, type PlayHint } from "./coachPrefetch";
-import { OwleeFace } from "./OwleeFace";
 
 // The BirdBridge palette, as CoachPanel uses it (the app's theme.ts is the
 // source of truth; the felt names are kept so usages map 1:1).
@@ -370,12 +369,9 @@ export function WhatShouldIPlay({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {play.kind === "loading" && (
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          <OwleeFace size={20} mood="working" />
-          <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
-            Working it out — a few seconds…
-          </p>
-        </div>
+        <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
+          Working it out — a few seconds…
+        </p>
       )}
       {play.kind === "empty" && (
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
@@ -385,9 +381,9 @@ export function WhatShouldIPlay({
       {play.kind === "done" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-            {/* the face beside the name (owner direction 2026-08-14: not
-                just words) — the same badge the panel headers wear */}
-            <OwleeFace size={20} />
+            {/* No mini-face here any more — in the Tell screen this whole
+                answer sits inside Owlee's SPEECH BUBBLE (owner ask
+                2026-08-15), and the avatar beside the bubble is the face. */}
             <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
               Owlee plays
             </span>

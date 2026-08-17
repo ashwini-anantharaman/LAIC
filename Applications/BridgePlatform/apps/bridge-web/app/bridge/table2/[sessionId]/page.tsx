@@ -24,8 +24,9 @@ import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { loadTableView } from "@/lib/tableView";
+import { currentAt } from "@/lib/curated";
+import { CurateRail } from "@/components/table/play/CurateRail";
 import { lookingAt } from "@/lib/coach/looking";
-import { partnershipStates } from "@/lib/coach/states";
 import { boardTakeaway } from "@/lib/coach/takeaway";
 import { thinkAid } from "@/lib/coach/think";
 import { bidMeaningReader } from "@/lib/bidMeanings";
@@ -51,13 +52,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; curate?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, curate } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -147,6 +148,32 @@ export default async function PlayTablePage({
   // alone, centred on white.
   const coachOff = coachParam === "off";
   const showCoach = canCoach && !coachOff;
+
+  // CURATED-DEAL AUTHORING (owner design 2026-08-15): ?curate=1 puts the
+  // coach's annotation rail beside the table. The coach plays the line they
+  // want to teach; the rail collects per-decision notes and publishes
+  // through the save route (which re-validates every position). On the
+  // desktop the rail rides the wide tier's railExtra; EMBEDDED (the app's
+  // Curated Deals door) it takes the coach band's slot instead of the dock.
+  // Assignment remains the coach gate, so a non-coach curating to their own
+  // shelf harms nobody.
+  const curating = curate === "1" && !!mySeat && !handsView;
+  const curateAt = curating && myTurn && !boardOver ? currentAt(state) : null;
+  const curateAtLabel = curateAt
+    ? curateAt.kind === "call"
+      ? `Your call — bid #${state.auction.length + 1}`
+      : `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1}`
+    : null;
+  const curateRail = curating ? (
+    <CurateRail
+      sessionId={sessionId}
+      at={curateAt}
+      atLabel={curateAtLabel}
+      boardOver={boardOver}
+      boardName={record.board.name}
+      fill={embedded}
+    />
+  ) : null;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
   // scaffold (think), computed from THIS learner's seat. Both are null for a
   // watcher — nobody's hand to reason from — and the panel then shows its honest
@@ -238,37 +265,19 @@ export default async function PlayTablePage({
       };
     }),
   }));
-  // THE PARTNER AND PARTNERSHIP VIEWS (owner direction 2026-08-14): what the
-  // bids have shown, read from the same replayed KB meanings the bidding grid
-  // draws. Recomputed on every call, so the cards narrow as the auction grows.
-  const coachStates =
-    coachLooking && coachSeat
-      ? partnershipStates({
-          auction: state.auction,
-          seat: coachSeat,
-          hand: coachHands[coachSeat],
-          meanings: coachMeanings,
-        })
-      : [];
-
+  // THE PARTNER / PARTNERSHIP / THEIRS CARDS are CLAUDE'S now, fetched
+  // client-side from /api/bridge/state-reads (boss direction 2026-08-15:
+  // no knowledge base anywhere in the bid-inference path — the KB-parsing
+  // states layer, lib/coach/states.ts, is unwired). The page passes only
+  // the deterministic facts; the panel fetches the reads per decision.
   const quanCoach: CoachPanelData | undefined = showCoach
     ? {
         title: "Owlee",
+        // A curated session grows the third voice — the coach's bubbles,
+        // nudge, and authored ladders (owner design 2026-08-15).
+        ...(record.curated ? { curated: true } : {}),
         ...(coachLooking
-          ? {
-              looking: coachLooking.looking,
-              facts: [
-                ...coachLooking.facts,
-                // KnownCard's `title` is the facts slot's `label` — same card,
-                // different corner of the plumbing.
-                ...coachStates.map((c) => ({
-                  label: c.title,
-                  value: c.value,
-                  detail: c.detail,
-                  ...(c.group ? { group: c.group } : {}),
-                })),
-              ],
-            }
+          ? { looking: coachLooking.looking, facts: coachLooking.facts }
           : {}),
         ...(coachGroups?.length ? { eventGroups: coachGroups } : {}),
         ...(coachAid ? { aid: coachAid } : {}),
@@ -321,7 +330,7 @@ export default async function PlayTablePage({
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, curate };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -675,7 +684,7 @@ export default async function PlayTablePage({
         completedNote={challenge?.done ? challenge.onward.note : undefined}
         controlsExtra={canStepControls ? controlsAt(1) : undefined}
         controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
-        railExtra={seatsPanel}
+        railExtra={!embedded && curateRail ? <>{seatsPanel}{curateRail}</> : seatsPanel}
         // How a tap plays a card, and how a finished trick clears — the two
         // play preferences origin/main's table reads (persisted per user via
         // the ☰ rows above).
@@ -697,7 +706,13 @@ export default async function PlayTablePage({
         // empty layer, not just the ones a selector could reach.
         {...(embedded && coachOff ? { surroundBg: "#000" } : {})}
         coach={coachData}
-        {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
+        {...(embedded && curateRail
+          ? // Curating in the app: the annotation rail takes the coach band —
+            // authoring and coaching don't fit one phone band at once.
+            { coachContent: curateRail }
+          : quanCoach
+            ? { coachContent: <CoachDock data={quanCoach} /> }
+            : {})}
       />
       </div>
     </div>
