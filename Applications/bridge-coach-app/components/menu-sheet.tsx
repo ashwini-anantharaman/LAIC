@@ -18,21 +18,22 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import type { Href } from "expo-router";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
 import { clearThread } from "../lib/club-chat";
 import { confirmDestructive, notify } from "../lib/dialogs";
+import { setClubDescription } from "../lib/nexus";
 import {
   loadClubHeader,
   pickAndUploadClubHeader,
   removeClubHeader,
   subscribeToClubHeader,
 } from "../lib/avatar-store";
-import { can } from "../lib/bridge-role";
+import { can, clearAppContext, getAppContext } from "../lib/bridge-role";
 import { useSelectedClubId } from "../lib/club-context";
-import { useRoleContext } from "../lib/use-can";
+import { useClubScopedContext } from "../lib/use-can";
 import { useIsCoach } from "../lib/use-is-coach";
 
 /** One tappable row, shared by both levels of the drawer. */
@@ -149,7 +150,12 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
   // Every row here is a capability. The fallbacks are the pre-roles behaviour:
   // this sheet was coach-only, so a coach saw all of it.
   const coach = useIsCoach();
-  const context = useRoleContext();
+  // CLUB-SCOPED, not useRoleContext(). getRoleContext leaves `app` null, so every
+  // can() below found an empty capability set and returned its fallback — this whole
+  // section was a plain coach check wearing nine capability names. The fallbacks stay
+  // (a club with no fine role keeps the pre-roles behaviour); they are just no longer
+  // the only answer.
+  const context = useClubScopedContext();
   const caps = new Set(
     ITEMS.filter((i) => can(context, i.capability, coach)).map((i) => i.capability),
   );
@@ -158,6 +164,15 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
   // Emptying the club's conversation is moderation, not header management, so it has
   // its own grant. Falls back to coach, like the rest of this section.
   const canClearChat = can(context, "app.chat.moderate", coach);
+  // Whoever may set the club's banner may set the line under its name — same tier,
+  // same act (what the club looks like to everyone), so the fallback is the banner
+  // grant rather than `coach`. A club that has never been given the new id therefore
+  // gets it wherever it already trusted someone with the banner.
+  const canSetDescription = can(
+    context,
+    "app.club.description.set",
+    can(context, "app.club.header.set", coach),
+  );
 
   const go = (href: Href) => {
     // Dismiss first so the sheet isn't left open behind the pushed screen.
@@ -177,16 +192,121 @@ export function OtherSheetBody({ onClose }: { onClose: () => void }) {
       </View>
 
       {/* Only shown to a role that can actually change something here. */}
-      {canSetHeader || canRemoveHeader || canClearChat ? (
+      {canSetHeader || canRemoveHeader || canClearChat || canSetDescription ? (
         <>
           <Text style={styles.section}>Club management</Text>
           <View style={styles.rows}>
             <ClubHeaderRow canSet={canSetHeader} canRemove={canRemoveHeader} />
+            {canSetDescription ? <ClubDescriptionRow /> : null}
             {canClearChat ? <ClearChatRow /> : null}
           </View>
         </>
       ) : null}
     </ScrollView>
+  );
+}
+
+
+/**
+ * The club's one line, under its name.
+ *
+ * Editable in place rather than on a pushed screen: it is one short string, and a
+ * whole screen for one field is a worse trade than an input that appears where the
+ * row was. Same shape as the profile sheet's Name field, which is the same problem.
+ *
+ * It could only be SET at creation before this — the console's program routes cover
+ * name, theme, features and the catalogue and never had a description among them.
+ */
+function ClubDescriptionRow() {
+  const { token } = useAuth();
+  const programId = useSelectedClubId();
+  const [current, setCurrent] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Read it from the club-app context, which the app already fetches per club.
+  useEffect(() => {
+    if (!token || !programId) return;
+    let cancelled = false;
+    getAppContext(token, programId)
+      .then((ctx) => !cancelled && setCurrent(ctx?.program_description ?? ""))
+      // Silent: the row still opens, and the input starts empty rather than the
+      // screen showing an error for a label.
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [token, programId]);
+
+  function open() {
+    setDraft(current ?? "");
+    setEditing(true);
+  }
+
+  async function save() {
+    if (!token || !programId || saving) return;
+    const next = draft.trim();
+    setSaving(true);
+    try {
+      await setClubDescription(token, programId, next);
+      setCurrent(next);
+      setEditing(false);
+      // The club-app context carries the old value; drop it so the next read — and
+      // anything else keyed on this club — sees the new one.
+      clearAppContext(token, programId);
+    } catch (e) {
+      notify("Couldn't save that", e instanceof Error ? e.message : "Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!programId) return null;
+
+  if (editing) {
+    return (
+      <View style={styles.editRow}>
+        <TextInput
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="What is this club about?"
+          placeholderTextColor="rgba(255,244,215,0.45)"
+          maxLength={200}
+          autoFocus
+          returnKeyType="done"
+          onSubmitEditing={() => void save()}
+          style={styles.editInput}
+        />
+        <Pressable
+          onPress={() => void save()}
+          disabled={saving}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Save the description"
+          style={({ pressed }) => [pressed && styles.pressed, saving && { opacity: 0.5 }]}
+        >
+          <Text style={styles.editAction}>{saving ? "Saving…" : "Save"}</Text>
+        </Pressable>
+        <Pressable
+          onPress={() => setEditing(false)}
+          hitSlop={8}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel"
+          style={({ pressed }) => pressed && styles.pressed}
+        >
+          <Ionicons name="close" size={20} color="rgba(255,244,215,0.6)" />
+        </Pressable>
+      </View>
+    );
+  }
+
+  return (
+    <Row
+      label="Club description"
+      hint={current ? current : "Not set — tap to add one"}
+      onPress={open}
+    />
   );
 }
 
@@ -355,5 +475,23 @@ const styles = StyleSheet.create({
     color: "rgba(255,255,255,0.72)",
     marginTop: 2,
   },
+  /** The description row while it is being typed in — the row's own footprint. */
+  editRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: Radius.field,
+    backgroundColor: "rgba(255,244,215,0.10)",
+  },
+  editInput: {
+    flex: 1,
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    color: Brand.cream,
+    padding: 0,
+  },
+  editAction: { fontFamily: Fonts.heading, fontSize: 14, color: Brand.cream },
   pressed: { opacity: 0.7 },
 });

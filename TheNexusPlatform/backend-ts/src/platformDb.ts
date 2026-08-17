@@ -401,6 +401,13 @@ export async function updateProgramName(programId: string, name: string): Promis
   return tpg.updateProgramName(programId, name);
 }
 
+export async function updateProgramDescription(
+  programId: string,
+  description: string,
+): Promise<Row | null> {
+  return tpg.updateProgramDescription(programId, description);
+}
+
 // Org-defined program categories (DB-backed; routes guard dbEnabled). Categories
 // are name-identified with an optional `parent` for nesting (CategoryNode).
 export async function listOrgCategories(orgId: string): Promise<tpg.CategoryNode[]> {

@@ -1760,11 +1760,19 @@ async function _clubAppActor(c: Context) {
     (m) => isAdminRole(m) && (!m.program_id || m.program_id === programId),
   );
 
-  return { user, programId, orgId, programName: (program.name as string) ?? null, structuralTier };
+  return {
+    user,
+    programId,
+    orgId,
+    programName: (program.name as string) ?? null,
+    programDescription: (program.description as string | null) ?? null,
+    structuralTier,
+  };
 }
 
 platformRouter.get("/club-app/context", async (c) => {
-  const { user, programId, orgId, programName, structuralTier } = await _clubAppActor(c);
+  const { user, programId, orgId, programName, programDescription, structuralTier } =
+    await _clubAppActor(c);
 
   // The ONE role they hold in this club, and what it grants. Shared with
   // /bridge/context and the learning path so the three cannot disagree; it also
@@ -1784,6 +1792,9 @@ platformRouter.get("/club-app/context", async (c) => {
   return c.json({
     program_id: programId,
     program_name: programName,
+    // The club's own one-line label, so the app can show it and offer to change it
+    // without a second round-trip. Nullable: most clubs have never set one.
+    program_description: programDescription,
     role_name: result.roleName,
     capabilities: result.capabilities,
     is_admin: structuralTier,

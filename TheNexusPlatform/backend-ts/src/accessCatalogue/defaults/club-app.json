@@ -8,7 +8,7 @@
     "kind": "application",
     "id": "club-app"
   },
-  "catalogueVersion": "1.1",
+  "catalogueVersion": "1.2",
   "capabilities": [
     {
       "id": "app.club.view",
@@ -207,6 +207,12 @@
       "label": "Act on content someone else authored",
       "description": "Edit, publish or delete another member's work — club housekeeping",
       "group": "club_content"
+    },
+    {
+      "id": "app.club.description.set",
+      "label": "Change the club's description",
+      "description": "Edit the one line under the club's name",
+      "group": "club_management"
     }
   ],
   "resourceTypes": [],
@@ -475,6 +481,16 @@
       "requiredAnyCapabilities": [
         "app.content.delete"
       ]
+    },
+    {
+      "id": "club.description.set",
+      "label": "Edit description",
+      "kind": "action",
+      "group": "club_management",
+      "routeOrComponent": "ClubDescriptionEdit",
+      "requiredAnyCapabilities": [
+        "app.club.description.set"
+      ]
     }
   ],
   "groups": [
@@ -556,12 +572,14 @@
       "order": 5,
       "capabilityIds": [
         "app.club.header.set",
-        "app.club.header.remove"
+        "app.club.header.remove",
+        "app.club.description.set"
       ],
       "uiSurfaceIds": [
         "menu.club_management",
         "menu.header_set",
-        "menu.header_remove"
+        "menu.header_remove",
+        "club.description.set"
       ]
     },
     {
@@ -725,7 +743,8 @@
             "app.content.edit",
             "app.content.publish",
             "app.content.delete",
-            "app.content.manage_others"
+            "app.content.manage_others",
+            "app.club.description.set"
           ]
         }
       ]

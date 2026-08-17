@@ -836,6 +836,21 @@ export async function updateOrgName(orgId: string, name: string): Promise<Row> {
 }
 
 /** Rename a program (display name). */
+/** The club's own one-line label. Empty string clears it. */
+export async function updateProgramDescription(
+  programId: string,
+  description: string,
+): Promise<Row | null> {
+  return scoped(async (tx) => {
+    const [p] = await tx
+      .update(programs)
+      .set({ description: description || null })
+      .where(eq(programs.id, programId))
+      .returning();
+    return p ? programRow(p) : null;
+  });
+}
+
 export async function updateProgramName(programId: string, name: string): Promise<Row | null> {
   return scoped(async (tx) => {
     const [p] = await tx.update(programs).set({ name }).where(eq(programs.id, programId)).returning();
