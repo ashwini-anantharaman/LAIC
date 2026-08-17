@@ -1990,16 +1990,18 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         // so the button — and with it the grid row — grows to hold whatever
         // the face says, and nothing clips.
         position: "relative", minHeight: 60,
-        // WIDTH IS EXPLICIT because this is a <button>. A grid item stretches
-        // to its column by default, but iOS Safari does not stretch form
-        // controls — it shrink-wraps them to their content. So on the phone
-        // each envelope sized itself to its own label: "HCP" narrow, then a
-        // gap, then a wide "DISTRIBUTION", then "SHAPE" starting a ragged new
-        // row. The same markup is a tidy grid in Chrome, which is why it read
-        // as fine on the desktop and messed up on the phone (owner report
-        // 2026-08-17). 100% + border-box fills the cell in every engine.
-        width: "100%", boxSizing: "border-box",
-        display: "flex", flexDirection: "column",
+        // NOTHING ABOUT THIS CARD'S SIZE IS LEFT TO THE <button>. On the
+        // phone the envelopes shrink-wrapped to their labels — "HCP" narrow,
+        // a gap, a wide "DISTRIBUTION", "SHAPE" on a ragged second row —
+        // while the same markup measured a perfect 171px in desktop WebKit
+        // 26.5 AND Chromium (playwright, 2026-08-17). So the quirk lives in
+        // the device WebView's own UA styling of form controls, which cannot
+        // be reproduced on this side. The cure is to stop betting on it: the
+        // GRID ITEM is a plain <div> (see the render below) — a box no UA
+        // stylesheet touches — and this button merely fills it, with every
+        // default that could vary (width, cross-axis alignment) pinned.
+        flex: "1 1 auto", width: "100%", boxSizing: "border-box", minWidth: 0,
+        display: "flex", flexDirection: "column", alignItems: "stretch",
         ...(turning ? { perspective: 600 } : {}),
         padding: 0, borderWidth: 0, background: "transparent",
         cursor: canFlip ? "pointer" : "default", textAlign: "inherit",
@@ -2010,7 +2012,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         // ── opening the letter: flap lifts, envelope drops away, the value
         // face rises from behind it. Keyframed with `both` fill; the flip's
         // timeout settles the card flat either way. ──
-        <span style={{ position: "relative", flex: 1, display: "block" }}>
+        <span style={{ position: "relative", flex: 1, display: "block", width: "100%" }}>
           {/* invisible in-flow copy of the landing face — the footprint */}
           <span aria-hidden style={{ visibility: "hidden", display: "block" }}>
             {front}
@@ -2027,7 +2029,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
           className="coach-flip"
           onTransitionEnd={() => finish(target)}
           style={{
-            position: "relative", flex: 1, transformStyle: "preserve-3d",
+            position: "relative", flex: 1, width: "100%", transformStyle: "preserve-3d",
             transform: rotated ? "rotateY(180deg)" : "rotateY(0deg)",
           }}
         >
@@ -2052,7 +2054,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
       ) : (
         // At rest: one face, in flow, no transforms — this is where the
         // crispness lives, and where the card takes its size from its text.
-        <span style={{ flex: 1, display: "flex" }}>{faceFor(stage)}</span>
+        <span style={{ flex: 1, display: "flex", width: "100%" }}>{faceFor(stage)}</span>
       )}
     </button>
   );
@@ -2259,7 +2261,14 @@ function GameState({
           }}
         >
           {shown.map((c) => (
-            <FlipCard key={`${epoch}|${pane}|${c.title}|${c.value}`} card={c} onOpen={dismissEnvelopeHint} />
+            // The DIV is the grid item, not the button. Divs stretch to their
+            // cell in every engine; the phone WebView shrink-wrapped <button>
+            // grid items to their labels (owner report 2026-08-17), and that
+            // is a UA behaviour no inline style on the button itself can be
+            // trusted to override.
+            <div key={`${epoch}|${pane}|${c.title}|${c.value}`} style={{ display: "flex", minWidth: 0 }}>
+              <FlipCard card={c} onOpen={dismissEnvelopeHint} />
+            </div>
           ))}
         </div>
       ) : readsPending && (pane === "partner" || pane === "partnership" || pane === "theirs") ? (
