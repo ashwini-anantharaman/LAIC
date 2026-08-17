@@ -13,7 +13,7 @@ import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { ensureSeeds } from "@/lib/kb";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
-import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
+import { assignmentStore, libraryStore, sessionIsGone, sessionService } from "@/lib/sessions";
 
 const CORS = corsHeaders("POST");
 
@@ -35,8 +35,19 @@ export async function POST(
       throw new AccessError("Only the assigned learner can start this board");
     }
 
-    // Already underway — back to the same table.
-    if (assignment.sessionId && assignment.status === "started") {
+    // Already underway — back to the same table, IF that table is still
+    // there. A dangling sessionId used to be handed straight back, and the
+    // learner rode it to a board the table could only answer boardGone to:
+    // the app closed the screen and dropped them on the list they came from,
+    // every single time, with no way to start over because the row still
+    // said "started". Falling through deals them a fresh board off the same
+    // entry — which is also how a curated deal finally reaches someone whose
+    // session predates the overlay.
+    if (
+      assignment.sessionId &&
+      assignment.status === "started" &&
+      !(await sessionIsGone(assignment.sessionId))
+    ) {
       return NextResponse.json(
         { sessionId: assignment.sessionId, resumed: true },
         { headers: CORS },

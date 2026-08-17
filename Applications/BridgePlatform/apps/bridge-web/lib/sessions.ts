@@ -124,3 +124,25 @@ export function assignmentStore(): AssignmentStore {
       : new JsonFileAssignmentStore(join(process.cwd(), dataDir(), "assignment-store.json"));
   return assignmentStoreInstance;
 }
+
+/**
+ * Is the session this id names actually gone?
+ *
+ * An assignment remembers the session it started, and nothing ever checked
+ * that the session was still there. A dangling id is a DEAD END: the table
+ * answers boardGone, the app closes the board, and the learner lands back on
+ * the list they tapped from — every time, with no way to start over, because
+ * the row still says "started".
+ *
+ * ONLY a genuinely absent row counts, the same discipline viewOrGone applies
+ * in lib/tableView: a cold Postgres connection timing out must not read as
+ * "gone" and deal someone a second board over the top of a live one.
+ */
+export async function sessionIsGone(sessionId: string): Promise<boolean> {
+  try {
+    await sessionService().requireSession(sessionId);
+    return false;
+  } catch (e) {
+    return e instanceof Error && e.message.startsWith("No session ");
+  }
+}

@@ -10,7 +10,7 @@ import { audit } from "@/lib/audit";
 import { ensureSeeds } from "@/lib/kb";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
-import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
+import { assignmentStore, libraryStore, sessionIsGone, sessionService } from "@/lib/sessions";
 
 export async function startAssignmentAction(formData: FormData): Promise<void> {
   const context = await requireContext();
@@ -23,10 +23,20 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     throw new Error("Only the assigned learner can start this board");
   }
 
-  // Already underway — go back to the table. STRAIGHT to the real table page:
-  // /m/table/<id> only exists to redirect there, and that extra hop is another
-  // server round trip the learner waits through before the board paints.
-  if (assignment.sessionId && assignment.status === "started") {
+  // Already underway — go back to the table, IF that table is still there.
+  // STRAIGHT to the real table page: /m/table/<id> only exists to redirect
+  // there, and that extra hop is another server round trip the learner waits
+  // through before the board paints.
+  //
+  // A dangling sessionId is a dead end (see the API route's twin): the table
+  // answers boardGone and the learner is bounced back to the list, for good,
+  // because the row still says "started". Falling through deals a fresh board
+  // off the same entry.
+  if (
+    assignment.sessionId &&
+    assignment.status === "started" &&
+    !(await sessionIsGone(assignment.sessionId))
+  ) {
     redirect(`/bridge/table2/${assignment.sessionId}`);
   }
 
