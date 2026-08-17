@@ -47,6 +47,19 @@ interface CoachHold {
   /** `null` forgets the answer — epochs repeat across a rewind, so a stale
    *  one would suppress the nudge for an unanswered divergence. */
   answer: (epoch: string | null) => void;
+  /**
+   * Bumped when the learner accepts the coach's take-back.
+   *
+   * AutoAdvance pauses itself whenever the event count goes DOWN, because an
+   * undo is normally someone taking a card back to LOOK at it and auto-play
+   * would instantly put it back. A coach's take-back is the opposite kind of
+   * undo: the lesson is "take it back and play the charted move", so pausing
+   * made the learner press Play afterwards to get the board going again
+   * (owner report 2026-08-17). This tells the driver that this particular
+   * rewind was asked for, and the table should stay running.
+   */
+  resumeNonce: number;
+  noteTakeBack: () => void;
 }
 
 const CoachHoldContext = createContext<CoachHold>({
@@ -55,6 +68,8 @@ const CoachHoldContext = createContext<CoachHold>({
   pop: () => {},
   answeredEpoch: null,
   answer: () => {},
+  resumeNonce: 0,
+  noteTakeBack: () => {},
 });
 
 export const CoachHoldProvider = CoachHoldContext.Provider;
@@ -81,20 +96,30 @@ export function useHoldTable(active: boolean): void {
 }
 
 /** Has this decision been answered, and the way to answer it. */
-export function useCoachQuestion(): Pick<CoachHold, "answeredEpoch" | "answer"> {
-  const { answeredEpoch, answer } = useContext(CoachHoldContext);
-  return { answeredEpoch, answer };
+export function useCoachQuestion(): Pick<
+  CoachHold,
+  "answeredEpoch" | "answer" | "noteTakeBack"
+> {
+  const { answeredEpoch, answer, noteTakeBack } = useContext(CoachHoldContext);
+  return { answeredEpoch, answer, noteTakeBack };
+}
+
+/** The take-back counter, for the driver that must not pause on it. */
+export function useCoachResumeNonce(): number {
+  return useContext(CoachHoldContext).resumeNonce;
 }
 
 /** The state behind the provider. Returns the value to hand it. */
 export function useCoachHoldState(): CoachHold {
   const [holds, setHolds] = useState(0);
   const [answeredEpoch, setAnsweredEpoch] = useState<string | null>(null);
+  const [resumeNonce, setResumeNonce] = useState(0);
   const push = useCallback(() => setHolds((n) => n + 1), []);
   const pop = useCallback(() => setHolds((n) => Math.max(0, n - 1)), []);
   const answer = useCallback((epoch: string | null) => setAnsweredEpoch(epoch), []);
+  const noteTakeBack = useCallback(() => setResumeNonce((n) => n + 1), []);
   return useMemo(
-    () => ({ holding: holds > 0, push, pop, answeredEpoch, answer }),
-    [holds, push, pop, answeredEpoch, answer],
+    () => ({ holding: holds > 0, push, pop, answeredEpoch, answer, resumeNonce, noteTakeBack }),
+    [holds, push, pop, answeredEpoch, answer, resumeNonce, noteTakeBack],
   );
 }

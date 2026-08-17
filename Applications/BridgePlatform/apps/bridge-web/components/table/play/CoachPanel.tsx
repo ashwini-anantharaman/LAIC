@@ -1361,7 +1361,7 @@ function CuratedCoachVoice({
   const [roadOpen, setRoadOpen] = useState(false);
   // Answered-ness is SHARED across both copies of this bubble and keyed by the
   // decision, so "keep my move" frees the table wherever it was pressed.
-  const { answeredEpoch, answer } = useCoachQuestion();
+  const { answeredEpoch, answer, noteTakeBack } = useCoachQuestion();
   const nudgeKept = answeredEpoch === epoch;
   const [undoing, setUndoing] = useState(false);
   const [undoFailed, setUndoFailed] = useState(false);
@@ -1418,6 +1418,9 @@ function CuratedCoachVoice({
         setUndoFailed(true);
         return;
       }
+      // The rewind that follows is one the learner was ASKED to make, so the
+      // driver must not read it as "someone is inspecting" and pause.
+      noteTakeBack();
       // NOT marked answered. A rewind makes epochs repeat — `auction#5` for
       // the bid taken back, `auction#4` after it, `auction#5` again for the
       // next one — so remembering this epoch would silently suppress the

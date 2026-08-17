@@ -9,7 +9,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { useCoachHolding } from "./coachHold";
+import { useCoachHolding, useCoachResumeNonce } from "./coachHold";
 import { useTrickHold } from "./trickHold";
 
 /** The step endpoint's honest failure shape (see the route). */
@@ -89,14 +89,39 @@ export function AutoAdvance({
    * point of undo — you take a card back to look at it, and auto-play would
    * instantly put it back.
    */
+  /**
+   * …EXCEPT the coach's take-back, which is an undo the learner was ASKED to
+   * make. "Take it back and see why" means play the charted move and carry on,
+   * so pausing there charged them a trip to the Play button for following the
+   * lesson (owner report 2026-08-17). The nonce is armed when the take-back
+   * lands and spent on the seq drop it causes — a plain flag would be consumed
+   * by the wrong render, since the bump arrives before the rewind does.
+   */
+  const resumeNonce = useCoachResumeNonce();
+  const seenNonce = useRef(resumeNonce);
+  const takeBackArmed = useRef(false);
+  if (resumeNonce !== seenNonce.current) {
+    seenNonce.current = resumeNonce;
+    takeBackArmed.current = true;
+  }
+
   const lastSeq = useRef(seq);
   if (seq < lastSeq.current) {
     lastSeq.current = seq;
-    // Setting state during render is legal when it is a plain "derived from
-    // props" correction; React re-renders immediately without committing.
-    setPaused(true);
+    if (takeBackArmed.current) {
+      // Asked for. Spend the arming and leave the tempo alone.
+      takeBackArmed.current = false;
+    } else {
+      // Setting state during render is legal when it is a plain "derived from
+      // props" correction; React re-renders immediately without committing.
+      setPaused(true);
+    }
   } else if (seq !== lastSeq.current) {
     lastSeq.current = seq;
+    // The board went FORWARD, so the rewind this was armed for is not coming.
+    // Spend it here too, or a later manual Undo would inherit the pass and
+    // quietly not pause.
+    takeBackArmed.current = false;
   }
   // A finished trick is on the felt and has not been let go — stepping now
   // would sweep it away, which is the one thing the hold exists to stop. The
