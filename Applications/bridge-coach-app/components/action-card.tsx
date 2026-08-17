@@ -1,4 +1,10 @@
-// A tappable playing card — the Play tab's grid (Figma 870:752).
+// A tappable playing card.
+//
+// UNREFERENCED as of Figma 894:337, which replaced the Play tab's grid of six
+// equal cards with one wide New Play, two small buttons and the friends stack.
+// Kept rather than deleted because Curated Deals — the one card of the six still
+// wanted — is moving to another screen, and this is the component it is drawn
+// with. Delete it if that lands somewhere with its own treatment.
 //
 // Two cards, as everywhere else in the deck: a dark one rotated behind, and the
 // suit-coloured face on top. Here the card behind is ROTATED rather than merely

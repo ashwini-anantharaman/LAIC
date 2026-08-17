@@ -104,6 +104,16 @@ const NAMES = {
   "icon-grad-cap.svg": "ICON_GRAD_CAP",
   "icon-reviews-doc.svg": "ICON_REVIEWS_DOC",
   "icon-plus-circle.svg": "ICON_PLUS_CIRCLE",
+  // Play screen (Figma 894:337). The four suits are the decorative band behind the
+  // Play-with-Friends stack; identified by geometry rather than by the export's
+  // names, which were all "Vector": heart is widest at the top and narrow at the
+  // base, spade the reverse, diamond is a point at each end and widest exactly at
+  // mid-height, and the club is the only one wide across all three thirds.
+  "icon-suit-heart.svg": "ICON_SUIT_HEART",
+  "icon-suit-spade.svg": "ICON_SUIT_SPADE",
+  "icon-suit-diamond.svg": "ICON_SUIT_DIAMOND",
+  "icon-suit-club.svg": "ICON_SUIT_CLUB",
+  "icon-people-pair.svg": "ICON_PEOPLE_PAIR",
 };
 
 const TRUNK_FILL = "#421313";
