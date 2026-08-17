@@ -1151,10 +1151,27 @@ function BiddingSequence({ content }: { content: BiddingSequenceContent }) {
   );
 }
 
+/**
+ * Per-type renderer replacements. Tutorial V3 supplies its own quiz, concept
+ * card, flashcard set and bidding sequence this way; every other object type
+ * passes nothing and gets exactly the renderers it has always had.
+ */
+export type BlockOverrides = Partial<Record<string, (ctx: {
+  block: Block;
+  objectId: string;
+  quizProps?: {
+    deferPassScore?: boolean;
+    maxHints?: number;
+    hintsEnabled?: boolean;
+    onResolvedChange?: Parameters<typeof QuizBlock>[0]['onResolvedChange'];
+  };
+}) => React.ReactNode>>;
+
 function BlockRenderer({
   block,
   objectId,
   quizProps,
+  overrides,
 }: {
   block: Block;
   objectId: string;
@@ -1164,7 +1181,10 @@ function BlockRenderer({
     hintsEnabled?: boolean;
     onResolvedChange?: Parameters<typeof QuizBlock>[0]['onResolvedChange'];
   };
+  overrides?: BlockOverrides;
 }) {
+  const override = overrides?.[block.type];
+  if (override) return <>{override({ block, objectId, quizProps })}</>;
   switch (block.type) {
     case 'rich-text': {
       const c = block.content as { text?: string; heading?: string; subheads?: string[] };
@@ -1335,6 +1355,11 @@ function AssessedBlocks({
   animate = false,
   sourceUnits,
   paginate = false,
+  blockOverrides,
+  pageIndex,
+  onPageChange,
+  onPageCountChange,
+  hidePager = false,
 }: {
   blocks: Block[];
   objectId: string;
@@ -1347,6 +1372,17 @@ function AssessedBlocks({
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
   /** When true, long tutorials split into pages (~520 words) after generation. */
   paginate?: boolean;
+  /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
+  blockOverrides?: BlockOverrides;
+  /**
+   * Controlled paging. Tutorial V3 drives the page from its section sidebar, so
+   * it owns the index; left undefined, paging stays internal exactly as before.
+   */
+  pageIndex?: number;
+  onPageChange?: (index: number) => void;
+  onPageCountChange?: (count: number) => void;
+  /** Hide the built-in pager when the surrounding chrome provides its own. */
+  hidePager?: boolean;
 }) {
   const total = countQuizQuestionsInBlocks(blocks);
   const [byBlock, setByBlock] = useState<Record<string, Record<number, QuizResolveStatus>>>({});
@@ -1357,13 +1393,24 @@ function AssessedBlocks({
     ? paginateTutorialBlocks(blocks, { wordsPerPage: TUTORIAL_WORDS_PER_PAGE })
     : [blocks];
   const pageCount = pages.length;
-  const safePage = Math.min(pageIdx, Math.max(0, pageCount - 1));
+  const controlled = pageIndex != null;
+  const safePage = Math.min(controlled ? pageIndex : pageIdx, Math.max(0, pageCount - 1));
+  const goToPage = (next: number) => {
+    const clamped = Math.max(0, Math.min(pageCount - 1, next));
+    if (controlled) onPageChange?.(clamped);
+    else setPageIdx(clamped);
+  };
 
   useEffect(() => {
-    setPageIdx(0);
+    if (!controlled) setPageIdx(0);
     // Reset when the block set identity changes (ids), not on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks.map((b) => b.id).join('|')]);
+
+  useEffect(() => {
+    onPageCountChange?.(pageCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageCount]);
 
   const onResolvedChange = (info: {
     keyPrefix: string;
@@ -1449,7 +1496,7 @@ function AssessedBlocks({
 
         return wrap(
           seg.block.id,
-          <BlockRenderer block={seg.block} objectId={objectId} quizProps={quizProps} />,
+          <BlockRenderer block={seg.block} objectId={objectId} quizProps={quizProps} overrides={blockOverrides} />,
         );
       })}
     </div>
@@ -1459,7 +1506,7 @@ function AssessedBlocks({
     <div className="flex flex-col gap-6">
       {pages.map((pageBlocks, pi) => renderPage(pageBlocks, pi, pi === safePage))}
 
-      {pageCount > 1 && (
+      {pageCount > 1 && !hidePager && (
         <nav
           aria-label="Tutorial pages"
           className="sticky bottom-3 z-[5] mt-2"
@@ -1478,7 +1525,7 @@ function AssessedBlocks({
                 type="button"
                 disabled={safePage <= 0}
                 onClick={() => {
-                  setPageIdx((p) => Math.max(0, p - 1));
+                  goToPage(safePage - 1);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold border disabled:opacity-35"
@@ -1502,7 +1549,7 @@ function AssessedBlocks({
                       aria-label={`Go to page ${i + 1}`}
                       aria-current={i === safePage ? 'page' : undefined}
                       onClick={() => {
-                        setPageIdx(i);
+                        goToPage(i);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       className="rounded-full transition-all"
@@ -1520,7 +1567,7 @@ function AssessedBlocks({
                 type="button"
                 disabled={safePage >= pageCount - 1}
                 onClick={() => {
-                  setPageIdx((p) => Math.min(pageCount - 1, p + 1));
+                  goToPage(safePage + 1);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-35"
@@ -1560,6 +1607,11 @@ export function LearningBlocksPreview({
   glossary,
   sourceUnits,
   paginate = true,
+  blockOverrides,
+  pageIndex,
+  onPageChange,
+  onPageCountChange,
+  hidePager = false,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1575,6 +1627,13 @@ export function LearningBlocksPreview({
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
   /** Split long tutorials into pages after generation (default on). */
   paginate?: boolean;
+  /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
+  blockOverrides?: BlockOverrides;
+  /** Controlled paging, for chrome that navigates pages itself (Tutorial V3). */
+  pageIndex?: number;
+  onPageChange?: (index: number) => void;
+  onPageCountChange?: (count: number) => void;
+  hidePager?: boolean;
 }) {
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1605,6 +1664,11 @@ export function LearningBlocksPreview({
           hintsEnabled={hintsEnabled}
           sourceUnits={sourceUnits}
           paginate={paginate}
+          blockOverrides={blockOverrides}
+          pageIndex={pageIndex}
+          onPageChange={onPageChange}
+          onPageCountChange={onPageCountChange}
+          hidePager={hidePager}
         />
       </div>
       <GlossarySidebar

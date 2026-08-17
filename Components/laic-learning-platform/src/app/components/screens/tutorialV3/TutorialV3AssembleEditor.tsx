@@ -16,6 +16,7 @@ import {
 } from '../../../../lib/tutorialV3/embedEditorBridge';
 import type { TutorialV3Draft, TutorialV3Part } from '../../../../lib/tutorialV3/types';
 import { LearningBlocksPreview } from '../LearnerReader';
+import { TutorialV3Reader } from './learner/TutorialV3Reader';
 import { TutorialV3NestedEditor } from './TutorialV3NestedEditor';
 import { parseYtId } from './TutorialV3SourcePanel';
 import { TutorialV3RefineSidebar } from './TutorialV3RefineSidebar';
@@ -312,28 +313,28 @@ export function TutorialV3AssembleEditor({
       </div>
 
       <div className="flex-1 min-h-0 flex flex-col md:flex-row">
+        {/* The student preview is the post-generation view: the V3 reader, with
+            its section sidebar, rather than a bare column of blocks. It runs
+            full-bleed because the sidebar is part of the layout, not content. */}
+        {mode === 'preview' && parts.length > 0 ? (
+          <div className="flex-1 min-w-0 overflow-y-auto" style={{ background: '#fff' }}>
+            <TutorialV3Reader
+              draft={draft}
+              blocks={blocks as any}
+              objectId={draft.id}
+              cumulativePassMark={parseInt(String(fv.pass).replace('%', ''), 10) || 70}
+              passRequired
+              hintsEnabled={draft.structure.hintsOn !== false}
+              maxHints={typeof draft.structure.hintN === 'number' ? draft.structure.hintN : 4}
+            />
+          </div>
+        ) : (
         <div className="flex-1 min-w-0 overflow-y-auto p-3 sm:p-5">
           <div className="max-w-2xl w-full mx-auto">
             {mode === 'preview' ? (
-              <>
-                <h1 style={{ fontSize: 22, fontWeight: 700, color: '#0B1220', marginBottom: 10 }}>
-                  {draft.title || 'Untitled tutorial'}
-                </h1>
-                <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 22, lineHeight: 1.5 }}>
-                  Student preview · how learners will see this tutorial · {parts.length} part{parts.length !== 1 ? 's' : ''}
-                </p>
-                {!parts.length ? (
-                  <p style={{ fontSize: 13.5, color: '#B45309' }}>
-                    Nothing to preview yet — generate or write the recipe content first.
-                  </p>
-                ) : (
-                  <LearningBlocksPreview
-                    blocks={blocks as any}
-                    objectId={draft.id}
-                    paginate
-                  />
-                )}
-              </>
+              <p style={{ fontSize: 13.5, color: '#B45309' }}>
+                Nothing to preview yet — generate or write the recipe content first.
+              </p>
             ) : (
               <>
                 <input
@@ -559,6 +560,7 @@ export function TutorialV3AssembleEditor({
             )}
           </div>
         </div>
+        )}
 
         {mode === 'edit' && (
           <TutorialV3RefineSidebar

@@ -470,8 +470,15 @@ export interface ConceptCardContent {
   commonMistake?: string;
   /** CONNECTION */
   connection?: string;
-  /** RECALL QUESTION */
+  /** RECALL QUESTION — one prompt for the whole card. */
   recallQuestion?: string;
+  /**
+   * Per-panel recall prompts, keyed by category id (`whyItMatters`,
+   * `coreIdea`, a custom section id, …). Tutorial V3's Test-yourself mode asks
+   * one question per panel, which the single card-level `recallQuestion`
+   * cannot express. Optional — readers that don't ask per panel ignore it.
+   */
+  sectionRecallPrompts?: Record<string, string>;
   /** TEACH-BACK */
   teachBack?: string;
 
@@ -599,6 +606,19 @@ export interface BiddingSequenceContent {
   bids: BidItem[];
   finalContract: string;
   sourceRef?: BridgeSourceRef;
+  /**
+   * Hands to show above the auction, by seat. Optional — an auction with no
+   * hands renders exactly as it always has.
+   */
+  hands?: Partial<Record<'N' | 'E' | 'S' | 'W', BridgeHandRow[]>>;
+  /** The point the auction makes but does not state, shown under the contract. */
+  footnote?: string;
+}
+
+/** One suit's holding in a displayed hand. */
+export interface BridgeHandRow {
+  suit: '♠' | '♥' | '♦' | '♣';
+  cards: string;
 }
 export interface SourceExcerptContent {
   sourceTitle: string;
