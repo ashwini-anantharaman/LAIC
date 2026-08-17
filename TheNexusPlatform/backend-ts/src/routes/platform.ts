@@ -3659,6 +3659,10 @@ function _assertCanManageCredentials(user: PlatformUser, target: Row): void {
  * Set a member's username and/or password. Admin-initiated, never self-service —
  * a person changing their OWN password goes through the auth provider's flow.
  *
+ * Setting a password for someone who already owns theirs is ALLOWED and releases
+ * their claim, so the app makes them choose again at the next sign in. See the
+ * password branch below for why that trade is the one being made.
+ *
  * The password is written straight to the auth backend and never stored,
  * returned, or logged; the audit event records only WHICH fields changed.
  */
@@ -3688,19 +3692,34 @@ platformRouter.patch("/members/:member_id/credentials", async (c) => {
   }
 
   if (req.password !== undefined) {
-    // A credential is SHARED across every club its owner belongs to. While it is
-    // unclaimed nobody owns it, so a starting password is a courtesy; once the
-    // person has set their own, setting it here would hand this club a working
-    // key to another club's member. Refuse, and point at the code instead.
+    /**
+     * An admin may set a password even for someone who owns theirs — somebody has
+     * to be able to help a person who is locked out and cannot work a claim code.
+     * What makes that safe enough to allow is that the reset is TEMPORARY BY
+     * CONSTRUCTION rather than by promise.
+     *
+     * A credential is shared across every club its owner belongs to, so an admin
+     * who sets one holds a working key to that person's OTHER clubs. Releasing the
+     * claim is what closes that: `must_set_password` goes true again, the app's
+     * gate opens nothing else until the person chooses their own, and ownership
+     * returns to them at the next sign in.
+     *
+     * THE WINDOW IS REAL AND WORTH NAMING: between the reset and that next sign
+     * in, the admin knows a working password. It is narrower than the alternative
+     * (an admin-set password that stays valid indefinitely) and wider than zero,
+     * which is why the claim code — where nobody but the person ever learns the
+     * password — remains the preferred path and the one the console offers first.
+     */
     const claim = await db.getClaimState(membership.profile_id as string);
-    if (claim?.claimed) {
-      throw new HttpError(
-        409,
-        "This person has set their own password, so it cannot be changed here. " +
-          "Issue a claim code instead — they redeem it in the app and choose a new one.",
-      );
-    }
+    const wasClaimed = claim?.claimed === true;
     await setAuthUserPassword(email, req.password);
+    if (wasClaimed) {
+      await db.releasePasswordClaim(membership.profile_id as string);
+      // Recorded separately from "password": an audit reader needs to be able to
+      // tell a courtesy starting password for a new member from a reset that took
+      // an owned credential back off its owner.
+      changed.push("password_reset_reclaim_required");
+    }
     changed.push("password");
   }
 

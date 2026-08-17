@@ -1078,6 +1078,10 @@ export async function markPasswordClaimed(profileId: string): Promise<void> {
   if (!usePg()) return;
   return claim.markClaimed(profileId);
 }
+export async function releasePasswordClaim(profileId: string): Promise<void> {
+  if (!usePg()) return;
+  return claim.releaseClaim(profileId);
+}
 export async function issueClaimCode(profileId: string) {
   if (!usePg()) throw new HttpError(400, "Claim codes require the database backend");
   return claim.issueClaimCode(profileId);

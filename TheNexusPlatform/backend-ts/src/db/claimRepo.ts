@@ -9,9 +9,14 @@
  *   UNCLAIMED (claimed_at null) — nobody owns it yet. An admin may set a starting
  *     password so a new member can get in, and the app forces a change at first
  *     sign-in.
- *   CLAIMED — the person owns it. Admins are refused. Recovery is a single-use
- *     CLAIM CODE an admin issues and reads out; the person redeems it and sets a
- *     password nobody else ever sees.
+ *   CLAIMED — the person owns it. Recovery has two shapes, and they differ in who
+ *     ever learns the password:
+ *       · a single-use CLAIM CODE an admin issues and reads out — the person
+ *         redeems it and sets a password nobody else ever sees. Preferred.
+ *       · an admin setting one directly, for someone who cannot work a code. This
+ *         RELEASES the claim (see releaseClaim), so the password is temporary by
+ *         construction: the app forces the person to choose their own at the next
+ *         sign in, and ownership returns to them.
  *
  * Codes are hashed (SHA-256) and never stored in the clear, single-use, and
  * expire. SHA-256 rather than a KDF is deliberate and safe here: the code is 50
@@ -93,6 +98,33 @@ export async function markClaimed(profileId: string): Promise<void> {
       .update(profiles)
       .set({
         claimedAt: new Date(),
+        claimCodeHash: null,
+        claimCodeExpiresAt: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(profiles.id, profileId));
+  });
+}
+
+
+/**
+ * Hand ownership BACK, because an admin has just set a password again.
+ *
+ * The password an admin types is a temporary one by definition — they know it,
+ * and a credential is shared across every club its owner belongs to. Clearing
+ * `claimed_at` is what makes that temporariness enforceable rather than a promise:
+ * `must_set_password` goes true again, the app's gate takes over at the next sign
+ * in, and nothing else opens until the person has chosen one only they know.
+ *
+ * Any outstanding claim code goes too. The admin has just provided a way in, so a
+ * second one left live is a spare key nobody is tracking.
+ */
+export async function releaseClaim(profileId: string): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx
+      .update(profiles)
+      .set({
+        claimedAt: null,
         claimCodeHash: null,
         claimCodeExpiresAt: null,
         updatedAt: new Date(),
