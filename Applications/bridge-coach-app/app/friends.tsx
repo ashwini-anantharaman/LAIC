@@ -181,13 +181,19 @@ export default function FriendsScreen() {
   const requestCount = data.requests.length;
 
   return (
-    <View style={styles.page}>
+    // insets.top, or the app bar renders UNDER the status bar and the notch. The back
+    // arrow was there the whole time — it was behind the clock, which reads as the
+    // screen simply not having one. Every other pushed screen gets this from
+    // BrandChrome; this one draws its own bar, so it owes its own inset.
+    <View style={[styles.page, { paddingTop: insets.top }]}>
       {/* No wordmark: it renders "BridgeBird" in Fonts.display at Type.wordmark —
           the same face and size as this screen's own title, at almost the same left
           inset — so the two stack up and read as one title repeated rather than as
           branding. The design has a single title here. */}
       <BrandAppBar
-        onBack={() => router.back()}
+        // A deep link straight here has nothing to go back TO, and an arrow that does
+        // nothing is worse than the one that was hidden.
+        onBack={() => (router.canGoBack() ? router.back() : router.replace("/home"))}
         showActions
         showMenu={false}
         showWordmark={false}
