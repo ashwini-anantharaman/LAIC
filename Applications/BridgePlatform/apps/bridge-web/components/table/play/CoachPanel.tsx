@@ -1384,12 +1384,14 @@ function CuratedCoachVoice({
   const [roadOpen, setRoadOpen] = useState(false);
   const [nudgeKept, setNudgeKept] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [undoFailed, setUndoFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
     setOverlay(null);
     setRoadOpen(false);
     setNudgeKept(false);
+    setUndoFailed(false);
     fetchCuratedOverlay(sessionId, epoch)
       .then((o) => {
         if (alive) setOverlay(o);
@@ -1405,11 +1407,28 @@ function CuratedCoachVoice({
   const takeBack = async () => {
     if (undoing) return;
     setUndoing(true);
+    setUndoFailed(false);
     try {
-      await fetch(`/api/bridge/sessions/${encodeURIComponent(sessionId)}/undo`, { method: "POST" });
+      // The CURATED take-back, not the table's one-ply Undo. It rewinds to
+      // the coach's line however many robot replies auto-play slipped in
+      // while the bubble was being read — with a single undo, the last
+      // action was usually a robot's card, so the learner's own diverging
+      // card stayed put and the button appeared to do nothing.
+      const res = await fetch("/api/bridge/curated-takeback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      });
+      // fetch only rejects on a network fault — a 403 or 409 lands here with
+      // ok:false, and the old code refreshed and declared victory over it.
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
+      if (!res.ok || !body.ok) {
+        setUndoFailed(true);
+        return;
+      }
       router.refresh();
     } catch {
-      // The table's own Undo still exists; a failed take-back just stays put.
+      setUndoFailed(true);
     } finally {
       setUndoing(false);
     }
@@ -1461,6 +1480,15 @@ function CuratedCoachVoice({
               Keep my move
             </button>
           </div>
+          {/* A take-back that could not happen SAYS so. It used to refresh and
+              look successful whatever came back, so the learner pressed a
+              button that promised a rewind and watched the board sit still. */}
+          {undoFailed && (
+            <p style={{ margin: "7px 0 0", fontFamily: "inherit", fontSize: 11.5, color: MUTED }}>
+              Couldn&apos;t take that back — the board has moved on. Carry on from here,
+              or use Undo at the table.
+            </p>
+          )}
         </SpeechBubble>
       )}
 
