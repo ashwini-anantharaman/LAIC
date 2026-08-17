@@ -18,7 +18,7 @@ import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { fanOutBriefToReviewer } from "@/lib/assignments";
 import { adoptLegacyGroup, loadAssignment } from "@/lib/assignmentSets";
-import { bridgeLibrary, itemToEntry, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners } from "@/lib/nexus";
 import { findReviewerCandidate } from "@/lib/reviewers";
 import { assignmentStore, submissionStore } from "@/lib/sessions";
@@ -113,15 +113,10 @@ export async function addLearnerAction(formData: FormData): Promise<void> {
 
   const { newId } = await import("@bridge/kb");
   // Copy-on-assign, the same primitive the create flow uses: the learner gets
-  // their OWN copy, and copyTo is idempotent per (source, learner) — which is
-  // what makes re-adding someone safe.
-  const copy = itemToEntry(
-    await bridgeLibrary().copyTo(await libraryPrincipalOf(context), content.entryId, {
-      ownerId: learnerId,
-      scopeLevel: "user",
-      provenance: "assigned",
-    }),
-  );
+  // their OWN copy, idempotent per (source, learner) — which is what makes
+  // re-adding someone safe — with a curated overlay brought forward onto a
+  // copy that predates it.
+  const copy = await copyForAssign(await libraryPrincipalOf(context), content.entryId, learnerId);
   await assignmentStore().putAssignment({
     assignmentId: newId("as"),
     programOrganizationId: set.brief.programOrganizationId,

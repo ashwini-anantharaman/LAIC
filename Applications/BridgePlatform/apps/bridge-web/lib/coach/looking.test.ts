@@ -133,8 +133,15 @@ describe("lookingAt — the play", () => {
       ],
     });
     const r = lookingAt(s, "S")!;
-    expect(r.facts.find((f) => f.label === "yours")?.value).toBe("1");
-    expect(r.facts.find((f) => f.label === "theirs")?.value).toBe("1");
+    // Labelled as what they COUNT, and filed under the side that won them
+    // (owner direction 2026-08-15) — a bare "theirs" inside the Theirs pane
+    // read as nonsense.
+    const ours = r.facts.find((f) => f.label === "Our tricks");
+    const theirs = r.facts.find((f) => f.label === "Their tricks");
+    expect(ours?.value).toBe("1");
+    expect(ours?.group).toBe("partnership");
+    expect(theirs?.value).toBe("1");
+    expect(theirs?.group).toBe("theirs");
     expect(r.facts.some((f) => f.value === "Trick 3")).toBe(true);
   });
 

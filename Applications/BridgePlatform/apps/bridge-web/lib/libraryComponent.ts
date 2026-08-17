@@ -362,6 +362,45 @@ export async function canCreateInLibrary(context: NexusBridgeContext): Promise<b
   return canUse(context, "library.create");
 }
 
+/**
+ * Copy-on-assign, carrying the coach's CURRENT words.
+ *
+ * `copyTo` is idempotent per (source, learner): re-assigning returns the copy
+ * made the first time. That is right for the board — the learner keeps one
+ * entry, and live assignments point at its id — and wrong for a curated
+ * overlay. A deal assigned BEFORE the coach curated it hands back the
+ * pre-curation copy forever, and because both start paths stamp the session
+ * only when the learner's own entry has `curatedJson`, that session is never
+ * marked curated: the overlay API answers `{ overlay: null }` and the learner
+ * opens an ordinary table with no coach in it.
+ *
+ * So the copy is reused, and only the coach's words are brought forward. Two
+ * things deliberately survive untouched:
+ *
+ *   · the entryId — assignment rows already reference it;
+ *   · curatedProgressJson — the LEARNER's record of which hint ladders they
+ *     opened. Refreshing the whole entry would erase it, and a re-assign can
+ *     land while they are mid-board.
+ */
+export async function copyForAssign(
+  principal: LibraryPrincipal,
+  sourceId: string,
+  learnerId: string,
+): Promise<LibraryEntry> {
+  const copy = itemToEntry(
+    await bridgeLibrary().copyTo(principal, sourceId, {
+      ownerId: learnerId,
+      scopeLevel: "user",
+      provenance: "assigned",
+    }),
+  );
+  const source = await libraryStore().getEntry(sourceId);
+  if (!source?.curatedJson || source.curatedJson === copy.curatedJson) return copy;
+  const refreshed: LibraryEntry = { ...copy, curatedJson: source.curatedJson };
+  await libraryStore().putEntry(refreshed);
+  return refreshed;
+}
+
 /** Throws unless the caller may create — for the create server actions. */
 export async function assertCanCreateInLibrary(context: NexusBridgeContext): Promise<void> {
   if (!(await canCreateInLibrary(context))) {
