@@ -2695,7 +2695,46 @@ function _programScope(programId?: string | null, clubProgramId?: string | null)
   return sql`and program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`;
 }
 
-export async function listLearningObjects(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
+/** Who is asking, for the personal-visibility arm below. */
+export interface LearningViewer {
+  /** The org-scoped profile id — what owner_id holds. */
+  profileId: string;
+  /** Club role ids this person holds, for `subject_type='role'` grants. */
+  roleIds?: readonly string[];
+}
+
+/**
+ * The personal tier, layered on top of the program scope above.
+ *
+ * A row is visible when it is not personal, OR it is mine, OR someone shared it
+ * with me — by name, or through a role I hold.
+ *
+ * `is distinct from 'user'` rather than `<> 'user'`: legacy rows predate the column
+ * and carry NULL, and `NULL <> 'user'` is NULL, which is not true, which would hide
+ * every object written before 0006. That is the whole content library.
+ *
+ * No viewer (an anonymous or system read) means no personal rows at all, never
+ * "all of them" — the failure direction matters here more than anywhere else in
+ * this file.
+ */
+function _personalScope(viewer?: LearningViewer | null) {
+  if (!viewer?.profileId) return sql`and scope_level is distinct from 'user'`;
+  const roles = viewer.roleIds?.length ? [...new Set(viewer.roleIds)] : [];
+  const roleArm = roles.length
+    ? sql`or (g.subject_type = 'role' and g.subject_id in (${sql.join(roles.map((r) => sql`${r}`), sql`, `)}))`
+    : sql``;
+  return sql`and (
+    scope_level is distinct from 'user'
+    or owner_id = ${viewer.profileId}
+    or exists (
+      select 1 from learning_object_grants g
+      where g.object_id = learning_objects.id
+        and ((g.subject_type = 'profile' and g.subject_id = ${viewer.profileId}) ${roleArm})
+    )
+  )`;
+}
+
+export async function listLearningObjects(orgId: string, programId?: string | null, clubProgramId?: string | null, viewer?: LearningViewer | null): Promise<Row[]> {
   // Same optional group and the same fallback as the meta listing below. This
   // query used to omit collection_ids/collection_names/version_number/published_at
   // entirely, so an object round-tripped through Nexus came back with NO folder
@@ -2703,11 +2742,13 @@ export async function listLearningObjects(orgId: string, programId?: string | nu
   // hydrated its library from the service-role path instead. Reader apps group the
   // Learn tab by collection_names, so losing them is not cosmetic.
   try {
-    return await _listLearningObjects(orgId, programId, clubProgramId, true);
+    return await _listLearningObjects(orgId, programId, clubProgramId, true, viewer);
   } catch (e) {
-    if (!_isUndefinedColumn(e)) throw e;
-    console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
-    return _listLearningObjects(orgId, programId, clubProgramId, false);
+    if (!_missingPersonalTier(e)) throw e;
+    console.warn("[nexus] learning_objects optional columns or grants table missing — run migrations");
+    // Without the personal tier this is exactly the query that shipped before it:
+    // every row in scope, which is what those rows already were.
+    return _listLearningObjects(orgId, programId, clubProgramId, false, null);
   }
 }
 
@@ -2716,16 +2757,19 @@ async function _listLearningObjects(
   programId: string | null | undefined,
   clubProgramId: string | null | undefined,
   withCollections: boolean,
+  viewer: LearningViewer | null | undefined,
 ): Promise<Row[]> {
   const cols = withCollections
     ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
             coalesce(collection_names, '[]'::jsonb) as collection_names,
             version_number,
-            published_at::text as published_at`
+            published_at::text as published_at,
+            coalesce(scope_level, 'program') as scope_level`
     : sql``;
   // One query, not two near-identical ones: the pinned/unpinned pair had to be kept
   // in step by hand, which is exactly where a program predicate drifts.
   const scope = _programScope(programId, clubProgramId);
+  const personal = withCollections ? _personalScope(viewer) : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
@@ -2734,7 +2778,7 @@ async function _listLearningObjects(
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
-      where organization_id = ${orgId} ${scope}
+      where organization_id = ${orgId} ${scope} ${personal}
       order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
@@ -2743,17 +2787,17 @@ async function _listLearningObjects(
 /** Metadata-only listing: everything except the (potentially huge) content
  *  columns (blocks, pipeline_draft). For list screens; content comes from
  *  getLearningObject. */
-export async function listLearningObjectsMeta(orgId: string, programId?: string | null, clubProgramId?: string | null): Promise<Row[]> {
+export async function listLearningObjectsMeta(orgId: string, programId?: string | null, clubProgramId?: string | null, viewer?: LearningViewer | null): Promise<Row[]> {
   // collection_ids/collection_names arrive with 0003_object_collections.sql. A
   // deploy that lands before that migration must still serve the list, so the
   // richer query falls back to the original one on undefined_column rather than
   // 500ing the Learn tab.
   try {
-    return await _listLearningObjectsMeta(orgId, programId, clubProgramId, true);
+    return await _listLearningObjectsMeta(orgId, programId, clubProgramId, true, viewer);
   } catch (e) {
-    if (!_isUndefinedColumn(e)) throw e;
-    console.warn("[nexus] learning_objects.collection_*/version_number/published_at missing — run migrations");
-    return _listLearningObjectsMeta(orgId, programId, clubProgramId, false);
+    if (!_missingPersonalTier(e)) throw e;
+    console.warn("[nexus] learning_objects optional columns or grants table missing — run migrations");
+    return _listLearningObjectsMeta(orgId, programId, clubProgramId, false, null);
   }
 }
 
@@ -2762,6 +2806,7 @@ async function _listLearningObjectsMeta(
   programId: string | null | undefined,
   clubProgramId: string | null | undefined,
   withCollections: boolean,
+  viewer: LearningViewer | null | undefined,
 ): Promise<Row[]> {
   // One optional group for every column added by 0003/0004. They land together in
   // practice, and a single fallback keeps the pre-migration path to one query
@@ -2770,9 +2815,11 @@ async function _listLearningObjectsMeta(
     ? sql`, coalesce(collection_ids, '[]'::jsonb) as collection_ids,
             coalesce(collection_names, '[]'::jsonb) as collection_names,
             version_number,
-            published_at::text as published_at`
+            published_at::text as published_at,
+            coalesce(scope_level, 'program') as scope_level`
     : sql``;
   const scope = _programScope(programId, clubProgramId);
+  const personal = withCollections ? _personalScope(viewer) : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
@@ -2780,7 +2827,7 @@ async function _listLearningObjectsMeta(
              created_at::text as created_at, updated_at::text as updated_at
              ${cols}
       from learning_objects
-      where organization_id = ${orgId} ${scope}
+      where organization_id = ${orgId} ${scope} ${personal}
       order by updated_at desc nulls last`);
     return rows as unknown as Row[];
   });
@@ -2806,15 +2853,36 @@ export async function getLearningObject(
   id: string,
   programId?: string | null,
   clubProgramId?: string | null,
+  viewer?: LearningViewer | null,
+): Promise<Row | null> {
+  // This is the ONE learning read that had no undefined-column fallback, so a
+  // deploy landing ahead of 0006/0007 would 500 the detail screen while every
+  // listing degraded quietly. Same shape as the listings now.
+  try {
+    return await _getLearningObject(orgId, id, programId, clubProgramId, viewer);
+  } catch (e) {
+    if (!_missingPersonalTier(e)) throw e;
+    console.warn("[nexus] learning_objects.scope_level or grants table missing — run migrations");
+    return _getLearningObject(orgId, id, programId, clubProgramId, null);
+  }
+}
+
+async function _getLearningObject(
+  orgId: string,
+  id: string,
+  programId: string | null | undefined,
+  clubProgramId: string | null | undefined,
+  viewer: LearningViewer | null | undefined,
 ): Promise<Row | null> {
   const scope = _programScope(programId, clubProgramId);
+  const personal = viewer === null ? sql`` : _personalScope(viewer);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
-      where organization_id = ${orgId} and id = ${id} ${scope}
+      where organization_id = ${orgId} and id = ${id} ${scope} ${personal}
       limit 1`);
     return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
   });
@@ -2848,6 +2916,21 @@ export async function getSharedLearningObject(id: string): Promise<Row | null> {
   }
 }
 
+/**
+ * Postgres 42P01 = undefined_table. `learning_object_grants` arrives with 0007, and
+ * a deploy that lands first must still serve every list.
+ */
+function _isUndefinedRelation(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
+    ?? (e as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "42P01";
+}
+
+/** The personal tier (0006's column, 0007's table) is not in the database yet. */
+function _missingPersonalTier(e: unknown): boolean {
+  return _isUndefinedColumn(e) || _isUndefinedRelation(e);
+}
+
 /** Postgres 42703 = undefined_column. */
 function _isUndefinedColumn(e: unknown): boolean {
   const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
@@ -2866,6 +2949,140 @@ async function _getSharedLearningObject(id: string): Promise<Row | null> {
       limit 1`);
     return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
   });
+}
+
+// ── The personal tier: scope, and who it is shared with ────────────────────
+
+/**
+ * Mark a NEW object as personal.
+ *
+ * A separate statement rather than a column in the big upsert, on purpose. The
+ * insert above has to keep working on a database that has not run 0006 yet, and
+ * naming a missing column in an INSERT is a hard error with no partial success —
+ * whereas this can fail on its own and leave a perfectly good object behind, filed
+ * as the club's. The failure direction is the safe one: a personal draft that ends
+ * up club-visible is a disappointment; a lost object is a bug.
+ *
+ * Guarded on `owner_id` so it cannot re-scope somebody else's row, and it never
+ * moves an object that is already 'program' — a scope change is a deliberate act
+ * with its own endpoint, not a side effect of a save.
+ */
+export async function setLearningObjectPersonal(
+  orgId: string,
+  id: string,
+  ownerId: string,
+): Promise<boolean> {
+  try {
+    return await asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        update learning_objects
+        set scope_level = 'user'
+        where organization_id = ${orgId} and id = ${id} and owner_id = ${ownerId}
+        returning id`);
+      return (rows as unknown as Row[]).length > 0;
+    });
+  } catch (e) {
+    if (_missingPersonalTier(e)) {
+      console.warn("[nexus] learning_objects.scope_level missing — object saved as the club's; run migrations");
+      return false;
+    }
+    throw e;
+  }
+}
+
+/** One person or role a piece of content has been shared with. */
+export interface LearningGrant {
+  subjectType: "profile" | "role";
+  subjectId: string;
+  level: "view" | "edit";
+}
+
+/**
+ * Everyone this object is shared with. Empty when the table is not there yet, which
+ * reads as "shared with nobody" — true, and the same answer the product gave before
+ * grants existed.
+ */
+export async function listLearningObjectGrants(objectId: string): Promise<LearningGrant[]> {
+  try {
+    return await asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        select subject_type, subject_id, level
+        from learning_object_grants
+        where object_id = ${objectId}
+        order by subject_type, subject_id`);
+      return (rows as unknown as Row[]).map((r) => ({
+        subjectType: r.subject_type as "profile" | "role",
+        subjectId: r.subject_id as string,
+        level: r.level as "view" | "edit",
+      }));
+    });
+  } catch (e) {
+    if (_missingPersonalTier(e)) return [];
+    throw e;
+  }
+}
+
+/**
+ * The level this viewer holds on this object through a grant, or null.
+ *
+ * Highest wins: someone invited by name as a viewer and by role as an editor edits.
+ * A narrower personal grant silently overriding a broader role grant would be a
+ * demotion nobody performed.
+ */
+export async function learningGrantLevelFor(
+  objectId: string,
+  viewer: LearningViewer,
+): Promise<"view" | "edit" | null> {
+  const roles = viewer.roleIds?.length ? [...new Set(viewer.roleIds)] : [];
+  try {
+    return await asPrivileged(async (tx) => {
+      const roleArm = roles.length
+        ? sql`or (subject_type = 'role' and subject_id in (${sql.join(roles.map((r) => sql`${r}`), sql`, `)}))`
+        : sql``;
+      const rows = await tx.execute(sql`
+        select level from learning_object_grants
+        where object_id = ${objectId}
+          and ((subject_type = 'profile' and subject_id = ${viewer.profileId}) ${roleArm})`);
+      const levels = (rows as unknown as Row[]).map((r) => r.level as string);
+      if (levels.includes("edit")) return "edit";
+      return levels.includes("view") ? "view" : null;
+    });
+  } catch (e) {
+    if (_missingPersonalTier(e)) return null;
+    throw e;
+  }
+}
+
+/** Invite a subject, or change the level they already hold. */
+export async function setLearningObjectGrant(
+  objectId: string,
+  grant: LearningGrant,
+  grantedBy: string | null,
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_object_grants (object_id, subject_type, subject_id, level, granted_by)
+      values (${objectId}, ${grant.subjectType}, ${grant.subjectId}, ${grant.level}, ${grantedBy}::uuid)
+      on conflict (object_id, subject_type, subject_id)
+      do update set level = excluded.level, granted_by = excluded.granted_by, created_at = now()`);
+  });
+}
+
+/** Withdraw a share. Idempotent — removing a grant nobody holds is the state asked for. */
+export async function removeLearningObjectGrant(
+  objectId: string,
+  subjectType: "profile" | "role",
+  subjectId: string,
+): Promise<void> {
+  try {
+    await asPrivileged(async (tx) => {
+      await tx.execute(sql`
+        delete from learning_object_grants
+        where object_id = ${objectId} and subject_type = ${subjectType} and subject_id = ${subjectId}`);
+    });
+  } catch (e) {
+    if (!_missingPersonalTier(e)) throw e;
+  }
 }
 
 /**
@@ -2931,6 +3148,7 @@ export async function upsertLearningObject(
   orgId: string,
   r: Row,
   programId?: string | null,
+  author?: LearningAuthor | null,
 ): Promise<boolean> {
   // An UNKNOWN scope narrows nothing: with no program resolved, fall back to the
   // org guard alone, exactly as before. Only a caller that knows its program gets
@@ -2953,8 +3171,10 @@ export async function upsertLearningObject(
          reuse_count, description, estimated_time, blocks, tags, source_ids, pipeline_draft,
          created_at, updated_at)
       values (
-        ${r.id}, ${orgId}, ${programId ?? (r.program_id as string) ?? null}, ${r.type}, ${r.title ?? ""}, ${r.owner_id ?? null},
-        ${r.owner_name ?? null}, ${r.status ?? "draft"}, ${r.scope ?? "bridge"},
+        ${r.id}, ${orgId}, ${programId ?? (r.program_id as string) ?? null}, ${r.type}, ${r.title ?? ""},
+        ${author?.ownerId ?? (r.owner_id as string | null) ?? null},
+        ${author ? (author.ownerName ?? null) : ((r.owner_name as string | null) ?? null)},
+        ${r.status ?? "draft"}, ${r.scope ?? "bridge"},
         ${r.reuse_count ?? 0}, ${r.description ?? ""}, ${r.estimated_time ?? ""},
         ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
         ${JSON.stringify(r.source_ids ?? [])}::jsonb,
@@ -2991,16 +3211,41 @@ export async function upsertLearningObject(
 // note on why a draft backup is not a publish.
 
 /** What the write path needs to know about an object before writing it. */
+/**
+ * Who the server says wrote this, when it is being created.
+ *
+ * `owner_id` used to be taken verbatim from the request body and never checked, so
+ * a caller could claim any author it liked — which made every ownership rule built
+ * on it decorative. It is now supplied by the route from the resolved session.
+ *
+ * INSERT ONLY, both here and in the publish path: the `on conflict` clauses already
+ * omit owner_id deliberately, so authorship is set once and no existing row moves.
+ */
+export interface LearningAuthor {
+  ownerId: string;
+  ownerName?: string | null;
+}
+
 export async function probeLearningObject(
   orgId: string,
   id: string,
-): Promise<{ programId: string | null; published: boolean; ownerId: string | null; type: string | null } | null> {
+): Promise<{
+  programId: string | null;
+  published: boolean;
+  ownerId: string | null;
+  type: string | null;
+  scopeLevel: string | null;
+} | null> {
   // Org-scoped on purpose. A cross-org id collision reports "not here", the write
   // is then attempted as an insert, and the conflict guard refuses it — so the
   // caller learns nothing about other orgs' ids from this probe.
   return asPrivileged(async (tx) => {
+    // scope_level via a to_jsonb probe rather than a bare column, so this one query
+    // works either side of 0006 without a second round-trip — the write path calls
+    // it before every mutation and cannot afford a fallback query each time.
     const rows = await tx.execute(sql`
-      select program_id, owner_id, type, published_at
+      select program_id, owner_id, type, published_at,
+             to_jsonb(learning_objects.*) ->> 'scope_level' as scope_level
       from learning_objects
       where organization_id = ${orgId} and id = ${id}
       limit 1`);
@@ -3011,6 +3256,7 @@ export async function probeLearningObject(
       published: row.published_at != null,
       ownerId: (row.owner_id as string | null) ?? null,
       type: (row.type as string | null) ?? null,
+      scopeLevel: (row.scope_level as string | null) ?? null,
     };
   });
 }
@@ -3030,9 +3276,10 @@ export async function publishLearningObject(
   programId: string | null | undefined,
   r: Row,
   opts: { publish: boolean; share: boolean },
+  author?: LearningAuthor | null,
 ): Promise<boolean> {
   try {
-    return await _publishLearningObject(orgId, programId, r, opts);
+    return await _publishLearningObject(orgId, programId, r, opts, author);
   } catch (e) {
     if (_isUndefinedColumn(e)) {
       // LOUD, like the share toggle: someone clicking Publish must never be told it
@@ -3050,6 +3297,7 @@ async function _publishLearningObject(
   programId: string | null | undefined,
   r: Row,
   opts: { publish: boolean; share: boolean },
+  author?: LearningAuthor | null,
 ): Promise<boolean> {
   // Same guard as upsertLearningObject, for the same reasons: an unclaimed row may
   // be adopted, a row that belongs to a program can never be moved out of it.
@@ -3075,7 +3323,9 @@ async function _publishLearningObject(
          shared_at)
       values (
         ${r.id}, ${orgId}, ${programId ?? (r.program_id as string) ?? null}, ${r.type},
-        ${r.title ?? ""}, ${r.owner_id ?? null}, ${r.owner_name ?? null},
+        ${r.title ?? ""},
+        ${author?.ownerId ?? (r.owner_id as string | null) ?? null},
+        ${author ? (author.ownerName ?? null) : ((r.owner_name as string | null) ?? null)},
         ${r.status ?? "in-review"}, ${r.scope ?? "bridge"}, ${r.reuse_count ?? 0},
         ${r.description ?? ""}, ${r.estimated_time ?? ""},
         ${JSON.stringify(r.blocks ?? [])}::jsonb, ${JSON.stringify(r.tags ?? [])}::jsonb,
@@ -3141,15 +3391,32 @@ export async function unpublishLearningObject(
   const programGuard = programId
     ? sql`and (program_id is null or program_id = ${programId})`
     : sql``;
-  return asPrivileged(async (tx) => {
-    const rows = await tx.execute(sql`
-      update learning_objects
-      set published_at = null, version_number = null, status = 'draft', updated_at = now()
-      where organization_id = ${orgId} and id = ${id}
-        ${programGuard}
-      returning id`);
-    return (rows as unknown as Row[]).length > 0;
-  });
+  // shared_at goes too. Withdrawing content while leaving the public link live is
+  // the opposite of what the word means: /o/<id> serves anything with a shared_at
+  // stamp, with no session and no reference to published_at, so an unpublish that
+  // spared it left the withdrawn content readable by anyone holding the URL.
+  //
+  // Tolerant of the column being absent (0002 not yet applied), because the
+  // unpublish itself must still work — an author withdrawing content on a database
+  // that has no share feature has nothing to withdraw from.
+  const clearShare = sql`, shared_at = null`;
+  const run = (withShare: boolean) =>
+    asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        update learning_objects
+        set published_at = null, version_number = null, status = 'draft', updated_at = now()
+            ${withShare ? clearShare : sql``}
+        where organization_id = ${orgId} and id = ${id}
+          ${programGuard}
+        returning id`);
+      return (rows as unknown as Row[]).length > 0;
+    });
+  try {
+    return await run(true);
+  } catch (e) {
+    if (!_isUndefinedColumn(e)) throw e;
+    return run(false);
+  }
 }
 
 /** Remove content from the shared store for good. */

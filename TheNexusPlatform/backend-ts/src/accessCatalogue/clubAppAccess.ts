@@ -26,6 +26,8 @@ type Membership = { org_id: string; role: string; program_id?: string | null };
 export interface ClubAppAccess {
   /** The role's name as the console shows it, or "Administrator" for the tier. */
   roleName: string | null;
+  /** The program_roles row id, for grants addressed to a role rather than a person. */
+  roleId: string | null;
   /** Clamped `app.*` ids. Empty means NO FINE ROLE — never "denied". */
   capabilities: string[];
   /** Club administrator, or the org's owner/admin. Holds the app entire. */
@@ -73,6 +75,7 @@ export async function clubAppAccessFor(
   const structuralTier = clubStructuralTier(user.memberships as Membership[], clubOrgId, clubProgramId);
 
   let roleName: string | null = null;
+  let roleId: string | null = null;
   let granted: string[] = [];
   let areaLevel: string | null = null;
 
@@ -80,6 +83,7 @@ export async function clubAppAccessFor(
     const role = await getRole(clubProgramId, user.email).catch(() => null);
     if (role) {
       roleName = (role.role_name as string | null) ?? null;
+      roleId = (role.role_id as string | null) ?? null;
       const perms = (role.perms as Record<string, unknown>) ?? {};
       granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
       // The role's grant level on the app's own area. "administrator" means the
@@ -98,9 +102,9 @@ export async function clubAppAccessFor(
       roleName,
       programRoleCapabilities: granted,
     });
-    return { roleName: resolved.roleName, capabilities: resolved.capabilities, structuralTier };
+    return { roleName: resolved.roleName, roleId, capabilities: resolved.capabilities, structuralTier };
   } catch (e) {
     console.error("club-app access resolution failed (using empty set):", e);
-    return { roleName, capabilities: [], structuralTier };
+    return { roleName, roleId, capabilities: [], structuralTier };
   }
 }
