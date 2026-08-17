@@ -77,7 +77,15 @@ export default async function PlayTablePage({
   let view;
   try {
     view = await sessionService().view(sessionId);
-  } catch {
+  } catch (e) {
+    // SAY WHY. A bare notFound() here reads as "no such board" for every
+    // possible cause — a missing session, a pinned compile that is gone, a
+    // seat kind the running build does not know about. That last one cost a
+    // long diagnosis once: a dev server older than a new seat kind threw deep
+    // inside buildGame, and the only evidence anywhere was a styled 404.
+    // The page still 404s, because a board that cannot be built cannot be
+    // shown — but the reason now exists somewhere a developer can read it.
+    console.error(`table2: cannot build session ${sessionId}:`, e);
     notFound();
   }
   const { record, state, actingSeat, actingIsHuman } = view;
