@@ -20,7 +20,7 @@
 
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, useWindowDimensions, View } from "react-native";
+import { ScrollView, StyleSheet, Text, useWindowDimensions, View } from "react-native";
 
 import { ACTION_CARD, ActionCard } from "../../components/action-card";
 import { BrandChrome } from "../../components/brand-chrome";
@@ -33,6 +33,7 @@ import {
 import { Brand, Fonts, Spacing, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { TabLoading } from "../../components/tab-loading";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
@@ -58,6 +59,27 @@ export default function PlayScreen() {
     token ? peekSummary(token, clubId ?? undefined) : null,
   );
   const [error, setError] = useState<string | null>(null);
+  // Coaches get the Curated Deals door (owner design 2026-08-15). Same
+  // role discipline as the Coach tab: unknown (null) shows no card rather
+  // than flashing one in or out once the context resolves.
+  const [coach, setCoach] = useState<boolean | null>(() => {
+    const peeked = token ? peekRoleContext(token, clubId ?? undefined) : null;
+    return peeked ? isCoach(peeked) : null;
+  });
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || clubsLoading) return;
+      let cancelled = false;
+      const peeked = peekRoleContext(token, clubId ?? undefined);
+      setCoach(peeked ? isCoach(peeked) : null);
+      getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
+        if (!cancelled) setCoach(isCoach(ctx));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [token, clubId, clubsLoading]),
+  );
 
   const s = width / DESIGN_WIDTH;
 
@@ -169,14 +191,45 @@ export default function PlayScreen() {
       onPress: () => router.push("/assigned"),
       disabled: false,
     },
+    // COACHES ONLY (owner design 2026-08-15): deal a board in curate mode —
+    // play the line, annotate your own decisions, publish to the library,
+    // assign from Assignments. Hidden (not dimmed) for everyone else; while
+    // the role is UNKNOWN it stays hidden rather than flashing in.
+    ...(coach === true
+      ? [
+          {
+            key: "curate",
+            label: "Curated Deals",
+            icon: ICON_CARD_PLUS,
+            suit: Brand.maroon,
+            onPress: () => router.push("/new-board?curate=1"),
+            disabled: false,
+          },
+        ]
+      : []),
   ];
 
   return (
     <BrandChrome>
-      <View style={styles.page}>
+      {/* The tab SCROLLS (owner report 2026-08-16): the coach's sixth card
+          put a third row behind the tab bar, and a fixed page gave no way to
+          reach it. Same pattern as the Coach tab — nothing here is chrome
+          worth pinning, so the title rides along. */}
+      <ScrollView
+        style={styles.page}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.scrollBody}
+      >
         <Text style={styles.title}>Play</Text>
 
-        <View style={[styles.grid, { height: rowPitch * 2, marginTop: GRID_TOP_GAP * s }]}>
+        <View
+          style={[
+            styles.grid,
+            // As many rows as the cards need — five cards was already three
+            // rows quietly overflowing a two-row box.
+            { height: rowPitch * Math.ceil(cards.length / 2), marginTop: GRID_TOP_GAP * s },
+          ]}
+        >
           {cards.map((c, i) => (
             <View
               key={c.key}
@@ -201,17 +254,26 @@ export default function PlayScreen() {
         </View>
 
         {error ? <Text style={styles.stateText}>{error}</Text> : null}
-      </View>
+      </ScrollView>
 
-      {/* Ready once the club is known and the summary (or its error) is in —
-          the tiles' numbers arrive with the content, not after it. */}
-      <TabLoading ready={!clubsLoading && (summary !== null || error !== null)} />
+      {/* Ready once the club is known, the summary (or its error) is in, AND
+          the role has resolved — the tiles' numbers and the grid's SHAPE
+          arrive with the content, not after it. Without the role in that
+          list a coach watched the grid paint five cards and then grow a
+          sixth; the sign-in prime now warms it, so this waits on nothing.
+          (TabLoading has its own failsafe, and lifts for good once lifted.) */}
+      <TabLoading
+        ready={!clubsLoading && (summary !== null || error !== null) && coach !== null}
+      />
     </BrandChrome>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flex: 1, paddingBottom: TAB_BAR_CLEARANCE },
+  page: { flex: 1 },
+  // Clearance lives on the CONTENT, not the scroll view: padding on the view
+  // itself would shrink the scrollport and still hide the last row's tail.
+  scrollBody: { paddingBottom: TAB_BAR_CLEARANCE + 24 },
   title: {
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,

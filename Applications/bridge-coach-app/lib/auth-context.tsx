@@ -13,7 +13,7 @@ import { AppState } from "react-native";
 import { clearAvatarCache } from "./avatar-store";
 import { clearAllBridgeCaches } from "./bridge-cache";
 import { clearBridgeMeCache } from "./bridge-features";
-import { clearBridgeRoleCache, clubDefaultProgramId, getRoleContext } from "./bridge-role";
+import { clearBridgeRoleCache, getRoleContext, initialClubProgramId } from "./bridge-role";
 import { clearDealChats } from "./deal-chat";
 import { clearLaunchCache } from "./launch-cache";
 import { clearLearningCache } from "./learning";
@@ -91,14 +91,23 @@ function refreshStoredSession(): Promise<StoredSession | null> {
 }
 
 function primeSessionCaches(accessToken: string): void {
-  // The summary prime waits for the role context so it can ask about the
-  // RIGHT program. Firing immediately looked faster but wasn't: a club-only
+  // The primes wait for the role context so they can ask about the RIGHT
+  // program. Firing immediately looked faster but wasn't: a club-only
   // account's app-wide summary is a guaranteed 403, so their prime burned a
   // full round-trip and the first screen still paid the real fetch cold.
   getRoleContext(accessToken)
-    .then((ctx) =>
-      refreshSummary(accessToken, clubDefaultProgramId(ctx.memberships) ?? undefined),
-    )
+    .then((ctx) => {
+      const programId = initialClubProgramId(ctx.memberships) ?? undefined;
+      // The CLUB-scoped role context is its own cache key, and nothing primed
+      // it — so the Play tab asked for it cold on arrival and its coach-only
+      // Curated Deals card popped in a round-trip after the grid it belongs
+      // to. Primed here it rides alongside the summary and lands with it.
+      // (Only the bridge grant is actually re-fetched; /auth/me is shared.)
+      return Promise.all([
+        getRoleContext(accessToken, programId),
+        refreshSummary(accessToken, programId),
+      ]);
+    })
     .catch(() => {});
 }
 
