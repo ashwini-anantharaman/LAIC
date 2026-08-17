@@ -46,6 +46,7 @@ import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 import { useRouter } from "next/navigation";
 
 import { useCoachQuestion, useHoldTable } from "../coachHold";
+import { boardEpoch, currentGroup, decisionEpoch } from "@/lib/coach/epoch";
 import { CoachChat, CoachEventAsk } from "./CoachEventAsk";
 import { BenWhatIf, CoachHints, CoachTell, SpeechBubble } from "./CoachHintsTell";
 import { CoachTakeaway } from "./CoachTakeaway";
@@ -1308,35 +1309,10 @@ function chatChapter(data: CoachPanelData): string {
 }
 
 /** The board's current history section — the open trick, or the auction. */
-function currentGroup(data: CoachPanelData): CoachEventGroup | undefined {
-  return (
-    data.eventGroups?.find((g) => g.current) ??
-    data.eventGroups?.[data.eventGroups.length - 1]
-  );
-}
+// currentGroup / boardEpoch / decisionEpoch live in ./coachEpoch — pure, and
+// tested there. decisionEpoch in particular has a sharp edge (a count is not
+// an identity across an undo) that earns a test of its own.
 
-/**
- * Where the board is, per TRICK, as a remount key. A new trick is a new
- * conversation: the chat keys on this, so it survives the cards inside a
- * trick but empties for the next one.
- */
-function boardEpoch(data: CoachPanelData): string {
-  return currentGroup(data)?.id ?? "start";
-}
-
-/**
- * Where the board is, per CARD. The hint ladder, the advice and BEN's tell
- * are about ONE decision, and a trick holds up to four — declarer decides for
- * dummy at trick one and again from hand three cards later, and serving the
- * first decision's ladder to the second is coaching the wrong position (the
- * bug this fixes: hints "not resetting for every play"). Counting the current
- * section's events makes every card — and every call in the auction — a new
- * epoch, which is a new cache key and a fresh, face-down ladder.
- */
-function decisionEpoch(data: CoachPanelData): string {
-  const g = currentGroup(data);
-  return g ? `${g.id}#${g.events.length}` : "start";
-}
 
 /** The coach's badge for the curated bubbles — the platform holds no avatar
  *  images, so the identity is a maroon chip wearing a whistle-plain "C". */
