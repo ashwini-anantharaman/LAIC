@@ -226,6 +226,21 @@ export function removeAssignmentLearner(
   });
 }
 
+/**
+ * Retire the whole assignment (owner request 2026-08-17).
+ *
+ * Detach, never destroy — the same rule removing one learner follows. The
+ * brief and every learner's row go; the boards they played, their submissions
+ * and the feedback on them stay exactly where they are.
+ */
+export function deleteAssignment(
+  token: string,
+  programId: string,
+  key: string,
+): Promise<{ deleted: boolean; learners: number; keptSessions: number }> {
+  return bridgeRequest(briefPath(key), { token, programId, method: "DELETE" });
+}
+
 export function addAssignmentReviewer(
   token: string,
   programId: string,

@@ -49,6 +49,11 @@ export type AuditAction =
   | "play.comment"
   | "assignment.created"
   | "assignment.started"
+  /** The WHOLE assignment retired — brief and every learner's row. Distinct
+   *  from `assignment.brief.deleted`, which is only the brief; the detail
+   *  carries how many learners were on it and how many played games were
+   *  left standing (detach, never destroy). */
+  | "assignment.deleted"
   | "assignment.brief.created"
   | "assignment.brief.updated"
   | "assignment.brief.deleted"

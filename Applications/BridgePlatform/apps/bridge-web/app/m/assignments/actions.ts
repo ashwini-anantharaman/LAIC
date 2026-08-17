@@ -17,6 +17,7 @@ import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { fanOutBriefToReviewer } from "@/lib/assignments";
+import { deleteAssignmentSet } from "@/lib/assignmentEdit";
 import { adoptLegacyGroup, loadAssignment } from "@/lib/assignmentSets";
 import { copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners } from "@/lib/nexus";
@@ -139,6 +140,21 @@ export async function addLearnerAction(formData: FormData): Promise<void> {
     addedLearner: learnerId,
   });
   redirect(back(set.view.key, "added=learner"));
+}
+
+/**
+ * Delete the whole assignment (owner request 2026-08-17): the coach could
+ * take learners off one at a time but never put the assignment itself away,
+ * so a board asked for by mistake stayed on every learner's list for good.
+ *
+ * Detach, never destroy — see deleteAssignmentSet. Games and feedback stand.
+ */
+export async function deleteAssignmentAction(formData: FormData): Promise<void> {
+  const key = String(formData.get("key"));
+  const { context, set } = await requireEditable(key);
+  await deleteAssignmentSet(context, set);
+  // Back to the LIST, not the sheet — the sheet's assignment is gone.
+  redirect("/m/assignments?deleted=1");
 }
 
 export async function removeLearnerAction(formData: FormData): Promise<void> {

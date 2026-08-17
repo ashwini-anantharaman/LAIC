@@ -24,6 +24,7 @@ import {
   addLearnerAction,
   addReviewerAction,
   adoptAssignmentAction,
+  deleteAssignmentAction,
   removeLearnerAction,
   removeReviewerAction,
   updateAssignmentNoteAction,
@@ -49,6 +50,9 @@ export default async function MobileAssignmentsPage({
 }: Readonly<{
   searchParams: Promise<{
     assigned?: string;
+    /** A whole assignment was just retired — the list is where it lands, since
+     *  the sheet it was deleted from no longer has anything to show. */
+    deleted?: string;
     /** Which assignment's editor sheet a mutation came back to — it carries the
      *  banner AND forces that sheet open, since a client-side redirect does not
      *  re-evaluate `:target`. Opening one otherwise is a pure fragment change. */
@@ -262,6 +266,7 @@ export default async function MobileAssignmentsPage({
     removeLearner: removeLearnerAction,
     addReviewer: addReviewerAction,
     removeReviewer: removeReviewerAction,
+    deleteAssignment: deleteAssignmentAction,
   };
   const links: AssignmentLinks = {
     list: "/m/assignments",
@@ -313,6 +318,21 @@ export default async function MobileAssignmentsPage({
           }}
         >
           Assigned to {params.assigned} learner{params.assigned === "1" ? "" : "s"}.
+        </p>
+      )}
+
+      {params.deleted && (
+        <p
+          style={{
+            font: `500 13px ${G}`,
+            background: GREEN,
+            color: CREAM,
+            borderRadius: 12,
+            padding: "10px 14px",
+            margin: "14px 0 0",
+          }}
+        >
+          Assignment deleted. Any boards your learners already played stay in their My Games.
         </p>
       )}
 
