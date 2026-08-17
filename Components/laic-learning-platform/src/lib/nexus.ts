@@ -198,6 +198,18 @@ export function contextToRole(ctx: LearningContext): Role {
   return "student";
 }
 
+/**
+ * Drop a session token Nexus has stopped accepting, without navigating.
+ *
+ * A spent or expired token is worse than none: `supabaseEnabled()` still reads
+ * true, so the Studio keeps offering to publish and every attempt comes back a
+ * bare 401. Clearing it puts the app back into its honest draft-only state,
+ * where the next attempt explains itself.
+ */
+export function clearDeadSession(): void {
+  localStorage.removeItem(TOKEN_KEY);
+}
+
 /** Clear the session and return to the org's own sign-in (or a neutral page). */
 export function signOutToNexus(): void {
   const ret = getReturnUrl();

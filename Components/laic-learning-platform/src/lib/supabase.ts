@@ -7,7 +7,7 @@
  * Nexus session?). The file name is kept to minimise churn.
  */
 import type { LearningObject } from './types';
-import { nexusFetch, getToken, getProgramId } from './nexus';
+import { nexusFetch, getToken, getProgramId, clearDeadSession } from './nexus';
 
 /** Remote persistence is available when we have a Nexus session (post-launch). */
 export function supabaseEnabled(): boolean {
@@ -211,6 +211,15 @@ export async function publishObject(
     // 409 is the one worth naming: the object belongs to another program, which a
     // generic "publish failed" would leave the author guessing about.
     if (res.status === 409) throw new Error('That object belongs to another program');
+    // 401 means we HAD a token and Nexus refused it — expired, or spent by a
+    // newer launch. The message above only fires when there is no token at all,
+    // so without this an expired session surfaced as a bare number and the
+    // Studio went on offering Publish against a dead token. Dropping it puts
+    // the app back into draft-only, where the next attempt explains itself.
+    if (res.status === 401) {
+      clearDeadSession();
+      throw new Error('Your Nexus session expired — relaunch the Studio from Nexus to publish');
+    }
     throw new Error(`Publish failed (${res.status})`);
   }
   return res.json();
