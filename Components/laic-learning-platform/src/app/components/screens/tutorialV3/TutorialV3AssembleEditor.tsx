@@ -665,7 +665,12 @@ export function TutorialV3AssembleEditor({
         </div>
         )}
 
-        {mode === 'edit' && (
+        {/*
+          Reading as a student is when an author notices the thing they want to
+          ask Hoot about. Gating the panel on edit mode meant the button was
+          there in preview and pressing it did nothing visible.
+        */}
+        {(
           <TutorialV3RefineSidebar
             open={refineOpen}
             onOpenChange={setRefineOpen}
