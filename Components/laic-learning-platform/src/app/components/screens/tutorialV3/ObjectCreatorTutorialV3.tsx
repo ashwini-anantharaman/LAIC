@@ -883,7 +883,11 @@ export function ObjectCreatorTutorialV3() {
       onGo={goToPipelinePhase}
       canReview={allRequiredDone(draft.sections, draft.topLevelSlots)
         || phase === 'review'
-        || !!(draft.assembledParts && draft.assembledParts.length)}
+        || !!(draft.assembledParts && draft.assembledParts.length)
+        // Anything authored is enough to look at Review; requiring everything
+        // meant an author could not check their first section against it.
+        || draft.sections.some((sec) => (sec.parts || []).length > 0)
+        || (draft.topLevelSlots || []).some((sl) => (sl.parts || []).length > 0 || !!sl.part)}
       canRevisitEarlySteps={canRevisitEarlySteps}
       sourceFirst={sourceFirst}
     />
@@ -1786,11 +1790,17 @@ function PipelineRail({
       {steps.map((s, i) => {
         const isActive = s.id === activeId;
         const isPast = i < activeIndex || (!!canRevisitEarlySteps && (s.id === 'start' || s.id === 'structure') && !isActive);
-        const canClick = s.id === 'start' || s.id === 'structure'
-          ? activeIndex >= i || !!canRevisitEarlySteps
-          : s.id === 'review'
-            ? canReview || isPast || isActive
-            : i <= activeIndex || (!!canRevisitEarlySteps && (s.id === 'navigator' || s.id === 'sources'));
+        /*
+          Once a draft has substance, every step is reachable. The old rule was a
+          per-step tangle that left an author looking at a step they could see but
+          not click, with no way to tell why — and going back never lost anything,
+          so there was nothing being protected. Review still needs something to
+          review; before that it would be an empty page with a submit button.
+          */
+        const canClick = isActive
+          || (canRevisitEarlySteps
+            ? (s.id !== 'review' || canReview)
+            : i <= activeIndex);
 
         return (
           <React.Fragment key={s.id}>

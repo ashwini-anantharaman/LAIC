@@ -3,10 +3,10 @@
  * Learning-object parts open their dedicated editors; Back returns here.
  * Edit mode includes a collapsible Refine with AI sidebar (Hoot + sources + embeds).
  */
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Eye, Pencil, Send, Sparkles, ChevronUp, ChevronDown, Trash2,
-  ExternalLink, Save,
+  ExternalLink, Save, Maximize2, Minimize2,
 } from 'lucide-react';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
@@ -208,26 +208,55 @@ export function TutorialV3AssembleEditor({
     setSelectedPartId(id);
   };
 
+  /**
+   * Full screen hands the whole viewport to whichever mode is open. Editing a
+   * long tutorial or reading it as a student both want the height, and the
+   * authoring chrome above is not what you are looking at while you do either.
+   */
+  const [fullscreen, setFullscreen] = useState(false);
+
+  // Escape is what people try first, so it should work.
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreen]);
+
   const openRefineForPart = (partId: string) => {
     setSelectedPartId(partId);
     setRefineOpen(true);
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div
+      className={fullscreen ? 'fixed inset-0 z-[70] flex flex-col min-h-0' : 'flex flex-col h-full min-h-0'}
+      style={fullscreen ? { background: '#fff' } : undefined}
+    >
       <div
         className="sticky top-0 z-20 flex flex-col gap-2 px-3 sm:px-5 py-3 border-b"
         style={{ background: 'rgba(255,255,255,0.92)', backdropFilter: 'blur(12px)', borderColor: 'rgba(0,0,0,0.06)' }}
       >
         <div className="flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="inline-flex items-center gap-1 text-sm font-medium"
-            style={{ color: '#6B7280' }}
-          >
-            <ArrowLeft size={14} /> Back to outline
-          </button>
+          {fullscreen ? (
+            <button
+              type="button"
+              onClick={() => setFullscreen(false)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 13, fontWeight: 650, color: '#44403c', borderColor: 'rgba(0,0,0,0.12)', background: '#fff' }}
+            >
+              <Minimize2 size={14} /> Exit full screen
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-1 text-sm font-medium"
+              style={{ color: '#6B7280' }}
+            >
+              <ArrowLeft size={14} /> Back to outline
+            </button>
+          )}
           <SubmitVersionMenu
             versions={submitVersions}
             canSubmit={parts.length > 0}
@@ -235,8 +264,8 @@ export function TutorialV3AssembleEditor({
             disabledTitle={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
           />
         </div>
-        {rail}
-        {(onBackToPlan || onBackToStructure) && (
+        {!fullscreen && rail}
+        {!fullscreen && (onBackToPlan || onBackToStructure) && (
           <div className="flex flex-wrap gap-2">
             {onBackToPlan && (
               <button
@@ -292,6 +321,17 @@ export function TutorialV3AssembleEditor({
           <span style={{ fontSize: 12, color: '#9AA3AF' }}>
             {parts.length} part{parts.length === 1 ? '' : 's'}
           </span>
+          {!fullscreen && (
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              title={mode === 'preview' ? 'Full screen student preview' : 'Full screen editing'}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 12, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: '#fff' }}
+            >
+              <Maximize2 size={12} /> Full screen
+            </button>
+          )}
           {mode === 'edit' && (
             <button
               type="button"
@@ -317,7 +357,9 @@ export function TutorialV3AssembleEditor({
             its section sidebar, rather than a bare column of blocks. It runs
             full-bleed because the sidebar is part of the layout, not content. */}
         {mode === 'preview' && parts.length > 0 ? (
-          <div className="flex-1 min-w-0 overflow-y-auto" style={{ background: '#fff' }}>
+          // overflow-hidden, not auto: the reader scrolls its own reading
+          // column, and a second scrollbar around it moved the rail too.
+          <div className="flex-1 min-w-0 overflow-hidden" style={{ background: '#fff' }}>
             <TutorialV3Reader
               draft={draft}
               blocks={blocks as any}

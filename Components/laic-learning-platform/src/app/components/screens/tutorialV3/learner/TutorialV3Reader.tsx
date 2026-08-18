@@ -46,7 +46,7 @@ import type {
 } from '../../../../../lib/types';
 import type { TutorialV3Draft } from '../../../../../lib/tutorialV3/types';
 import { LearningBlocksPreview, type BlockOverrides } from '../../LearnerReader';
-import { expandTutorialBlocks } from '../../../../../lib/libraryEmbed';
+import { expandTutorialBlocks, parseEmbedSlotHeading } from '../../../../../lib/libraryEmbed';
 import { countBlocksWords } from '../../../../../lib/tutorialPages.js';
 import { enrichQuizQuestionsWithSources } from '../../../../../lib/mcqSources.js';
 import { LearnerProgressProvider, useLearnerProgress } from './LearnerProgressContext';
@@ -106,6 +106,13 @@ function buildOverrides(
   return {
     'rich-text': ({ block }) => {
       const c = block.content as { text?: string; heading?: string; subheads?: string[] };
+      /*
+        A reserved embed position that never got filled. The generator writes
+        ⟦EMBED_SLOT:…⟧ as a placeholder heading and something else is supposed to
+        replace it; when that did not happen the marker used to render to the
+        learner as a title. A gap is the right failure here, not a token.
+      */
+      if (parseEmbedSlotHeading(c.heading)) return null;
       return <WarmRichText text={c.text || ''} heading={c.heading} subheads={c.subheads} />;
     },
 
@@ -322,7 +329,16 @@ function ReaderInner({
   };
 
   return (
-    <div className="flex min-h-screen" style={{ background: WARM_BG, fontFamily: WARM_FONT }}>
+    /*
+      The reader owns its own scrolling. The rail is full height and does not
+      move; the reading column scrolls inside it. Letting the page scroll instead
+      dragged the rail up and out of view — it was only ever as tall as the
+      viewport, so scrolling down left an empty strip where it had been.
+    */
+    <div
+      className="flex overflow-hidden"
+      style={{ background: WARM_BG, fontFamily: WARM_FONT, height: '100%', minHeight: 520 }}
+    >
       <style>{WARM_PROSE_CSS}</style>
 
       <TutorialV3SectionSidebar
@@ -355,7 +371,7 @@ function ReaderInner({
         </button>
       )}
 
-      <main className="flex-1 min-w-0">
+      <main className="flex-1 min-w-0 overflow-y-auto" style={{ height: '100%' }}>
         <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
           {/* Header */}
           <div className="mb-8">

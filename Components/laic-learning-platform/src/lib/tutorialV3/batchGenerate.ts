@@ -29,7 +29,7 @@ import type { TutorialV3Draft, TutorialV3Part, V3Section, V3TopLevelSlot } from 
 import { generateObjectBlocks } from './generateObject';
 import { defaultDefineConfig, objectTypeNoun } from './objectPipelineDefaults';
 import { templateUsesCompositeRecipe, toFlatSectionBlockRecipe } from './tutorialTemplates';
-import { makeGeneratedEmbedPart } from '../libraryEmbed';
+import { makeGeneratedEmbedPart, slotKeyFromPart } from '../libraryEmbed';
 
 /** One thing to generate: a section of prose, or an embedded object slot. */
 export type BatchTarget =
@@ -161,6 +161,76 @@ async function generateSectionParts(opts: {
 }
 
 /**
+ * Fill the embed markers a generated section leaves behind.
+ *
+ * When a section recipe carries an embedded object, the tutorial generator does
+ * not write it — it reserves the position with a `⟦EMBED_SLOT:…⟧` heading and
+ * moves on, because each object type has its own pipeline. Nothing in V3 ever
+ * came back to fill those in, so the marker reached the learner verbatim.
+ *
+ * A slot whose object cannot be generated has its marker dropped rather than
+ * left showing: a missing exercise is a gap, a raw marker is a bug on screen.
+ */
+async function fillSectionEmbedSlots(opts: {
+  section: V3Section;
+  parts: TutorialV3Part[];
+  units: ContentUnit[];
+  draft: TutorialV3Draft;
+  signal: AbortSignal;
+  onProgress?: (message: string) => void;
+}): Promise<{ parts: TutorialV3Part[]; failures: string[] }> {
+  const { section, parts, units, draft, signal, onProgress } = opts;
+  const failures: string[] = [];
+  const out: TutorialV3Part[] = [];
+
+  for (const part of parts) {
+    const key = slotKeyFromPart(part);
+    if (!key) {
+      out.push(part);
+      continue;
+    }
+    // `${sectionId}:${recipeItemId}` — the recipe item names the object type.
+    const recipeItemId = key.slice(key.indexOf(':') + 1);
+    const item = (section.recipe || []).find(
+      (r) => r.kind === 'embedded' && r.id === recipeItemId,
+    );
+    if (!item || item.kind !== 'embedded') {
+      failures.push('an embed slot with no recipe entry');
+      continue;
+    }
+    const objectType = String(item.objectType);
+    const noun = objectTypeNoun(objectType);
+    try {
+      onProgress?.(`Writing the ${noun} for ${section.title}…`);
+      const { blocks, title } = await generateObjectBlocks({
+        objectType,
+        noun,
+        title: `${section.title} · ${noun}`,
+        define: defaultDefineConfig(objectType, item.generateMeta, section.intent || section.title),
+        extracts: extractsFromUnits(units),
+        markupUnits: units,
+        knowledgeBase: null,
+        slotId: recipeItemId,
+        signal,
+      });
+      out.push(makeGeneratedEmbedPart({
+        id: `embed-${recipeItemId}`,
+        objectType: objectType as any,
+        title,
+        snapshotBlocks: blocks,
+        authoringNote: item.authoringNote,
+        required: item.required,
+      }) as TutorialV3Part);
+    } catch (e) {
+      if (e instanceof DOMException && e.name === 'AbortError') throw e;
+      failures.push(noun);
+    }
+  }
+
+  return { parts: out, failures };
+}
+
+/**
  * Run the whole batch. Applies `markup` to every target, generates it, and
  * reports each outcome as it lands.
  *
@@ -184,6 +254,8 @@ export async function runBatchGenerate(opts: {
   for (const target of targets) {
     if (signal.aborted) return;
     onOutcome({ target, status: 'running' });
+    /** Set when the target succeeded but something inside it did not. */
+    let note: string | undefined;
     try {
       const units = markup.units?.length
         ? markup.units
@@ -197,11 +269,19 @@ export async function runBatchGenerate(opts: {
       if (target.kind === 'section') {
         const section = (draft.sections || []).find((s) => s.id === target.id);
         if (!section) throw new Error('Section no longer exists.');
-        const parts = await generateSectionParts({
+        const prose = await generateSectionParts({
           draft, template, section, units, highlights: markup.highlights, signal,
         });
+        const filled = await fillSectionEmbedSlots({
+          section, parts: prose, units, draft, signal,
+        });
+        // The section itself succeeded; carry what inside it did not, so the
+        // final outcome does not overwrite the only mention of it.
+        if (filled.failures.length) {
+          note = `Written, but ${filled.failures.join(' and ')} could not be generated.`;
+        }
         onSectionDone(target.id, {
-          parts,
+          parts: filled.parts,
           units,
           pickedSourceIds: markup.pickedSourceIds,
           highlights: markup.highlights,
@@ -248,7 +328,7 @@ export async function runBatchGenerate(opts: {
           done: true,
         });
       }
-      onOutcome({ target, status: 'done' });
+      onOutcome({ target, status: 'done', message: note });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       // One target failing is not the batch failing — carry on and report it.

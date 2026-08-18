@@ -220,7 +220,13 @@ export function TutorialV3SectionSidebar({
       {/* Desktop: sticky rail that collapses to nothing. */}
       <aside
         aria-label="Tutorial sections"
-        className={`hidden lg:flex flex-col shrink-0 sticky top-0 h-screen z-30 overflow-hidden transition-[width] duration-300 ${
+        /* h-full, not h-screen: the rail fills the reader, which owns the scroll. */
+        /*
+          No z-index: the rail is a column in the layout, not an overlay. It
+          carried z-30 from when it was sticky, which let it paint over the
+          authoring header above the student preview.
+        */
+        className={`hidden lg:flex flex-col shrink-0 h-full overflow-hidden transition-[width] duration-300 ${
           collapsed ? 'w-0' : 'w-64'
         }`}
         style={{ background: SAGE }}
