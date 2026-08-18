@@ -27,6 +27,7 @@ import type {
 } from '../types';
 import type { TutorialV3Draft, TutorialV3Part, V3Section, V3TopLevelSlot } from './types';
 import { generateObjectBlocks } from './generateObject';
+import { outlineRows } from './draftModel';
 import { defaultDefineConfig, objectTypeNoun } from './objectPipelineDefaults';
 import { templateUsesCompositeRecipe, toFlatSectionBlockRecipe } from './tutorialTemplates';
 import { makeGeneratedEmbedPart, slotKeyFromPart } from '../libraryEmbed';
@@ -43,6 +44,28 @@ export type BatchOutcome = {
 };
 
 /** Author markup, in the shape both generators want. */
+/**
+ * Put a set of targets into the tutorial's reading order.
+ *
+ * A batch is assembled from ticked rows or from a filter over two arrays, and
+ * neither says anything about sequence — so a run generated the content before
+ * the sections regardless of where the template put them. Generating in the
+ * order the tutorial reads also means each piece is written after the ones a
+ * learner will have read before it.
+ */
+export function sortTargetsByOutline<T extends { id: string }>(
+  draft: TutorialV3Draft,
+  targets: T[],
+): T[] {
+  const rank = new Map<string, number>();
+  outlineRows(draft).forEach((row, i) => {
+    rank.set(row.kind === 'slot' ? row.slot.id : row.section.id, i);
+  });
+  return [...targets].sort(
+    (a, b) => (rank.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (rank.get(b.id) ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
 export interface SharedMarkup {
   pickedSourceIds: string[];
   highlights: any[];
@@ -284,7 +307,8 @@ export async function runBatchGenerate(opts: {
   onSectionDone: (sectionId: string, patch: Partial<V3Section>) => void;
   onSlotDone: (slotId: string, patch: Partial<V3TopLevelSlot>) => void;
 }): Promise<void> {
-  const { draft, template, targets, markup, signal, onOutcome, onSectionDone, onSlotDone } = opts;
+  const { draft, template, markup, signal, onOutcome, onSectionDone, onSlotDone } = opts;
+  const targets = sortTargetsByOutline(draft, opts.targets);
 
   for (const target of targets) {
     if (signal.aborted) return;

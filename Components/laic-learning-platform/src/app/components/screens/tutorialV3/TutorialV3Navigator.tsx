@@ -27,6 +27,7 @@ import {
   doneCount,
   requiredSectionsRemaining,
 } from '../../../../lib/tutorialV3/draftModel';
+import { sortTargetsByOutline } from '../../../../lib/tutorialV3/batchGenerate';
 import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 import { V3_NAVY, V3_SAGE } from '../../../../lib/tutorialV3/authorTheme';
 
@@ -93,11 +94,15 @@ export function TutorialV3Navigator({
    * tutorial.
    */
   const [selected, setSelected] = React.useState<string[]>([]);
-  /** Ticked ids, resolved to what each one actually is. */
-  const asTargets = (ids: string[]) => ids.map((id) => ({
+  /**
+   * Ticked ids, resolved to what each one actually is — and put back into the
+   * order the tutorial reads, since ticks arrive in whatever order they were
+   * clicked and that is not a running order anyone chose.
+   */
+  const asTargets = (ids: string[]) => sortTargetsByOutline(draft, ids.map((id) => ({
     kind: (draft.sections.some((sec) => sec.id === id) ? 'section' : 'slot') as 'section' | 'slot',
     id,
-  }));
+  })));
   const toggleSelected = (id: string) => setSelected(
     (prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]),
   );

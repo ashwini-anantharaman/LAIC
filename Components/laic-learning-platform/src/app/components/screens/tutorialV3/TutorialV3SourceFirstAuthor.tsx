@@ -18,6 +18,7 @@ import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 import { unitsFromSourcePool } from '../../../../lib/tutorialV3/sourceFirst';
 import {
   runBatchGenerate,
+  sortTargetsByOutline,
   type BatchOutcome,
   type BatchTarget,
 } from '../../../../lib/tutorialV3/batchGenerate';
@@ -38,7 +39,7 @@ export function TutorialV3SourceFirstAuthor({
   const template = getTutorialTemplate(draft.templateId);
   const pool = draft.sourcePool || [];
 
-  const targets = useMemo<BatchTarget[]>(() => [
+  const targets = useMemo<BatchTarget[]>(() => sortTargetsByOutline(draft, [
     ...(draft.topLevelSlots || [])
       .filter((s) => s.kind === 'generate')
       .map((s) => ({
@@ -52,7 +53,7 @@ export function TutorialV3SourceFirstAuthor({
       id: s.id,
       title: s.title,
     })),
-  ], [draft.sections, draft.topLevelSlots]);
+  ]), [draft]);
 
   const pickedSourceIds = useMemo(() => {
     const fromSection = (draft.sections || [])[0]?.pickedSourceIds;
