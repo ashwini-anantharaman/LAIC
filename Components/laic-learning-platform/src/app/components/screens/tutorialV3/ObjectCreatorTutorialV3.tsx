@@ -19,6 +19,7 @@ import {
 import { supabaseEnabled, uploadImage } from '../../../../lib/supabase';
 import { getDefaultTemplateId } from '../../../../lib/templateDefaults';
 import {
+  BLANK_CANVAS_TUTORIAL_TEMPLATE_ID,
   DEFAULT_TUTORIAL_TEMPLATE_ID,
   WRITE_YOURSELF_TUTORIAL_TEMPLATE_ID,
   getTutorialTemplate,
@@ -69,6 +70,9 @@ import type { TutorialV3Draft, TutorialV3Phase, V3SourceRef } from '../../../../
 import { TutorialV3StructurePanel } from './TutorialV3StructurePanel';
 import { TutorialV3Navigator } from './TutorialV3Navigator';
 import { TutorialV3BatchGenerate } from './TutorialV3BatchGenerate';
+import { TutorialV3SourceFirstStructure } from './TutorialV3SourceFirstStructure';
+import { TutorialV3SourceFirstAuthor } from './TutorialV3SourceFirstAuthor';
+import { applyProposal, isSourceFirstDraft, SOURCE_FIRST_PATH } from '../../../../lib/tutorialV3/sourceFirst';
 import { TutorialV3SectionWorkspace } from './TutorialV3SectionWorkspace';
 import {
   TutorialV3SourcePanel,
@@ -161,6 +165,22 @@ export function ObjectCreatorTutorialV3() {
   const [draft, setDraft] = useState<TutorialV3Draft>(() => {
     const launchId = resolveTutorialV3LaunchTemplate(pendingTemplateId);
     const authoringPath = pendingAuthoringPath;
+
+    if (authoringPath === SOURCE_FIRST_PATH) {
+      /*
+        No template, because the structure is not known yet — it comes out of
+        the sources on the Structure step. Blank canvas is the right skeleton to
+        start from: free section count and nothing prescribed.
+      */
+      const tpl = getTutorialTemplate(BLANK_CANVAS_TUTORIAL_TEMPLATE_ID);
+      return emptyTutorialV3Draft({
+        templateId: tpl.id,
+        structure: structureFromTemplate(tpl),
+        title: '',
+        phase: 'start',
+        metadata: { authoringPath: SOURCE_FIRST_PATH, pathMode: 'manual' },
+      });
+    }
 
     if (authoringPath === 'write-yourself') {
       const tpl = writeYourselfTutorialTemplate();
@@ -530,16 +550,19 @@ export function ObjectCreatorTutorialV3() {
       const resolvedPath = pool.length || pathMode === 'prompt'
         ? pathMode
         : 'manual';
+      // On the source-first path Sources hands off to Structure, where the
+      // model proposes the shape; every other path has already been there.
+      const afterSources = isSourceFirstDraft(draft) ? 'structure' : 'navigator';
       commit(touchDraft(draft, {
         sourcePool: pool,
-        phase: 'navigator',
+        phase: afterSources,
         metadata: {
           ...draft.metadata,
           pathMode: resolvedPath,
           promptText: pathMode === 'prompt' ? promptText : undefined,
           media,
         },
-      }), 'navigator');
+      }), afterSources);
     } finally {
       setSourcesBusy(false);
     }
@@ -705,14 +728,19 @@ export function ObjectCreatorTutorialV3() {
 
   const writeYourself = isWriteYourselfTutorial(draft.templateId)
     || draft.metadata.authoringPath === 'write-yourself';
+  /** Sources first, and the model proposes the shape. See lib/tutorialV3/sourceFirst. */
+  const sourceFirst = isSourceFirstDraft(draft);
   /** Blank canvas: free section count + author-added slots, but Sources and AI stay on. */
   const freeform = isBlankCanvasTutorial(draft.templateId);
 
   const pipelineNeedsSources = useMemo(() => {
     if (writeYourself) return false;
+    // Source-first has nothing to work from without them, whatever the
+    // skeleton template happens to say.
+    if (sourceFirst) return true;
     const tpl = getTutorialTemplate(draft.templateId);
     return analyzeTemplateRecipe(tpl).needsSources;
-  }, [draft.templateId, writeYourself]);
+  }, [draft.templateId, writeYourself, sourceFirst]);
 
   /** Jump back (or forward) along the top-level Plan → Structure → Sources → Author rail. */
   const goToPipelinePhase = useCallback((next: TutorialV3Phase) => {
@@ -857,6 +885,7 @@ export function ObjectCreatorTutorialV3() {
         || phase === 'review'
         || !!(draft.assembledParts && draft.assembledParts.length)}
       canRevisitEarlySteps={canRevisitEarlySteps}
+      sourceFirst={sourceFirst}
     />
   );
 
@@ -1093,19 +1122,64 @@ export function ObjectCreatorTutorialV3() {
                   learnerPage: s.learnerPage ?? (i + 1),
                 })));
               }
+              // Source-first reads before it designs, so Plan hands off to
+              // Sources and Structure comes after.
+              const nextPhase = sourceFirst ? 'sources' : 'structure';
               const next = touchDraft(synced, {
                 title: draft.title.trim(),
                 metadata: draft.metadata,
-                phase: 'structure',
+                phase: nextPhase,
               });
-              commit(next, 'structure');
+              commit(next, nextPhase);
             }}
             className="w-full py-3.5 rounded-full text-white disabled:opacity-40"
             style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
-            Save and continue to structure
+            {sourceFirst ? 'Save and continue to sources' : 'Save and continue to structure'}
           </button>
         </div>
+      </Shell>
+    );
+  }
+
+  /* ── B0. Structure, source-first: the model proposes it ───── */
+  if (phase === 'structure' && sourceFirst) {
+    const pickedIds = (draft.sourcePool || []).map((sp) => sp.id);
+    return (
+      <Shell
+        onBack={() => goToPipelinePhase('sources')}
+        onSave={saveDraft}
+        title="Structure"
+        subtitle="Proposed from your sources — review it before it becomes the tutorial"
+        rail={pipelineRail}
+        assistant={globalHoot}
+      >
+        <TutorialV3SourceFirstStructure
+          draft={draft}
+          pickedSourceIds={pickedIds}
+          onBackToSources={() => goToPipelinePhase('sources')}
+          onApply={(proposal) => {
+            const { sections, topLevelSlots } = applyProposal(draft, proposal, pickedIds);
+            setSectionTitles(sections.map((sec, i) => ({
+              id: sec.id,
+              title: sec.title,
+              intent: sec.intent || '',
+              learnerPage: sec.learnerPage ?? (i + 1),
+            })));
+            commit(touchDraft(draft, {
+              phase: 'navigator',
+              sections,
+              topLevelSlots,
+              // The model's own title and objective only fill gaps — an author
+              // who wrote them on Plan meant them.
+              title: draft.title.trim() || proposal.title || draft.title,
+              metadata: {
+                ...draft.metadata,
+                objective: String(draft.metadata.objective || '').trim() || proposal.objective || '',
+              },
+            }), 'navigator');
+          }}
+        />
       </Shell>
     );
   }
@@ -1335,7 +1409,9 @@ export function ObjectCreatorTutorialV3() {
             className="w-full py-3.5 rounded-full text-white disabled:opacity-50"
             style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
-            {hasAnySource ? 'Save and continue to author' : 'Skip sources and continue'}
+            {sourceFirst
+              ? 'Save and propose a structure'
+              : hasAnySource ? 'Save and continue to author' : 'Skip sources and continue'}
           </button>
         </div>
       </div>
@@ -1451,6 +1527,39 @@ export function ObjectCreatorTutorialV3() {
       </div>
       {globalHoot}
       </>
+    );
+  }
+
+  /* ── D0. Author, source-first: one button, everything ─────── */
+  if (phase === 'navigator' && sourceFirst && !batchSelection) {
+    return (
+      <Shell
+        onBack={() => goToPipelinePhase('structure')}
+        onSave={saveDraft}
+        title={draft.title || 'Tutorial V3'}
+        subtitle="Written from your sources"
+        rail={pipelineRail}
+        assistant={globalHoot}
+      >
+        <TutorialV3SourceFirstAuthor
+          draft={draft}
+          onReview={() => goToPipelinePhase('review')}
+          onSectionDone={(sectionId, patch) => {
+            setDraft((d) => {
+              const next = updateSection(d, sectionId, patch);
+              persist(next);
+              return next;
+            });
+          }}
+          onSlotDone={(slotId, patch) => {
+            setDraft((d) => {
+              const next = updateTopLevelSlot(d, slotId, patch);
+              persist(next);
+              return next;
+            });
+          }}
+        />
+      </Shell>
     );
   }
 
@@ -1633,6 +1742,7 @@ function PipelineRail({
   onGo,
   canReview,
   canRevisitEarlySteps,
+  sourceFirst = false,
 }: {
   phase: TutorialV3Phase;
   needsSources: boolean;
@@ -1640,16 +1750,30 @@ function PipelineRail({
   canReview: boolean;
   /** When true, Plan/Structure stay clickable even if the rail thinks you're still early. */
   canRevisitEarlySteps?: boolean;
+  /**
+   * Source-first runs Sources BEFORE Structure, because on that path the
+   * sources are what the structure is derived from — proposing a shape before
+   * there is anything to read would be the wrong way round.
+   */
+  sourceFirst?: boolean;
 }) {
-  const steps: { id: PipelineStepId; label: string; icon: React.ReactNode }[] = [
-    { id: 'start', label: 'Plan', icon: <ListOrdered size={12} /> },
-    { id: 'structure', label: 'Structure', icon: <LayoutList size={12} /> },
-    ...(needsSources
-      ? [{ id: 'sources' as const, label: 'Sources', icon: <Database size={12} /> }]
-      : []),
-    { id: 'navigator', label: 'Author', icon: <PenLine size={12} /> },
-    { id: 'review', label: 'Review', icon: <Eye size={12} /> },
-  ];
+  const steps: { id: PipelineStepId; label: string; icon: React.ReactNode }[] = sourceFirst
+    ? [
+      { id: 'start', label: 'Plan', icon: <ListOrdered size={12} /> },
+      { id: 'sources', label: 'Sources', icon: <Database size={12} /> },
+      { id: 'structure', label: 'Structure', icon: <LayoutList size={12} /> },
+      { id: 'navigator', label: 'Author', icon: <PenLine size={12} /> },
+      { id: 'review', label: 'Review', icon: <Eye size={12} /> },
+    ]
+    : [
+      { id: 'start', label: 'Plan', icon: <ListOrdered size={12} /> },
+      { id: 'structure', label: 'Structure', icon: <LayoutList size={12} /> },
+      ...(needsSources
+        ? [{ id: 'sources' as const, label: 'Sources', icon: <Database size={12} /> }]
+        : []),
+      { id: 'navigator', label: 'Author', icon: <PenLine size={12} /> },
+      { id: 'review', label: 'Review', icon: <Eye size={12} /> },
+    ];
 
   const activeId: PipelineStepId = (phase === 'section' || phase === 'slot')
     ? 'navigator'

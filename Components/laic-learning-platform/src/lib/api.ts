@@ -710,6 +710,54 @@ export function editConceptCard(
 
 /* ─── Summary / Reflection / Assignment / Drill ─────────────────── */
 
+
+/* ─── Tutorial: propose a structure from the sources ───────────── */
+
+export interface ProposedSection {
+  title: string;
+  intent: string;
+  /** Atomic prose block types the model thinks this section needs. */
+  blocks: string[];
+  /** Embedded object types it thinks earn a place here. */
+  objects: string[];
+}
+
+export interface ProposedStructure {
+  title?: string;
+  objective?: string;
+  /** Two sentences on why this shape fits this source. */
+  rationale?: string;
+  openers: string[];
+  sections: ProposedSection[];
+  closers: string[];
+}
+
+export type ProposeEvent =
+  | { type: 'progress'; message: string }
+  | { type: 'result'; content: ProposedStructure }
+  | { type: 'done' }
+  | { type: 'error'; code?: string; message: string };
+
+/**
+ * Ask for a whole tutorial shape from source text — the source-first path,
+ * where the author designs nothing and reviews what came back.
+ */
+export function proposeTutorialStructure(
+  payload: {
+    title?: string;
+    objective?: string;
+    config?: { secs?: number };
+    sentences: { text: string; page?: number }[];
+  },
+  signal?: AbortSignal,
+): AsyncGenerator<ProposeEvent, void, unknown> {
+  return apiStream<ProposeEvent>('/api/tutorials/propose-structure', {
+    method: 'POST',
+    body: payload,
+    signal,
+  });
+}
+
 export type StructuredObjectKind =
   | 'summary'
   | 'reflection'

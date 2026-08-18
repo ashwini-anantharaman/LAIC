@@ -27,7 +27,7 @@ import {
   DEFAULT_TUTORIAL_TEMPLATE_ID as DEFAULT_TUTORIAL_V3_TEMPLATE_ID,
   getTutorialTemplate as getTutorialV3Template,
 } from '../../../lib/tutorialV3/tutorialTemplates';
-import { setTutorialV3LaunchTemplate } from '../../../lib/tutorialV3/launchTemplate';
+import { clearTutorialV3LaunchTemplate, setTutorialV3LaunchTemplate } from '../../../lib/tutorialV3/launchTemplate';
 import type { RecipeItem, TutorialTemplate } from '../../../lib/types';
 import { getObjectTemplate, type TemplateObjectType } from '../../../lib/objectTemplates';
 import {
@@ -679,8 +679,8 @@ function AuthoringPathModal({
   /** Org-assigned / Template Library default template. */
   defaultTemplateName: string;
   defaultTemplateId: string;
-  value: 'template' | 'write-yourself' | 'blank' | null;
-  onChange: (v: 'template' | 'write-yourself' | 'blank') => void;
+  value: 'template' | 'write-yourself' | 'blank' | 'source-first' | null;
+  onChange: (v: 'template' | 'write-yourself' | 'blank' | 'source-first') => void;
   onContinue: () => void;
   onBack: () => void;
   onClose: () => void;
@@ -852,6 +852,40 @@ function AuthoringPathModal({
                 )}
               </div>
             </button>
+            {objectType === 'tutorial-v3' && (
+              <button
+                type="button"
+                onClick={() => onChange('source-first')}
+                className="w-full text-left rounded-2xl px-4 py-4 border transition-colors"
+                style={{
+                  background: value === 'source-first' ? 'rgba(77,124,90,0.08)' : '#fff',
+                  borderColor: value === 'source-first' ? 'rgba(77,124,90,0.4)' : 'rgba(0,0,0,0.08)',
+                  boxShadow: value === 'source-first' ? '0 0 0 1px rgba(77,124,90,0.18)' : undefined,
+                }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p style={{ fontSize: 14, fontWeight: 700, color: '#2f4e39' }}>Generate based on sources</p>
+                    <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 4, lineHeight: 1.45 }}>
+                      Attach the material and the model decides the rest — how many sections, what each
+                      teaches, and which exercises the source can actually support. It writes all of it.
+                      {' '}Plan → Sources → Structure → Author → Review.
+                    </p>
+                    <p style={{ fontSize: 11.5, color: '#9AA3AF', marginTop: 6, lineHeight: 1.4 }}>
+                      No template, and no markup step. You review the proposed shape before it is applied.
+                    </p>
+                  </div>
+                  {value === 'source-first' && (
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                      style={{ background: '#4d7c5a', color: '#fff' }}
+                    >
+                      <Check size={11} strokeWidth={3} />
+                    </span>
+                  )}
+                </div>
+              </button>
+            )}
             {(objectType === 'tutorial-v2' || objectType === 'tutorial-v3') && (
               <button
                 type="button"
@@ -905,7 +939,11 @@ function AuthoringPathModal({
               <p style={{ fontSize: 12.5, color: '#6B7280' }}>
                 <strong style={{ color: '#0B1220' }}>Selected</strong>
                 {' · '}
-                {value === 'blank' ? 'Blank canvas' : 'Write it yourself'}
+                {value === 'blank'
+                  ? 'Blank canvas'
+                  : value === 'source-first'
+                    ? 'Generate based on sources'
+                    : 'Write it yourself'}
               </p>
             )}
           </div>
@@ -961,7 +999,7 @@ export function CDCreate() {
   const [showNewCol, setShowNewCol] = useState(false);
   const [newColParentId, setNewColParentId] = useState<string | null>(null);
   const [showPathPicker, setShowPathPicker] = useState(false);
-  const [pathChoice, setPathChoice] = useState<'template' | 'write-yourself' | 'blank' | null>(null);
+  const [pathChoice, setPathChoice] = useState<'template' | 'write-yourself' | 'blank' | 'source-first' | null>(null);
 
   const pendingTile = TILES.find((t) => t.id === pendingType) ?? null;
   const newColParentName = newColParentId
@@ -1020,6 +1058,11 @@ export function CDCreate() {
         setTutorialV2LaunchTemplate(BLANK_CANVAS_TUTORIAL_TEMPLATE_ID);
       }
       setPendingAuthoringPath('template');
+    } else if (pathChoice === 'source-first') {
+      // No launch template: the structure is derived from the sources, so
+      // pinning one here would only be overwritten on the Structure step.
+      clearTutorialV3LaunchTemplate();
+      setPendingAuthoringPath('source-first');
     } else {
       setPendingAuthoringPath(pathChoice);
     }

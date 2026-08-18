@@ -47,6 +47,14 @@ export interface SharedMarkup {
   pickedSourceIds: string[];
   highlights: any[];
   markupFlags?: any[];
+  /**
+   * Units to generate from, when they did not come from highlights.
+   *
+   * The source-first path has no markup step — the author attached sources and
+   * that is the whole instruction — so it supplies units read straight from the
+   * pool. When this is set the highlights are not consulted.
+   */
+  units?: ContentUnit[];
 }
 
 /**
@@ -177,8 +185,14 @@ export async function runBatchGenerate(opts: {
     if (signal.aborted) return;
     onOutcome({ target, status: 'running' });
     try {
-      const units = highlightsToUnits(markup.highlights, target.id);
-      if (!units.length) throw new Error('No usable highlights — tag passages Use or Support first.');
+      const units = markup.units?.length
+        ? markup.units
+        : highlightsToUnits(markup.highlights, target.id);
+      if (!units.length) {
+        throw new Error(markup.units
+          ? 'The picked sources have no readable text.'
+          : 'No usable highlights — tag passages Use or Support first.');
+      }
 
       if (target.kind === 'section') {
         const section = (draft.sections || []).find((s) => s.id === target.id);

@@ -229,8 +229,8 @@ export interface AppState {
    * One-shot from Create: Tutorial V2 path after folder picker
    * (`template` | `write-yourself`). Cleared when the creator consumes it.
    */
-  pendingAuthoringPath: 'template' | 'write-yourself' | null;
-  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  pendingAuthoringPath: 'template' | 'write-yourself' | 'source-first' | null;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | 'source-first' | null) => void;
   /**
    * One-shot: when set, Content Library opens this folder once then clears.
    * Normal nav to Content Library leaves this null → collections root.
@@ -248,7 +248,7 @@ export interface AppState {
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
-  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | 'source-first' | null) => void;
   addObject: (
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
     opts?: AddObjectOptions,
@@ -301,7 +301,7 @@ function StudioApp() {
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
-  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | null>(null);
+  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
   const [libraryRootNonce, setLibraryRootNonce] = useState(0);
   const clearPendingLibraryFolderId = useCallback(() => setPendingLibraryFolderId(null), []);

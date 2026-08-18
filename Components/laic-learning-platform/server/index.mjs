@@ -4443,6 +4443,106 @@ function buildOpeningQuestionPrompt(body) {
   return { system, user };
 }
 
+
+/* ─── Tutorial: propose a whole structure from the sources ─────────
+   The source-first path. Nothing is designed by hand: the model reads the
+   pool and says what the tutorial should be — how many sections, what each
+   one teaches, which prose blocks it needs, and which exercises earn a place.
+   It is a proposal, not a commitment; the author sees it before it is applied. */
+
+const PROPOSE_ATOMIC = [
+  'explanation', 'worked-example', 'source-excerpt', 'instruction',
+  'try-it', 'principle', 'misconception', 'correction',
+];
+const PROPOSE_OBJECTS = [
+  'quiz', 'flashcard-set', 'concept-card', 'reflection', 'assignment',
+  'reference-table', 'quick-decisions', 'matching', 'opening-question',
+];
+
+function normalizeProposal(raw, config = {}) {
+  if (!raw || typeof raw !== 'object') return null;
+  const maxSecs = Math.max(2, Math.min(12, Number(config.secs) || 6));
+  const atomic = new Set(PROPOSE_ATOMIC);
+  const objects = new Set(PROPOSE_OBJECTS);
+
+  const sections = (Array.isArray(raw.sections) ? raw.sections : [])
+    .map((sec, i) => {
+      const title = String(sec?.title || '').trim();
+      if (!title) return null;
+      return {
+        title,
+        intent: String(sec?.intent || '').trim(),
+        // Unknown block names are dropped rather than guessed at: a recipe
+        // referring to a block type that does not exist would scaffold a part
+        // nothing can render.
+        blocks: (Array.isArray(sec?.blocks) ? sec.blocks : [])
+          .map((b) => String(b || '').trim())
+          .filter((b) => atomic.has(b))
+          .slice(0, 6),
+        objects: (Array.isArray(sec?.objects) ? sec.objects : [])
+          .map((o) => String(o || '').trim())
+          .filter((o) => objects.has(o))
+          .slice(0, 3),
+      };
+    })
+    .filter(Boolean)
+    .slice(0, maxSecs);
+  if (!sections.length) return null;
+
+  return {
+    title: String(raw.title || '').trim() || undefined,
+    objective: String(raw.objective || '').trim() || undefined,
+    rationale: String(raw.rationale || '').trim() || undefined,
+    sections,
+    // Tutorial-level content that is not part of any one section.
+    openers: (Array.isArray(raw.openers) ? raw.openers : [])
+      .map((o) => String(o || '').trim())
+      .filter((o) => objects.has(o) || o === 'lesson-overview')
+      .slice(0, 2),
+    closers: (Array.isArray(raw.closers) ? raw.closers : [])
+      .map((o) => String(o || '').trim())
+      .filter((o) => objects.has(o) || o === 'lesson-complete')
+      .slice(0, 3),
+  };
+}
+
+function buildProposePrompt(body) {
+  const { title, objective, config, sentences } = body || {};
+  const c = config || {};
+  const maxSecs = Math.max(2, Math.min(12, Number(c.secs) || 6));
+  const lines = (Array.isArray(sentences) ? sentences : [])
+    .slice(0, 400)
+    .map((s, i) => `[${i}] ${String(s?.text ?? s ?? '').trim()}`)
+    .filter((l) => l.length > 4);
+
+  const system = [
+    'You design ONE tutorial from source material and return STRUCTURED JSON.',
+    'Output ONLY a JSON object. No prose, no markdown fences.',
+    'Shape: {"title":string,"objective":string,"rationale":string,"openers":string[],"sections":[{"title":string,"intent":string,"blocks":string[],"objects":string[]}],"closers":string[]}',
+    `At most ${maxSecs} sections. Each teaches ONE thing and is named for what the learner will be able to do.`,
+    `"blocks" are prose blocks, chosen from: ${PROPOSE_ATOMIC.join(', ')}.`,
+    `"objects" are exercises, chosen from: ${PROPOSE_OBJECTS.join(', ')}.`,
+    '"openers" may contain lesson-overview. "closers" may contain lesson-complete, and an end quiz or assignment if the material warrants one.',
+    'Choose blocks the SOURCE justifies — do not include every type available. A section with nothing to correct gets no misconception block; a section with no worked procedure gets no worked-example.',
+    'Prefer an exercise the source can actually be checked against: a reference-table when the source defines a key, matching when it pairs cases to responses, quick-decisions when it turns on judgement, a quiz when it turns on recall.',
+    'intent is one line naming what the section teaches. rationale is two sentences on why this shape fits this source.',
+    'Order the sections so each depends only on the ones before it.',
+  ].join('\n');
+
+  const user = [
+    `Working title: ${title || '(untitled)'}`,
+    objective ? `Author's objective: ${objective}` : '',
+    `Sections wanted: at most ${maxSecs}`,
+    '',
+    '--- Source sentences ---',
+    lines.join('\n'),
+    '',
+    'Return the tutorial structure JSON now.',
+  ].filter(Boolean).join('\n');
+
+  return { system, user };
+}
+
 async function generateStructuredObject(kind, body) {
   const builders = {
     summary: buildSummaryPrompt,
@@ -4769,6 +4869,28 @@ export async function handler(req, res) {
       const status = e instanceof LlmError ? e.status : 500;
       return send(res, status, { code: e.code || 'error', message: e.message });
     }
+  }
+
+
+  /* ---- Tutorial: propose a structure from the sources (SSE) ---- */
+  if (method === 'POST' && path === '/api/tutorials/propose-structure') {
+    const body = await readJson(req);
+    sseStart(res);
+    try {
+      sseSend(res, { type: 'progress', message: 'Reading your sources…' });
+      const { system, user } = buildProposePrompt(body);
+      sseSend(res, { type: 'progress', message: 'Deciding what this tutorial should be…' });
+      const raw = await callAnthropic({ system, user, maxTokens: 4096 });
+      const parsed = extractJson(raw);
+      const obj = Array.isArray(parsed) ? parsed[0] : parsed;
+      const proposal = normalizeProposal(obj, body?.config || {});
+      if (!proposal) throw new LlmError(502, 'llm_parse', 'The model did not return a usable structure.');
+      sseSend(res, { type: 'result', content: proposal });
+      sseSend(res, { type: 'done' });
+    } catch (e) {
+      sseSend(res, { type: 'error', code: e.code || 'error', message: e.message || 'Could not propose a structure.' });
+    }
+    return sseDone(res);
   }
 
   /* ---- Tutorial: suggest highlights (real LLM) ---- */
