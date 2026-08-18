@@ -12,7 +12,7 @@
  */
 
 import React, { useMemo, useRef, useState } from 'react';
-import { AlertTriangle, Check, Loader2, Sparkles } from 'lucide-react';
+import { AlertTriangle, Check, Loader2, RotateCcw, Sparkles } from 'lucide-react';
 import { getTutorialTemplate } from '../../../../lib/tutorialV3/tutorialTemplates';
 import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 import { unitsFromSourcePool } from '../../../../lib/tutorialV3/sourceFirst';
@@ -201,6 +201,17 @@ export function TutorialV3SourceFirstAuthor({
                     <p style={{ fontSize: 12, color: '#B91C1C', marginTop: 2, lineHeight: 1.45 }}>{o.message}</p>
                   )}
                 </div>
+                {status === 'failed' && !busy && (
+                  <button
+                    type="button"
+                    onClick={() => void run([t])}
+                    className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+                    style={{ fontSize: 12, fontWeight: 650, color: '#3d6349', borderColor: 'rgba(77,124,90,0.4)', background: '#fff' }}
+                    title="Generate this one again, in its place in the lesson"
+                  >
+                    <RotateCcw size={12} /> Retry
+                  </button>
+                )}
                 <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 600 }}>
                   {status === 'pending' ? 'waiting' : status}
                 </span>

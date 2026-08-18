@@ -9,7 +9,7 @@ import {
   readBridgeConfig,
 } from '../../../../lib/tutorialV3/bridgeEmbed';
 import {
-  ArrowLeft, Check, Loader2, PenLine, Sparkles, AlertTriangle,
+  ArrowLeft, Check, Loader2, PenLine, RotateCcw, Sparkles, AlertTriangle,
   Image as ImageIcon, Youtube, Upload, ExternalLink, Plus, Trash2, Type,
 } from 'lucide-react';
 import { MarkupWorkspace, type MarkupSource } from '../MarkupWorkspace';
@@ -449,14 +449,32 @@ export function TutorialV3SectionWorkspace({
             </p>
           )}
         </div>
-        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer" style={{ borderColor: 'rgba(0,0,0,0.1)', fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={!!section.done}
-            onChange={(e) => onMarkDone(e.target.checked)}
-          />
-          <Check size={14} /> {isSlot ? 'Mark content done' : 'Mark section done'}
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          {allowAiGenerate && (section.parts || []).length > 0 && (
+            /*
+              Written once already and it came out wrong — the only way back to
+              the generator was to notice the tab and switch to it, which reads
+              as a place to go rather than a thing to do.
+            */
+            <button
+              type="button"
+              onClick={() => setTab('generate')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border"
+              style={{ fontSize: 13, fontWeight: 650, color: '#3d6349', borderColor: 'rgba(77,124,90,0.4)', background: '#fff' }}
+              title={isSlot ? 'Generate this again' : 'Write this section again, in its place in the lesson'}
+            >
+              <RotateCcw size={13} /> Redo with AI
+            </button>
+          )}
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer" style={{ borderColor: 'rgba(0,0,0,0.1)', fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={!!section.done}
+              onChange={(e) => onMarkDone(e.target.checked)}
+            />
+            <Check size={14} /> {isSlot ? 'Mark content done' : 'Mark section done'}
+          </label>
+        </div>
       </div>
 
       {allowAiGenerate ? (

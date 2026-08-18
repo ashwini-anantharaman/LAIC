@@ -1,7 +1,7 @@
 /**
  * Bridge Tutorial V3 parts ↔ per-type object editors (concept card, flashcards, quiz, …).
  */
-import type { Block, ObjectType } from '../types';
+import type { Block, BlockContent, ObjectType, ReferenceTableContent } from '../types';
 import type { TutorialV3Part } from './types';
 
 export type NestedEditorKind =
@@ -270,6 +270,47 @@ const V3_BLOCK_EMBEDS = new Set<string>([
   'matching',
   'opening-question',
 ]);
+
+/** The reference table inside a part, or null when it holds something else. */
+export function extractReferenceTable(part: TutorialV3Part): ReferenceTableContent | null {
+  const block = snapBlocks(part).find((b) => b?.type === 'reference-table');
+  const c = (block?.content || null) as ReferenceTableContent | null;
+  if (!c || !Array.isArray(c.columns)) return null;
+  return c;
+}
+
+/**
+ * Write an edited table back into the part.
+ *
+ * The table lives in a snapshot block, so the edit replaces that block's
+ * content and leaves the rest of the part — its id, label, page — alone.
+ */
+export function applyReferenceTableResult(
+  part: TutorialV3Part,
+  content: ReferenceTableContent,
+): Partial<TutorialV3Part> {
+  const blocks = snapBlocks(part);
+  const i = blocks.findIndex((b) => b?.type === 'reference-table');
+  const block: Block = {
+    id: i >= 0 ? blocks[i].id : `${part.id}_rt`,
+    type: 'reference-table',
+    content: content as unknown as BlockContent,
+  };
+  const next = i >= 0 ? blocks.map((b, j) => (j === i ? block : b)) : [...blocks, block];
+  return {
+    snapshotBlocks: next,
+    ...(content.title ? { libraryTitle: content.title } : {}),
+  };
+}
+
+/** A table with nothing in it yet — two columns and one empty row to type into. */
+export function emptyReferenceTable(title?: string): ReferenceTableContent {
+  return {
+    title: title || '',
+    columns: ['', ''],
+    rows: [['', '']],
+  };
+}
 
 export function isV3BlockEmbedPart(part: TutorialV3Part): boolean {
   if (V3_BLOCK_EMBEDS.has(String(part.type))) return true;
