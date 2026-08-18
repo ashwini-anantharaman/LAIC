@@ -33,18 +33,44 @@ export interface ClubDraftRow {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** A private-table draft — the creator's own, never the club's. */
+  personal: boolean;
+}
+
+/** Which shelf: the club's shared drafts, or my own private-table drafts. */
+export type DraftScope = "club" | "personal";
+
+/**
+ * Is this a PERSONAL draft? Read from the stored wizard state itself — the
+ * draft JSON carries `personal`, the same flag that will make the published
+ * challenge a private table. Reading the flag where it lives beats mirroring
+ * it into a second field that could disagree.
+ */
+function isPersonalDraft(entry: LibraryEntry): boolean {
+  if (!entry.challengeDraftJson) return false;
+  try {
+    return (JSON.parse(entry.challengeDraftJson) as { personal?: unknown }).personal === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Is this entry one of THIS CLUB's drafts?
+ * May this caller SEE this draft at all?
  *
- * The club test mirrors matchesScope's 0022 rule: a row with no program stamp
- * is org-scoped (pre-0022) and belongs to every club in the org, so it stays
- * visible rather than orphaned. A personal web draft (scopeLevel "user") is
- * NOT a club draft and never appears here — the web keeps its own semantics.
+ * Two regimes, decided by what the draft will become:
+ *  - a PERSONAL draft belongs to its creator alone — exactly like the private
+ *    table it turns into, which is stored unowned and visible only to whoever
+ *    was invited (and nobody is invited to a draft);
+ *  - a CLUB draft belongs to the club: any of its challenge-creators may pick
+ *    it up. The club test mirrors matchesScope's 0022 rule — a row with no
+ *    program stamp is org-scoped (pre-0022) and stays visible rather than
+ *    orphaned. A user-scoped row (the web wizard stamps authoredScope) is
+ *    still its creator's own.
  */
-function isClubDraft(entry: LibraryEntry, context: NexusBridgeContext): boolean {
+function canSeeDraft(entry: LibraryEntry, context: NexusBridgeContext): boolean {
   if (entry.kind !== "challenge" || entry.challengeStatus !== "draft") return false;
+  if (isPersonalDraft(entry)) return entry.createdBy === context.nexusUserId;
   if (entry.scopeLevel === "user") return entry.createdBy === context.nexusUserId;
   const org = orgScopeOf(context);
   if (entry.programOrganizationId !== undefined && entry.programOrganizationId !== org)
@@ -53,11 +79,19 @@ function isClubDraft(entry: LibraryEntry, context: NexusBridgeContext): boolean 
   return entry.nexusProgramId == null || club == null || entry.nexusProgramId === club;
 }
 
-/** The club's parked drafts, newest work first. */
-export async function listClubDrafts(context: NexusBridgeContext): Promise<ClubDraftRow[]> {
+/** Does this draft belong on the requested shelf? Visibility comes first. */
+function onShelf(entry: LibraryEntry, scope: DraftScope): boolean {
+  return isPersonalDraft(entry) === (scope === "personal");
+}
+
+/** The requested shelf's parked drafts, newest work first. */
+export async function listClubDrafts(
+  context: NexusBridgeContext,
+  scope: DraftScope = "club",
+): Promise<ClubDraftRow[]> {
   const entries = await libraryStore().listEntries("challenge");
   return entries
-    .filter((e) => isClubDraft(e, context))
+    .filter((e) => canSeeDraft(e, context) && onShelf(e, scope))
     .map((e) => ({
       entryId: e.entryId,
       title: e.name,
@@ -67,6 +101,7 @@ export async function listClubDrafts(context: NexusBridgeContext): Promise<ClubD
       createdBy: e.createdBy,
       createdAt: e.createdAt,
       updatedAt: e.updatedAt ?? e.createdAt,
+      personal: isPersonalDraft(e),
     }))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
@@ -82,7 +117,7 @@ export async function getClubDraft(
   entryId: string,
 ): Promise<{ entryId: string; title: string; draft: ChallengeDraft } | null> {
   const entry = await libraryStore().getEntry(entryId);
-  if (!entry || !isClubDraft(entry, context) || !entry.challengeDraftJson) return null;
+  if (!entry || !canSeeDraft(entry, context) || !entry.challengeDraftJson) return null;
   try {
     return {
       entryId: entry.entryId,
@@ -114,7 +149,7 @@ export async function saveClubDraft(
   const title = draft.title.trim() || "Untitled challenge";
   const store = libraryStore();
   const existing = entryId ? await store.getEntry(entryId) : null;
-  const editable = existing && isClubDraft(existing, context) ? existing : null;
+  const editable = existing && canSeeDraft(existing, context) ? existing : null;
 
   const now = new Date().toISOString();
   const entry: LibraryEntry = {
@@ -125,10 +160,16 @@ export async function saveClubDraft(
       createdBy: context.nexusUserId,
       createdAt: now,
       programOrganizationId: orgScopeOf(context),
-      // THE CLUB'S ROW, not the author's: program-scoped and stamped with the
-      // club's own program id, the same ownership a published challenge gets.
-      nexusProgramId: challengeOwnerScope(context) ?? undefined,
-      scopeLevel: "program" as const,
+      // OWNERSHIP FOLLOWS WHAT IT BECOMES. A club draft is the club's row —
+      // program-scoped with the club's own program id, like the challenge it
+      // turns into. A personal (private-table) draft is its creator's alone:
+      // user-scoped, no owning program, exactly how the table itself is stored.
+      ...(draft.personal === true
+        ? { scopeLevel: "user" as const }
+        : {
+            nexusProgramId: challengeOwnerScope(context) ?? undefined,
+            scopeLevel: "program" as const,
+          }),
     }),
     kind: "challenge" as const,
     name: title,
@@ -151,7 +192,7 @@ export async function deleteClubDraft(
   entryId: string,
 ): Promise<boolean> {
   const entry = await libraryStore().getEntry(entryId);
-  if (!entry || !isClubDraft(entry, context)) return false;
+  if (!entry || !canSeeDraft(entry, context)) return false;
   await libraryStore().deleteEntry(entryId);
   return true;
 }
@@ -170,7 +211,7 @@ export async function promoteClubDraft(
 ): Promise<void> {
   try {
     const entry = await libraryStore().getEntry(entryId);
-    if (!entry || !isClubDraft(entry, context)) return;
+    if (!entry || !canSeeDraft(entry, context)) return;
     await libraryStore().putEntry({
       ...entry,
       name: challenge.title,

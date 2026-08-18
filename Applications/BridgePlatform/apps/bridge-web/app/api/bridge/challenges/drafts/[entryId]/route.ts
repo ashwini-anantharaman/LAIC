@@ -26,10 +26,14 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     const context = await requireContext();
     if (!(await canUse(context, "page.challenges"))) throw new AccessError("No access");
-    if (!(await canCreateChallenge(context))) throw new AccessError("No create access");
     const { entryId } = await params;
+    // Visibility first (creator-only for personal drafts, club for club ones —
+    // the lib enforces both), then the club gate ONLY for club drafts: a
+    // private table's draft needs no club create right, same as creating one.
     const found = await getClubDraft(context, entryId);
     if (!found) throw new AccessError("No such draft");
+    if (found.draft.personal !== true && !(await canCreateChallenge(context)))
+      throw new AccessError("No create access");
     return NextResponse.json(found, { headers: CORS });
   } catch (e) {
     return withCors(apiError(e), "GET", "DELETE");
@@ -40,8 +44,11 @@ export async function DELETE(_request: Request, { params }: Params) {
   try {
     const context = await requireContext();
     if (!(await canUse(context, "page.challenges"))) throw new AccessError("No access");
-    if (!(await canCreateChallenge(context))) throw new AccessError("No create access");
     const { entryId } = await params;
+    const found = await getClubDraft(context, entryId);
+    if (!found) throw new AccessError("No such draft");
+    if (found.draft.personal !== true && !(await canCreateChallenge(context)))
+      throw new AccessError("No create access");
     const deleted = await deleteClubDraft(context, entryId);
     if (!deleted) throw new AccessError("No such draft");
     await audit(context, "profile.delete", "kb_library", entryId, {

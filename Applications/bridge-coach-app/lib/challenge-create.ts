@@ -98,13 +98,20 @@ export type ChallengeDraftRow = {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  /** A private-table draft — the creator's own, never the club's. */
+  personal: boolean;
 };
 
 export function fetchChallengeDrafts(
   token: string,
   programId: string,
+  /** "personal" = my private-table drafts; omitted = the club's shelf. */
+  scope?: "personal",
 ): Promise<{ drafts: ChallengeDraftRow[] }> {
-  return bridgeRequest("/api/bridge/challenges/drafts", { token, programId });
+  return bridgeRequest(
+    scope ? "/api/bridge/challenges/drafts?scope=personal" : "/api/bridge/challenges/drafts",
+    { token, programId },
+  );
 }
 
 export function fetchChallengeDraft(
