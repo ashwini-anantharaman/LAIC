@@ -41,7 +41,7 @@
       "status": "in-review",
       "scope": "bridge",
       "reuseCount": 0,
-      "description": "",
+      "description": "Three practice hands for responding to 1NT with a balanced hand. One rule decides all of them - pass below game strength, invite with 2NT, bid 3NT when game is there.",
       "estimatedTime": "10 min",
       "blocks": [
         {
@@ -31325,7 +31325,7 @@
       "status": "in-review",
       "scope": "bridge",
       "reuseCount": 0,
-      "description": "",
+      "description": "Measure a hand the way every bidding system expects: ace four, king three, queen two, jack one. Then add distribution points for the shape of your suits.",
       "estimatedTime": "10 min",
       "blocks": [
         {
@@ -37801,7 +37801,7 @@
       "status": "in-review",
       "scope": "bridge",
       "reuseCount": 0,
-      "description": "",
+      "description": "Everything between a shuffled deck and a finished rubber: how the cards rank and are dealt, how bidding settles a contract, how tricks are won, and how the score is kept.",
       "estimatedTime": "10 min",
       "blocks": [
         {
