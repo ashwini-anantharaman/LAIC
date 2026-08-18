@@ -38,7 +38,7 @@
 // carry coaching; coaching is the app's surface. PlayTable renders this in its
 // portrait layout and nowhere else.
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
 import type { BoardTakeaway } from "@/lib/coach/takeaway";
 import type { KnownCard, ThinkAid } from "@/lib/coach/think";
@@ -701,7 +701,7 @@ type CoachView = "now" | "hints" | "tell" | "history";
  * same level as the coach's chip and the expand button (owner direction
  * 2026-08-13). FOUR SCREENS (owner direction 2026-08-11, folding the
  * earlier five): "Now" faces forward — the position and the chat. "Hints"
- * is the choices and the ladder. "Tell" is the answers side by side.
+ * is the choices and the ladder. "Answer" is the answers side by side.
  * "History" faces back and holds both records as one tab.
  */
 function CoachTabRow({
@@ -712,10 +712,11 @@ function CoachTabRow({
     <>
       {(
         [
-          // "State" (owner ask 2026-08-15, revising 2026-08-14's "Position").
-          ["now", "State"],
+          // "Know" (owner ask 2026-08-17, revising 2026-08-15's "State").
+          ["now", "Know"],
           ["hints", "Hints"],
-          ["tell", "Tell"],
+          // "Answer" (owner ask 2026-08-17, revising the original "Tell").
+          ["tell", "Answer"],
           ["history", "History"],
         ] as const
       ).map(([v, label]) => {
@@ -1745,14 +1746,16 @@ export function CoachDock({ data }: Readonly<{ data: CoachPanelData }>) {
    blocks; the owner asked for one section (2026-08-10) with the information
    dissected into small cards. THREE FACES (owner directions 2026-08-13/14,
    REAFFIRMED 2026-08-14 after a row-based redesign was tried and reversed —
-   "reverse back to the flip card design"): the card starts SEALED as a
-   nameless envelope, the first tap OPENS it like a letter (flap lifts,
-   envelope falls away, the value rises), and taps after that flip between
-   the value and the full fact. Working it out before peeking is the
-   exercise. Every card is arithmetic or a definition, all cards are styled
-   identically, and nothing on any face recommends. */
+   "reverse back to the flip card design"): the card starts LOCKED — its
+   whole title at reading size with a padlock in the top right corner
+   (owner direction 2026-08-17, superseding the sealed envelope) — the
+   first tap UNLOCKS it (the shackle swings open, the locked face falls
+   away, the value rises), and taps after that flip between the value and
+   the full fact. Working it out before peeking is the exercise. Every card
+   is arithmetic or a definition, all cards are styled identically, and
+   nothing on any face recommends. */
 
-/** What every card shows: a sealed envelope, the value behind it, the fact behind that. */
+/** What every card shows: a locked title, the value behind it, the fact behind that. */
 type StateCard = {
   title: string;
   value: string;
@@ -1770,7 +1773,8 @@ const SIDE_VIEWS = [
 
 /** OURS breaks into the original three views, in reading order. */
 const STATE_VIEWS = [
-  ["me", "My state"],
+  // "Me" (owner ask 2026-08-17, revising "My state").
+  ["me", "Me"],
   ["partner", "My partner"],
   ["partnership", "Partnership"],
 ] as const;
@@ -1784,24 +1788,77 @@ const STATE_EMPTY: Record<(typeof STATE_VIEWS)[number][0] | "theirs" | "advanced
   advanced: "Nothing worked out yet — the counting starts once the board moves.",
 };
 
-/** The envelope coachmark's once-only flag — one browser, one showing. */
+/** The lock coachmark's once-only flag — one browser, one showing. The key
+ *  value keeps its envelope-era name so nobody who dismissed it sees it again. */
 const ENVELOPE_HINT_KEY = "owlee-envelope-coachmark";
 
 /** The three faces, in opening order. */
 type FlipStage = "sealed" | "value" | "detail";
 
-function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => void }>) {
-  // A card with no title has nothing to seal with — it starts open.
-  const [stage, setStage] = useState<FlipStage>(card.title ? "sealed" : "value");
+/** Past this many characters the fact face clamps to three lines and hands
+ *  the rest to the "more" popup (owner ask 2026-08-17: smaller cards; long
+ *  explanations pop up whole instead of growing the card into a tower). */
+const DETAIL_MORE_AT = 130;
+
+/* ── the unlock registry ─────────────────────────────────────────────────────
+   A card, once unlocked, STAYS unlocked for as long as the page lives (owner
+   ask 2026-08-17: switch tabs, come back — still open). MODULE state, not
+   component state, because no component survives every path: the panes
+   filter cards out of the grid, the screens unmount wholesale, and the dock
+   and the sheet each mount their own CoachScreens — sometimes both at once.
+   Keys carry the epoch (the host builds them), so a new position re-locks
+   every card by itself. Render reads go through useSyncExternalStore ONLY —
+   never straight off the set. */
+const unlockedCards = new Set<string>();
+const unlockListeners = new Set<() => void>();
+function subscribeUnlocks(listener: () => void): () => void {
+  unlockListeners.add(listener);
+  return () => {
+    unlockListeners.delete(listener);
+  };
+}
+function unlockCard(key: string) {
+  if (unlockedCards.has(key)) return;
+  unlockedCards.add(key);
+  unlockListeners.forEach((l) => l());
+}
+
+function FlipCard({
+  card,
+  unlockKey,
+  onOpen,
+  onMore,
+}: Readonly<{
+  card: StateCard;
+  /** The card's identity in the unlock registry, epoch-scoped by the host —
+   *  a new position re-locks everything. Absent means the unlock isn't
+   *  persisted (the card still works, it just re-seals on remount). */
+  unlockKey?: string;
+  onOpen?: () => void;
+  /** Opens the host's full-detail popup — the card itself can't render it:
+   *  the card is a <button>, and a dialog nested in a button is neither
+   *  valid markup nor clickable without fighting the flip. */
+  onMore?: () => void;
+}>) {
+  // Whether THIS card was ever unlocked, from the registry — the sanctioned
+  // way to read module state during render.
+  const unlocked = useSyncExternalStore(
+    subscribeUnlocks,
+    () => (unlockKey ? unlockedCards.has(unlockKey) : false),
+    () => false,
+  );
+  // A card with no title has nothing to lock behind — and one the learner
+  // already unlocked this position doesn't re-seal on remount.
+  const [ownStage, setOwnStage] = useState<FlipStage>(card.title && !unlocked ? "sealed" : "value");
   // The 3D stage exists ONLY while the card is turning. A face that sits under
   // perspective/preserve-3d/backface-visibility lives on a composited layer,
   // where the text is a rasterized texture — visibly blurry at this size. At
   // rest the visible face renders flat, with no transform anywhere, so the
   // glyphs come off the ordinary crisp text path.
   const [turning, setTurning] = useState(false);
-  // The SEAL doesn't flip — it OPENS (owner direction 2026-08-14: "an
-  // animation similar to opening a letter, not a flip card"): the flap
-  // lifts, the envelope falls away, and the letter rises from behind it.
+  // The LOCK doesn't flip — it OPENS (owner direction 2026-08-17, keeping
+  // 2026-08-14's open-don't-flip choreography): the shackle swings open,
+  // the locked face falls away, and the value rises from behind it.
   // Its own phase, separate from `turning`, so the flip machinery stays
   // exactly what it was for value ↔ fact.
   const [opening, setOpening] = useState(false);
@@ -1810,10 +1867,16 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
   const [target, setTarget] = useState<FlipStage | null>(null);
   const [rotated, setRotated] = useState(false);
 
-  // A letter, once opened, stays open: sealed leads to the value, and from
+  // The dock keeps its own copy of every card mounted under the open sheet.
+  // When the sheet's copy unlocks, the registry pings this one too, and it
+  // snaps straight to the value — no animation, it wasn't the copy tapped.
+  // The instance MID-animation keeps its sealed face until `finish` lands it.
+  const stage: FlipStage = ownStage === "sealed" && unlocked && !opening ? "value" : ownStage;
+
+  // A lock, once opened, stays open: locked leads to the value, and from
   // there taps toggle value ↔ fact. No detail means nothing past the value —
   // and an UNTITLED card ("Trick 1", the system chip) is not a flip card at
-  // all (owner direction 2026-08-14): it was never sealed, so it's simply a
+  // all (owner direction 2026-08-14): it was never locked, so it's simply a
   // readout, static from the first render to the last.
   const next: FlipStage | null =
     stage === "sealed"
@@ -1824,7 +1887,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
   const canFlip = next !== null;
 
   const finish = (to: FlipStage) => {
-    setStage(to);
+    setOwnStage(to);
     setTarget(null);
     setTurning(false);
     setRotated(false);
@@ -1834,11 +1897,12 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
     if (!next || turning || opening) return;
     const to = next;
     if (stage === "sealed") {
-      // Opening the letter: pure keyframes with `both` fill, so there is no
+      // Unlocking: pure keyframes with `both` fill, so there is no
       // frame-order dance — mount the overlay and it plays. The timeout is
       // the ONLY settle (reduced motion sets animation:none and the timeout
       // still lands the card on its crisp flat face).
       onOpen?.(); // the host's coachmark retires on the first real opening
+      if (unlockKey) unlockCard(unlockKey); // remembered for the whole position
       setOpening(true);
       setTimeout(() => finish(to), 620);
       return;
@@ -1857,53 +1921,53 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
   // face sizes the card — minHeight keeps the small ones even, and the grid
   // row grows for the tall ones instead of clipping them.
   const face: React.CSSProperties = {
-    position: "relative", width: "100%", minHeight: 60, boxSizing: "border-box",
+    // 50px floor (owner ask 2026-08-17: "make the flip cards smaller",
+    // trimming 2026-08-15's 60).
+    position: "relative", width: "100%", minHeight: 50, boxSizing: "border-box",
     borderRadius: 9,
     display: "flex", flexDirection: "column", justifyContent: "center",
     padding: "5px 7px", textAlign: "center",
   };
-  // A LABELLED ENVELOPE (owner direction 2026-08-15, superseding 2026-08-14's
-  // nameless seal): the sealed face wears a short line naming what's inside —
-  // "HCP", "Distribution" — the way a real envelope wears its subject. The
-  // VALUE stays sealed; knowing the topic is what makes working-it-out-first
-  // possible at all. The flap is its OWN element on top of the body, so the
-  // opening animation can lift just the flap before the envelope drops away.
-  const sealedFace = (flapOpen: boolean) => (
-    <span style={{ ...face, alignItems: "center", background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
-      <span style={{ position: "relative", width: 36, height: 26, display: "block", perspective: 140 }}>
-        <svg width={36} height={26} viewBox="0 0 32 23" aria-hidden style={{ display: "block" }}>
-          <rect x="1" y="1" width="30" height="21" rx="3" fill="#fbf5e3" stroke="#c9b98f" strokeWidth="1.4" />
-          {/* the bottom fold — the body still reads as an envelope once the flap lifts */}
-          <path d="M2 21.2 16 13 30 21.2" fill="none" stroke="#e8ddbb" strokeWidth="1.2" strokeLinejoin="round" />
-        </svg>
-        <svg
-          width={36}
-          height={16}
-          viewBox="0 0 32 14"
-          aria-hidden
-          className={flapOpen ? "coach-flap" : undefined}
-          style={{ position: "absolute", left: 0, top: 0, display: "block", transformOrigin: "50% 1.5px" }}
-        >
-          <path d="M1.5 1.5 H30.5 L16 12.5 Z" fill="#f3e7c8" stroke="#c9b98f" strokeWidth="1.4" strokeLinejoin="round" />
-        </svg>
-      </span>
+  // A LOCKED CARD (owner direction 2026-08-17, superseding 2026-08-15's
+  // labelled envelope): the locked face carries the card's WHOLE title at
+  // reading size — no clamp, no miniature label — with a padlock in the top
+  // right corner. The VALUE stays locked; knowing the topic is what makes
+  // working-it-out-first possible at all. The shackle is its OWN element on
+  // top of the body, so the unlock animation can swing just the shackle
+  // open before the locked face drops away.
+  const lockedFace = (unlocking: boolean) => (
+    <span style={{ ...face, alignItems: "center", padding: "16px 9px 8px", background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
+      <svg
+        width={15}
+        height={15}
+        viewBox="0 0 15 15"
+        aria-hidden
+        style={{ position: "absolute", top: 5, right: 6, display: "block", overflow: "visible" }}
+      >
+        <path
+          className={unlocking ? "coach-shackle" : undefined}
+          d="M4.7 7 V4.7 a2.8 2.8 0 0 1 5.6 0 V7"
+          fill="none"
+          stroke="#8a7a5c"
+          strokeWidth="1.7"
+          strokeLinecap="round"
+          style={{ transformBox: "view-box" as const, transformOrigin: "4.7px 7px" }}
+        />
+        <rect x="2.7" y="6.6" width="9.6" height="7.4" rx="1.9" fill="#cdbd93" stroke="#8a7a5c" strokeWidth="1.3" />
+        <circle cx="7.5" cy="10.3" r="1.15" fill="#6b5f50" />
+      </svg>
       <span
         style={{
-          marginTop: 3, maxWidth: "100%", overflowWrap: "break-word",
-          color: "#6b5f50",
-          // A short LABEL ("HCP") wears small caps; a long CLUE ("West
-          // passed over 1♠…") stays sentence case and is clamped to two
-          // lines — uppercase paragraphs were ballooning the envelopes
-          // (owner report 2026-08-15: "why is it so much word?").
+          maxWidth: "100%", overflowWrap: "break-word", color: "#6b5f50",
+          // The whole title, at reading size (owner ask 2026-08-17: "have
+          // the entire text there and increase the size of the text") — a
+          // short label keeps its small caps, a long clue keeps sentence
+          // case, and neither is clamped anymore.
           ...(card.title.length > 18
-            ? {
-                fontSize: 8.5, fontWeight: 600, lineHeight: 1.3,
-                display: "-webkit-box", WebkitBoxOrient: "vertical" as const,
-                WebkitLineClamp: 2, overflow: "hidden",
-              }
+            ? { fontSize: 10.5, fontWeight: 600, lineHeight: 1.35 }
             : {
-                fontSize: 8, fontWeight: 700, letterSpacing: ".06em",
-                textTransform: "uppercase" as const, lineHeight: 1.25,
+                fontSize: 11, fontWeight: 700, letterSpacing: ".05em",
+                textTransform: "uppercase" as const, lineHeight: 1.3,
               }),
         }}
       >
@@ -1911,7 +1975,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
       </span>
     </span>
   );
-  const sealed = sealedFace(false);
+  const sealed = lockedFace(false);
   const front = (
     <span style={{ ...face, background: "#f3ead4", borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3" }}>
       <span
@@ -1951,25 +2015,60 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         </span>
       )}
       {card.title && card.detail && (
-        // Black and legible (owner, 2026-08-15) — the faint 8px ghost read
-        // as dust, not as "this card flips".
-        <span aria-hidden style={{ position: "absolute", top: 2, right: 5, fontSize: 12, fontWeight: 700, color: INK }}>
+        // Black and legible (owner, 2026-08-15), sized up again (owner ask
+        // 2026-08-17: "made bigger so it is viewable") — the small glyph
+        // still read as dust, not as "this card flips".
+        <span aria-hidden style={{ position: "absolute", top: 1, right: 5, fontSize: 17, lineHeight: 1, fontWeight: 700, color: INK }}>
           ⟳
         </span>
       )}
     </span>
   );
+  // A LONG fact no longer grows the card (owner ask 2026-08-17, superseding
+  // "the card grows to hold the whole fact"): past DETAIL_MORE_AT it clamps
+  // to three lines and ends in "more", which opens the host's popup with the
+  // whole explanation. The clamp is visual only — the full text stays in the
+  // DOM, so a screen reader still gets all of it off the card itself.
+  const detailLong = !!card.detail && !!onMore && card.detail.length > DETAIL_MORE_AT;
   const back = card.detail ? (
     <span
       style={{
-        // No scroll region: the card grows to hold the whole fact.
         ...face,
         background: FELT_SOFT, borderWidth: 1, borderStyle: "solid", borderColor: "#e0cfa4",
       }}
     >
-      <span style={{ fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500 }}>
+      <span
+        style={{
+          fontSize: 9.5, lineHeight: 1.35, color: FELT_DEEP, fontWeight: 500,
+          ...(detailLong
+            ? {
+                display: "-webkit-box", WebkitBoxOrient: "vertical" as const,
+                WebkitLineClamp: 3, overflow: "hidden",
+              }
+            : {}),
+        }}
+      >
         <RedSuits>{card.detail}</RedSuits>
       </span>
+      {detailLong && (
+        // A <span>, not a <button> — nested buttons are invalid markup. It's
+        // aria-hidden because the clamped element above already carries the
+        // full text for screen readers; this is a sighted-tap affordance.
+        // stopPropagation keeps the tap from also flipping the card.
+        <span
+          aria-hidden
+          onClick={(e) => {
+            e.stopPropagation();
+            onMore?.();
+          }}
+          style={{
+            marginTop: 3, fontSize: 9.5, fontWeight: 700, color: FELT_DEEP,
+            textDecoration: "underline", cursor: "pointer",
+          }}
+        >
+          more
+        </span>
+      )}
     </span>
   ) : null;
   const faceFor = (s: FlipStage) => (s === "sealed" ? sealed : s === "value" ? front : back);
@@ -1980,7 +2079,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
       aria-pressed={stage !== "sealed"}
       aria-label={
         stage === "sealed"
-          ? `${card.title} — sealed, tap to open` // the topic is public; the value is the surprise
+          ? `${card.title} — locked, tap to unlock` // the topic is public; the value is the surprise
           : canFlip
             ? `${card.title || card.value} — tap to flip`
             : card.value
@@ -1989,7 +2088,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
         // The CONTENT owns the footprint: the visible face renders in-flow,
         // so the button — and with it the grid row — grows to hold whatever
         // the face says, and nothing clips.
-        position: "relative", minHeight: 60,
+        position: "relative", minHeight: 50,
         // NOTHING ABOUT THIS CARD'S SIZE IS LEFT TO THE <button>. On the
         // phone the envelopes shrink-wrapped to their labels — "HCP" narrow,
         // a gap, a wide "DISTRIBUTION", "SHAPE" on a ragged second row —
@@ -2009,9 +2108,9 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
       }}
     >
       {opening ? (
-        // ── opening the letter: flap lifts, envelope drops away, the value
-        // face rises from behind it. Keyframed with `both` fill; the flip's
-        // timeout settles the card flat either way. ──
+        // ── unlocking: the shackle swings open, the locked face drops away,
+        // the value face rises from behind it. Keyframed with `both` fill;
+        // the flip's timeout settles the card flat either way. ──
         <span style={{ position: "relative", flex: 1, display: "block", width: "100%" }}>
           {/* invisible in-flow copy of the landing face — the footprint */}
           <span aria-hidden style={{ visibility: "hidden", display: "block" }}>
@@ -2021,7 +2120,7 @@ function FlipCard({ card, onOpen }: Readonly<{ card: StateCard; onOpen?: () => v
             {front}
           </span>
           <span className="coach-env" style={{ position: "absolute", inset: 0, display: "flex", pointerEvents: "none" }}>
-            {sealedFace(true)}
+            {lockedFace(true)}
           </span>
         </span>
       ) : turning && target ? (
@@ -2125,11 +2224,19 @@ function GameState({
     const g = c.group ?? "me";
     return side === "ours" ? g === view : g === side;
   });
-  // THE ENVELOPE COACHMARK (owner pick #4, 2026-08-14): identical sealed
-  // envelopes don't explain themselves — one first-run strip says why they
-  // are sealed, then never again. Retired by the ✕, or by the first real
-  // opening (the learner who opened one has understood the mechanic).
+  // THE LOCK COACHMARK (owner pick #4, 2026-08-14; envelopes became locked
+  // cards 2026-08-17): identical locked cards don't explain themselves —
+  // one first-run strip says why they are locked, then never again. Retired
+  // by the ✕, or by the first real unlocking (the learner who opened one
+  // has understood the mechanic).
   // localStorage read is in an effect so the server render never touches it.
+  // THE "MORE" POPUP (owner ask 2026-08-17): a long explanation clamps on
+  // the card and opens whole here instead. One popup for the whole section,
+  // OUTSIDE the card buttons — a dialog can't live inside a <button>. It
+  // closes with the ✕, a backdrop tap, or the board moving on (a new epoch
+  // may retire the fact it was explaining).
+  const [moreCard, setMoreCard] = useState<StateCard | null>(null);
+  useEffect(() => setMoreCard(null), [epoch]);
   const [envelopeHint, setEnvelopeHint] = useState(false);
   useEffect(() => {
     try {
@@ -2148,17 +2255,17 @@ function GameState({
   };
   return (
     <div style={{ background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3", borderRadius: 11, padding: "13px 14px 15px", display: "flex", flexDirection: "column", gap: 11 }}>
-      {/* the flip rotation, the letter-opening choreography, and their
+      {/* the flip rotation, the unlock choreography, and their
           absence for those who asked motion to stop */}
       <style>{`.coach-flip{transition:transform .45s;display:block}
-.coach-flap{animation:coachFlap .26s ease both}
+.coach-shackle{animation:coachShackle .26s ease both}
 .coach-letter{animation:coachLetterUp .38s ease .16s both}
 .coach-env{animation:coachEnvGone .3s ease .22s both}
-@keyframes coachFlap{from{transform:rotateX(0)}to{transform:rotateX(-150deg)}}
+@keyframes coachShackle{from{transform:none}to{transform:rotate(-45deg)}}
 @keyframes coachLetterUp{from{transform:translateY(16%) scale(.94);opacity:0}to{transform:none;opacity:1}}
 @keyframes coachEnvGone{from{opacity:1;transform:none}to{opacity:0;transform:translateY(24%)}}
-@media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}.coach-flap,.coach-letter,.coach-env{animation:none!important}}`}</style>
-      <Label color={FELT_DEEP}>State</Label>
+@media (prefers-reduced-motion:reduce){.coach-flip{transition:none!important}.coach-shackle,.coach-letter,.coach-env{animation:none!important}}`}</style>
+      <Label color={FELT_DEEP}>Know</Label>
       {/* DECLUTTERED (owner ask 2026-08-15): ONE control per tier, two
           different visual languages so they never compete. The sides are a
           single segmented track — one soft capsule, the active side a green
@@ -2198,7 +2305,7 @@ function GameState({
         // Nudged by eye against the rendered capsule (owner, 2026-08-15):
         // the arithmetic said 15 (3px track + 12px pill inset) but the
         // pill's rounded cap makes the word read further left than its box —
-        // 7 is where "My state" sits visually under "Ours".
+        // 7 is where "Me" sits visually under "Ours".
         <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingLeft: 7 }}>
           {STATE_VIEWS.map(([v, label]) => {
             const on = view === v;
@@ -2232,8 +2339,8 @@ function GameState({
           }}
         >
           <p style={{ margin: 0, flex: 1, fontSize: 12, lineHeight: 1.5, color: INK }}>
-            The envelopes are sealed on purpose — try working each fact out
-            before you open it. That&rsquo;s the exercise.
+            The cards are locked on purpose — try working each fact out
+            before you unlock it. That&rsquo;s the exercise.
           </p>
           <button
             type="button"
@@ -2252,12 +2359,12 @@ function GameState({
       {shown.length > 0 ? (
         <div
           style={{
-            // 122px floor (owner, 2026-08-15: "increase the size of the
-            // cards") — the dock gets two roomy columns instead of three
-            // cramped ones, and an opened inference's two lines fit without
-            // wrapping into a tower.
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(122px, 1fr))",
-            gap: 8,
+            // 104px floor (owner ask 2026-08-17: "make the flip cards
+            // smaller", trimming 2026-08-15's 122) — long facts no longer
+            // need the room either, now that they clamp and defer to the
+            // "more" popup.
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))",
+            gap: 7,
           }}
         >
           {shown.map((c) => (
@@ -2267,7 +2374,14 @@ function GameState({
             // is a UA behaviour no inline style on the button itself can be
             // trusted to override.
             <div key={`${epoch}|${pane}|${c.title}|${c.value}`} style={{ display: "flex", minWidth: 0 }}>
-              <FlipCard card={c} onOpen={dismissEnvelopeHint} />
+              <FlipCard
+                card={c}
+                // No pane in the key, unlike the grid's: the same fact
+                // unlocked under one tab stays open wherever it shows.
+                unlockKey={`${epoch}|${c.title}|${c.value}`}
+                onOpen={dismissEnvelopeHint}
+                onMore={() => setMoreCard(c)}
+              />
             </div>
           ))}
         </div>
@@ -2281,6 +2395,65 @@ function GameState({
         <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
           {STATE_EMPTY[pane]}
         </p>
+      )}
+      {moreCard && (
+        // FIXED, not absolute: the sheet and the dock both clip their
+        // overflow, and at rest neither carries a transform, so fixed
+        // reliably escapes to the viewport in both hosts.
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={moreCard.title || "The full explanation"}
+          onClick={() => setMoreCard(null)}
+          style={{
+            position: "fixed", inset: 0, zIndex: 60,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: 18, background: "rgba(42,5,6,.5)",
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: "#e8ddc3",
+              borderRadius: 13, padding: "13px 15px 15px",
+              width: "min(440px, 100%)", maxHeight: "76vh", overflowY: "auto",
+              boxShadow: "0 12px 34px rgba(0,0,0,.35)",
+              display: "flex", flexDirection: "column", gap: 8,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+              <span
+                style={{
+                  flex: 1, minWidth: 0, overflowWrap: "break-word", color: "#6b5f50",
+                  fontSize: 11, fontWeight: 700, letterSpacing: ".05em",
+                  textTransform: "uppercase", lineHeight: 1.3, paddingTop: 3,
+                }}
+              >
+                {moreCard.title}
+              </span>
+              <button
+                type="button"
+                aria-label="Close"
+                onClick={() => setMoreCard(null)}
+                style={{
+                  flex: "none", width: 26, height: 26, borderRadius: 7,
+                  background: "#f3ead4", borderWidth: 0, color: "#6b5f50",
+                  fontSize: 14, lineHeight: 1, cursor: "pointer",
+                }}
+              >
+                ×
+              </button>
+            </div>
+            <span style={{ fontSize: 15, fontWeight: 700, lineHeight: 1.2, color: INK, fontVariantNumeric: "tabular-nums" }}>
+              <RedSuits>{moreCard.value}</RedSuits>
+            </span>
+            {moreCard.detail && (
+              <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.55, color: FELT_DEEP, fontWeight: 500 }}>
+                <RedSuits>{moreCard.detail}</RedSuits>
+              </p>
+            )}
+          </div>
+        </div>
       )}
     </div>
   );
