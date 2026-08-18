@@ -1226,10 +1226,36 @@ export function ObjectCreatorTutorialV3() {
               className="flex items-center justify-between gap-3 flex-wrap rounded-2xl px-4 py-3 mb-4"
               style={{ background: V3_SAGE_TINT, border: `1px solid ${V3_SAGE_BORDER}` }}
             >
-              <p style={{ fontSize: 12.5, color: '#44403c', lineHeight: 1.5 }}>
-                This shape came from your sources. Rename, reorder and delete it like any other —
-                or ask for a different proposal.
-              </p>
+              <div className="min-w-0">
+                <p style={{ fontSize: 12.5, color: '#44403c', lineHeight: 1.5 }}>
+                  This shape came from your sources. Rename, reorder and delete it like any other —
+                  or ask for a different proposal.
+                </p>
+                {/*
+                  What it actually proposed, per section. Without this the only
+                  record of the model's decisions was the sections' names, and
+                  coming back looked like an empty form with a re-propose button.
+                */}
+                <div className="mt-2 space-y-1">
+                  {draft.sections.map((sec, i) => {
+                    const objects = (sec.recipe || [])
+                      .filter((r) => r.kind === 'embedded')
+                      .map((r) => embedTypeLabel(String((r as { objectType?: string }).objectType)));
+                    const blocks = (sec.recipe || [])
+                      .filter((r) => r.kind === 'atomic' && (r as { blockType?: string }).blockType !== 'section-heading')
+                      .length;
+                    return (
+                      <p key={sec.id} style={{ fontSize: 11.5, color: '#57534e' }}>
+                        <span style={{ fontWeight: 700 }}>{i + 1}. {sec.title}</span>
+                        {' — '}
+                        {blocks} prose block{blocks === 1 ? '' : 's'}
+                        {objects.length ? ` · ${objects.join(', ')}` : ''}
+                        {(sec.parts || []).length ? ` · ${(sec.parts || []).length} written` : ''}
+                      </p>
+                    );
+                  })}
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => {

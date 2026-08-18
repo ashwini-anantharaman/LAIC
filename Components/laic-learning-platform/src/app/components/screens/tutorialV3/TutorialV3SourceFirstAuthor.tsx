@@ -64,9 +64,35 @@ export function TutorialV3SourceFirstAuthor({
     [pool, pickedSourceIds],
   );
 
+  /**
+   * What each target already holds, read off the draft.
+   *
+   * Coming back to this step used to show nothing but the generate button, as
+   * though the run had never happened — the record of it lived only in React
+   * state that died with the screen. The draft already knows what was written,
+   * so the screen reads it rather than remembering it.
+   */
+  const authored = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const t of targets) {
+      if (t.kind === 'section') {
+        map[t.id] = ((draft.sections || []).find((sec) => sec.id === t.id)?.parts || []).length;
+      } else {
+        const slot = (draft.topLevelSlots || []).find((sl) => sl.id === t.id);
+        map[t.id] = (slot?.parts?.length || (slot?.part ? 1 : 0));
+      }
+    }
+    return map;
+  }, [targets, draft.sections, draft.topLevelSlots]);
+
   const [busy, setBusy] = useState(false);
-  const [started, setStarted] = useState(false);
-  const [outcomes, setOutcomes] = useState<Record<string, BatchOutcome>>({});
+  const [started, setStarted] = useState(() => Object.values(authored).some((n) => n > 0));
+  const [outcomes, setOutcomes] = useState<Record<string, BatchOutcome>>(
+    () => Object.fromEntries(targets.map((t) => [
+      t.id,
+      { target: t, status: authored[t.id] ? 'done' as const : 'pending' as const },
+    ])),
+  );
   const abortRef = useRef<AbortController | null>(null);
 
   /** `only` re-runs a subset — what "try the failed ones again" actually means. */
@@ -165,6 +191,11 @@ export function TutorialV3SourceFirstAuthor({
                 </span>
                 <div className="min-w-0 flex-1">
                   <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>{t.title}</p>
+                  {authored[t.id] > 0 && (
+                    <p style={{ fontSize: 12, color: '#57534e', marginTop: 2 }}>
+                      {authored[t.id]} block{authored[t.id] === 1 ? '' : 's'} written
+                    </p>
+                  )}
                   {o?.message && (
                     <p style={{ fontSize: 12, color: '#B91C1C', marginTop: 2, lineHeight: 1.45 }}>{o.message}</p>
                   )}
@@ -177,6 +208,16 @@ export function TutorialV3SourceFirstAuthor({
           })}
 
           <div className="flex flex-wrap gap-2 pt-2">
+            {finished && Object.values(authored).some((n) => !n) && (
+              <button
+                type="button"
+                onClick={() => void run(targets.filter((t) => !authored[t.id]))}
+                className="px-4 py-2.5 rounded-full text-white"
+                style={{ fontSize: 13.5, fontWeight: 650, background: V3_SAGE }}
+              >
+                Generate what is still empty
+              </button>
+            )}
             {finished && (
               <button
                 type="button"
