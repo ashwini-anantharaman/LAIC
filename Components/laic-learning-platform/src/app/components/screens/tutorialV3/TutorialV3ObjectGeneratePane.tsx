@@ -430,7 +430,7 @@ export function TutorialV3ObjectGeneratePane({
             style={{
               fontSize: 12,
               fontWeight: 600,
-              background: substep === s.id ? '#EEF2FF' : 'white',
+              background: substep === s.id ? '#e9f0ea' : 'white',
               borderColor: substep === s.id ? '#14B8A6' : 'rgba(0,0,0,0.1)',
               color: '#374151',
             }}
@@ -479,7 +479,7 @@ export function TutorialV3ObjectGeneratePane({
             disabled={!picked.length && !!pool.length}
             onClick={() => setSubstep('markup')}
             className="mt-3 px-4 py-2 rounded-full text-white disabled:opacity-40"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
           >
             Continue to mark up →
           </button>
@@ -519,7 +519,7 @@ export function TutorialV3ObjectGeneratePane({
             type="button"
             onClick={() => setSubstep('extract')}
             className="mt-4 px-4 py-2 rounded-full text-white"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
           >
             Continue to extract →
           </button>
@@ -554,7 +554,7 @@ export function TutorialV3ObjectGeneratePane({
             type="button"
             onClick={() => setSubstep('define')}
             className="mt-4 px-4 py-2 rounded-full text-white"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
           >
             Continue to define →
           </button>
@@ -577,7 +577,7 @@ export function TutorialV3ObjectGeneratePane({
               disabled={busy}
               onClick={() => void runGenerate()}
               className="inline-flex items-center gap-1.5 px-5 py-2.5 rounded-full text-white disabled:opacity-40"
-              style={{ fontSize: 13, fontWeight: 650, background: '#059669' }}
+              style={{ fontSize: 13, fontWeight: 650, background: '#4d7c5a' }}
             >
               {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
               Generate {noun}
@@ -590,7 +590,7 @@ export function TutorialV3ObjectGeneratePane({
         <div className="py-8 text-center">
           {busy ? (
             <>
-              <Loader2 size={28} className="animate-spin mx-auto mb-3" style={{ color: '#0B0F1A' }} />
+              <Loader2 size={28} className="animate-spin mx-auto mb-3" style={{ color: '#1e2b3d' }} />
               <p style={{ fontSize: 14, fontWeight: 650 }}>Generating {noun}…</p>
               <p style={{ fontSize: 13, color: '#6B7280', marginTop: 6 }}>{progress}</p>
               <button
@@ -609,13 +609,13 @@ export function TutorialV3ObjectGeneratePane({
                 type="button"
                 onClick={() => setSubstep('define')}
                 className="px-4 py-2 rounded-full text-white"
-                style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+                style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
               >
                 Back to define
               </button>
             </>
           ) : (
-            <p style={{ fontSize: 13.5, color: '#065F46' }}>
+            <p style={{ fontSize: 13.5, color: '#2f4e39' }}>
               Generated — opening the {noun} editor so you can refine it.
             </p>
           )}

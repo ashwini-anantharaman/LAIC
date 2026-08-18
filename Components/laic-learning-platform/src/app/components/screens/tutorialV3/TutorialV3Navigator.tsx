@@ -15,7 +15,7 @@ import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   not_started: { bg: '#F3F4F6', text: '#6B7280', label: 'Not started' },
   in_progress: { bg: '#FEF3C7', text: '#92400E', label: 'In progress' },
-  done: { bg: '#D1FAE5', text: '#065F46', label: 'Done' },
+  done: { bg: '#D1FAE5', text: '#2f4e39', label: 'Done' },
 };
 
 const MODE_HINT: Record<string, string> = {
@@ -90,7 +90,7 @@ export function TutorialV3Navigator({
           disabled={!canReview}
           onClick={onReview}
           className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full text-white disabled:opacity-40"
-          style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+          style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
         >
           <Eye size={14} />
           Review & submit
@@ -191,7 +191,7 @@ function SlotRow({
         className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
         style={{
           background: slot.done ? '#D1FAE5' : slot.kind === 'generate' ? '#E0E7FF' : '#F3F4F6',
-          color: slot.done ? '#065F46' : slot.kind === 'generate' ? '#3730A3' : '#6B7280',
+          color: slot.done ? '#2f4e39' : slot.kind === 'generate' ? '#3730A3' : '#6B7280',
         }}
       >
         {slot.done ? <Check size={14} /> : slot.kind === 'generate' ? <PenLine size={14} /> : <Sparkles size={14} />}
@@ -210,7 +210,7 @@ function SlotRow({
           fontSize: 11,
           fontWeight: 600,
           background: slot.done ? '#D1FAE5' : '#FEF3C7',
-          color: slot.done ? '#065F46' : '#92400E',
+          color: slot.done ? '#2f4e39' : '#92400E',
         }}
       >
         {status}
@@ -226,7 +226,7 @@ function SlotRow({
         onClick={onOpen}
         className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-colors hover:bg-white"
         style={{
-          background: slot.done ? 'rgba(5,150,105,0.06)' : 'rgba(255,255,255,0.72)',
+          background: slot.done ? 'rgba(77,124,90,0.06)' : 'rgba(255,255,255,0.72)',
           border: '1px solid rgba(0,0,0,0.06)',
           boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
         }}
@@ -240,7 +240,7 @@ function SlotRow({
     <div
       className="flex items-center gap-3 px-4 py-3.5 rounded-2xl"
       style={{
-        background: slot.done ? 'rgba(5,150,105,0.06)' : 'rgba(249,250,251,0.95)',
+        background: slot.done ? 'rgba(77,124,90,0.06)' : 'rgba(249,250,251,0.95)',
         border: '1px solid rgba(0,0,0,0.06)',
       }}
     >
@@ -280,7 +280,7 @@ function SectionRow({
       >
         <div
           className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
-          style={{ background: status === 'done' ? '#D1FAE5' : '#EEF2FF', color: status === 'done' ? '#065F46' : '#4338CA', fontSize: 13, fontWeight: 700 }}
+          style={{ background: status === 'done' ? '#D1FAE5' : '#e9f0ea', color: status === 'done' ? '#2f4e39' : '#3d6349', fontSize: 13, fontWeight: 700 }}
         >
           {status === 'done' ? <Check size={14} /> : index + 1}
         </div>

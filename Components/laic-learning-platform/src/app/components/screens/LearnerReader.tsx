@@ -32,6 +32,7 @@ import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
 import { richTextToSafeHtml } from '../../../lib/richTextMarkdown';
 
 import { McqClusterExperience, type McqClusterQuestion, type QuizResolveStatus } from './McqClusterExperience';
+import { TutorialV3Reader } from './tutorialV3/learner/TutorialV3Reader';
 
 export type { QuizResolveStatus };
 
@@ -1727,6 +1728,33 @@ export function LearnerReader({
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
 
   if (!obj) return null;
+
+  /*
+    A Tutorial V3 brings its own reader — section rail, covers, per-type blocks.
+    Until now only the in-editor Student preview mounted it, so a V3 tutorial
+    opened from the library, from /o/<id>, or from the embedded viewer fell
+    through to this shared reader and showed the pre-V3 UI. Same object, two
+    different learner views depending on how you arrived, which is the sort of
+    thing an author only finds out about after publishing.
+  */
+  if (obj.type === 'tutorial-v3' && obj.tutorialV3Draft) {
+    const v3 = obj.tutorialV3Draft;
+    const v3Pass = parseInt(String(v3.structure?.pass || '70').replace('%', ''), 10) || 70;
+    return (
+      <TutorialV3Reader
+        draft={v3}
+        blocks={obj.blocks || []}
+        objectId={obj.id}
+        cumulativePassMark={v3Pass}
+        passRequired
+        hintsEnabled={v3.structure?.hintsOn !== false}
+        maxHints={typeof v3.structure?.hintN === 'number' ? v3.structure.hintN : 4}
+        glossary={buildGlossary({ blocks: expandTutorialBlocks(obj.blocks || []) as Block[], highlights: [] })}
+        onBack={embedMode ? undefined : closeReader}
+        learnerName={app.nexusUserName || undefined}
+      />
+    );
+  }
 
   const draft = (obj as any).pipelineDraft;
   const fv = draft?.fv || {};

@@ -351,7 +351,7 @@ export function TutorialExtractPanelV3({
           <div className="min-w-0 flex-1">
             <p style={{ fontSize: 13, fontWeight: 650, color: '#0B1220' }}>
               {hlCount} highlight{hlCount !== 1 ? 's' : ''} from Mark up
-              {mergeNote ? <span style={{ color: '#059669', fontWeight: 600 }}> · {mergeNote}</span> : null}
+              {mergeNote ? <span style={{ color: '#4d7c5a', fontWeight: 600 }}> · {mergeNote}</span> : null}
             </p>
             <p style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }} className="truncate">
               {outcome} Nothing is invented from general knowledge.
@@ -371,7 +371,7 @@ export function TutorialExtractPanelV3({
             disabled={hlCount === 0 || busy}
             className="px-3.5 py-1.5 rounded-full transition-all shrink-0"
             style={{
-              background: hlCount === 0 || busy ? '#E5E7EB' : '#0B0F1A',
+              background: hlCount === 0 || busy ? '#E5E7EB' : '#1e2b3d',
               color: hlCount === 0 || busy ? '#9AA3AF' : '#fff',
               fontSize: 12.5, fontWeight: 650,
             }}
@@ -398,7 +398,7 @@ export function TutorialExtractPanelV3({
               disabled={hlCount === 0 || busy}
               onClick={() => runBuild({ refineWithLlm: true, intent: shapeIntent })}
               className="px-3.5 py-1.5 rounded-xl text-white disabled:opacity-50"
-              style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600 }}
+              style={{ background: '#1e2b3d', fontSize: 12.5, fontWeight: 600 }}
             >
               Extract
             </button>
@@ -439,9 +439,9 @@ export function TutorialExtractPanelV3({
       {defineFirst && emptySectionCount > 0 && knowledgeBase && (
         <div
           className="flex items-start gap-2 mb-3 rounded-2xl p-3"
-          style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}
+          style={{ background: '#e9f0ea', border: '1px solid #C7D2FE' }}
         >
-          <AlertTriangle size={14} style={{ color: '#4338CA', marginTop: 2 }} />
+          <AlertTriangle size={14} style={{ color: '#3d6349', marginTop: 2 }} />
           <p style={{ fontSize: 12.5, color: '#3730A3' }}>
             {emptySectionCount} section{emptySectionCount === 1 ? '' : 's'} have no source units yet — generation will note missing markup instead of inventing content.
           </p>
@@ -456,8 +456,8 @@ export function TutorialExtractPanelV3({
       )}
 
       {seedNote && (
-        <div className="flex items-start gap-2 mb-3 rounded-2xl p-3" style={{ background: '#EEF2FF', border: '1px solid #C7D2FE' }}>
-          <AlertTriangle size={14} style={{ color: '#4338CA', marginTop: 2 }} />
+        <div className="flex items-start gap-2 mb-3 rounded-2xl p-3" style={{ background: '#e9f0ea', border: '1px solid #C7D2FE' }}>
+          <AlertTriangle size={14} style={{ color: '#3d6349', marginTop: 2 }} />
           <p style={{ fontSize: 12.5, color: '#3730A3' }}>{seedNote}</p>
         </div>
       )}
@@ -533,7 +533,7 @@ export function TutorialExtractPanelV3({
                         ? (un ? 'rgba(245,158,11,0.12)' : 'rgba(11,15,26,0.05)')
                         : 'transparent',
                       borderLeft: on
-                        ? `2px solid ${un ? '#F59E0B' : '#0B0F1A'}`
+                        ? `2px solid ${un ? '#F59E0B' : '#1e2b3d'}`
                         : '2px solid transparent',
                     }}
                   >
@@ -698,11 +698,11 @@ export function TutorialExtractPanelV3({
                         className="w-full rounded-lg px-2 py-1.5 resize-y mt-1.5"
                         style={{
                           fontSize: 12,
-                          border: u.authorNote ? '1px solid rgba(124,58,237,0.35)' : '1px solid rgba(0,0,0,0.08)',
+                          border: u.authorNote ? '1px solid rgba(77,124,90,0.35)' : '1px solid rgba(0,0,0,0.08)',
                           background: u.authorNote ? 'rgba(243,232,255,0.45)' : '#FAFBFC',
                           outline: 'none',
                           lineHeight: 1.4,
-                          color: '#4C1D95',
+                          color: '#3d6349',
                         }}
                       />
                     </div>

@@ -72,13 +72,13 @@ function ImageDropZone({
         height: active ? 44 : 10,
         margin: active ? '2px 0' : '-4px 0',
         borderRadius: 12,
-        border: active ? '2px dashed rgba(109,40,217,0.55)' : '2px dashed transparent',
-        background: active ? 'rgba(109,40,217,0.06)' : 'transparent',
+        border: active ? '2px dashed rgba(77,124,90,0.55)' : '2px dashed transparent',
+        background: active ? 'rgba(77,124,90,0.06)' : 'transparent',
       }}
       aria-hidden={!active}
     >
       {active && (
-        <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6D28D9' }}>
+        <span style={{ fontSize: 11.5, fontWeight: 650, color: '#4d7c5a' }}>
           Drop image here
         </span>
       )}
@@ -269,7 +269,7 @@ export function TutorialV3AssembleEditor({
               style={{
                 fontSize: 12,
                 fontWeight: 600,
-                background: mode === 'edit' ? '#0B0F1A' : 'transparent',
+                background: mode === 'edit' ? '#1e2b3d' : 'transparent',
                 color: mode === 'edit' ? '#fff' : '#6B7280',
               }}
             >
@@ -282,7 +282,7 @@ export function TutorialV3AssembleEditor({
               style={{
                 fontSize: 12,
                 fontWeight: 600,
-                background: mode === 'preview' ? '#0B0F1A' : 'transparent',
+                background: mode === 'preview' ? '#1e2b3d' : 'transparent',
                 color: mode === 'preview' ? '#fff' : '#6B7280',
               }}
             >
@@ -300,9 +300,9 @@ export function TutorialV3AssembleEditor({
               style={{
                 fontSize: 12,
                 fontWeight: 650,
-                color: refineOpen ? '#4C1D95' : '#374151',
-                borderColor: refineOpen ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.1)',
-                background: refineOpen ? 'rgba(109,40,217,0.08)' : '#fff',
+                color: refineOpen ? '#3d6349' : '#374151',
+                borderColor: refineOpen ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                background: refineOpen ? 'rgba(77,124,90,0.08)' : '#fff',
               }}
             >
               <Sparkles size={13} />
@@ -368,7 +368,7 @@ export function TutorialV3AssembleEditor({
                         <div className="flex items-center gap-2 pt-1" aria-label={`Student page ${partPages[i]}`}>
                           <span
                             className="px-2.5 py-0.5 rounded-full shrink-0"
-                            style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', background: '#EEF2FF', color: '#4338CA' }}
+                            style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.05em', background: '#e9f0ea', color: '#3d6349' }}
                           >
                             STUDENT PAGE {partPages[i]}
                           </span>
@@ -379,8 +379,8 @@ export function TutorialV3AssembleEditor({
                         className="rounded-2xl p-4"
                         style={{
                           background: 'white',
-                          border: selected ? '1.5px solid rgba(109,40,217,0.45)' : '1px solid rgba(0,0,0,0.06)',
-                          boxShadow: selected ? '0 0 0 3px rgba(109,40,217,0.08)' : undefined,
+                          border: selected ? '1.5px solid rgba(77,124,90,0.45)' : '1px solid rgba(0,0,0,0.06)',
+                          boxShadow: selected ? '0 0 0 3px rgba(77,124,90,0.08)' : undefined,
                         }}
                         onClick={() => setSelectedPartId(p.id)}
                         role="presentation"
@@ -395,7 +395,7 @@ export function TutorialV3AssembleEditor({
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => { e.stopPropagation(); setPartPage(p.id, Number(e.target.value)); }}
                               className="rounded-lg px-1.5 py-0.5 mr-1"
-                              style={{ fontSize: 11, fontWeight: 650, color: '#4338CA', border: '1px solid rgba(67,56,202,0.25)', background: '#F5F3FF', outline: 'none' }}
+                              style={{ fontSize: 11, fontWeight: 650, color: '#3d6349', border: '1px solid rgba(67,56,202,0.25)', background: '#F5F3FF', outline: 'none' }}
                               title="Student page this block appears on"
                             >
                               {Array.from({ length: pageCount }, (_, k) => (
@@ -446,7 +446,7 @@ export function TutorialV3AssembleEditor({
                               type="button"
                               onClick={(e) => { e.stopPropagation(); setEditingPartId(p.id); }}
                               className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
-                              style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
+                              style={{ fontSize: 12.5, fontWeight: 650, background: '#1e2b3d' }}
                             >
                               <ExternalLink size={13} />
                               Open {nestedEditorKindForPart(p)?.replace(/-/g, ' ') || 'content'} editor
@@ -529,7 +529,7 @@ export function TutorialV3AssembleEditor({
                                         type="button"
                                         onClick={() => openRefineForPart(p.id)}
                                         className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
-                                        style={{ fontSize: 12, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)', background: '#fff' }}
+                                        style={{ fontSize: 12, color: '#4d7c5a', borderColor: 'rgba(77,124,90,0.25)', background: '#fff' }}
                                       >
                                         <Sparkles size={11} /> Ask AI
                                       </button>
@@ -582,10 +582,10 @@ export function TutorialV3AssembleEditor({
         style={{
           fontSize: 13.5,
           fontWeight: 650,
-          color: '#065F46',
-          background: pastelFromHex('#059669', 0.82),
-          border: '1px solid rgba(5,150,105,0.3)',
-          boxShadow: '0 10px 28px -12px rgba(5,150,105,0.55)',
+          color: '#2f4e39',
+          background: pastelFromHex('#4d7c5a', 0.82),
+          border: '1px solid rgba(77,124,90,0.3)',
+          boxShadow: '0 10px 28px -12px rgba(77,124,90,0.55)',
         }}
       >
         <Save size={15} /> Save

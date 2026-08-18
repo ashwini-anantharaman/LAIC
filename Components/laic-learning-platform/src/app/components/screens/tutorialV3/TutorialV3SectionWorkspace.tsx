@@ -591,9 +591,9 @@ function TabBtn({
       style={{
         fontSize: 13,
         fontWeight: 600,
-        background: active ? '#0B0F1A' : 'white',
+        background: active ? '#1e2b3d' : 'white',
         color: active ? 'white' : '#374151',
-        borderColor: active ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+        borderColor: active ? '#1e2b3d' : 'rgba(0,0,0,0.1)',
       }}
     >
       {icon}{label}
@@ -696,7 +696,7 @@ function WritePane({
                   type="button"
                   onClick={() => onOpenNestedEditor(p.id)}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
-                  style={{ fontSize: 12.5, fontWeight: 650, background: '#0B0F1A' }}
+                  style={{ fontSize: 12.5, fontWeight: 650, background: '#1e2b3d' }}
                 >
                   <ExternalLink size={13} />
                   Open {nestedEditorKindForPart(p)?.replace(/-/g, ' ') || 'content'} editor
@@ -706,7 +706,7 @@ function WritePane({
                     type="button"
                     onClick={() => onGeneratePart(p)}
                     className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border"
-                    style={{ fontSize: 12.5, fontWeight: 650, color: '#4C1D95', borderColor: 'rgba(109,40,217,0.35)', background: 'rgba(109,40,217,0.06)' }}
+                    style={{ fontSize: 12.5, fontWeight: 650, color: '#3d6349', borderColor: 'rgba(77,124,90,0.35)', background: 'rgba(77,124,90,0.06)' }}
                   >
                     <Sparkles size={13} />
                     Generate with AI
@@ -729,7 +729,7 @@ function WritePane({
                   type="button"
                   onClick={() => onGeneratePart(p)}
                   className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full border"
-                  style={{ fontSize: 12.5, fontWeight: 650, color: '#4C1D95', borderColor: 'rgba(109,40,217,0.35)', background: 'rgba(109,40,217,0.06)' }}
+                  style={{ fontSize: 12.5, fontWeight: 650, color: '#3d6349', borderColor: 'rgba(77,124,90,0.35)', background: 'rgba(77,124,90,0.06)' }}
                 >
                   <Sparkles size={13} />
                   {p.snapshotBlocks?.length ? 'Regenerate with AI' : 'Generate with AI'}
@@ -759,7 +759,7 @@ function WritePane({
                     type="button"
                     onClick={() => setRefineId(refineId === p.id ? null : p.id)}
                     className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
-                    style={{ fontSize: 12, color: '#6D28D9', borderColor: 'rgba(109,40,217,0.25)', background: '#fff' }}
+                    style={{ fontSize: 12, color: '#4d7c5a', borderColor: 'rgba(77,124,90,0.25)', background: '#fff' }}
                   >
                     <Sparkles size={11} /> Ask AI
                   </button>
@@ -790,7 +790,7 @@ function WritePane({
                 disabled={busy}
                 onClick={() => onRefine(p)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full text-white"
-                style={{ fontSize: 12.5, fontWeight: 600, background: '#6D28D9' }}
+                style={{ fontSize: 12.5, fontWeight: 600, background: '#4d7c5a' }}
               >
                 {busy ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
                 Refine
@@ -945,7 +945,7 @@ function MediaSlotEditor({
                 type="button"
                 onClick={() => fileRef.current?.click()}
                 className="flex items-center gap-1 px-2.5 py-2 rounded-xl text-white text-xs shrink-0"
-                style={{ background: '#0B0F1A' }}
+                style={{ background: '#1e2b3d' }}
               >
                 <Upload size={12} /> Upload
               </button>
@@ -1125,7 +1125,7 @@ function GeneratePane({
             style={{
               fontSize: 12,
               fontWeight: 600,
-              background: substep === s ? '#EEF2FF' : 'white',
+              background: substep === s ? '#e9f0ea' : 'white',
               borderColor: substep === s ? '#C7D2FE' : 'rgba(0,0,0,0.1)',
               color: '#374151',
             }}
@@ -1164,7 +1164,7 @@ function GeneratePane({
             disabled={!picked.length && !!pool.length}
             onClick={() => setSubstep('markup')}
             className="mt-3 px-4 py-2 rounded-full text-white disabled:opacity-40"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
           >
             Continue to mark up →
           </button>
@@ -1202,7 +1202,7 @@ function GeneratePane({
             type="button"
             onClick={() => setSubstep('run')}
             className="mt-4 px-4 py-2 rounded-full text-white"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#1e2b3d' }}
           >
             Continue to generate →
           </button>
@@ -1223,7 +1223,7 @@ function GeneratePane({
             disabled={busy}
             onClick={onGenerate}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-full text-white disabled:opacity-50"
-            style={{ fontSize: 13, fontWeight: 600, background: '#6D28D9' }}
+            style={{ fontSize: 13, fontWeight: 600, background: '#4d7c5a' }}
           >
             {busy ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
             {busy ? 'Generating…' : 'Generate section'}

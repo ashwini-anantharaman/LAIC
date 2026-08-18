@@ -21,6 +21,7 @@ import {
 import { findLibraryLearningObject } from '../../../../lib/libraryEmbed';
 import type { V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
 import { LibraryPickerModal } from '../../LibraryPickerModal';
+import { V3_SAGE, V3_SAGE_BORDER, V3_SAGE_DARK, V3_SAGE_TINT } from '../../../../lib/tutorialV3/authorTheme';
 
 /** Everything the Blank canvas "Add content" sidebar can generate. */
 const ADD_GENERATE_TYPES: { type: string; label: string }[] = [
@@ -193,7 +194,7 @@ export function TutorialV3StructurePanel({
         <Plus size={13} /> Section
       </button>
       <div>
-        <p style={{ fontSize: 11, fontWeight: 650, color: '#6D28D9', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
+        <p style={{ fontSize: 11, fontWeight: 650, color: '#4d7c5a', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
           <Sparkles size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
           Generate with AI
         </p>
@@ -203,8 +204,8 @@ export function TutorialV3StructurePanel({
               key={g.type}
               type="button"
               onClick={() => addContentSlot('generate', g.type)}
-              className="px-2.5 py-1.5 rounded-full border"
-              style={{ fontSize: 11.5, fontWeight: 600, borderColor: 'rgba(109,40,217,0.25)', background: 'rgba(109,40,217,0.05)', color: '#5B21B6' }}
+              className="px-3 py-1.5 rounded-full border transition-colors"
+              style={{ fontSize: 12.5, fontWeight: 600, borderColor: 'rgba(0,0,0,0.12)', background: '#fff', color: '#44403c' }}
             >
               {g.label}
             </button>
@@ -215,7 +216,7 @@ export function TutorialV3StructurePanel({
         </p>
       </div>
       <div>
-        <p style={{ fontSize: 11, fontWeight: 650, color: '#065F46', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
+        <p style={{ fontSize: 11, fontWeight: 650, color: '#2f4e39', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
           <Library size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
           From Content Library
         </p>
@@ -223,7 +224,7 @@ export function TutorialV3StructurePanel({
           type="button"
           onClick={() => addContentSlot('library', 'reused-from-library')}
           className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-full border"
-          style={{ fontSize: 12, fontWeight: 600, borderColor: 'rgba(5,150,105,0.3)', background: 'rgba(5,150,105,0.05)', color: '#065F46' }}
+          style={{ fontSize: 12, fontWeight: 600, borderColor: 'rgba(77,124,90,0.3)', background: 'rgba(77,124,90,0.05)', color: '#2f4e39' }}
         >
           Embed existing content…
         </button>
@@ -269,12 +270,12 @@ export function TutorialV3StructurePanel({
       {(sectionTitles.length > 0 || slots.length > 0) && (
         <div
           className="rounded-xl px-3.5 py-3"
-          style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.18)' }}
+          style={{ background: V3_SAGE_TINT, border: `1px solid ${V3_SAGE_BORDER}` }}
         >
-          <p style={{ fontSize: 12, fontWeight: 650, color: '#1D4ED8', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+          <p style={{ fontSize: 12, fontWeight: 650, color: V3_SAGE_DARK, letterSpacing: '.04em', textTransform: 'uppercase' }}>
             Student preview pages
           </p>
-          <p style={{ fontSize: 12.5, color: '#1E40AF', marginTop: 4, lineHeight: 1.45 }}>
+          <p style={{ fontSize: 12.5, color: '#44403c', marginTop: 4, lineHeight: 1.45 }}>
             Choose which sections share a page. Same page number = shown together; different numbers = Prev/Next in the student view.
           </p>
           <div className="flex flex-wrap gap-2 mt-2.5">
@@ -288,7 +289,7 @@ export function TutorialV3StructurePanel({
                 onChangeSectionTitles(sectionTitles.map((r) => ({ ...r, learnerPage: page++ })));
               }}
               className="px-2.5 py-1 rounded-full border"
-              style={{ fontSize: 11.5, fontWeight: 600, color: '#1D4ED8', borderColor: 'rgba(29,78,216,0.25)', background: '#fff' }}
+              style={{ fontSize: 11.5, fontWeight: 600, color: V3_SAGE_DARK, borderColor: V3_SAGE_BORDER, background: '#fff' }}
             >
               One per page
             </button>
@@ -301,7 +302,7 @@ export function TutorialV3StructurePanel({
                 }
               }}
               className="px-2.5 py-1 rounded-full border"
-              style={{ fontSize: 11.5, fontWeight: 600, color: '#1D4ED8', borderColor: 'rgba(29,78,216,0.25)', background: '#fff' }}
+              style={{ fontSize: 11.5, fontWeight: 600, color: V3_SAGE_DARK, borderColor: V3_SAGE_BORDER, background: '#fff' }}
             >
               All on page 1
             </button>
@@ -407,7 +408,7 @@ export function TutorialV3StructurePanel({
               >
                 <span
                   className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-                  style={{ background: '#EEF2FF', color: '#4338CA', fontSize: 12, fontWeight: 700 }}
+                  style={{ background: '#e9f0ea', color: '#3d6349', fontSize: 12, fontWeight: 700 }}
                 >
                   {i + 1}
                 </span>
@@ -509,7 +510,7 @@ function PageSelect({
       style={{
         fontSize: 12,
         fontWeight: 600,
-        color: '#1D4ED8',
+        color: V3_SAGE_DARK,
         border: '1px solid rgba(29,78,216,0.25)',
         borderRadius: 8,
         padding: '4px 8px',
@@ -544,14 +545,14 @@ function LibrarySlotRow({
     <div
       className="rounded-xl px-3.5 py-3"
       style={{
-        background: picked ? 'rgba(5,150,105,0.06)' : 'rgba(254,243,199,0.55)',
-        border: `1px solid ${picked ? 'rgba(5,150,105,0.25)' : '#FCD34D'}`,
+        background: picked ? 'rgba(77,124,90,0.06)' : 'rgba(254,243,199,0.55)',
+        border: `1px solid ${picked ? 'rgba(77,124,90,0.25)' : '#FCD34D'}`,
       }}
     >
       <div className="flex items-start gap-2">
-        <Library size={14} style={{ color: picked ? '#047857' : '#92400E', marginTop: 2 }} />
+        <Library size={14} style={{ color: picked ? '#3d6349' : '#92400E', marginTop: 2 }} />
         <div className="flex-1 min-w-0">
-          <p style={{ fontSize: 13, fontWeight: 650, color: picked ? '#065F46' : '#92400E' }}>
+          <p style={{ fontSize: 13, fontWeight: 650, color: picked ? '#2f4e39' : '#92400E' }}>
             {picked
               ? `✓ ${label}: ${slot.libraryTitle || slot.versionPin?.objectId}`
               : `Choose a library ${label}${slot.required ? ' (required)' : ''}`}
@@ -606,11 +607,11 @@ function GenerateSlotRow({
   return (
     <div
       className="rounded-xl px-3.5 py-3 flex items-start gap-2"
-      style={{ background: 'rgba(237,233,254,0.7)', border: '1px solid rgba(109,40,217,0.2)' }}
+      style={{ background: 'rgba(237,233,254,0.7)', border: '1px solid rgba(77,124,90,0.2)' }}
     >
-      <Sparkles size={14} style={{ color: '#6D28D9', marginTop: 2 }} />
+      <Sparkles size={14} style={{ color: '#4d7c5a', marginTop: 2 }} />
       <div className="flex-1 min-w-0">
-        <p style={{ fontSize: 13, fontWeight: 650, color: '#5B21B6' }}>
+        <p style={{ fontSize: 13, fontWeight: 650, color: V3_SAGE_DARK }}>
           {label} — generate after Sources
           {slot.required ? '' : ' (optional)'}
         </p>

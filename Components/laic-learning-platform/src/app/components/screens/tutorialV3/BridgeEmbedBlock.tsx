@@ -452,9 +452,9 @@ function Chip({
       style={{
         fontSize: 11.5,
         fontWeight: 600,
-        borderColor: selected ? 'rgba(109,40,217,0.4)' : 'rgba(0,0,0,0.1)',
-        background: selected ? 'rgba(109,40,217,0.08)' : '#fff',
-        color: selected ? '#4C1D95' : '#374151',
+        borderColor: selected ? 'rgba(77,124,90,0.4)' : 'rgba(0,0,0,0.1)',
+        background: selected ? 'rgba(77,124,90,0.08)' : '#fff',
+        color: selected ? '#3d6349' : '#374151',
         lineHeight: 1.1,
       }}
     >
@@ -743,7 +743,7 @@ export function BridgeEmbedBlock({
           borderRadius: framed ? 14 : 0,
           overflow: 'hidden',
           border: framed ? '1px solid rgba(0,0,0,0.08)' : 0,
-          background: framed ? '#0B0F1A' : 'transparent',
+          background: framed ? '#1e2b3d' : 'transparent',
           ...(framed ? { aspectRatio: String(def.ratio) } : {}),
         }}
       >
@@ -813,7 +813,7 @@ export function BridgeEmbedBlock({
                   boxShadow: '0 6px 18px rgba(0,0,0,0.35)',
                 }}
               >
-                <Play size={20} style={{ color: '#0B0F1A', marginLeft: 3 }} fill="#0B0F1A" />
+                <Play size={20} style={{ color: '#1e2b3d', marginLeft: 3 }} fill="#1e2b3d" />
               </span>
             )}
             <span
@@ -860,9 +860,9 @@ export function BridgeEmbedBlock({
             style={{
               fontSize: 11.5,
               fontWeight: 600,
-              borderColor: configOpen ? 'rgba(109,40,217,0.4)' : 'rgba(0,0,0,0.1)',
-              background: configOpen ? 'rgba(109,40,217,0.08)' : '#fff',
-              color: configOpen ? '#4C1D95' : '#374151',
+              borderColor: configOpen ? 'rgba(77,124,90,0.4)' : 'rgba(0,0,0,0.1)',
+              background: configOpen ? 'rgba(77,124,90,0.08)' : '#fff',
+              color: configOpen ? '#3d6349' : '#374151',
             }}
           >
             <Settings2 size={12} /> Configure

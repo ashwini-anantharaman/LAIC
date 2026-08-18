@@ -116,8 +116,8 @@ export function TutorialV3PlanPanel({
       const pin = e.item.versionPin;
       if (pin?.objectId) {
         return (
-          <div key={e.key} className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}>
-            <p style={{ fontSize: 12, fontWeight: 600, color: '#065F46' }}>
+          <div key={e.key} className="rounded-lg px-2.5 py-2" style={{ background: 'rgba(77,124,90,0.06)', border: '1px solid rgba(77,124,90,0.2)' }}>
+            <p style={{ fontSize: 12, fontWeight: 600, color: '#2f4e39' }}>
               ✓ {typeLabel}: {e.item.libraryTitle || pin.objectId}
               {pin.versionId ? ` · pinned ${pin.versionId}` : ''}
               {' — from library'}
@@ -129,7 +129,7 @@ export function TutorialV3PlanPanel({
                 setPickerType(e.item.objectType);
               }}
               className="mt-1.5 px-2.5 py-1 rounded-full border"
-              style={{ fontSize: 11.5, fontWeight: 600, background: '#fff', borderColor: 'rgba(0,0,0,0.1)', color: '#047857' }}
+              style={{ fontSize: 11.5, fontWeight: 600, background: '#fff', borderColor: 'rgba(0,0,0,0.1)', color: '#3d6349' }}
             >
               Change library content…
             </button>
@@ -224,7 +224,7 @@ export function TutorialV3PlanPanel({
           Set the learning objective and named sections first. Tag which generate/library content belongs to each section so they don’t overlap. Mark up and Extract assign source units into these sections — the AI will not invent the outline.
         </p>
         {templateName && (
-          <p style={{ fontSize: 12, color: '#5B21B6', marginTop: 8 }}>
+          <p style={{ fontSize: 12, color: '#3d6349', marginTop: 8 }}>
             Template · {templateName} — teaching blocks come from the default recipe; content is tagged per section below.
           </p>
         )}
@@ -318,9 +318,9 @@ export function TutorialV3PlanPanel({
                           style={{
                             fontSize: 11.5,
                             fontWeight: on ? 650 : 500,
-                            background: on ? '#0B0F1A' : '#fff',
+                            background: on ? '#1e2b3d' : '#fff',
                             color: on ? '#fff' : '#374151',
-                            borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+                            borderColor: on ? '#1e2b3d' : 'rgba(0,0,0,0.1)',
                           }}
                           title={emb.authoringNote || embedTypeLabel(emb.objectType)}
                         >

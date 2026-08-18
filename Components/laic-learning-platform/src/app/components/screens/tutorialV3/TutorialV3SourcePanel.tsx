@@ -100,7 +100,7 @@ function SourceReadyCard({
   return (
     <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.85)', borderColor: 'rgba(0,0,0,0.08)' }}>
       <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#7C3AED' }}>
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#4d7c5a' }}>
           <FileText size={18} />
         </div>
         <div className="flex-1 min-w-0">
@@ -187,7 +187,7 @@ function SourcesModal({
             disabled={saveDisabled}
             onClick={onSave}
             className="px-5 py-2 rounded-full text-white"
-            style={{ fontSize: 13, fontWeight: 600, background: saveDisabled ? '#E5E7EB' : '#7C3AED', color: saveDisabled ? '#9AA3AF' : '#fff' }}
+            style={{ fontSize: 13, fontWeight: 600, background: saveDisabled ? '#E5E7EB' : '#4d7c5a', color: saveDisabled ? '#9AA3AF' : '#fff' }}
           >
             {saveLabel}
           </button>
@@ -422,8 +422,8 @@ export function TutorialV3SourcePanel(props: any) {
                   onDrop={(e) => { e.preventDefault(); setImgDragOver(false); takeImageFiles(e.dataTransfer.files); }}
                   className="w-full rounded-xl border-2 border-dashed flex flex-col items-center justify-center gap-1 py-5"
                   style={{
-                    borderColor: imgDragOver ? '#7C3AED' : 'rgba(0,0,0,0.12)',
-                    background: imgDragOver ? 'rgba(124,58,237,0.05)' : 'rgba(247,249,251,0.9)',
+                    borderColor: imgDragOver ? '#4d7c5a' : 'rgba(0,0,0,0.12)',
+                    background: imgDragOver ? 'rgba(77,124,90,0.05)' : 'rgba(247,249,251,0.9)',
                   }}
                 >
                   <ImageIcon size={16} style={{ color: '#9AA3AF' }} />
@@ -445,12 +445,12 @@ export function TutorialV3SourcePanel(props: any) {
                         className="relative rounded-xl overflow-hidden w-full h-full"
                         style={{
                           background: '#F3F4F6',
-                          border: m.caption ? '2px solid #7C3AED' : '1.5px solid rgba(0,0,0,0.1)',
+                          border: m.caption ? '2px solid #4d7c5a' : '1.5px solid rgba(0,0,0,0.1)',
                         }}
                         title={m.caption ? `Caption: ${m.caption}` : 'Add caption'}
                       >
                         {m.uploading ? (
-                          <div className="w-full h-full flex items-center justify-center" style={{ color: '#7C3AED' }}>
+                          <div className="w-full h-full flex items-center justify-center" style={{ color: '#4d7c5a' }}>
                             <Loader2 size={16} className="animate-spin" />
                           </div>
                         ) : m.url ? (
@@ -594,9 +594,9 @@ export function TutorialV3SourcePanel(props: any) {
                   style={{
                     fontSize: 12.5,
                     fontWeight: on ? 650 : 500,
-                    background: on ? '#7C3AED' : 'rgba(255,255,255,0.85)',
+                    background: on ? '#4d7c5a' : 'rgba(255,255,255,0.85)',
                     color: on ? '#fff' : '#374151',
-                    borderColor: on ? '#7C3AED' : 'rgba(0,0,0,0.1)',
+                    borderColor: on ? '#4d7c5a' : 'rgba(0,0,0,0.1)',
                   }}
                 >
                   {t.icon}{t.label}
@@ -617,8 +617,8 @@ export function TutorialV3SourcePanel(props: any) {
                   onDragLeave={() => setDragOver(false)}
                   onDrop={(e) => { e.preventDefault(); setDragOver(false); pick(e.dataTransfer.files); }}
                   className="w-full flex flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed"
-                  style={{ padding: (pdfSources || []).length ? '22px 20px' : '36px 20px', borderColor: dragOver ? '#7C3AED' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(124,58,237,0.05)' : 'rgba(247,249,251,0.9)' }}>
-                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: '#7C3AED' }}><Upload size={20} /></div>
+                  style={{ padding: (pdfSources || []).length ? '22px 20px' : '36px 20px', borderColor: dragOver ? '#4d7c5a' : 'rgba(0,0,0,0.14)', background: dragOver ? 'rgba(77,124,90,0.05)' : 'rgba(247,249,251,0.9)' }}>
+                  <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-white" style={{ background: '#4d7c5a' }}><Upload size={20} /></div>
                   <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>{(pdfSources || []).length ? 'Add another PDF' : 'Drop a PDF here or click to attach'}</p>
                   <p style={{ fontSize: 12, color: '#9AA3AF' }}>PDF only · parsed in Mark up · you can add several</p>
                 </button>
@@ -637,7 +637,7 @@ export function TutorialV3SourcePanel(props: any) {
                   <span style={{ fontSize: 11.5, color: '#9AA3AF' }}>{pasteText.trim() ? `${pasteText.trim().split(/\s+/).length} words` : 'Notes, an article, a transcript…'}</span>
                   <button type="button" onClick={onLoadText} disabled={!pasteText.trim()}
                     className="px-4 py-2 rounded-full"
-                    style={{ fontSize: 12.5, fontWeight: 600, background: pasteText.trim() ? '#0B0F1A' : '#E5E7EB', color: pasteText.trim() ? '#fff' : '#9AA3AF' }}>
+                    style={{ fontSize: 12.5, fontWeight: 600, background: pasteText.trim() ? '#1e2b3d' : '#E5E7EB', color: pasteText.trim() ? '#fff' : '#9AA3AF' }}>
                     {(textSources || []).length ? 'Add this text →' : 'Use this text →'}
                   </button>
                 </div>
@@ -656,7 +656,7 @@ export function TutorialV3SourcePanel(props: any) {
                     onKeyDown={(e) => { if (e.key === 'Enter' && webUrl?.trim() && !webLoading) onFetchWeb(); }} />
                   <button type="button" onClick={onFetchWeb} disabled={!webUrl?.trim() || webLoading}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
-                    style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl?.trim() || webLoading) ? 0.7 : 1 }}>
+                    style={{ background: '#1e2b3d', fontSize: 12.5, fontWeight: 600, opacity: (!webUrl?.trim() || webLoading) ? 0.7 : 1 }}>
                     {webLoading ? <Loader2 size={13} className="animate-spin" /> : <Link2 size={14} />}{webLoading ? 'Fetching…' : ((webSources || []).length ? 'Add site' : 'Fetch')}
                   </button>
                 </div>
@@ -676,7 +676,7 @@ export function TutorialV3SourcePanel(props: any) {
                     onKeyDown={(e) => { if (e.key === 'Enter' && ytUrl.trim() && !ytLoading) onFetchYoutube(); }} />
                   <button type="button" onClick={onFetchYoutube} disabled={!ytUrl.trim() || ytLoading}
                     className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-white shrink-0"
-                    style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 600, opacity: (!ytUrl.trim() || ytLoading) ? 0.7 : 1 }}>
+                    style={{ background: '#1e2b3d', fontSize: 12.5, fontWeight: 600, opacity: (!ytUrl.trim() || ytLoading) ? 0.7 : 1 }}>
                     {ytLoading ? <Loader2 size={13} className="animate-spin" /> : <Youtube size={14} />}{ytLoading ? 'Fetching…' : ((ytSources || []).length ? 'Add transcript' : 'Fetch transcript')}
                   </button>
                 </div>
@@ -728,7 +728,7 @@ export function TutorialV3SourcePanel(props: any) {
                               onClick={onUseYoutubePaste}
                               disabled={!ytPasteText.trim() || ytLoading}
                               className="px-4 py-2 rounded-full text-white disabled:opacity-50"
-                              style={{ fontSize: 12.5, fontWeight: 600, background: '#0B0F1A' }}
+                              style={{ fontSize: 12.5, fontWeight: 600, background: '#1e2b3d' }}
                             >
                               Use this transcript →
                             </button>
@@ -743,7 +743,7 @@ export function TutorialV3SourcePanel(props: any) {
 
             {activeTab === 'prompt' && (
               <div>
-                <p style={{ fontSize: 13, color: '#4C1D95', lineHeight: 1.55, marginBottom: 10 }}>
+                <p style={{ fontSize: 13, color: '#3d6349', lineHeight: 1.55, marginBottom: 10 }}>
                   Describe what the content should teach. We generate markable source text from your prompt.
                 </p>
                 <textarea
@@ -767,7 +767,7 @@ export function TutorialV3SourcePanel(props: any) {
             )}
 
             {activeTab === 'manual' && (
-              <div className="rounded-2xl p-4 border" style={{ background: 'rgba(124,58,237,0.05)', borderColor: 'rgba(124,58,237,0.2)' }}>
+              <div className="rounded-2xl p-4 border" style={{ background: 'rgba(77,124,90,0.05)', borderColor: 'rgba(77,124,90,0.2)' }}>
                 <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220', marginBottom: 6 }}>Hand-write from a template</p>
                 <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
                   Next we open a blank {objectNoun} shaped like the Template Library default — nothing is generated. Change the default in Template Library anytime.
@@ -778,9 +778,9 @@ export function TutorialV3SourcePanel(props: any) {
             {activeTab === 'library' && onPickLibrarySource && (
               <div>
                 {librarySource ? (
-                  <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(124,58,237,0.25)' }}>
+                  <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(77,124,90,0.25)' }}>
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#7C3AED' }}>
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#4d7c5a' }}>
                         <FileText size={18} />
                       </div>
                       <div className="flex-1 min-w-0">
@@ -816,7 +816,7 @@ export function TutorialV3SourcePanel(props: any) {
                     >
                       <span style={{ color: '#6B7280' }}>{s.icon}</span>
                       <span className="flex-1 min-w-0 truncate" style={{ fontSize: 12.5, fontWeight: 600, color: '#0B1220' }}>{s.name}</span>
-                      <span className="px-2 py-0.5 rounded-full shrink-0" style={{ fontSize: 10.5, fontWeight: 650, color: '#059669', background: 'rgba(5,150,105,0.1)' }}>✓ ready</span>
+                      <span className="px-2 py-0.5 rounded-full shrink-0" style={{ fontSize: 10.5, fontWeight: 650, color: '#4d7c5a', background: 'rgba(77,124,90,0.1)' }}>✓ ready</span>
                       <button type="button" onClick={s.onRemove} className="shrink-0 w-6 h-6 rounded-full flex items-center justify-center" style={{ color: '#9AA3AF' }} title="Remove">
                         <X size={13} />
                       </button>
@@ -916,9 +916,9 @@ export function TutorialV3SourcePanel(props: any) {
               className="flex-1 px-3 py-2 rounded-xl border"
               style={{
                 fontSize: 12.5, fontWeight: 650,
-                background: videoModal.fullVideo ? '#7C3AED' : 'rgba(255,255,255,0.9)',
+                background: videoModal.fullVideo ? '#4d7c5a' : 'rgba(255,255,255,0.9)',
                 color: videoModal.fullVideo ? '#fff' : '#374151',
-                borderColor: videoModal.fullVideo ? '#7C3AED' : 'rgba(0,0,0,0.1)',
+                borderColor: videoModal.fullVideo ? '#4d7c5a' : 'rgba(0,0,0,0.1)',
               }}
             >
               Full video
@@ -929,9 +929,9 @@ export function TutorialV3SourcePanel(props: any) {
               className="flex-1 px-3 py-2 rounded-xl border"
               style={{
                 fontSize: 12.5, fontWeight: 650,
-                background: !videoModal.fullVideo ? '#7C3AED' : 'rgba(255,255,255,0.9)',
+                background: !videoModal.fullVideo ? '#4d7c5a' : 'rgba(255,255,255,0.9)',
                 color: !videoModal.fullVideo ? '#fff' : '#374151',
-                borderColor: !videoModal.fullVideo ? '#7C3AED' : 'rgba(0,0,0,0.1)',
+                borderColor: !videoModal.fullVideo ? '#4d7c5a' : 'rgba(0,0,0,0.1)',
               }}
             >
               Clip

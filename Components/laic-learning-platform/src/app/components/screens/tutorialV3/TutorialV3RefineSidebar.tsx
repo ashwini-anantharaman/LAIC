@@ -435,7 +435,7 @@ export function TutorialV3RefineSidebar({
         }}
         title="Refine with AI"
       >
-        <Sparkles size={16} style={{ color: '#6D28D9' }} />
+        <Sparkles size={16} style={{ color: '#4d7c5a' }} />
         <span
           style={{
             writingMode: 'vertical-rl',
@@ -464,9 +464,9 @@ export function TutorialV3RefineSidebar({
     >
       <div
         className="flex items-center gap-2 px-3 py-2.5 shrink-0"
-        style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(109,40,217,0.04)' }}
+        style={{ borderBottom: '1px solid rgba(0,0,0,0.06)', background: 'rgba(77,124,90,0.04)' }}
       >
-        <Sparkles size={15} style={{ color: '#6D28D9' }} />
+        <Sparkles size={15} style={{ color: '#4d7c5a' }} />
         <div className="flex-1 min-w-0">
           <p style={{ fontSize: 13, fontWeight: 700, color: '#0B1220' }}>Refine with AI</p>
           <p style={{ fontSize: 11, color: '#6B7280' }}>Optional — keep writing by hand anytime</p>
@@ -495,7 +495,7 @@ export function TutorialV3RefineSidebar({
             style={{
               fontSize: 11.5,
               fontWeight: 650,
-              background: tab === t.id ? '#0B0F1A' : 'transparent',
+              background: tab === t.id ? '#1e2b3d' : 'transparent',
               color: tab === t.id ? '#fff' : '#6B7280',
             }}
           >
@@ -545,8 +545,8 @@ export function TutorialV3RefineSidebar({
                   fontSize: 11.5,
                   fontWeight: 600,
                   color: '#374151',
-                  borderColor: sourcePanel === 'pdf' ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.1)',
-                  background: sourcePanel === 'pdf' ? 'rgba(109,40,217,0.06)' : '#fff',
+                  borderColor: sourcePanel === 'pdf' ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                  background: sourcePanel === 'pdf' ? 'rgba(77,124,90,0.06)' : '#fff',
                 }}
               >
                 {sourceBusy && sourcePanel === 'pdf' ? <Loader2 size={12} className="animate-spin" /> : <FileText size={12} />}
@@ -572,8 +572,8 @@ export function TutorialV3RefineSidebar({
                   fontSize: 11.5,
                   fontWeight: 600,
                   color: '#374151',
-                  borderColor: sourcePanel === 'youtube' ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.1)',
-                  background: sourcePanel === 'youtube' ? 'rgba(109,40,217,0.06)' : '#fff',
+                  borderColor: sourcePanel === 'youtube' ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                  background: sourcePanel === 'youtube' ? 'rgba(77,124,90,0.06)' : '#fff',
                 }}
               >
                 <Youtube size={12} /> Video transcript
@@ -586,8 +586,8 @@ export function TutorialV3RefineSidebar({
                   fontSize: 11.5,
                   fontWeight: 600,
                   color: '#374151',
-                  borderColor: sourcePanel === 'text' ? 'rgba(109,40,217,0.35)' : 'rgba(0,0,0,0.1)',
-                  background: sourcePanel === 'text' ? 'rgba(109,40,217,0.06)' : '#fff',
+                  borderColor: sourcePanel === 'text' ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                  background: sourcePanel === 'text' ? 'rgba(77,124,90,0.06)' : '#fff',
                 }}
               >
                 <Type size={12} /> Paste text
@@ -597,7 +597,7 @@ export function TutorialV3RefineSidebar({
                 disabled={!(draft.sourcePool || []).length}
                 onClick={() => setMarkupOpen(true)}
                 className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-white disabled:opacity-40"
-                style={{ fontSize: 11.5, fontWeight: 600, background: '#6D28D9' }}
+                style={{ fontSize: 11.5, fontWeight: 600, background: '#4d7c5a' }}
               >
                 <Wand2 size={12} /> Mark up
               </button>
@@ -625,7 +625,7 @@ export function TutorialV3RefineSidebar({
                     disabled={!ytUrl.trim() || sourceBusy}
                     onClick={() => void handleFetchYoutube()}
                     className="inline-flex items-center gap-1 px-3 py-2 rounded-full text-white disabled:opacity-40 shrink-0"
-                    style={{ fontSize: 12, fontWeight: 600, background: '#0B0F1A' }}
+                    style={{ fontSize: 12, fontWeight: 600, background: '#1e2b3d' }}
                   >
                     {sourceBusy ? <Loader2 size={12} className="animate-spin" /> : <Youtube size={13} />}
                     {sourceBusy ? 'Fetching…' : 'Add'}
@@ -657,7 +657,7 @@ export function TutorialV3RefineSidebar({
                     disabled={!pasteText.trim()}
                     onClick={handlePasteText}
                     className="px-3 py-1.5 rounded-full text-white disabled:opacity-40"
-                    style={{ fontSize: 12, fontWeight: 600, background: '#0B0F1A' }}
+                    style={{ fontSize: 12, fontWeight: 600, background: '#1e2b3d' }}
                   >
                     Add text source
                   </button>
@@ -696,7 +696,7 @@ export function TutorialV3RefineSidebar({
               })}
             </div>
             {(draft.refineHighlights || []).length > 0 && (
-              <p style={{ fontSize: 11.5, color: '#059669' }}>
+              <p style={{ fontSize: 11.5, color: '#4d7c5a' }}>
                 {(draft.refineHighlights || []).length} marked passage{(draft.refineHighlights || []).length === 1 ? '' : 's'} for grounding
               </p>
             )}
@@ -790,7 +790,7 @@ export function TutorialV3RefineSidebar({
                     />
                     {placingImageSrc === img.src && (
                       <span className="absolute inset-0 flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.7)' }}>
-                        <Loader2 size={16} className="animate-spin" style={{ color: '#6D28D9' }} />
+                        <Loader2 size={16} className="animate-spin" style={{ color: '#4d7c5a' }} />
                       </span>
                     )}
                   </button>
@@ -829,8 +829,8 @@ export function TutorialV3RefineSidebar({
                     style={{
                       fontSize: 11.5,
                       fontWeight: 600,
-                      borderColor: genType === g.type ? 'rgba(109,40,217,0.4)' : 'rgba(0,0,0,0.1)',
-                      background: genType === g.type ? 'rgba(109,40,217,0.08)' : '#fff',
+                      borderColor: genType === g.type ? 'rgba(77,124,90,0.4)' : 'rgba(0,0,0,0.1)',
+                      background: genType === g.type ? 'rgba(77,124,90,0.08)' : '#fff',
                       color: '#374151',
                     }}
                   >
@@ -843,10 +843,10 @@ export function TutorialV3RefineSidebar({
             {genSlot && genType && (
               <div
                 className="rounded-2xl overflow-hidden"
-                style={{ border: '1px solid rgba(109,40,217,0.2)', background: 'rgba(109,40,217,0.03)' }}
+                style={{ border: '1px solid rgba(77,124,90,0.2)', background: 'rgba(77,124,90,0.03)' }}
               >
                 <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid rgba(0,0,0,0.06)' }}>
-                  <p style={{ fontSize: 12.5, fontWeight: 650, color: '#4C1D95' }}>
+                  <p style={{ fontSize: 12.5, fontWeight: 650, color: '#3d6349' }}>
                     Generate {GEN_TYPES.find((g) => g.type === genType)?.label}
                   </p>
                   <button type="button" onClick={() => { setGenSlot(null); setGenType(null); }} className="p-1">
@@ -920,7 +920,7 @@ export function TutorialV3RefineSidebar({
                 type="button"
                 onClick={() => setMarkupOpen(false)}
                 className="px-3 py-1.5 rounded-full text-white"
-                style={{ fontSize: 12.5, fontWeight: 600, background: '#0B0F1A' }}
+                style={{ fontSize: 12.5, fontWeight: 600, background: '#1e2b3d' }}
               >
                 Done
               </button>

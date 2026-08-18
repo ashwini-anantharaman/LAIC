@@ -80,6 +80,7 @@ import {
 } from './TutorialV3SourcePanel';
 import type { PickedLibrarySource } from '../CDSources';
 import { useConfirm } from '../../ConfirmDialog';
+import { V3_FONT, V3_NAVY, V3_PAPER, V3_SAGE } from '../../../../lib/tutorialV3/authorTheme';
 import {
   getCollectionPath,
   objectCollectionIds,
@@ -1018,24 +1019,24 @@ export function ObjectCreatorTutorialV3() {
           {writeYourself ? (
             <div
               className="rounded-xl px-3.5 py-2.5"
-              style={{ background: 'rgba(5,150,105,0.08)', border: '1px solid rgba(5,150,105,0.22)' }}
+              style={{ background: 'rgba(77,124,90,0.08)', border: '1px solid rgba(77,124,90,0.22)' }}
             >
-              <p style={{ fontSize: 11, fontWeight: 650, color: '#059669', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              <p style={{ fontSize: 11, fontWeight: 650, color: '#4d7c5a', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                 Write it yourself
               </p>
-              <p style={{ fontSize: 13.5, color: '#065F46', marginTop: 2 }}>
+              <p style={{ fontSize: 13.5, color: '#2f4e39', marginTop: 2 }}>
                 No template — you’ll add sections by hand.
               </p>
             </div>
           ) : (
             <div
               className="rounded-xl px-3.5 py-2.5"
-              style={{ background: 'rgba(109,40,217,0.06)', border: '1px solid rgba(109,40,217,0.18)' }}
+              style={{ background: 'rgba(77,124,90,0.06)', border: '1px solid rgba(77,124,90,0.18)' }}
             >
-              <p style={{ fontSize: 11, fontWeight: 650, color: '#6D28D9', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+              <p style={{ fontSize: 11, fontWeight: 650, color: '#4d7c5a', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
                 Template
               </p>
-              <p style={{ fontSize: 14, fontWeight: 650, color: '#4C1D95', marginTop: 2 }}>{tpl.name}</p>
+              <p style={{ fontSize: 14, fontWeight: 650, color: '#3d6349', marginTop: 2 }}>{tpl.name}</p>
             </div>
           )}
 
@@ -1093,10 +1094,10 @@ export function ObjectCreatorTutorialV3() {
               });
               commit(next, 'structure');
             }}
-            className="w-full py-3 rounded-full text-white disabled:opacity-40"
-            style={{ fontSize: 14, fontWeight: 650, background: '#0B0F1A' }}
+            className="w-full py-3.5 rounded-full text-white disabled:opacity-40"
+            style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
-            Save & continue to structure →
+            Save and continue to structure
           </button>
         </div>
       </Shell>
@@ -1110,10 +1111,10 @@ export function ObjectCreatorTutorialV3() {
     const slots = writeYourself ? [] : (draft.topLevelSlots || []);
     const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself, freeform });
     const continueLabel = writeYourself
-      ? 'Save skeleton & continue to author →'
+      ? 'Save and continue to author'
       : analysis.needsSources
-        ? 'Save skeleton & continue to sources →'
-        : 'Save skeleton & continue →';
+        ? 'Save and continue to sources'
+        : 'Save and continue';
 
     return (
       <Shell
@@ -1182,8 +1183,8 @@ export function ObjectCreatorTutorialV3() {
                 });
                 commit(next, nextPhase);
               }}
-              className="px-5 py-2.5 rounded-full text-white disabled:opacity-40"
-              style={{ fontSize: 13, fontWeight: 650, background: '#0B0F1A' }}
+              className="w-full py-3.5 rounded-full text-white disabled:opacity-40"
+              style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
             >
               {continueLabel}
             </button>
@@ -1317,10 +1318,10 @@ export function ObjectCreatorTutorialV3() {
             type="button"
             disabled={sourcesBusy}
             onClick={() => void continueFromSources()}
-            className="px-5 py-2.5 rounded-full text-white disabled:opacity-50"
-            style={{ fontSize: 13, fontWeight: 650, background: '#0B0F1A' }}
+            className="w-full py-3.5 rounded-full text-white disabled:opacity-50"
+            style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
-            {hasAnySource ? 'Continue →' : 'Skip sources →'}
+            {hasAnySource ? 'Save and continue to author' : 'Skip sources and continue'}
           </button>
         </div>
       </div>
@@ -1505,12 +1506,13 @@ function FixedSaveButton({ onClick }: { onClick: () => void }) {
       onClick={onClick}
       className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
       style={{
-        fontSize: 13.5,
-        fontWeight: 650,
-        color: '#065F46',
-        background: pastelFromHex('#059669', 0.82),
-        border: '1px solid rgba(5,150,105,0.3)',
-        boxShadow: '0 10px 28px -12px rgba(5,150,105,0.55)',
+        fontSize: 14,
+        fontWeight: 700,
+        fontFamily: V3_FONT,
+        color: '#fff',
+        background: V3_SAGE,
+        border: 'none',
+        boxShadow: '0 10px 28px -12px rgba(77,124,90,0.65)',
       }}
     >
       {/* Publishes in a club compose session — see saveDraft. */}
@@ -1533,28 +1535,39 @@ function Shell({
   return (
     <>
       <div
-        className="min-h-full px-4 py-5"
+        className="min-h-full"
         style={{
-          background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)',
+          background: V3_PAPER,
+          fontFamily: V3_FONT,
           paddingBottom: onSave ? 88 : undefined,
         }}
       >
-        <div className="max-w-4xl mx-auto mb-4">
-          <div className="flex items-center gap-3 mb-3">
+        {/* Back and the step rail ride together in a white bar across the top,
+            so the pipeline stays put while the column below scrolls. */}
+        <div
+          className="sticky top-0 z-30 px-4"
+          style={{ background: '#fff', borderBottom: '1px solid rgba(0,0,0,0.06)' }}
+        >
+          <div className="max-w-4xl mx-auto flex items-center gap-3" style={{ minHeight: 58 }}>
             <button
               type="button"
               onClick={onBack}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full hover:bg-white/70"
-              style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}
+              className="inline-flex items-center gap-1.5 shrink-0"
+              style={{ fontSize: 14, fontWeight: 650, color: '#44403c' }}
             >
-              <ArrowLeft size={14} /> Back
+              <ArrowLeft size={15} /> Back
             </button>
+            {rail}
           </div>
-          {rail}
-          <h1 style={{ fontSize: 22, fontWeight: 750, color: '#0B1220', letterSpacing: '-0.3px', marginTop: rail ? 12 : 0 }}>{title}</h1>
-          {subtitle ? <p style={{ fontSize: 13.5, color: '#6B7280', marginTop: 4 }}>{subtitle}</p> : null}
         </div>
-        {children}
+
+        <div className="px-4 py-6">
+          <div className="max-w-4xl mx-auto mb-5">
+            <h1 style={{ fontSize: 30, fontWeight: 700, color: '#1c1917', letterSpacing: '-0.5px' }}>{title}</h1>
+            {subtitle ? <p style={{ fontSize: 15, color: '#78716c', marginTop: 6 }}>{subtitle}</p> : null}
+          </div>
+          {children}
+        </div>
       </div>
       {onSave ? <FixedSaveButton onClick={() => void onSave()} /> : null}
       {assistant}
@@ -1613,9 +1626,9 @@ function PipelineRail({
               onClick={() => canClick && onGo(s.id)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-full transition-all shrink-0"
               style={{
-                background: isActive ? '#0B0F1A' : isPast ? 'rgba(5,150,105,0.1)' : 'rgba(255,255,255,0.7)',
-                color: isActive ? '#fff' : isPast ? '#059669' : '#9AA3AF',
-                border: `1.5px solid ${isActive ? '#0B0F1A' : isPast ? '#059669' : 'rgba(0,0,0,0.08)'}`,
+                background: isActive ? V3_NAVY : isPast ? V3_SAGE : '#fff',
+                color: isActive || isPast ? '#fff' : '#a8a29e',
+                border: `1.5px solid ${isActive ? V3_NAVY : isPast ? V3_SAGE : 'rgba(0,0,0,0.12)'}`,
                 cursor: canClick ? 'pointer' : 'default',
                 opacity: canClick ? 1 : 0.55,
               }}

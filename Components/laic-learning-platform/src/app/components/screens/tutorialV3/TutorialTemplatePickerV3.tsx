@@ -99,9 +99,9 @@ export function TutorialTemplatePickerV3({ value, onChange }: Props) {
               key={t.id}
               className="rounded-2xl border transition-all"
               style={{
-                background: on ? '#0B0F1A' : 'rgba(255,255,255,0.9)',
+                background: on ? '#1e2b3d' : 'rgba(255,255,255,0.9)',
                 color: on ? '#fff' : '#374151',
-                borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+                borderColor: on ? '#1e2b3d' : 'rgba(0,0,0,0.1)',
               }}
             >
               <button
@@ -137,8 +137,8 @@ export function TutorialTemplatePickerV3({ value, onChange }: Props) {
                     <span
                       className="px-2 py-0.5 rounded text-xs font-semibold"
                       style={{
-                        background: on ? 'rgba(255,255,255,0.15)' : 'rgba(5,150,105,0.12)',
-                        color: on ? '#fff' : '#059669',
+                        background: on ? 'rgba(255,255,255,0.15)' : 'rgba(77,124,90,0.12)',
+                        color: on ? '#fff' : '#4d7c5a',
                       }}
                     >
                       Custom

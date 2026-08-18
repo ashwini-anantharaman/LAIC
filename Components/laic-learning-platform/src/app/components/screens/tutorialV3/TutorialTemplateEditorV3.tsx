@@ -531,9 +531,9 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
   const pill = (on: boolean): React.CSSProperties => ({
     fontSize: 12,
     fontWeight: on ? 650 : 500,
-    background: on ? '#0B0F1A' : 'rgba(255,255,255,0.9)',
+    background: on ? '#1e2b3d' : 'rgba(255,255,255,0.9)',
     color: on ? '#fff' : '#374151',
-    borderColor: on ? '#0B0F1A' : 'rgba(0,0,0,0.1)',
+    borderColor: on ? '#1e2b3d' : 'rgba(0,0,0,0.1)',
   });
 
   const chipStyle: React.CSSProperties = {
@@ -597,7 +597,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                     onPatch({ kind: 'if_source_kinds', kinds: next.length ? next : ['Key point'] });
                   }}
                   className="px-2 py-0.5 rounded-full border"
-                  style={{ ...chipStyle, ...(selected ? { background: '#0B0F1A', color: '#fff', borderColor: '#0B0F1A' } : {}) }}
+                  style={{ ...chipStyle, ...(selected ? { background: '#1e2b3d', color: '#fff', borderColor: '#1e2b3d' } : {}) }}
                 >
                   {k}
                 </button>
@@ -635,7 +635,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
               onChange(on ? cur.filter((x) => x !== o) : [...cur, o]);
             }}
             className="px-2 py-0.5 rounded-full border"
-            style={{ ...chipStyle, ...(on ? { background: '#0B0F1A', color: '#fff', borderColor: '#0B0F1A' } : {}) }}
+            style={{ ...chipStyle, ...(on ? { background: '#1e2b3d', color: '#fff', borderColor: '#1e2b3d' } : {}) }}
           >
             {o}
           </button>
@@ -652,7 +652,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
         className="rounded-xl px-3 py-2.5 space-y-2"
         style={{ background: 'rgba(255,255,255,0.85)', border: '1px solid rgba(0,0,0,0.08)' }}
       >
-        <p style={{ fontSize: 11, fontWeight: 700, color: '#047857', letterSpacing: '0.04em' }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: '#3d6349', letterSpacing: '0.04em' }}>
           GENERATE NEW — FULL DEFINE CONTROLS
         </p>
 
@@ -1423,12 +1423,12 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                   className="rounded-xl border overflow-hidden transition-colors"
                   style={{
                     background: 'rgba(249,250,251,0.95)',
-                    borderColor: isOpen ? 'rgba(5,150,105,0.28)' : 'rgba(0,0,0,0.08)',
+                    borderColor: isOpen ? 'rgba(77,124,90,0.28)' : 'rgba(0,0,0,0.08)',
                   }}
                 >
                   <div
                     className="flex items-center gap-2 px-3 py-2 cursor-pointer"
-                    style={{ borderLeft: '3px solid #059669' }}
+                    style={{ borderLeft: '3px solid #4d7c5a' }}
                     onClick={() => toggleExpanded(item.id)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
@@ -1441,10 +1441,10 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                     aria-expanded={isOpen}
                   >
                     <span style={{ fontSize: 11, color: '#9AA3AF', fontFamily: 'monospace', width: 18 }}>{i + 1}</span>
-                    <Puzzle size={13} style={{ color: '#059669', flexShrink: 0 }} />
+                    <Puzzle size={13} style={{ color: '#4d7c5a', flexShrink: 0 }} />
                     <span
                       className="px-1.5 py-0.5 rounded"
-                      style={{ fontSize: 10, fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#047857', background: 'rgba(5,150,105,0.08)' }}
+                      style={{ fontSize: 10, fontWeight: 650, letterSpacing: '0.04em', textTransform: 'uppercase', color: '#3d6349', background: 'rgba(77,124,90,0.08)' }}
                     >
                       Embedded content
                     </span>
@@ -1497,7 +1497,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                   </div>
 
                   {isOpen && (
-                    <div className="px-3 pb-3 space-y-2.5" style={{ paddingLeft: 14, borderLeft: '3px solid #059669' }}>
+                    <div className="px-3 pb-3 space-y-2.5" style={{ paddingLeft: 14, borderLeft: '3px solid #4d7c5a' }}>
                       <div>
                         <label style={{ fontSize: 11, fontWeight: 600, color: '#9AA3AF', display: 'block', marginBottom: 4 }}>
                           Content type
@@ -1552,9 +1552,9 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                         <div className="space-y-2">
                           <div
                             className="rounded-xl px-3 py-2"
-                            style={{ background: 'rgba(5,150,105,0.06)', border: '1px solid rgba(5,150,105,0.2)' }}
+                            style={{ background: 'rgba(77,124,90,0.06)', border: '1px solid rgba(77,124,90,0.2)' }}
                           >
-                            <p style={{ fontSize: 12, fontWeight: 600, color: '#047857' }}>
+                            <p style={{ fontSize: 12, fontWeight: 600, color: '#3d6349' }}>
                               Library slot — course developer chooses the content when authoring
                             </p>
                             <p style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
@@ -1607,7 +1607,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
                             type="button"
                             onClick={() => toggleGenSettings(item.id)}
                             className="flex items-center gap-1"
-                            style={{ fontSize: 12, fontWeight: 600, color: '#047857', background: 'transparent', border: 'none', padding: 0 }}
+                            style={{ fontSize: 12, fontWeight: 600, color: '#3d6349', background: 'transparent', border: 'none', padding: 0 }}
                           >
                             <ChevronRight
                               size={13}
@@ -1796,7 +1796,7 @@ export function TutorialTemplateEditorV3({ initial, onSave, onCancel }: Props) {
           type="button"
           onClick={handleSave}
           className="px-4 py-2 rounded-full text-white"
-          style={{ background: '#059669', fontSize: 13, fontWeight: 600 }}
+          style={{ background: '#4d7c5a', fontSize: 13, fontWeight: 600 }}
         >
           Save template
         </button>
