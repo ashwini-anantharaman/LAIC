@@ -31,6 +31,7 @@ import type {
   DrillContent,
   FlashcardSetContent,
   ImageContent,
+  LearningObject,
   LessonCompleteContent,
   LessonOverviewContent,
   MatchingContent,
@@ -50,6 +51,7 @@ import { expandTutorialBlocks, parseEmbedSlotHeading } from '../../../../../lib/
 import { countBlocksWords } from '../../../../../lib/tutorialPages.js';
 import { enrichQuizQuestionsWithSources } from '../../../../../lib/mcqSources.js';
 import { LearnerProgressProvider, useLearnerProgress } from './LearnerProgressContext';
+import { AskAIChat } from '../../AskAIChat';
 import { TutorialV3SectionSidebar } from './TutorialV3SectionSidebar';
 import { TutorialV3QuizBlock } from './TutorialV3QuizBlock';
 import { TutorialV3ConceptCard } from './TutorialV3ConceptCard';
@@ -225,6 +227,7 @@ function ReaderInner({
   sourceUnits,
   onBack,
   learnerName,
+  object,
 }: {
   draft: TutorialV3Draft;
   blocks: Block[];
@@ -237,6 +240,11 @@ function ReaderInner({
   sourceUnits?: SourceUnits;
   onBack?: () => void;
   learnerName?: string;
+  /**
+   * The object being read, for Ask Hoot. Hoot answers only from this content,
+   * so it needs the whole object rather than the page in front of the learner.
+   */
+  object?: LearningObject;
 }) {
   const { progress, visitSection } = useLearnerProgress();
 
@@ -267,6 +275,7 @@ function ReaderInner({
   const [contentPages, setContentPages] = useState(() => countPages(expanded));
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [askOpen, setAskOpen] = useState(false);
 
   /**
    * Page numbering the learner sees: 1 is the overview, the content pages
@@ -398,6 +407,22 @@ function ReaderInner({
                 <h1 className="text-2xl sm:text-3xl font-bold text-stone-900 leading-tight">{title}</h1>
               </div>
               <div className="flex items-center gap-2 shrink-0 pt-1">
+                {object && (
+                  <button
+                    type="button"
+                    onClick={() => setAskOpen((v) => !v)}
+                    aria-label="Ask Hoot about this lesson"
+                    className="flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-full bg-white shadow-sm hover:shadow"
+                    style={{ fontSize: 12.5, fontWeight: 650, color: SAGE }}
+                  >
+                    <img
+                      src="/owl-logo.png"
+                      alt=""
+                      style={{ width: 17, height: 17, borderRadius: '50%', objectFit: 'cover' }}
+                    />
+                    <span className="hidden sm:inline">Ask Hoot</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => goToPage(page - 1)}
@@ -506,6 +531,8 @@ function ReaderInner({
           </div>
         </div>
       </main>
+
+      {object && <AskAIChat open={askOpen} onClose={() => setAskOpen(false)} obj={object} />}
     </div>
   );
 }

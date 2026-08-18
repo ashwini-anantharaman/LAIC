@@ -1761,6 +1761,7 @@ export function LearnerReader({
         glossary={buildGlossary({ blocks: expandTutorialBlocks(obj.blocks || []) as Block[], highlights: [] })}
         onBack={embedMode ? undefined : closeReader}
         learnerName={app.nexusUserName || undefined}
+        object={obj}
       />
     );
   }
