@@ -144,6 +144,12 @@ export interface LibraryEntry {
   /** How many boards, for the shelf row — a DRAFT has seeds, not packs yet. */
   challengeBoardCount?: number;
   /**
+   * When the entry last changed, for shelves that order by work rather than by
+   * birth (a club's draft shelf). Additive: an entry that has never been
+   * re-saved has none, and readers fall back to createdAt.
+   */
+  updatedAt?: string;
+  /**
    * `draft` = built but not published; `published` = a live challenge exists.
    *
    * One entry spans both: a draft is promoted in place when it is published,

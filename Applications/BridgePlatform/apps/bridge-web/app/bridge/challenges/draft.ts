@@ -346,6 +346,10 @@ export function normalizeDraft(input: unknown): ChallengeDraft {
     // Only an explicit "ben" selects BEN; every other value, including a draft
     // saved before the option existed, resolves to the solver.
     engine: o.engine === "ben" ? "ben" : "dd",
+    // A PRIVATE TABLE stays private through a save/resume round trip. Dropping
+    // this here would quietly turn a resumed friends-table draft into a CLUB
+    // challenge — a scope escalation, not a cosmetic loss.
+    ...(o.personal === true ? { personal: true } : {}),
     editorBadge: o.editorBadge === true,
   };
 }

@@ -46,6 +46,13 @@ import { ICON_ARCHIVE_BOX } from "../constants/brand-vectors";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../constants/theme";
 import { tintSvg } from "../components/svg-tint";
 import { useAuth } from "../lib/auth-context";
+import { confirmDestructive } from "../lib/dialogs";
+import {
+  deleteChallengeDraft,
+  fetchChallengeDrafts,
+  type ChallengeDraftRow,
+} from "../lib/challenge-create";
+import { PROGRAM_ID } from "../lib/config";
 import {
   fetchClubChallenges,
   type ChallengeStanding,
@@ -152,6 +159,8 @@ export default function ClubChallengesScreen() {
 
   // Null while loading — an empty carousel means "none", not "not yet".
   const [all, setAll] = useState<ClubChallenge[] | null>(null);
+  /** The club's parked drafts — its own shelf, never mixed into the carousel. */
+  const [drafts, setDrafts] = useState<ChallengeDraftRow[] | null>(null);
   /** Showing the archive instead of the live list. */
   const [showArchived, setShowArchived] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -173,6 +182,15 @@ export default function ClubChallengesScreen() {
       if (fresh) {
         setAll(null);
         setLoadError(null);
+      }
+      // The drafts shelf rides the same load. Only creators can see it (the
+      // route refuses others), so a refusal is an empty shelf, not an error.
+      if (canCreate) {
+        fetchChallengeDrafts(token, clubId ?? PROGRAM_ID)
+          .then(({ drafts: rows }) => !cancelled && setDrafts(rows))
+          .catch(() => !cancelled && setDrafts([]));
+      } else {
+        setDrafts([]);
       }
       fetchClubChallenges(token, clubId)
         .then((rows) => {
@@ -196,7 +214,7 @@ export default function ClubChallengesScreen() {
         cancelled = true;
       };
     },
-    [token, clubId],
+    [token, clubId, canCreate],
   );
 
   useEffect(() => load(true), [load]);
@@ -417,6 +435,71 @@ export default function ClubChallengesScreen() {
           </ScrollView>
         )}
 
+        {/* ── Drafts: the club's parked challenges, a separate shelf ──
+            Any of the club's challenge-creators can pick one up — parking at
+            club level is the point — and publishing promotes the same row, so
+            nothing here goes stale beside the contest it became. Hidden in the
+            archive view: a draft is unstarted work, and the archive is where
+            finished things rest. */}
+        {canCreate && !showArchived && drafts !== null && drafts.length > 0 && (
+          <>
+            <Text
+              style={[
+                styles.heading,
+                { paddingTop: BOARD_HEADING_GAP * s, paddingBottom: 10 * s, paddingLeft: ROW.left * s },
+              ]}
+            >
+              Drafts
+            </Text>
+            <View style={{ paddingHorizontal: ROW.left * s }}>
+              {drafts.map((d) => (
+                <Pressable
+                  key={d.entryId}
+                  onPress={() =>
+                    router.push({ pathname: "/challenge-new", params: { draft: d.entryId } })
+                  }
+                  style={({ pressed }) => [styles.draftRow, pressed && { opacity: 0.85 }]}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Keep building ${d.title}`}
+                >
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={styles.draftTitle} numberOfLines={1}>
+                      {d.title}
+                    </Text>
+                    <Text style={styles.draftMeta} numberOfLines={1}>
+                      {d.boardCount} board{d.boardCount === 1 ? "" : "s"} · edited{" "}
+                      {new Date(d.updatedAt).toLocaleDateString(undefined, {
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </Text>
+                  </View>
+                  <Text style={styles.draftGo}>Keep building →</Text>
+                  <Pressable
+                    onPress={() =>
+                      confirmDestructive(
+                        "Delete draft?",
+                        `"${d.title}" will be gone for the whole club.`,
+                        "Delete",
+                        () => {
+                          if (!token) return;
+                          deleteChallengeDraft(token, clubId ?? PROGRAM_ID, d.entryId)
+                            .then(() => setDrafts((prev) => prev?.filter((x) => x.entryId !== d.entryId) ?? null))
+                            .catch(() => {});
+                        },
+                      )
+                    }
+                    hitSlop={10}
+                    accessibilityLabel={`Delete draft ${d.title}`}
+                  >
+                    <Text style={styles.draftDelete}>✕</Text>
+                  </Pressable>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        )}
+
         {canSeeBoard ? (
           <Text
             style={[
@@ -506,4 +589,25 @@ const styles = StyleSheet.create({
     borderColor: Brand.ink,
   },
   pressed: { opacity: 0.6 },
+  draftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: Brand.white,
+    borderWidth: 1,
+    borderColor: "#d3ccbb",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+  draftTitle: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: Brand.ink },
+  draftMeta: { fontFamily: Fonts.body, fontSize: 11.5, color: "#7b7466", marginTop: 1 },
+  draftGo: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: Brand.green },
+  draftDelete: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 14,
+    color: "#a49d8e",
+    paddingHorizontal: 4,
+  },
 });

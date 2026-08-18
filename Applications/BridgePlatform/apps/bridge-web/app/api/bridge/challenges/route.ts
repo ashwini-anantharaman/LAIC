@@ -10,6 +10,7 @@ import type { AuditAction } from "@bridge/audit";
 import {
   challengeFormat,
   standardVul,
+  type ChallengeEngine,
   type Challenge,
   type ChallengeBoard,
   type ChallengeInvite,
@@ -21,6 +22,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { packFromDraft, validateDraft, type ChallengeDraft } from "@/app/bridge/challenges/draft";
+import { promoteClubDraft } from "@/lib/challengeDrafts";
 import { listChallengePeople, listFriendPeople } from "@/app/bridge/challenges/people";
 import { canCreateChallenge, canUse } from "@/lib/access";
 import { AccessError, apiError, requireContext } from "@/lib/api";
@@ -38,7 +40,9 @@ export async function POST(request: NextRequest) {
     if (!(await canUse(context, "page.challenges"))) throw new AccessError("No access");
     // The two-catalogue rule (platform allows, the club's role gates) lives
     // in canCreateChallenge — the same gate the wizard page runs.
-    const draft = (await request.json().catch(() => null)) as ChallengeDraft | null;
+    const draft = (await request.json().catch(() => null)) as
+      | (ChallengeDraft & { draftEntryId?: string })
+      | null;
     if (!draft) {
       return NextResponse.json({ error: "No draft." }, { status: 400, headers: CORS });
     }
@@ -68,6 +72,10 @@ export async function POST(request: NextRequest) {
     // Written ONLY when not the default, so a bid-and-play challenge's record
     // is byte-identical to one created before the option existed.
     const format = challengeFormat(draft);
+    // The creator's choice of robots, defaulting to the solver — stamped on
+    // the challenge so everyone entering meets the same opponents however
+    // long the contest runs (the same rule the web action applies).
+    const engine: ChallengeEngine = draft.engine === "ben" ? "ben" : "dd";
 
     // 0029: the club this challenge belongs to. Refuses rather than storing a null
     // owner, which the read path would treat as "visible in every club".
@@ -89,6 +97,7 @@ export async function POST(request: NextRequest) {
       editorBadge: draft.editorBadge,
       standingsVisibility: draft.standingsVisibility,
       createdAt: now,
+      engine,
       nexusProgramId: ownerScope,
       scopeLevel: personal ? "user" : "program",
     };
@@ -168,6 +177,12 @@ export async function POST(request: NextRequest) {
       editorBadge: draft.editorBadge,
       overrides: Object.keys(draft.controlOverrides).length,
     });
+
+    // Created from a parked draft: promote that row in place, so the shelf
+    // never shows a stale draft beside the challenge it became.
+    if (typeof draft.draftEntryId === "string" && draft.draftEntryId) {
+      await promoteClubDraft(context, draft.draftEntryId, { challengeId, title: challenge.title }, draft);
+    }
 
     return NextResponse.json(
       { challengeId, title: challenge.title, invited },
