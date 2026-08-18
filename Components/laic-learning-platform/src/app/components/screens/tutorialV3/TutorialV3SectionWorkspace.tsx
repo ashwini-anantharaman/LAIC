@@ -3,7 +3,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
-import { TutorialV3ReferenceTableEditor } from './TutorialV3ReferenceTableEditor';
+import { TutorialV3BlockEditor, hasV3BlockEditor } from './TutorialV3BlockEditors';
 import {
   configToPartFields,
   isBridgeEmbedPart,
@@ -28,13 +28,13 @@ import {
   sourcePoolToMarkupSources,
 } from '../../../../lib/tutorialV3/draftModel';
 import {
-  applyReferenceTableResult,
-  emptyReferenceTable,
-  extractReferenceTable,
+  applyV3BlockContent,
+  emptyV3BlockContent,
+  extractV3BlockContent,
   isNestedEditablePart,
   isNestedPartEmpty,
-  isReferenceTablePart,
   isV3BlockEmbedPart,
+  v3BlockTypeOf,
   nestedEditorKindForPart,
   v3BlockEmbedLabel,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
@@ -743,11 +743,12 @@ function WritePane({
                 {p.libraryTitle || p.label || v3BlockEmbedLabel(p)}
                 <span style={{ color: '#9AA3AF' }}> · {v3BlockEmbedLabel(p)}</span>
               </p>
-              {isReferenceTablePart(p) ? (
+              {hasV3BlockEditor(v3BlockTypeOf(p)) ? (
                 <div className="mb-3">
-                  <TutorialV3ReferenceTableEditor
-                    content={extractReferenceTable(p) || emptyReferenceTable(p.libraryTitle)}
-                    onChange={(next) => onChangePart(p.id, applyReferenceTableResult(p, next))}
+                  <TutorialV3BlockEditor
+                    type={v3BlockTypeOf(p)!}
+                    content={extractV3BlockContent(p) || emptyV3BlockContent(v3BlockTypeOf(p)!, p.libraryTitle)}
+                    onChange={(next) => onChangePart(p.id, applyV3BlockContent(p, next))}
                   />
                 </div>
               ) : (

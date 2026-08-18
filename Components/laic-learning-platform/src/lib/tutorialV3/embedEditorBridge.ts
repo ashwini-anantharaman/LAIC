@@ -1,7 +1,7 @@
 /**
  * Bridge Tutorial V3 parts ↔ per-type object editors (concept card, flashcards, quiz, …).
  */
-import type { Block, BlockContent, ObjectType, ReferenceTableContent } from '../types';
+import type { Block, BlockContent, ObjectType } from '../types';
 import type { TutorialV3Part } from './types';
 
 export type NestedEditorKind =
@@ -271,52 +271,103 @@ const V3_BLOCK_EMBEDS = new Set<string>([
   'opening-question',
 ]);
 
-/** Whether this part is a reference table — the one V3 block with a real editor. */
-export function isReferenceTablePart(part: TutorialV3Part): boolean {
-  // Generated V3 blocks always arrive as a library embed carrying a snapshot;
-  // `type` never names the block itself.
-  return part.type === 'library-embed' && String(part.objectType) === 'reference-table';
+/**
+ * Which V3 block a part carries, if it carries one.
+ *
+ * Generated V3 blocks always arrive as a library embed wrapping a snapshot
+ * block; `type` names the wrapper, never the block itself.
+ */
+export function v3BlockTypeOf(part: TutorialV3Part): string | null {
+  if (part.type !== 'library-embed') return null;
+  const t = String(part.objectType || '');
+  return V3_BLOCK_EMBEDS.has(t) ? t : null;
 }
 
-/** The reference table inside a part, or null when it holds something else. */
-export function extractReferenceTable(part: TutorialV3Part): ReferenceTableContent | null {
-  const block = snapBlocks(part).find((b) => b?.type === 'reference-table');
-  const c = (block?.content || null) as ReferenceTableContent | null;
-  if (!c || !Array.isArray(c.columns)) return null;
-  return c;
+export function isReferenceTablePart(part: TutorialV3Part): boolean {
+  return v3BlockTypeOf(part) === 'reference-table';
+}
+
+/** The V3 block's content inside a part, or null when there is none yet. */
+export function extractV3BlockContent(part: TutorialV3Part): Record<string, unknown> | null {
+  const type = v3BlockTypeOf(part);
+  if (!type) return null;
+  const block = snapBlocks(part).find((b) => b?.type === type);
+  const c = block?.content;
+  return c && typeof c === 'object' ? ({ ...(c as object) } as Record<string, unknown>) : null;
 }
 
 /**
- * Write an edited table back into the part.
+ * Write edited content back into the part.
  *
- * The table lives in a snapshot block, so the edit replaces that block's
- * content and leaves the rest of the part — its id, label, page — alone.
+ * The block lives in a snapshot, so the edit replaces that block's content and
+ * leaves the rest of the part — its id, label, student page — alone.
  */
-export function applyReferenceTableResult(
+export function applyV3BlockContent(
   part: TutorialV3Part,
-  content: ReferenceTableContent,
+  content: Record<string, unknown>,
 ): Partial<TutorialV3Part> {
+  const type = v3BlockTypeOf(part);
+  if (!type) return {};
   const blocks = snapBlocks(part);
-  const i = blocks.findIndex((b) => b?.type === 'reference-table');
+  const i = blocks.findIndex((b) => b?.type === type);
   const block: Block = {
-    id: i >= 0 ? blocks[i].id : `${part.id}_rt`,
-    type: 'reference-table',
+    id: i >= 0 ? blocks[i].id : `${part.id}_${type.replace(/-/g, '')}`,
+    type: type as Block['type'],
     content: content as unknown as BlockContent,
   };
   const next = i >= 0 ? blocks.map((b, j) => (j === i ? block : b)) : [...blocks, block];
+  const title = String(content.title || content.heading || '').trim();
   return {
     snapshotBlocks: next,
-    ...(content.title ? { libraryTitle: content.title } : {}),
+    ...(title ? { libraryTitle: title } : {}),
   };
 }
 
-/** A table with nothing in it yet — two columns and one empty row to type into. */
-export function emptyReferenceTable(title?: string): ReferenceTableContent {
-  return {
-    title: title || '',
-    columns: ['', ''],
-    rows: [['', '']],
-  };
+/**
+ * A starting shape for a block with nothing in it yet.
+ *
+ * Enough scaffolding to type into — an empty options list gives an author
+ * nowhere to start, and a shape the renderer cannot read is worse than none.
+ */
+export function emptyV3BlockContent(type: string, title?: string): Record<string, unknown> {
+  const t = title || '';
+  switch (type) {
+    case 'reference-table':
+      return { title: t, columns: ['', ''], rows: [['', '']] };
+    case 'lesson-overview':
+      return { intro: '', objectives: ['', '', ''], coreIdea: '', coreRule: '' };
+    case 'lesson-complete':
+      return { heading: t, subheading: '', checklist: ['', '', ''], whatNext: '' };
+    case 'quick-decisions':
+      return {
+        title: t,
+        intro: '',
+        decisions: [{ label: 'Quick decision A', prompt: '', answer: '', explanation: '' }],
+        closing: '',
+      };
+    case 'matching':
+      return {
+        title: t,
+        intro: '',
+        options: ['', ''],
+        cards: [{ label: 'A', lines: [''], correct: '', explanation: '' }],
+        closing: '',
+      };
+    case 'opening-question':
+      return {
+        title: t,
+        context: '',
+        hand: [],
+        auction: [],
+        prompt: '',
+        options: ['', ''],
+        correct: 0,
+        feedback: '',
+        keyIdea: '',
+      };
+    default:
+      return {};
+  }
 }
 
 export function isV3BlockEmbedPart(part: TutorialV3Part): boolean {

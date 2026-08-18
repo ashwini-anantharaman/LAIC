@@ -11,14 +11,14 @@ import {
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
 import {
-  applyReferenceTableResult,
-  emptyReferenceTable,
-  extractReferenceTable,
+  applyV3BlockContent,
+  emptyV3BlockContent,
+  extractV3BlockContent,
   isNestedEditablePart,
-  isReferenceTablePart,
   nestedEditorKindForPart,
+  v3BlockTypeOf,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
-import { TutorialV3ReferenceTableEditor } from './TutorialV3ReferenceTableEditor';
+import { TutorialV3BlockEditor, hasV3BlockEditor } from './TutorialV3BlockEditors';
 import type { TutorialV3Draft, TutorialV3Part } from '../../../../lib/tutorialV3/types';
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV3Reader } from './learner/TutorialV3Reader';
@@ -471,16 +471,18 @@ export function TutorialV3AssembleEditor({
                               onChangeConfig={(next) => updatePart(p.id, configToPartFields(next))}
                             />
                           </div>
-                        ) : isReferenceTablePart(p) ? (
+                        ) : hasV3BlockEditor(v3BlockTypeOf(p)) ? (
                           /*
-                            A table has a shape, so it gets a grid rather than
-                            the body textarea every other part falls back to —
-                            which for a table showed nothing worth editing.
+                            These blocks have a shape, so they get a real editor
+                            rather than the body textarea every other part falls
+                            back to — which for a table or a question showed
+                            nothing worth editing.
                           */
                           <div onClick={(e) => e.stopPropagation()} role="presentation">
-                            <TutorialV3ReferenceTableEditor
-                              content={extractReferenceTable(p) || emptyReferenceTable(p.libraryTitle)}
-                              onChange={(next) => updatePart(p.id, applyReferenceTableResult(p, next))}
+                            <TutorialV3BlockEditor
+                              type={v3BlockTypeOf(p)!}
+                              content={extractV3BlockContent(p) || emptyV3BlockContent(v3BlockTypeOf(p)!, p.libraryTitle)}
+                              onChange={(next) => updatePart(p.id, applyV3BlockContent(p, next))}
                             />
                           </div>
                         ) : isNestedEditablePart(p) ? (
