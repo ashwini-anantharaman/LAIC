@@ -133,6 +133,12 @@ async function viewOrGone(
     return { ok: true, v: await sessionService().view(sessionId) };
   } catch (e) {
     if (isMissingSession(e)) return { ok: false };
+    // SAY WHY before the caller 404s. Every failure below this line — a pinned
+    // compile that is gone, a seat kind the running build does not know about —
+    // renders identically as "not found"; a dev server older than a new seat
+    // kind once cost a long diagnosis because the only evidence was a styled
+    // 404. The page still refuses, but the reason exists somewhere readable.
+    console.error(`tableView: cannot build session ${sessionId}:`, e);
     if (retried) throw e;
     await new Promise((r) => setTimeout(r, 400));
     return viewOrGone(sessionId, true);

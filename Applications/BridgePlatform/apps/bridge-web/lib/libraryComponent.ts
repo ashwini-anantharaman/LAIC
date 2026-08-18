@@ -45,6 +45,13 @@ export type BridgeLibraryContent = Pick<
   | "expectedCalls"
   | "sourceSessionId"
   | "importFileName"
+  | "challengeBoards"
+  | "challengeFormat"
+  | "challengeScoring"
+  | "challengeBoardCount"
+  | "challengeStatus"
+  | "challengeDraftJson"
+  | "sourceChallengeId"
 >;
 
 export const BRIDGE_LIBRARY_KINDS: readonly ContentKindSpec[] = [
@@ -54,6 +61,7 @@ export const BRIDGE_LIBRARY_KINDS: readonly ContentKindSpec[] = [
   { id: "play", label: "Plays", description: "board + calls + cards, as recorded" },
   { id: "drill", label: "Drills", description: "bidding regression checks" },
   { id: "puzzle", label: "Puzzles", description: "reserved" },
+  { id: "challenge", label: "Challenges", description: "boards, format and scoring, ready to run again" },
 ];
 
 // ── Envelope mapping (LibraryEntry ↔ LibraryItem) ────────────────────────────
@@ -89,6 +97,13 @@ export function entryToItem(e: LibraryEntry): LibraryItem<BridgeLibraryContent> 
       ...(e.expectedCalls ? { expectedCalls: e.expectedCalls } : {}),
       ...(e.sourceSessionId ? { sourceSessionId: e.sourceSessionId } : {}),
       ...(e.importFileName ? { importFileName: e.importFileName } : {}),
+      ...(e.challengeBoards ? { challengeBoards: e.challengeBoards } : {}),
+      ...(e.challengeFormat ? { challengeFormat: e.challengeFormat } : {}),
+      ...(e.challengeScoring ? { challengeScoring: e.challengeScoring } : {}),
+      ...(e.challengeBoardCount != null ? { challengeBoardCount: e.challengeBoardCount } : {}),
+      ...(e.challengeStatus ? { challengeStatus: e.challengeStatus } : {}),
+      ...(e.challengeDraftJson ? { challengeDraftJson: e.challengeDraftJson } : {}),
+      ...(e.sourceChallengeId ? { sourceChallengeId: e.sourceChallengeId } : {}),
     },
   };
 }

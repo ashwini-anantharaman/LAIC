@@ -14,6 +14,7 @@ export const LIBRARY_KIND_LABEL: Record<LibraryKind, string> = {
   play: "deal",
   drill: "drill",
   puzzle: "puzzle",
+  challenge: "challenge",
 };
 
 /** Map a stored kind discriminator to its display noun (falls back to itself). */

@@ -420,6 +420,21 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     defaultRoles: ALL,
   },
 
+  // Challenges: the full multi-step setup behind Quick create. Quick create
+  // itself rides on challenge.create — this key only decides who may open the
+  // advanced form (boards, table controls, invites, review, robot choice).
+  // Defaults to everyone, matching who could reach the whole wizard before it
+  // was split, so the key exists to RESTRICT rather than to grant.
+  {
+    key: "challenge.advanced",
+    label: "Advanced challenge setup",
+    group: "Challenges",
+    kind: "feature",
+    description:
+      "The multi-step challenge form behind Quick create; hidden, challenges are created from Quick create alone.",
+    defaultRoles: ALL,
+  },
+
   // Organization: org-profile editing.
   {
     key: "org.edit_profile",

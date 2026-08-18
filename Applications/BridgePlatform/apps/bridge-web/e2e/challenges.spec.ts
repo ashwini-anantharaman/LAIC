@@ -2,13 +2,15 @@
 // wizard, invites, and the results gate.
 //
 // ── WHAT THIS SPEC DELIBERATELY DOES NOT COVER ──────────────────────────────
-// BEN_ENDPOINT is unset in dev and CI, and challenge play correctly REFUSES to
-// start without it (spec §2: BEN everywhere, no KB fallback — a one-attempt
-// scored board must never be played against the shelved house player). That
-// refusal is asserted below, and it is not stubbed away: nothing here fakes a
-// BEN service into the app. So everything downstream of "a board actually
-// starts" is out of reach here and is covered by unit tests + manual runs
-// against a live BEN instead:
+// BEN_ENDPOINT is unset in dev and CI. Challenges created from 2026-08-15 face
+// the DOUBLE DUMMY SOLVER instead of BEN — local search, no endpoint — so the
+// old "refuses to start without BEN" rule is gone, and its test below now
+// asserts the opposite. What still cannot be driven from here is a board
+// actually PLAYED: this spec sorts ahead of kb.spec and there is no compiled
+// knowledge base yet, and boards are dealt inside one. Nothing here fakes a BEN
+// service into the app either. So everything downstream of "a board actually
+// starts" is out of reach here and is covered by unit tests instead — solver
+// play by packages/bridge-sessions/ddSeat.test.ts, and the rest by:
 //
 //   · playing a board — session creation, the seat plan, the decision cache
 //     (lib/challengeBen.test.ts), the one-attempt/resume rule, the freeze;
@@ -97,7 +99,7 @@ async function overflowPx(page: Page): Promise<number> {
 
 /**
  * Drive the create wizard end to end and return the new challenge's id. Board
- * count starts at 6, so `boards` is reached with the − stepper.
+ * count starts at DEFAULT_BOARDS (4), so `boards` is reached with the − stepper.
  */
 async function createChallenge(
   page: Page,
@@ -112,6 +114,10 @@ async function createChallenge(
   }>,
 ): Promise<string> {
   await page.goto("/bridge/challenges/new");
+  // The landing surface is Quick create alone (boards + who's in). Everything
+  // this helper sets — title, format, scoring, standings, invites — lives in
+  // the advanced form, so open it first.
+  await page.getByRole("button", { name: "Advanced settings →" }).click();
   await page.getByLabel("Title").fill(opts.title);
 
   // Format before scoring: a bidding-only challenge is not scored against a
@@ -121,14 +127,18 @@ async function createChallenge(
   if (opts.scoring)
     await page.getByRole("button", { name: opts.scoring, exact: true }).click();
 
-  // Quick create and 01 · Basics drive the same board count — either stepper
-  // does; first() is Quick create's.
+  // Title, format, scoring, boards and standings are all 01 · Basics; the
+  // count starts at DEFAULT_BOARDS.
   const fewer = page.getByRole("button", { name: "One board fewer" }).first();
-  for (let n = 6; n > opts.boards; n--) await fewer.click();
+  for (let n = 4; n > opts.boards; n--) await fewer.click();
 
   if (opts.standingsAlways)
     await page.getByRole("button", { name: /Always visible/ }).click();
 
+  // Invites are their own step now — the search box is not mounted until it is
+  // the open page.
+  if ((opts.invite ?? []).length)
+    await page.getByRole("button", { name: "Invites", exact: true }).click();
   for (const person of opts.invite ?? []) {
     await page.getByPlaceholder("Search players by name").fill(person.name);
     await page.getByRole("button", { name: "Invite", exact: true }).first().click();
@@ -140,10 +150,16 @@ async function createChallenge(
     }
   }
 
-  // Every Create button on the page submits the same draft — Quick create's,
-  // 05 · Review's, the sticky phone bar's, the wide draft rail's. first() is
-  // Quick create's.
-  await page.getByRole("button", { name: "Create challenge" }).first().click();
+  // Every Create button on the page submits the same draft — 05 · Review's,
+  // the sticky phone bar's, the wide draft rail's. Which one is VISIBLE depends
+  // on the viewport and the open step (the phone bar is lg:hidden, the rail is
+  // lg-only, Review is mounted only on its own step), so take whichever is
+  // actually on screen rather than the first in the DOM.
+  await page
+    .getByRole("button", { name: "Create challenge" })
+    .filter({ visible: true })
+    .first()
+    .click();
   await page.waitForURL(/\/bridge\/challenges\?created=/);
   return idOfCard(page, opts.title);
 }
@@ -298,23 +314,30 @@ test.describe("challenges", () => {
     await expect(page.getByText("Results are locked")).toHaveCount(0);
   });
 
-  test("without BEN a challenge board refuses to start, and says so", async ({
+  test("with no BEN configured a challenge board still starts, on the solver", async ({
     page,
     context,
   }) => {
-    // BEN_ENDPOINT is unset here. Challenges are BEN-only with no KB fallback
-    // (spec §2), so the entry route must refuse rather than seat the shelved
-    // house player in a one-attempt scored board.
+    // BEN_ENDPOINT is unset here, and this used to be the test that a challenge
+    // REFUSED to start at all — challenges were BEN-only, with the KB house
+    // player shelved and no fallback. Challenges created from now on face the
+    // double dummy solver, which is pure local search, so that gate is gone.
+    //
+    // WHAT THIS CAN AND CANNOT ASSERT. The gate is what is checked here: the
+    // entry route must no longer bounce back to the list saying BEN is
+    // missing. It cannot go on to assert the board OPENS, because this spec
+    // sorts ahead of kb.spec and no knowledge base has been compiled yet —
+    // boards are dealt inside one, so entry now gets past the engine check and
+    // stops at that instead. A board actually played by the solver, start to
+    // finish, is covered where it can be: packages/bridge-sessions/ddSeat.test.ts
+    // plays whole deals through the real SessionService.
     await switchUser(context, INVITEE);
     await page.goto("/bridge/challenges");
     await cardLink(page, IMPS_TITLE).first().click();
 
-    await page.waitForURL(/\/bridge\/challenges\?error=/);
-    await expect(
-      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
-    ).toBeVisible();
-    // The attempt was NOT burned: the card still offers board 1.
-    await expect(cardLink(page, IMPS_TITLE).first()).toContainText("Start · board 1 of 2");
+    await page.waitForLoadState("networkidle");
+    expect(page.url()).not.toMatch(/\/bridge\/challenges\?error=/);
+    await expect(page.getByText(/BEN isn't configured/)).toHaveCount(0);
   });
 
   test("a BBO hand link becomes a board, keeping its dealer and vulnerability", async ({
@@ -323,6 +346,10 @@ test.describe("challenges", () => {
   }) => {
     await switchUser(context, CREATOR);
     await page.goto("/bridge/challenges/new");
+    // Importing boards lives in 02 · Boards, which is a page of the advanced
+    // form rather than a section of one long scroll.
+    await page.getByRole("button", { name: "Advanced settings →" }).click();
+    await page.getByRole("button", { name: "Boards", exact: true }).click();
 
     // The hand-parameter form, which handviewer.js turns into `md|<dealer>S,W,N,E`.
     // West deals, E-W vulnerable — neither is what board 1 of the standard
@@ -358,8 +385,14 @@ test.describe("challenges", () => {
 
     // It survives the round trip: create, then the board opens with the seat
     // and the vulnerability the link carried.
+    // Title is back on 01 · Basics; Create is wherever the viewport shows it.
+    await page.getByRole("button", { name: "Basics", exact: true }).click();
     await page.getByLabel("Title").fill("E2E imported board");
-    await page.getByRole("button", { name: "Create challenge" }).first().click();
+    await page
+      .getByRole("button", { name: "Create challenge" })
+      .filter({ visible: true })
+      .first()
+      .click();
     await page.waitForURL(/\/bridge\/challenges\?created=/);
     await expect(cardLink(page, "E2E imported board").first()).toContainText(
       "board 1 of 1",
@@ -372,6 +405,8 @@ test.describe("challenges", () => {
   }) => {
     await switchUser(context, CREATOR);
     await page.goto("/bridge/challenges/new");
+    // Format and scoring are 01 · Basics — Quick create asks neither.
+    await page.getByRole("button", { name: "Advanced settings →" }).click();
 
     // The default is the v1 board, and the scoring question belongs to it.
     await expect(page.getByRole("button", { name: "Bid & play", exact: true })).toHaveAttribute(
@@ -386,14 +421,16 @@ test.describe("challenges", () => {
     await expect(page.getByRole("button", { name: "IMPs", exact: true })).toHaveCount(0);
     await expect(page.getByText(/The board ends when the auction ends/)).toBeVisible();
 
-    // The Review step and the draft rail both say which mode it is in.
+    // The Review step says which mode it is in — and names the robots that are
+    // actually seated, which is the solver unless BEN was picked.
+    await page.getByRole("button", { name: "Review", exact: true }).click();
     await expect(
       page.getByText(/Bidding only — the board ends with the auction/),
     ).toBeVisible();
     await expect(
-      page.getByText("Matched BEN's contract, board by board — no field scoring"),
+      page.getByText("Matched the solver's contract, board by board — no field scoring"),
     ).toBeVisible();
-    await expect(page.getByText("BEN's own auction is the reference")).toBeVisible();
+    await expect(page.getByText("its own auction is the reference")).toBeVisible();
 
     biddingId = await createChallenge(page, {
       title: BIDDING_TITLE,
@@ -418,14 +455,15 @@ test.describe("challenges", () => {
     // Nothing prints a score where there is none.
     await expect(page.getByText("IMPs vs datum")).toHaveCount(0);
 
-    // A bidding-only board still refuses to start without BEN — the format
-    // changes what a board asks for, never the no-fallback rule (spec §2).
+    // A bidding-only board no longer stops at the BEN gate either: the format
+    // changes what a board asks for, and the engine behind it is now the
+    // solver, so neither one needs an endpoint. (As above, this cannot go on
+    // to open the board — no knowledge base is compiled this early in the run.)
     await page.goto("/bridge/challenges");
     await cardLink(page, BIDDING_TITLE).first().click();
-    await page.waitForURL(/\/bridge\/challenges\?error=/);
-    await expect(
-      page.getByText(/Challenges are played against BEN, and BEN isn't configured/),
-    ).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    expect(page.url()).not.toMatch(/\/bridge\/challenges\?error=/);
+    await expect(page.getByText(/BEN isn't configured/)).toHaveCount(0);
   });
 
   test("a practice replay opens nothing until the challenge is finished", async ({
@@ -466,4 +504,78 @@ test.describe("challenges", () => {
     await expect(page.getByRole("heading", { name: "Standings", exact: true })).toBeVisible();
     expect(await overflowPx(page)).toBeLessThanOrEqual(1);
   });
+});
+
+// A challenge you MADE can be kept — its boards, format and scoring saved to
+// the library so the same contest can be set again (owner, 2026-08-14). The
+// boards are the substance: a challenge without its pack is a title, so this
+// asserts the count survives the round trip rather than only the name.
+test("save a challenge to the library, boards and all", async ({ page }) => {
+  test.setTimeout(150_000);
+  await switchUser(page.context(), "user_orgadmin_olivia");
+  const title = "E2E keep-me challenge";
+  await createChallenge(page, { title, boards: 2 });
+
+  const save = page
+    .locator("form")
+    .filter({ has: page.getByRole("button", { name: "Save to library" }) })
+    .first()
+    .getByRole("button", { name: "Save to library" });
+  await expect(save, "the creator is offered the save").toBeVisible();
+  await save.click();
+
+  await page.waitForURL(/\/bridge\/library\?kind=challenge/);
+  await expect(page.getByText(title).first()).toBeVisible();
+  await expect(
+    page.getByText(/2 boards/).first(),
+    "the boards came with it, not just the title",
+  ).toBeVisible();
+});
+
+// PARKING WORK IN PROGRESS (owner, 2026-08-14). The wizard's draft lives in
+// React state, so before this the only ways out of it were "publish" and "lose
+// it" — and a challenge is a pack per board, seats, invites and overrides.
+// The whole loop is asserted here because each half is useless alone: saving
+// that cannot be reopened, or a reopen that does not restore the WORK.
+test("park a challenge draft, pick it up, and publish it in place", async ({ page }) => {
+  test.setTimeout(150_000);
+  await switchUser(page.context(), "user_orgadmin_olivia");
+  const title = "E2E parked challenge";
+
+  await page.goto("/bridge/challenges/new");
+  await page.getByRole("button", { name: "Advanced settings →" }).click();
+  await page.getByLabel("Title").fill(title);
+  const fewer = page.getByRole("button", { name: "One board fewer" }).first();
+  for (let n = 4; n > 3; n--) await fewer.click();
+  await page.getByRole("button", { name: /Save draft to library/ }).click();
+  await expect(page.getByRole("button", { name: /Saved to library/ })).toBeVisible({
+    timeout: 20_000,
+  });
+
+  // Walk away completely, then come back through the library.
+  await page.goto("/bridge/library?kind=challenge");
+  const row = page.locator("li", { hasText: title }).first();
+  await expect(row).toContainText("draft");
+  await expect(row).toContainText("3 boards");
+  await row.getByRole("link", { name: /keep building/ }).click();
+  await page.waitForURL(/challenges\/new\?draft=/);
+
+  // The WORK came back, not just the name. A resumed draft opens straight into
+  // the advanced form (that is where the work was done), on 01 · Basics.
+  await expect(page.getByLabel("Title")).toHaveValue(title);
+  await page.getByRole("button", { name: "Boards", exact: true }).click();
+  await expect(page.getByText(/^Board 3$/).first()).toBeVisible();
+  await expect(page.getByText(/^Board 4$/), "the board count came back too").toHaveCount(0);
+
+  // Publishing PROMOTES the row it came from rather than leaving a stale draft
+  // beside the challenge it became.
+  await page
+    .getByRole("button", { name: "Create challenge" })
+    .filter({ visible: true })
+    .first()
+    .click();
+  await page.waitForURL(/\/bridge\/challenges\?created=/);
+  await page.goto("/bridge/library?kind=challenge");
+  await expect(page.locator("li", { hasText: title }), "promoted, not duplicated").toHaveCount(1);
+  await expect(page.locator("li", { hasText: title }).first()).toContainText("published");
 });

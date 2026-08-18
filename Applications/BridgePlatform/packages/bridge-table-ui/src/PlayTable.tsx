@@ -31,7 +31,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import type { AuctionCall, Card, Seat, Suit } from "@bridge/events";
-import { resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
+import { CARD_LIFT_PX, resolveSkin, type PlayMode, type SkinTokens, type TableAppearance } from "@bridge/table-config";
 import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
@@ -42,6 +42,7 @@ import { AuctionBox, auctionRowsBoxH, type AuctionBoxSizing } from "./AuctionBox
 import { TrickArea, clusterBox } from "./TrickArea";
 import { ResultCard, type ResultCardAction } from "./ResultCard";
 import { SeatsPopup } from "./SeatsPopup";
+import { GATHER_MS } from "./motion";
 import { CoachPanel, type CoachLine, type CoachAction } from "./CoachPanel";
 import {
   RED, GOLD, GREY, SEAT_BADGE, GLYPH, STRAINS, ORDER, PARTNER, DISPLAY,
@@ -71,10 +72,19 @@ const MOBILE_W = 720;
  *    at 75, and 96 ends the card shortly after the pip, in a still card-shaped
  *    1:1.71 box.
  */
-// No `weight` override: the authored look (rank 700, pip 400) — the 800 the
-// compact tray tried read as smeared ink at this size (owner, 2026-08-11).
+/**
+ * The phone's hand card. Rank down from 38 and the card shorter from 96 (owner,
+ * 2026-08-13) — the rank was filling its sliver edge to edge, which reads as
+ * cramped rather than bold, and the height it needed came out of the felt.
+ * Every band that quotes HAND_H follows this automatically.
+ */
 const M_CARD: SeatHandMetrics & { backW: number } = {
-  w: 56, h: 96, rank: 38, glyph: 36, inset: 5, overlap: 8, backW: 52,
+  // 55 wide and NO overlap: thirteen of them come to 715 of the 720 stage, so
+  // the hand reaches both edges and every card is whole (owner, 2026-08-14 —
+  // "remove any gaps ... make them stretch the whole width"). The 8px overlap
+  // it replaces existed to fit a 56-wide card thirteen times over, and cost a
+  // 32px margin at each end plus a sliver off every card but the last.
+  w: 55, h: 88, rank: 34, glyph: 33, inset: 5, overlap: 0, weight: 800, backW: 52,
 };
 /** Pitch of the mobile row: what one more card adds to the hand's width. */
 const M_PITCH = M_CARD.w - (M_CARD.overlap ?? 1);
@@ -234,7 +244,13 @@ const CARD_ROW: SeatHandMetrics = { w: 50, h: 71, rank: 25, glyph: 22, inset: 3 
 export type ResolvedAppearance = SkinTokens &
   Pick<
     TableAppearance,
-    "handLayout" | "bidPad" | "centreFrame" | "fanSpread" | "fanRadius" | "suitGroups"
+    | "handLayout"
+    | "bidPad"
+    | "centreFrame"
+    | "fanSpread"
+    | "fanRadius"
+    | "suitGroups"
+    | "cardLift"
   >;
 
 const DEFAULT_LOOK: ResolvedAppearance = {
@@ -247,6 +263,7 @@ const DEFAULT_LOOK: ResolvedAppearance = {
   // Off in the fallback look, which is the pre-skin table byte for byte; the
   // owner's default (on) arrives with a real appearance from the store.
   suitGroups: false,
+  cardLift: "subtle",
 };
 
 /** The centre frame's gold surround (design token, wide/stacked only). */
@@ -368,6 +385,8 @@ export interface PlayTableProps {
    * drifts — so the host, which already has the engine, works it out.
    */
   trickWinner?: Seat | null;
+  /** The finished trick is being swept towards its winner. */
+  trickGathering?: boolean;
   boardLabel?: string | number;
   scoringLabel?: string;
   /** Central auction box, or the running bid history beside each seat. */
@@ -471,6 +490,7 @@ export function PlayTable({
   playMode = "off",
   trickCleared = false,
   trickWinner = null,
+  trickGathering = false,
   boardLabel = "1",
   scoringLabel = "IMPs",
   auctionDisplay = "box",
@@ -617,7 +637,16 @@ export function PlayTable({
   const legalSet = new Set(legalCalls);
   const playable = new Set(legalPlays.map((p) => `${p.suit}${p.rank}`));
   const myCall = inAuction && myTurn;
-  const boxLive = myCall && !pending;
+  /**
+   * The tray is live while a call is STAGED, not frozen by it.
+   *
+   * With Confirm/Cancel the freeze was right: the only way out was the Cancel
+   * button, so nothing else should have been pressable. With one OK there is no
+   * Cancel — pressing the staged call again is the escape, and pressing a
+   * different one restages — so the pad has to stay live for either to be
+   * possible. `stageCall` below is what makes the second press mean "clear".
+   */
+  const boxLive = myCall;
 
   const vulFor = (seat: Seat) => state.vul === "both" || state.vul === "All" || sideOf(seat).toLowerCase() === String(state.vul).toLowerCase();
   const dealerCol = ORDER.indexOf(state.dealer);
@@ -809,8 +838,20 @@ export function PlayTable({
 
   // seatModel's plate rule: humans GOLD, the acting seat pale, others grey;
   // the suit panel brightens for the acting seat and the dummy.
+  /**
+   * GOLD MEANS "IT IS THIS SEAT'S GO", not "this seat is you" (owner,
+   * 2026-08-13: the player's yellow bar "shouldn't always be on").
+   *
+   * It used to mean both, so your own plate was gold from the first card to the
+   * last and the one moment it should have shouted — your turn — looked exactly
+   * like every other. What still marks your seat is what it SAYS: the host
+   * names it "you", where the others carry a player name, and its identity
+   * strip is the human teal rather than a robot colour. The gold and the glow
+   * are freed to mean the turn, and every seat wears them in its own turn —
+   * including dummy, which had no plate to wear them on at all.
+   */
   const plateBgFor = (seat: Seat) =>
-    seats[seat].human ? GOLD : !complete && seat === state.turn ? "#e8e8c8" : GREY;
+    !complete && seat === state.turn ? GOLD : GREY;
   const panelBgFor = (seat: Seat) =>
     seat === dummy || (!complete && seat === state.turn) ? "#fff" : "#b3b3b3";
 
@@ -818,8 +859,9 @@ export function PlayTable({
   // until confirmed — robots (server seats) are never staged.
   const stageCall = (call: string) => {
     if (!boxLive) return;
-    if (confirmBids) setPending(call);
-    else onCall?.(call);
+    if (!confirmBids) return onCall?.(call);
+    // Press the staged call again to clear it; press another to restage.
+    setPending((p) => (p === call ? null : call));
   };
   // Shared by both bid pads (BidBox tray and BidColumns): resolve the staged
   // call, or drop it.
@@ -953,12 +995,12 @@ export function PlayTable({
   };
 
   /** A fanned row of face cards (N/S wide; dummy + your hand on mobile). */
-  const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW) => (
+  const cardRow = (seat: Seat, m: SeatHandMetrics = CARD_ROW, liftDir: 1 | -1 = -1) => (
     <SeatHand
       cards={state.hands[seat]}
       // The seams are a property of the LOOK, so they ride the metrics bag
       // rather than becoming a second prop every caller has to thread.
-      metrics={{ ...m, suitGaps: tok.suitGroups }}
+      metrics={{ ...m, suitGaps: tok.suitGroups, lift: CARD_LIFT_PX[tok.cardLift], liftDir }}
       layout="row"
       fanSpread={tok.fanSpread}
       fanRadius={tok.fanRadius}
@@ -1065,8 +1107,24 @@ export function PlayTable({
     />
   );
 
-  const currentPlays =
-    inPlay && !trickCleared ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  /**
+   * The trick stays on screen while it is being GATHERED (owner, 2026-08-13:
+   * tapping should look smooth, and "the top cards shift a little" when it did
+   * not). Clearing used to delete the four cards in one frame — and because the
+   * winner's lift is keyed off a full trick, the winning card also dropped back
+   * flat in that same frame, which is the shift. Holding the plays for the
+   * animation's length keeps the lift steady and lets all four leave together.
+   */
+  const trickPlays = inPlay ? (state.tricks[state.tricks.length - 1]?.plays ?? []) : [];
+  const gathering = trickCleared && trickPlays.length === 4;
+  const [sweeping, setSweeping] = useState(false);
+  useEffect(() => {
+    if (!gathering) return setSweeping(false);
+    setSweeping(true);
+    const t = setTimeout(() => setSweeping(false), GATHER_MS);
+    return () => clearTimeout(t);
+  }, [gathering]);
+  const currentPlays = !trickCleared || sweeping ? trickPlays : [];
 
   /** The trick as real card faces; `k` scales the whole box. Wide keeps the
       262px compass that spreads to the corners; the phone gets a tight
@@ -1081,6 +1139,7 @@ export function PlayTable({
       card={M_TRICK_CARD}
       originOf={(seat) => origins.current[seat] ?? null}
       winner={currentPlays.length === 4 ? trickWinner : null}
+      gathering={trickGathering && sweeping}
     />
   );
 
@@ -1105,21 +1164,43 @@ export function PlayTable({
     cursor: live ? "pointer" : "default", opacity: live ? 1 : 0.42,
   });
 
+  /**
+   * ONE BUTTON: OK (owner, 2026-08-13), the same economy the columns pad uses.
+   *
+   * The pair it replaces was "Confirm 1♠" beside a Cancel — 360px of chrome to
+   * resolve a call that is already named right above it. The staged call is
+   * shown by the row itself, so the button only has to say what pressing it
+   * does. Cancel goes because pressing the staged call again clears it, which
+   * puts the escape under the finger that made the mistake rather than across
+   * the pad. The aria-label still names the call, so a screen reader hears what
+   * a sighted player reads from the row.
+   */
   const confirmButtons = (h: number, font: number) => (
     <>
-      <button
-        type="button"
-        onClick={confirmPending}
-        style={bidBtnStyle(240, h, "#116710", "#0c4b0b", true, font)}
-      >
-        Confirm {callText(pending ?? "")}
-      </button>
+      {/* The staged call, and the way out of it. The columns pad clears by
+          pressing the call again where it sits in the grid; this tray HIDES the
+          grid while a call waits, so there is nothing left to press — the call
+          itself becomes the escape instead. Without it, dropping Cancel would
+          have left a staged bid with no way back at all. */}
       <button
         type="button"
         onClick={cancelPending}
-        style={bidBtnStyle(120, h, "#8a3030", "#5e1c1c", true, font)}
+        aria-label={`Clear ${callText(pending ?? "")}`}
+        style={{
+          flex: "none", height: h, padding: `0 ${Math.round(font * 0.7)}px`,
+          border: "1px solid #b9b98a", borderRadius: skinRadius, background: "#fffdf2",
+          color: "#3a3a20", fontSize: font, fontWeight: 700, lineHeight: 1, cursor: "pointer",
+        }}
       >
-        Cancel
+        {callText(pending ?? "")}
+      </button>
+      <button
+        type="button"
+        onClick={confirmPending}
+        aria-label={`Bid ${callText(pending ?? "")}`}
+        style={{ ...bidBtnStyle(150, h, "#116710", "#0c4b0b", true, font), letterSpacing: ".06em" }}
+      >
+        OK
       </button>
     </>
   );
@@ -1180,7 +1261,10 @@ export function PlayTable({
       aria-label="Pass"
       style={bidBtnStyle(w, h, boxLive ? "#116710" : "#a7b8a2", "#0c4b0b", boxLive, font)}
     >
-      Pass
+      {/* "P" on the button, "Pass" to a screen reader (the aria-label above).
+          The word is the widest thing in this row and the row is the widest
+          thing in the tray. */}
+      P
     </button>
   );
 
@@ -1193,7 +1277,7 @@ export function PlayTable({
     <div style={{ width: 581, flex: "none", background: tok.trayBg, borderRadius: 4, padding: "9px 10px", boxShadow: "0 3px 8px rgba(0,0,0,.4)", display: "flex", flexDirection: "column", gap: 7, boxSizing: "border-box" }}>
       {pending ? (
         <div style={{ display: "flex", alignItems: "center", gap: 8, height: 81 }}>
-          <span style={{ fontSize: 19, color: "#3a3a20" }}>Confirm your call:</span>
+          
           {confirmButtons(44, 21)}
         </div>
       ) : (
@@ -1236,7 +1320,14 @@ export function PlayTable({
    * rendering the strains only when armed grew the tray on the first tap and
    * shoved every control under it down. The buttons must not move mid-bid.
    */
-  const TRAY_R1 = "1.75fr repeat(7,1fr)";
+  /**
+   * P · 1–7 · OK. The OK cell is ALWAYS reserved, empty until a call is staged
+   * — this file's own rule is that the buttons must not move mid-bid, and a
+   * cell that appears on the first tap would shove all seven levels left.
+   * "P" gave back the 1.75fr the word "Pass" needed, which is most of what OK
+   * now occupies.
+   */
+  const TRAY_R1 = "1fr repeat(7,1fr) 1.5fr";
   // Doubles get their two cells only when a double is legal — and legality is
   // fixed for the whole of your turn, so this can never move a button MID-bid.
   // Reserving them unconditionally left a quarter of the strain row permanently
@@ -1280,13 +1371,12 @@ export function PlayTable({
   });
 
   const bidBoxNarrow = (
-    <div data-testid="bid-tray" style={{ width: "100%", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
-      {pending ? (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, height: TRAY_ROWS * touchH + 5 }}>
-          <span style={{ fontSize: 20, fontWeight: 700, color: "#3a3a20" }}>Confirm your call</span>
-          {confirmButtons(touchH, 26)}
-        </div>
-      ) : (
+    // INSET, not edge to edge (owner, 2026-08-14: the panel should be more
+    // compact horizontally). It used to span the full stage because it was the
+    // only thing in its band; a bid pad that reaches both screen edges reads as
+    // a keyboard rather than as part of the table.
+    <div data-testid="bid-tray" style={{ width: "100%", maxWidth: 600, alignSelf: "center", flex: "none", background: tok.trayBg, padding: "6px 8px 8px", borderRadius: 8, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 5, boxShadow: "0 -2px 8px rgba(0,0,0,.45)", boxSizing: "border-box" }}>
+      {
         <>
           <div style={{ display: "grid", gridTemplateColumns: TRAY_R1, gap: 5 }}>
             <button
@@ -1295,7 +1385,9 @@ export function PlayTable({
               aria-label="Pass"
               style={trayCell({ border: "1px solid #0c4b0b", background: boxLive ? "#116710" : "#a7b8a2", color: "#fff", fontSize: 28, cursor: boxLive ? "pointer" : "default", opacity: boxLive ? 1 : 0.42 })}
             >
-              Pass
+              {/* "P" on the phone's tray too — the aria-label above still says
+                  Pass, so nothing is lost to a screen reader. */}
+              P
             </button>
             {[1, 2, 3, 4, 5, 6, 7].map((l) => {
               const any = STRAINS.some((st) => legalSet.has(`${l}${st}`));
@@ -1312,13 +1404,28 @@ export function PlayTable({
                 </button>
               );
             })}
+            {/* OK, in the panel — where BBO puts it and where the owner asked
+                for it (2026-08-14). The slot is always here so the levels never
+                shift; it only carries a button once a call is staged. */}
+            {pending ? (
+              <button
+                type="button"
+                onClick={confirmPending}
+                aria-label={`Bid ${callText(pending)}`}
+                style={trayCell({ background: GOLD, color: "#2a2a10", fontSize: 24, fontWeight: 800, letterSpacing: ".06em", cursor: "pointer", border: "1px solid #b9992b" })}
+              >
+                OK
+              </button>
+            ) : (
+              <span />
+            )}
           </div>
           <div style={{ display: "grid", gridTemplateColumns: TRAY_R2, gap: 5 }}>
             {strainSlots}
             {doubleSlots}
           </div>
         </>
-      )}
+      }
     </div>
   );
 
@@ -1335,6 +1442,10 @@ export function PlayTable({
     onConfirm: confirmPending,
     onCancel: cancelPending,
     radius: skinRadius,
+    // BBO's economy (owner, 2026-08-13): one OK, and the staged call is cleared
+    // by pressing it again rather than by a second button. The pad stays live
+    // underneath, so changing your mind is a tap on the call you meant.
+    confirmStyle: "ok" as const,
   };
   const wideBidColumns = <BidColumns cell={46} {...bidColumnsProps} />;
   const narrowBidColumns = (
@@ -1354,7 +1465,9 @@ export function PlayTable({
   const infoItems: ToolbarItem[] = [
     { kind: "chip", label: "Board", value: String(boardLabel) },
     { kind: "chip", label: "Dealer", value: state.dealer },
-    { kind: "chip", label: "Vul", value: vulLabel, color: vulLabel === "None" ? "#eef4f1" : "#ff9c9c" },
+    // Vulnerable is RED (owner, 2026-08-13) — it is the one chip that changes what
+    // a bid is worth, so it should not read as ordinary chrome.
+    { kind: "chip", label: "Vul", value: vulLabel, color: vulLabel === "None" ? "#eef4f1" : "#ff5555" },
     { kind: "divider" },
     { kind: "chip", label: "Contract", value: c ? `${c.level}${GLYPH[c.strain]}${c.doubled === 1 ? "X" : c.doubled === 2 ? "XX" : ""}` : "—", color: c && isRed(c.strain) ? "#ff8a8a" : "#eef4f1" },
     { kind: "chip", label: "By", value: c ? SEAT_NAMES[c.declarer] : "—" },
@@ -1412,6 +1525,10 @@ export function PlayTable({
    * every time it appears there.
    */
   const dummyRailSide: "left" | "right" = dummy === "E" ? "right" : "left";
+
+  /** Both flanks of the centre band reserve this, so the felt stays centred. */
+  const SIDE_AVATAR_W = 62;
+  const bandSideW = dummyIsStrip && sideSeat ? DUMMY_RAIL_W : inPlay || inAuction ? SIDE_AVATAR_W : 0;
 
   /**
    * The dummy rail: a vertical strip beside the centre band rather than a band
@@ -1513,6 +1630,25 @@ export function PlayTable({
             </div>
           );
         })()}
+        {/* DUMMY'S BAR, lit on dummy's turn (owner, 2026-08-13: during the
+            dummy's turn "nothing's highlighted"). Declarer plays dummy's cards,
+            so dummy genuinely takes turns — and it was the one seat on the felt
+            with nothing to show it. A bar under the hand rather than a plate:
+            the rail is labelled with the SEAT name deliberately, never the
+            player's, and a plate would have brought a player name with it. */}
+        <span
+          data-testid="dummy-turn-bar"
+          data-on-turn={!complete && state.turn === sideSeat ? "" : undefined}
+          style={{
+            flex: "none", width: "100%", height: 7, borderRadius: 4, marginTop: "auto",
+            background: !complete && state.turn === sideSeat ? GOLD : "rgba(255,255,255,.16)",
+            boxShadow:
+              !complete && state.turn === sideSeat
+                ? "0 0 8px 2px rgba(255,214,92,.55)"
+                : "none",
+            transition: "background 200ms ease, box-shadow 200ms ease",
+          }}
+        />
       </div>
     ) : null;
 
@@ -1542,8 +1678,18 @@ export function PlayTable({
           {seat}
         </span>
         <span style={{ fontSize: 13, fontWeight: 700, color: "#dfe9e4", whiteSpace: "nowrap" }}>{SEAT_NAMES[seat]}</span>
+        {/* The card count is only worth saying once cards are being played —
+            during the auction every seat holds thirteen, so it was three
+            identical numbers telling you nothing. In the auction the badge
+            carries that seat's LAST CALL instead, which is the thing you are
+            actually tracking then. */}
         <span style={{ fontSize: 12, color: "rgba(233,241,237,.75)", whiteSpace: "nowrap" }}>
-          {state.hands[seat].length} left
+          {inPlay
+            ? `${state.hands[seat].length} left`
+            : (() => {
+                const mine = state.auction.filter((a) => a.seat === seat);
+                return mine.length ? callText(mine[mine.length - 1]!.call) : "—";
+              })()}
         </span>
       </div>
     );
@@ -1559,7 +1705,7 @@ export function PlayTable({
         {visible[sideSeat]
           ? fanLayout
             ? fanHand(sideSeat, M_CARD)
-            : cardRow(sideSeat, M_CARD)
+            : cardRow(sideSeat, M_CARD, 1)
           : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
       </div>
     ) : null;
@@ -1635,19 +1781,50 @@ export function PlayTable({
             rail is `flex: none` and the felt `flex: 1`, so the band's height is
             untouched by the hand hanging beside it and the compass simply
             centres in what is left. */}
+        {/* SYMMETRIC SIDES, so the trick sits in the middle of the screen.
+            The band is a row — something on the left, the felt, something on the
+            right — and the felt centres its own content. But a dummy rail is
+            116 and a seat badge is 62, so on a board with a rail the felt's
+            centre was half that difference off the band's, and the compass with
+            it: measured 15px left of centre on a phone (owner, 2026-08-13, "the
+            trick pad is not always centered"). Both flanks now reserve the SAME
+            width — whatever the wider one needs — so the felt is centred
+            whatever is standing in the slots, including nothing. */}
         <div data-testid="centre-band" style={{ flex: "none", height: feltH, display: "flex", alignItems: "flex-start", overflow: "hidden", padding: "0 10px" }}>
-          {dummyRailSide === "left" ? dummyRailEl : null}
-          {/* The badge stands in for a seat the phone cannot draw a hand for, so
-              it yields to the dummy rail on that side rather than crowding it,
-              and never appears for the seat whose cards are already on screen. */}
-          {inPlay && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
-          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", ...(framed ? { border: "3px solid #c9992b", borderRadius: 10, boxSizing: "border-box" } : {}) }}>
+          <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-start" }}>
+            {dummyRailSide === "left" ? dummyRailEl : null}
+            {/* The badge stands in for a seat the phone cannot draw a hand for,
+                so it yields to the dummy rail on that side rather than crowding
+                it, and never appears for a seat already on screen. */}
+            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
+          </div>
+          <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", // A hairline, not a picture frame (owner, 2026-08-13): it marks where the
+                // felt is, and at 3px it competed with the cards inside it.
+                ...(framed ? { border: "1px solid rgba(201,153,43,.85)", borderRadius: 8, boxSizing: "border-box" } : {}) }}>
             {/* FOUR reserved call rows, whatever the auction holds: the grid is
                 one fixed object from "You deal" to the last pass, and the fifth
                 row scrolls the first off the top. A grid that grew with the
                 auction moved the felt under the reader on every call. maxH is
                 the safety net for a band squeezed below even that. */}
-            {inAuction && auctionDisplay === "box" ? auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS }) : null}
+            {/* WHO IS AT THE TABLE, during the auction (owner, 2026-08-13).
+                Names only — no badges, no card fans: the calls are already in
+                the grid below, so the one thing the auction does not say is who
+                is making them. A robot's name and a person's read differently,
+                which is the whole point of showing them. */}
+            {inAuction && auctionDisplay === "box" ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+                {/* NORTH GETS A NAMEPLATE, the same plate every other seat
+                    wears, so it lights on North's turn like the rest of them
+                    (owner, 2026-08-14). West and East are badges on the band's
+                    flanks — the play phase already puts them there, and using
+                    the same two components in both phases means the auction
+                    teaches the table you play on. This replaces a row of three
+                    names, which said the same thing in a form that had to be
+                    ellipsised to fit and could not show whose turn it was. */}
+                {plate("N", 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
+                {auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS })}
+              </div>
+            ) : null}
             {inAuction && auctionDisplay === "seats" ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 10 }}>
                 {(["N", "E", "S", "W"] as Seat[]).map((s) => (
@@ -1661,8 +1838,10 @@ export function PlayTable({
             {inPlay ? trickCluster(trickK) : null}
             {complete ? resultCard : null}
           </div>
-          {inPlay && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
-          {dummyRailSide === "right" ? dummyRailEl : null}
+          <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-end" }}>
+            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
+            {dummyRailSide === "right" ? dummyRailEl : null}
+          </div>
         </div>
         {/* Column pad (cell sized from the leftover) OR the level tray — one on
             screen at a time. The pad falls back to the tray when the fit could
@@ -1811,8 +1990,23 @@ export function PlayTable({
         <div style={{ flex: "none", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
           {/* CSS-driven table region box; the stage scrolls inside it if the
               scaled content ever exceeds the region (align to the top). */}
-          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", display: "flex", justifyContent: "center", alignItems: "flex-start", overflowX: "hidden", overflowY: "auto" }}>
-            {mobileStack}
+          {/* THE TABLE CANNOT BE SLID SIDEWAYS.
+              `transform: scale()` does not change layout size, so the stage's
+              box is a full 720 wide however small it renders. This region is a
+              vertical scroller, and a scroller whose content is wider than it is
+              can be scrolled horizontally too — `overflow-x: hidden` hides the
+              bar but still permits it. Anything calling scrollIntoView on a card
+              near the edge (a tap, a focus, a test) slid the whole table across
+              and it stayed: measured 165px off, which is the owner's "the trick
+              pad is not always centered".
+              `overflow-x: clip` is the value that REFUSES the scroll — but next
+              to `overflow-y: auto` the spec computes it back to `hidden`, so it
+              has to sit on its own element, whose other axis is visible. Hence
+              the inner box: the scroller sees nothing wider than itself. */}
+          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", overflowY: "auto" }}>
+            <div style={{ width: "100%", overflowX: "clip", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+              {mobileStack}
+            </div>
           </div>
         </div>
         {coachSharePct > 0 && (

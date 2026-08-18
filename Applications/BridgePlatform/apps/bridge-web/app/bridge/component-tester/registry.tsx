@@ -381,7 +381,7 @@ export const REGISTRY: RegistryEntry[] = [
             mySeat={c.mySeat}
             myTurn={false}
             boardLabel={7}
-            appearance={{ ...c.skin, handLayout: c.hand, bidPad: c.pad, centreFrame: false, fanSpread: 78, fanRadius: 0, suitGroups: false }}
+            appearance={{ ...c.skin, handLayout: c.hand, bidPad: c.pad, centreFrame: false, fanSpread: 78, fanRadius: 0, suitGroups: false, cardLift: "subtle" as const }}
             settings={f.settings_menu ? [{ label: "Show all four hands", value: "Off", href: "#" }] : undefined}
             railExtra={f.seats_panel ? <div style={{ color: "#dfe7e3", fontSize: 13 }}>Seat roster</div> : undefined}
             viewHref={f.hands_view ? { label: "Hands", href: "#" } : undefined}

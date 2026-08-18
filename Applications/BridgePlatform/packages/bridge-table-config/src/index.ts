@@ -79,6 +79,23 @@ export const TRICK_PAUSE_MS: Record<TrickPause, number | null> = {
   "3s": 3000,
 };
 
+/**
+ * How far a playable card rises out of your hand (owner, 2026-08-13).
+ *
+ * The lift is how the table says "this one is legal", and how much of it a
+ * player wants is taste: enough to spot, not so much that thirteen cards look
+ * restless. `off` is a real choice, not a degenerate one — the cards are still
+ * armed, they just do not move.
+ */
+export type CardLift = "off" | "subtle" | "pronounced";
+
+/** Pixels a playable card rises, and how far the held one goes beyond it. */
+export const CARD_LIFT_PX: Record<CardLift, { playable: number; held: number }> = {
+  off: { playable: 0, held: 10 },
+  subtle: { playable: 6, held: 16 },
+  pronounced: { playable: 12, held: 24 },
+};
+
 /** A user's full table appearance choice — the persisted read model. */
 export interface TableAppearance {
   skin: SkinName;
@@ -91,6 +108,8 @@ export interface TableAppearance {
   playMode: PlayMode;
   /** How a completed trick clears. */
   trickPause: TrickPause;
+  /** How far a playable card rises. */
+  cardLift: CardLift;
   /**
    * Draw a gap between the suits in a held hand. The order never changes — the
    * hand has always been sorted, and this only makes the seams visible.
@@ -164,6 +183,7 @@ export const DEFAULT_APPEARANCE: TableAppearance = {
   fanRadius: RAW.defaults.fanRadius,
   playMode: "raise",
   trickPause: "tap",
+  cardLift: "subtle",
   suitGroups: true,
   overrides: {},
 };
@@ -263,6 +283,10 @@ export function normalizeAppearance(input: unknown): TableAppearance {
         : DEFAULT_APPEARANCE.trickPause,
     suitGroups:
       typeof o.suitGroups === "boolean" ? o.suitGroups : DEFAULT_APPEARANCE.suitGroups,
+    cardLift:
+      o.cardLift === "off" || o.cardLift === "subtle" || o.cardLift === "pronounced"
+        ? o.cardLift
+        : DEFAULT_APPEARANCE.cardLift,
     overrides: normalizeOverrides(o.overrides),
   };
 }

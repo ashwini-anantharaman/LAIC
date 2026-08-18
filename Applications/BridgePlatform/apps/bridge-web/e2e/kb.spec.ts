@@ -417,10 +417,13 @@ test("fix at the table: undo pauses, overlay edits the item, session re-pins", a
   await page.getByRole("button", { name: "▶ start" }).click();
   await expect(page.getByText(/Decisions \(2\)/)).toBeVisible({ timeout: 15_000 });
 
-  // Undo the last AI decision — the table comes back PAUSED.
+  // Undo the last AI decision — the table comes back PAUSED, and does NOT
+  // navigate to say so (owner, 2026-08-13: undo used to reload the whole
+  // table). The two assertions below were always the ones that mattered: the
+  // decision is gone and the transport is holding. The URL is not evidence of
+  // either — it was only ever the mechanism.
   await page.getByRole("button", { name: "Undo the last decision" }).click();
-  await page.waitForURL(/paused=/);
-  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible();
+  await expect(page.getByText(/Decisions \(1\)/)).toBeVisible({ timeout: 15_000 });
   await expect(page.getByRole("button", { name: "▶ resume" })).toBeVisible();
 
   // Open the trace, jump into the overlay editor for the matched item.
@@ -803,24 +806,45 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await expect(async () => {
     expect(await pass.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
   }).toPass({ timeout: 30_000 });
+  const ok = page.getByRole("button", { name: /^Bid / });
   await pass.click();
   await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
 
-  // PHONE tier (Mobile Table design): one vertical stack, and NO West/East
-  // seats anywhere (only your hand and, in play, dummy's). Pass now sits INLINE
-  // with the levels (BBO's two-row phone bid box) rather than owning a row of
-  // its own, so what it promises is no longer "wide" but "the widest cell in
-  // the row, and no shorter than the levels beside it".
+  // PHONE tier (Mobile Table design): one vertical stack, and Pass INLINE with
+  // the levels (BBO's two-row phone bid box) rather than owning a row of its
+  // own. It used to promise "the widest cell in the row" — that width was for
+  // the WORD, and the word is now "P" (owner, 2026-08-13), so the cell it no
+  // longer needs went to the OK slot beside the levels. What survives is that
+  // Pass sits in the same row at the same height, which is what "inline" meant.
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(`/bridge/table2/${sid}?paused=1`);
   await expect(page.getByRole("button", { name: "Table menu" })).toBeVisible();
   const narrowPass = await page.getByRole("button", { name: "Pass", exact: true }).boundingBox();
   const narrowLevel = await page.getByRole("button", { name: "Level 1" }).boundingBox();
   if (narrowPass && narrowLevel) {
-    expect(narrowPass.width).toBeGreaterThan(narrowLevel.width);
+    expect(narrowPass.width).toBeCloseTo(narrowLevel.width, 0);
     expect(narrowPass.height).toBeCloseTo(narrowLevel.height, 0);
+    expect(narrowPass.y).toBeCloseTo(narrowLevel.y, 0);
   }
-  await expect(page.getByText(/House · Full/)).toHaveCount(0);
+  // The phone shows WHO IS AT THE TABLE during the auction (owner, 2026-08-13),
+  // reversing the older "no West/East seats anywhere" rule this line used to
+  // assert. Names only — no plates, no diagrams, no card fans: the calls are
+  // already in the grid, so the seats are the one thing it did not say. The
+  // rule that survives is that no HAND but yours is drawn, which the stacked
+  // tier below still distinguishes itself by.
+  await expect(page.getByText(/House · Full/).first()).toBeVisible();
+  // NORTH has a plate, WEST and EAST have badges (owner, 2026-08-14). The seats
+  // opposite and beside you are shown differently on purpose: north sits above
+  // the auction where a full plate fits, the flanks are 62px slots where one
+  // does not. Yesterday this line asserted ONE plate — that was the rule before
+  // north got one.
+  await expect(page.getByTestId("seat-plate")).toHaveCount(2);
+  await expect(page.locator('[data-testid="seat-plate"][data-seat="N"]')).toBeVisible();
+  await expect(
+    page.locator('[data-testid="seat-plate"][data-seat="W"], [data-testid="seat-plate"][data-seat="E"]'),
+    "the flanks are badges, not plates",
+  ).toHaveCount(0);
+  await expect(page.locator('[data-testid="side-avatar"]')).toHaveCount(2);
 
   // STACKED tier (Play Table narrow — Device Preview's split pane): portrait
   // but wider than a phone, so the seat DIAGRAMS return, W/E plates included.

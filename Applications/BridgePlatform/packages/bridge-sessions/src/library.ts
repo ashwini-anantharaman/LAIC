@@ -8,7 +8,30 @@
 
 import type { Call, Card, Seat, Vul } from "@bridge/events";
 
-export type LibraryKind = "deal" | "board" | "table" | "play" | "drill" | "puzzle";
+export type LibraryKind =
+  | "deal"
+  | "board"
+  | "table"
+  | "play"
+  | "drill"
+  | "puzzle"
+  | "challenge";
+
+/**
+ * One board of a saved challenge — enough to deal it again exactly.
+ *
+ * Declared structurally rather than imported from `@bridge/challenges`: this
+ * package has never depended on that one, and a library entry is a SNAPSHOT.
+ * A challenge's own type may gain fields, change defaults, or drop them; an
+ * entry saved last year must keep meaning what it meant when it was saved.
+ */
+export interface LibraryChallengeBoard {
+  boardNo: number;
+  pack: Record<Seat, Card[]>;
+  dealer: Seat;
+  vul: Vul;
+  humanSeat: Seat;
+}
 
 /** Instance scoping (0022): every artifact belongs to exactly one scope. */
 export type ScopeLevel = "user" | "program" | "org";
@@ -109,6 +132,38 @@ export interface LibraryEntry {
   // `expectedCalls` lists the acceptable engine answers. `notes` carries the
   // authoring note. Additive jsonb fields — no migration; old entries lack them.
   expectedCalls?: Call[];
+
+  // `challenge` entries: a whole challenge, kept so it can be found and run
+  // again. The BOARDS are the substance — without its pack a challenge is a
+  // title — and the format and scoring are what make replaying it the same
+  // exercise. Additive jsonb, like every field above: an older entry has none
+  // of this and is still a valid entry of some other kind.
+  challengeBoards?: LibraryChallengeBoard[];
+  challengeFormat?: "full" | "bidding-only";
+  challengeScoring?: string;
+  /** How many boards, for the shelf row — a DRAFT has seeds, not packs yet. */
+  challengeBoardCount?: number;
+  /**
+   * `draft` = built but not published; `published` = a live challenge exists.
+   *
+   * One entry spans both: a draft is promoted in place when it is published,
+   * so the library holds one row for the whole life of the thing rather than a
+   * row per moment in it (owner, 2026-08-14).
+   */
+  challengeStatus?: "draft" | "published";
+  /**
+   * The creator's whole work-in-progress, verbatim, as JSON.
+   *
+   * A string and not a typed field on purpose. The draft's shape belongs to the
+   * wizard in the app, which this package cannot import and should not mirror —
+   * and the app already owns a validator that tolerates older shapes ("a draft
+   * that predates the format option is not an error"). Storing the text and
+   * re-validating on the way out means an entry saved before a field existed
+   * still opens, which is the entire point of being able to park work.
+   */
+  challengeDraftJson?: string;
+  /** The challenge this was saved from or published into, if it still exists. */
+  sourceChallengeId?: string;
 
   origin: "recorded" | "imported" | "authored";
   sourceSessionId?: string;
