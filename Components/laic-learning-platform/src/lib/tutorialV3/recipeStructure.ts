@@ -42,7 +42,9 @@ export interface RecipeStructureAnalysis {
    * moment embeds are split into library and generate groups.
    */
   recipeOrder: Record<string, number>;
-  /** Where the Section block sits in the recipe (-1 when the template has none). */
+  /** Index of every Section block in the recipe, in order. Empty when there are none. */
+  sectionSlots: number[];
+  /** Where the first Section block sits (-1 when the template has none). */
   sectionOrder: number;
 }
 
@@ -61,9 +63,24 @@ function isGenerateMode(item: EmbeddedObjectItem): boolean {
 export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructureAnalysis {
   const recipe = template.recipe || [];
   const hasSections = recipeHasSectionBlock(recipe);
-  const sectionCount = hasSections
-    ? Math.max(1, Math.min(20, Number(template.knobDefaults?.secs) || 3))
-    : 0;
+
+  /*
+    Where the recipe's Section blocks sit.
+
+    A template may place several, interleaved with embedded content — Section,
+    quiz, Section, flashcards — and each one is a section in its own right, at
+    its own point in the reading order. Only when there is a single Section
+    block does the `secs` knob mean anything: one block standing for however
+    many sections the author asked for.
+  */
+  const sectionSlots = recipe
+    .map((r, i) => (r.kind === 'atomic' && String((r as { blockType?: string }).blockType || '') === 'section-heading' ? i : -1))
+    .filter((i) => i >= 0);
+  const sectionCount = !hasSections
+    ? 0
+    : sectionSlots.length > 1
+      ? sectionSlots.length
+      : Math.max(1, Math.min(20, Number(template.knobDefaults?.secs) || 3));
 
   const recipeOrder: Record<string, number> = {};
   recipe.forEach((r, i) => {
@@ -71,11 +88,6 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
       recipeOrder[String((r as EmbeddedObjectItem).id)] = i;
     }
   });
-  // The Section block is where the recipe's sections belong in the reading order.
-  const sectionOrder = recipe.findIndex(
-    (r) => r.kind === 'atomic' && String((r as { blockType?: string }).blockType || '') === 'section-heading',
-  );
-
   const embeds = recipe.filter((r): r is EmbeddedObjectItem => r.kind === 'embedded');
   const libraryEmbeds = embeds.filter(isLibraryMode);
   const generateEmbeds = embeds.filter(isGenerateMode);
@@ -84,7 +96,22 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
   // one quiz block in the template means one quiz to generate, not one per section.
   const topLevelGenerateEmbeds = generateEmbeds;
 
-  const sectionAtomics = recipe.filter((r) => r.kind === 'atomic');
+  /*
+    One section's shape, not the whole recipe's.
+
+    A recipe with five Section blocks describes five sections, not one section
+    made of five headings — so the repeats collapse to a single heading here,
+    and the other atomics (explanation, worked example, and so on) come along
+    as the shape each of those sections is built to.
+  */
+  let seenHeading = false;
+  const sectionAtomics = recipe.filter((r) => {
+    if (r.kind !== 'atomic') return false;
+    if (String((r as { blockType?: string }).blockType || '') !== 'section-heading') return true;
+    if (seenHeading) return false;
+    seenHeading = true;
+    return true;
+  });
   // Per-section: atomics only (embeds are tutorial-level Structure items).
   const sectionRecipe = hasSections ? sectionAtomics : [];
 
@@ -100,7 +127,8 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
     sectionAtomics,
     sectionRecipe,
     recipeOrder,
-    sectionOrder: hasSections ? (sectionOrder >= 0 ? sectionOrder : recipe.length) : -1,
+    sectionSlots,
+    sectionOrder: hasSections ? (sectionSlots[0] ?? recipe.length) : -1,
   };
 }
 
@@ -189,14 +217,8 @@ export function seedSectionsFromAnalysis(
     outline.push({ title: `Section ${outline.length + 1}`, intent: '' });
   }
 
-  /*
-    Every section shares the Section block's slot in the recipe, so they are
-    spread across a fractional span — enough to keep them in outline order and
-    still sit as a group wherever the template put them.
-  */
-  const base = analysis.sectionOrder >= 0 ? analysis.sectionOrder : 0;
   return outline.map((row, i) => ({
-    order: base + i / (outline.length + 1),
+    order: defaultSectionOrder(analysis, i, outline.length),
     id: row.id || newSectionId(),
     title: String(row.title || '').trim() || 'Section',
     intent: row.intent || '',
@@ -230,6 +252,14 @@ export type StructureSectionTitle = {
  * and still sit as a group wherever the template put the block.
  */
 export function defaultSectionOrder(analysis: RecipeStructureAnalysis, i: number, n: number): number {
+  const slots = analysis.sectionSlots || [];
+  // Several Section blocks: the nth section belongs at the nth one. Sections
+  // beyond the last block trail it, in order.
+  if (slots.length > 1) {
+    if (i < slots.length) return slots[i];
+    const last = slots[slots.length - 1];
+    return last + (i - slots.length + 1) / (Math.max(1, n) + 1);
+  }
   const base = analysis.sectionOrder >= 0 ? analysis.sectionOrder : 0;
   return base + i / (Math.max(1, n) + 1);
 }
