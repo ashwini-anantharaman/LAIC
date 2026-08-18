@@ -58,7 +58,6 @@ import { useCan, useClubScopedContext } from "../../lib/use-can";
 import { deleteLearningObject, type LearningObject } from "../../lib/nexus";
 import {
   canAuthorLearning,
-  canAuthorPersonal,
   canDeleteLearning,
   describeLearningError,
   getLearningContext,
@@ -314,9 +313,6 @@ export default function ClubScreen() {
   const clubScoped = useClubScopedContext();
   const clubDescription = clubScoped?.app?.program_description?.trim() || null;
   const [canAuthor, setCanAuthor] = useState(false);
-  /** May they keep something to themselves? A separate grant from authoring for the
-   *  club — see canAuthorPersonal. */
-  const [canAuthorMine, setCanAuthorMine] = useState(false);
   /** The club's OWN authored content, which the Activities row lists after the
    *  pinned challenges. The curriculum above the club is the Learn tab's, not this
    *  row's — a club's row is about the club.
@@ -554,7 +550,6 @@ export default function ClubScreen() {
     async (opts: { refresh?: boolean } = {}) => {
       if (!token || !club?.id) {
         setCanAuthor(false);
-        setCanAuthorMine(false);
         setCanDeleteContent(false);
         setClubContent({ state: "ready", objects: [] });
         return;
@@ -572,7 +567,6 @@ export default function ClubScreen() {
         // club we have just left must not land on the club we are now looking at.
         if (clubRef.current !== forClub) return;
         setCanAuthor(canAuthorLearning(ctx));
-        setCanAuthorMine(canAuthorPersonal(ctx));
         setCanDeleteContent(canDeleteLearning(ctx));
         // Only the club's half: the parent's curriculum belongs to the Learn tab.
         // The club's shelf, then this person's own. `mine` is content the server
@@ -914,10 +908,11 @@ export default function ClubScreen() {
                 loading={clubContent.state === "loading"}
                 error={clubContent.state === "failed" ? clubContent.message : null}
                 // No + at all for someone who may create neither: an inert button
-                // that opens an empty sheet is worse than no button.
-                {...(canCreateChallenge || canAuthor || canAuthorMine
-                  ? { onAdd: () => setAddOpen(true) }
-                  : {})}
+                // that opens an empty sheet is worse than no button. Counts only the
+                // two entries the sheet actually HAS — it used to include the
+                // personal-authoring grant, so pulling that row without this would
+                // have left a + that opened an empty sheet for anyone who held it.
+                {...(canCreateChallenge || canAuthor ? { onAdd: () => setAddOpen(true) } : {})}
               />
             </View>
 
@@ -1144,30 +1139,22 @@ export default function ClubScreen() {
               style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
             >
               <Ionicons name="document-text-outline" size={20} color={Brand.cream} />
-              <Text style={styles.checkLabel}>
-                {canAuthorMine ? "For the club" : "Tutorial or other content"}
-              </Text>
+              <Text style={styles.checkLabel}>Tutorial or other content</Text>
             </Pressable>
           ) : null}
-          {/* The scope choice is made HERE, before the Studio opens, rather than as a
-              toggle inside it. Whose content this is decides who can ever see it, and
-              a decision that consequential should not be a setting someone can miss
-              on a screen they came to for something else. Only shown when the two are
-              actually different grants. */}
-          {canAuthorMine ? (
-            <Pressable
-              onPress={() => {
-                setAddOpen(false);
-                router.push({ pathname: "/studio", params: { scope: "user" } });
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="New content just for you"
-              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
-            >
-              <Ionicons name="lock-closed-outline" size={20} color={Brand.cream} />
-              <Text style={styles.checkLabel}>Just for me</Text>
-            </Pressable>
-          ) : null}
+          {/* "Just for me" WAS a second row here, opening the Studio with
+              ?scope=user so the object landed personal rather than the club's.
+              PULLED FROM THE UI, not from the stack: the scope column, the grants
+              table, the server-side ownership check and the Studio's own handling of
+              the parameter are all still in place and still tested. What is missing
+              is the product thinking — who a personal draft is FOR once a club can
+              also share one object with named people, and whether "mine" and "shared
+              with me" want to be one shelf or two. Offering the choice before that is
+              answered means people file work somewhere we may move.
+
+              To bring it back: one Pressable pushing
+              /studio?scope=user, gated on canAuthorPersonal (still exported from
+              lib/learning.ts). Nothing else has to change. */}
         </ScrollView>
       </BrandSheet>
 
