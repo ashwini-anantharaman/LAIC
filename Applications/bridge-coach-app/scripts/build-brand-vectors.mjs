@@ -114,6 +114,11 @@ const NAMES = {
   "icon-suit-diamond.svg": "ICON_SUIT_DIAMOND",
   "icon-suit-club.svg": "ICON_SUIT_CLUB",
   "icon-people-pair.svg": "ICON_PEOPLE_PAIR",
+  // Learn's list view (Figma 906:417). The grid is the toggle shown WHILE in the
+  // list, offering the way back; the chevron points up as drawn and is turned 180°
+  // for an open section, so one asset carries both states.
+  "icon-view-grid.svg": "ICON_VIEW_GRID",
+  "icon-chevron-up.svg": "ICON_CHEVRON_UP",
 };
 
 const TRUNK_FILL = "#421313";
