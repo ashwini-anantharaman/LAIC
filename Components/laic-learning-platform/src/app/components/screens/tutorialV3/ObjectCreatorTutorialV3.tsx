@@ -73,6 +73,7 @@ import { TutorialV3BatchGenerate } from './TutorialV3BatchGenerate';
 import { TutorialV3SourceFirstStructure } from './TutorialV3SourceFirstStructure';
 import { TutorialV3SourceFirstAuthor } from './TutorialV3SourceFirstAuthor';
 import { applyProposal, isSourceFirstDraft, SOURCE_FIRST_PATH } from '../../../../lib/tutorialV3/sourceFirst';
+import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 import { TutorialV3SectionWorkspace } from './TutorialV3SectionWorkspace';
 import {
   TutorialV3SourcePanel,
@@ -85,7 +86,7 @@ import {
 } from './TutorialV3SourcePanel';
 import type { PickedLibrarySource } from '../CDSources';
 import { useConfirm } from '../../ConfirmDialog';
-import { V3_FONT, V3_NAVY, V3_PAPER, V3_SAGE } from '../../../../lib/tutorialV3/authorTheme';
+import { V3_FONT, V3_NAVY, V3_PAPER, V3_SAGE, V3_SAGE_BORDER, V3_SAGE_TINT } from '../../../../lib/tutorialV3/authorTheme';
 import {
   getCollectionPath,
   objectCollectionIds,
@@ -829,6 +830,12 @@ export function ObjectCreatorTutorialV3() {
    * about one action, and abandoning it should leave nothing behind.
    */
   const [batchSelection, setBatchSelection] = useState<{ kind: 'section' | 'slot'; id: string }[] | null>(null);
+  /**
+   * Deliberately asking for a new proposal. Without this, revisiting Structure
+   * on the source-first path always reopened the proposal screen and there was
+   * no way to edit the structure you already had — only to replace it.
+   */
+  const [reproposeStructure, setReproposeStructure] = useState(false);
 
   // Write-yourself never uses the Sources step.
   useEffect(() => {
@@ -1147,7 +1154,7 @@ export function ObjectCreatorTutorialV3() {
   }
 
   /* ── B0. Structure, source-first: the model proposes it ───── */
-  if (phase === 'structure' && sourceFirst) {
+  if (phase === 'structure' && sourceFirst && (reproposeStructure || !draft.sections.length)) {
     const pickedIds = (draft.sourcePool || []).map((sp) => sp.id);
     return (
       <Shell
@@ -1163,6 +1170,7 @@ export function ObjectCreatorTutorialV3() {
           pickedSourceIds={pickedIds}
           onBackToSources={() => goToPipelinePhase('sources')}
           onApply={(proposal) => {
+            setReproposeStructure(false);
             const { sections, topLevelSlots } = applyProposal(draft, proposal, pickedIds);
             setSectionTitles(sections.map((sec, i) => ({
               id: sec.id,
@@ -1213,6 +1221,37 @@ export function ObjectCreatorTutorialV3() {
         rail={pipelineRail}
       >
         <div className={`${freeform ? 'max-w-4xl' : 'max-w-2xl'} mx-auto pb-8`}>
+          {sourceFirst && (
+            <div
+              className="flex items-center justify-between gap-3 flex-wrap rounded-2xl px-4 py-3 mb-4"
+              style={{ background: V3_SAGE_TINT, border: `1px solid ${V3_SAGE_BORDER}` }}
+            >
+              <p style={{ fontSize: 12.5, color: '#44403c', lineHeight: 1.5 }}>
+                This shape came from your sources. Rename, reorder and delete it like any other —
+                or ask for a different proposal.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  void (async () => {
+                    // Replacing the sections throws away whatever was generated
+                    // into them, so it is asked rather than assumed.
+                    const ok = await confirm({
+                      title: 'Propose a new structure?',
+                      description: 'The current sections are replaced, and anything generated into them is lost.',
+                      confirmLabel: 'Propose a new one',
+                      destructive: true,
+                    });
+                    if (ok) setReproposeStructure(true);
+                  })();
+                }}
+                className="px-3.5 py-2 rounded-full border shrink-0"
+                style={{ fontSize: 12.5, fontWeight: 650, color: '#2f4e39', borderColor: V3_SAGE_BORDER, background: '#fff' }}
+              >
+                Propose a new structure
+              </button>
+            </div>
+          )}
           <TutorialV3StructurePanel
             template={tpl}
             slots={slots}
@@ -1623,6 +1662,43 @@ export function ObjectCreatorTutorialV3() {
           commit(touchDraft(draft, { phase: 'slot', activeSlotId: slotId, activeSectionId: null }), 'slot');
         }}
         onBatchGenerate={writeYourself ? undefined : (sel) => setBatchSelection(sel)}
+        onReorderSections={(orderedIds) => {
+          // Reordering the outline reorders the learner's pages too, so the page
+          // stamps are renumbered to match rather than left pointing at the old
+          // positions.
+          const byId = new Map(draft.sections.map((sec) => [sec.id, sec]));
+          const sections = orderedIds
+            .map((id, i) => {
+              const sec = byId.get(id);
+              return sec ? { ...sec, learnerPage: i + 1 } : null;
+            })
+            .filter(Boolean) as typeof draft.sections;
+          if (sections.length !== draft.sections.length) return;
+          setSectionTitles(sections.map((sec, i) => ({
+            id: sec.id,
+            title: sec.title,
+            intent: sec.intent || '',
+            learnerPage: sec.learnerPage ?? (i + 1),
+          })));
+          commit(touchDraft(draft, { sections, assembledParts: undefined }));
+        }}
+        onDeleteSlot={(slotId) => {
+          void (async () => {
+            const slot = (draft.topLevelSlots || []).find((sl) => sl.id === slotId);
+            const label = slot ? embedTypeLabel(String(slot.objectType)) : 'this content';
+            const ok = await confirm({
+              title: `Remove ${label}?`,
+              description: 'Anything generated into it is removed with it.',
+              confirmLabel: 'Remove',
+              destructive: true,
+            });
+            if (!ok) return;
+            commit(touchDraft(draft, {
+              topLevelSlots: (draft.topLevelSlots || []).filter((sl) => sl.id !== slotId),
+              assembledParts: undefined,
+            }));
+          })();
+        }}
         onDeleteSection={(sectionId) => {
           void (async () => {
             const sec = draft.sections.find((s) => s.id === sectionId);

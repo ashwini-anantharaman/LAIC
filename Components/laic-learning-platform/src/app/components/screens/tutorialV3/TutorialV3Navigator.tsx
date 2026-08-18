@@ -2,7 +2,24 @@
  * Tutorial V3 section navigator — outline + status + enter section / generate slot.
  */
 import React from 'react';
-import { Check, PenLine, Sparkles, ChevronRight, Eye, Database, Trash2 } from 'lucide-react';
+import { Check, PenLine, Sparkles, ChevronRight, Eye, Database, Trash2, GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { TutorialV3Draft, V3Section, V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
 import {
   allRequiredDone,
@@ -35,6 +52,8 @@ export function TutorialV3Navigator({
   onDeleteSection,
   onReview,
   onBatchGenerate,
+  onReorderSections,
+  onDeleteSlot,
   onBackToSources,
   onBackToStructure,
   onBackToPlan,
@@ -53,6 +72,10 @@ export function TutorialV3Navigator({
    * there is no AI step to batch.
    */
   onBatchGenerate?: (targets: { kind: 'section' | 'slot'; id: string }[]) => void;
+  /** Reorder the outline. Absent when the caller has no way to persist it. */
+  onReorderSections?: (orderedIds: string[]) => void;
+  /** Remove a generate slot, the way a section can already be removed. */
+  onDeleteSlot?: (slotId: string) => void;
   onBackToSources: () => void;
   onBackToStructure: () => void;
   onBackToPlan?: () => void;
@@ -66,6 +89,20 @@ export function TutorialV3Navigator({
   const toggleSelected = (id: string) => setSelected(
     (prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]),
   );
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const handleReorder = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id || !onReorderSections) return;
+    const ids = draft.sections.map((sec) => sec.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    onReorderSections(arrayMove(ids, from, to));
+  };
 
   const { done, total } = doneCount(draft.sections);
   const remaining = requiredSectionsRemaining(draft.sections);
@@ -217,11 +254,14 @@ export function TutorialV3Navigator({
               selectable={!!onBatchGenerate && slot.kind === 'generate'}
               selected={selected.includes(slot.id)}
               onToggleSelected={() => toggleSelected(slot.id)}
+              onDelete={onDeleteSlot ? () => onDeleteSlot(slot.id) : undefined}
             />
           ))}
         </div>
       )}
 
+      <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleReorder}>
+      <SortableContext items={draft.sections.map((sec) => sec.id)} strategy={verticalListSortingStrategy}>
       <div className="space-y-2">
         {draft.sections.map((sec, i) => (
           <SectionRow
@@ -233,6 +273,7 @@ export function TutorialV3Navigator({
             selectable={!!onBatchGenerate}
             selected={selected.includes(sec.id)}
             onToggleSelected={() => toggleSelected(sec.id)}
+            reorderable={!!onReorderSections}
           />
         ))}
         {!draft.sections.length && !slots.length && (
@@ -246,6 +287,8 @@ export function TutorialV3Navigator({
           </p>
         )}
       </div>
+      </SortableContext>
+      </DndContext>
     </div>
   );
 }
@@ -280,12 +323,14 @@ function SlotRow({
   selectable = false,
   selected = false,
   onToggleSelected,
+  onDelete,
 }: {
   slot: V3TopLevelSlot;
   onOpen?: () => void;
   selectable?: boolean;
   selected?: boolean;
   onToggleSelected?: () => void;
+  onDelete?: () => void;
 }) {
   const label = slot.kind === 'library'
     ? (slot.libraryTitle || embedTypeLabel(String(slot.objectType)))
@@ -351,6 +396,17 @@ function SlotRow({
         >
           {inner}
         </button>
+        {onDelete && (
+          <button
+            type="button"
+            onClick={onDelete}
+            title="Remove this content"
+            aria-label={`Remove ${label}`}
+            className="shrink-0 self-center px-3"
+          >
+            <Trash2 size={14} style={{ color: '#EF4444' }} />
+          </button>
+        )}
       </div>
     );
   }
@@ -376,6 +432,7 @@ function SectionRow({
   selectable = false,
   selected = false,
   onToggleSelected,
+  reorderable = false,
 }: {
   index: number;
   sec: V3Section;
@@ -384,20 +441,43 @@ function SectionRow({
   selectable?: boolean;
   selected?: boolean;
   onToggleSelected?: () => void;
+  reorderable?: boolean;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: sec.id,
+    disabled: !reorderable,
+  });
   const status = deriveSectionStatus(sec);
   const style = STATUS_STYLE[status];
   const mode = MODE_HINT[sec.authorMode] || '';
 
   return (
     <div
+      ref={setNodeRef}
       className="flex items-stretch gap-1 rounded-2xl"
       style={{
-        background: 'rgba(255,255,255,0.72)',
+        background: isDragging ? '#fff' : 'rgba(255,255,255,0.72)',
         border: `1px solid ${selected ? V3_SAGE : 'rgba(0,0,0,0.06)'}`,
-        boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
+        boxShadow: isDragging
+          ? '0 12px 28px -12px rgba(30,50,80,0.4)'
+          : '0 4px 16px -8px rgba(30,50,80,0.12)',
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: isDragging ? 'relative' : undefined,
+        zIndex: isDragging ? 5 : undefined,
       }}
     >
+      {reorderable && (
+        <button
+          type="button"
+          className="shrink-0 self-center pl-2 pr-0.5 cursor-grab active:cursor-grabbing"
+          aria-label={`Reorder ${sec.title}`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical size={15} style={{ color: '#C4CBD4' }} />
+        </button>
+      )}
       {selectable && onToggleSelected && (
         <SelectBox checked={selected} onToggle={onToggleSelected} label={sec.title} />
       )}
