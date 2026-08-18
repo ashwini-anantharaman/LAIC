@@ -459,7 +459,13 @@ function StudioApp() {
   useEffect(() => {
     if (!isLoggedIn || !libraryReady) return;
     if (createdObjects.length === 0) return;
-    saveUserObjects(activeUserId, createdObjects);
+    const res = saveUserObjects(activeUserId, createdObjects);
+    // A failed write means this session's work is not on disk and will be gone
+    // on refresh. It used to pass silently, so the first an author knew of it
+    // was a library that had lost their tutorials.
+    if (!res.ok) {
+      console.error('[library] SAVE FAILED — work from this session is not persisted:', res.error);
+    }
   }, [isLoggedIn, activeUserId, createdObjects, libraryReady]);
 
   // Flush on tab close / refresh so mid-session saves aren't lost.

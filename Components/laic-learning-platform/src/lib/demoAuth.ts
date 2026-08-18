@@ -99,9 +99,112 @@ export function loadUserObjects(userId: string): LearningObject[] {
  * Strip heavy inline media from pipeline drafts so libraries fit in localStorage.
  * Keeps structure needed to reopen the editor; media can be re-uploaded.
  */
-function slimForStorage(objects: LearningObject[]): LearningObject[] {
-  return objects.map((o) => {
-    if (!o.pipelineDraft) return o;
+
+/** A data URL big enough to be worth dropping from storage. */
+function isHeavyDataUrl(v: unknown): boolean {
+  return typeof v === 'string' && v.startsWith('data:') && v.length > 2000;
+}
+
+/**
+ * Strip the heavy parts of a Tutorial V2/V3 authoring draft.
+ *
+ * The draft is where a tutorial keeps everything it needs to reopen: the whole
+ * source pool, sentence by sentence, plus harvested page HTML and any images
+ * the author pulled in as data URLs. That is the bulk of a saved tutorial and
+ * `slimForStorage` never touched it, so a library holding one real V3 tutorial
+ * blew the quota, the slim pass shrank nothing, and the write failed outright —
+ * which is why an author's tutorials vanished on refresh while the seeded ones
+ * stayed.
+ *
+ * `hard` also truncates sentence text. That is a last resort: sentence indices
+ * are what markup highlights point at, so cutting them costs the author their
+ * markup, which is still better than losing the tutorial.
+ */
+function slimTutorialDraft(draft: any, hard = false): any {
+  if (!draft || typeof draft !== 'object') return draft;
+  const d = { ...draft };
+
+  if (Array.isArray(d.sourcePool)) {
+    d.sourcePool = d.sourcePool.map((src: any) => {
+      if (!src || typeof src !== 'object') return src;
+      const next = { ...src };
+      // Harvested page HTML is re-fetchable and never read back on reopen.
+      if (typeof next.html === 'string' && next.html.length > 20_000) {
+        delete next.html;
+        next.htmlStripped = true;
+      }
+      if (Array.isArray(next.images)) {
+        next.images = next.images.map((img: any) => {
+          if (!img || typeof img !== 'object') return img;
+          if (!isHeavyDataUrl(img.src)) return img;
+          const i = { ...img };
+          delete i.src;
+          i.stripped = true;
+          return i;
+        });
+      }
+      // meta carries the original upload for reopen — often the whole file.
+      if (next.meta && typeof next.meta === 'object') {
+        const meta: Record<string, unknown> = { ...next.meta };
+        for (const k of Object.keys(meta)) {
+          if (isHeavyDataUrl(meta[k])) delete meta[k];
+        }
+        next.meta = meta;
+      }
+      if (hard && Array.isArray(next.sentences) && next.sentences.length > 400) {
+        next.sentences = next.sentences.slice(0, 400);
+        next.sentencesTruncated = true;
+      }
+      return next;
+    });
+  }
+
+  const slimParts = (parts: any[]): any[] => parts.map((part: any) => {
+    if (!part || typeof part !== 'object') return part;
+    const next = { ...part };
+    if (isHeavyDataUrl(next.url)) {
+      delete next.url;
+      next.stripped = true;
+    }
+    if (Array.isArray(next.snapshotBlocks)) {
+      next.snapshotBlocks = next.snapshotBlocks.map((b: any) => {
+        if (!b || typeof b !== 'object' || !b.content || typeof b.content !== 'object') return b;
+        const content: Record<string, unknown> = { ...b.content };
+        let touched = false;
+        for (const k of Object.keys(content)) {
+          if (isHeavyDataUrl(content[k])) { delete content[k]; touched = true; }
+        }
+        return touched ? { ...b, content } : b;
+      });
+    }
+    return next;
+  });
+
+  if (Array.isArray(d.assembledParts)) d.assembledParts = slimParts(d.assembledParts);
+  if (Array.isArray(d.sections)) {
+    d.sections = d.sections.map((sec: any) => (
+      sec && Array.isArray(sec.parts) ? { ...sec, parts: slimParts(sec.parts) } : sec
+    ));
+  }
+  if (Array.isArray(d.topLevelSlots)) {
+    d.topLevelSlots = d.topLevelSlots.map((slot: any) => {
+      if (!slot || typeof slot !== 'object') return slot;
+      const next = { ...slot };
+      if (Array.isArray(next.parts)) next.parts = slimParts(next.parts);
+      if (next.part) next.part = slimParts([next.part])[0];
+      return next;
+    });
+  }
+  return d;
+}
+
+function slimForStorage(objects: LearningObject[], hard = false): LearningObject[] {
+  return objects.map((obj) => {
+    // Tutorial drafts first — they are the biggest thing in a saved library.
+    let o = obj as any;
+    if (o.tutorialV3Draft) o = { ...o, tutorialV3Draft: slimTutorialDraft(o.tutorialV3Draft, hard) };
+    if (o.tutorialV2Draft) o = { ...o, tutorialV2Draft: slimTutorialDraft(o.tutorialV2Draft, hard) };
+    if (!o.pipelineDraft) return o as LearningObject;
     const d = { ...o.pipelineDraft } as any;
     if (Array.isArray(d.sources)) {
       d.sources = d.sources.map((s: any) => {
@@ -142,7 +245,7 @@ function slimForStorage(objects: LearningObject[]): LearningObject[] {
         return next;
       });
     }
-    return { ...o, pipelineDraft: d };
+    return { ...o, pipelineDraft: d } as LearningObject;
   });
 }
 
@@ -181,9 +284,16 @@ export function saveUserObjects(
     } catch (err: any) {
       // Quota exceeded — retry without heavy inline media.
       if (err?.name === 'QuotaExceededError' || /quota/i.test(String(err?.message || err))) {
-        const slimmed = slimForStorage(objects);
-        write(slimmed);
-        console.warn('[demoAuth] persisted slimmed library (quota)');
+        // Degrade in steps rather than all at once: a single slim pass that
+        // still overflowed used to throw again and abandon the whole write,
+        // losing everything the author had made this session.
+        try {
+          write(slimForStorage(objects));
+          console.warn('[demoAuth] persisted slimmed library (quota)');
+          return { ok: true, slimmed: true };
+        } catch { /* still too big — try harder below */ }
+        write(slimForStorage(objects, true));
+        console.warn('[demoAuth] persisted hard-slimmed library (quota) — source markup may be truncated');
         return { ok: true, slimmed: true };
       }
       throw err;
