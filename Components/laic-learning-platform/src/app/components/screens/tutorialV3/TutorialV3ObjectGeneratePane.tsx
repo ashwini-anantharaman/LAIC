@@ -9,19 +9,10 @@ import { MarkupWorkspace, type MarkupSource } from '../MarkupWorkspace';
 import { TutorialExtractPanel } from '../TutorialExtractPanel';
 import {
   errorMessage,
-  generateConceptCard,
-  generateFlashcards,
-  generateQuiz,
-  generateStructuredObject,
   suggestTutorialMarkupFlags,
-  type GeneratedCard,
-  type GeneratedConceptCard,
-  type GeneratedQuizQuestion,
-  type StructuredObjectKind,
   type TutorialExtract,
 } from '../../../../lib/api';
 import { makeGeneratedEmbedPart } from '../../../../lib/libraryEmbed';
-import { resolveConceptCategories } from '../../../../lib/conceptCard';
 import { sourcePoolToMarkupSources } from '../../../../lib/tutorialV3/draftModel';
 import {
   defaultDefineConfig,
@@ -30,20 +21,8 @@ import {
 import type { TutorialV3Part, V3SourceRef, V3TopLevelSlot } from '../../../../lib/tutorialV3/types';
 import type { Block, ClusteredKnowledgeBase, ContentUnit, ObjectType } from '../../../../lib/types';
 import { DefineStepForm } from '../DefineStepForm';
+import { generateObjectBlocks } from '../../../../lib/tutorialV3/generateObject';
 
-/**
- * The block types Tutorial V3 added. They share one generate branch because
- * they share one contract: a Define group shaped to the prompt, a single JSON
- * object back, and a block whose `type` is the slot's own objectType.
- */
-const V3_BLOCK_TYPES = new Set([
-  'lesson-overview',
-  'lesson-complete',
-  'reference-table',
-  'quick-decisions',
-  'matching',
-  'opening-question',
-]);
 
 type Substep = 'pick' | 'markup' | 'extract' | 'define' | 'run';
 
@@ -214,180 +193,19 @@ export function TutorialV3ObjectGeneratePane({
     setProgress('Starting…');
     try {
       const title = objectTitle.trim() || `${tutorialTitle} · ${noun}`;
-      let blocks: Block[] = [];
-      let resultTitle = title;
-
-      if (objectType === 'flashcard-set') {
-        const collected: GeneratedCard[] = [];
-        for await (const ev of generateFlashcards({
-          title,
-          config: {
-            mem: define.mem || title,
-            aud: define.aud,
-            lvl: define.lvl,
-            cc: define.cc,
-            pull: define.pull,
-            dir: define.dir,
-            hooks: !!define.hooks,
-            nc: Number(define.nc) || 12,
-          },
-          extracts: pack,
-          knowledgeBase: knowledgeBase || undefined,
-          shapeIntent: shapeIntent || undefined,
-          prompt: define.instructions || undefined,
-        }, ctrl.signal)) {
-          if (ev.type === 'progress') setProgress(ev.message);
-          else if (ev.type === 'card') collected.push(ev.card);
-          else if (ev.type === 'error') throw new Error(ev.message);
-          else if (ev.type === 'done') break;
-        }
-        if (!collected.length) throw new Error('No cards were generated.');
-        blocks = [{
-          id: `blk-fc-${slot.id}`,
-          type: 'flashcard-set',
-          content: {
-            cards: collected.map((c) => ({
-              front: c.front,
-              back: c.back,
-              ...(c.hook ? { hook: c.hook } : {}),
-              ...(c.hint ? { hint: c.hint } : {}),
-            })),
-            direction: 'front-to-back',
-          },
-        }];
-      } else if (objectType === 'concept-card') {
-        let card: GeneratedConceptCard | null = null;
-        const markupUnits = unitsFromKb().map((u) => ({
-          text: u.text, from: u.from, kind: u.kind, authorNote: u.authorNote,
-        }));
-        for await (const ev of generateConceptCard({
-          title,
-          config: {
-            concept: define.concept || title,
-            aud: define.aud,
-            lvl: define.lvl,
-            voi: define.voi,
-            len: define.len,
-            categories: resolveConceptCategories(undefined),
-          },
-          extracts: pack,
-          markupUnits,
-          knowledgeBase: knowledgeBase || undefined,
-          shapeIntent: shapeIntent || undefined,
-          prompt: define.instructions || undefined,
-        }, ctrl.signal)) {
-          if (ev.type === 'progress') setProgress(ev.message);
-          else if (ev.type === 'card') card = ev.card;
-          else if (ev.type === 'error') throw new Error(ev.message);
-          else if (ev.type === 'done') break;
-        }
-        if (!card?.term) throw new Error('No concept card was generated.');
-        resultTitle = card.term;
-        blocks = [{ id: `blk-cc-${slot.id}`, type: 'concept-card', content: card }];
-      } else if (objectType === 'quiz') {
-        const collected: GeneratedQuizQuestion[] = [];
-        for await (const ev of generateQuiz({
-          title,
-          config: {
-            verify: define.verify || title,
-            purpose: define.purpose,
-            concepts: define.concepts,
-            aud: define.aud,
-            lvl: define.lvl,
-            qtypes: define.qtypes,
-            nq: Number(define.nq) || 8,
-            passOn: define.passOn !== false,
-            pass: define.pass,
-            show: define.show,
-            adaptive: define.adaptive,
-          } as any,
-          extracts: pack,
-          knowledgeBase: knowledgeBase || undefined,
-          shapeIntent: shapeIntent || undefined,
-          prompt: define.instructions || undefined,
-        }, ctrl.signal)) {
-          if (ev.type === 'progress') setProgress(ev.message);
-          else if (ev.type === 'question') collected.push(ev.question);
-          else if (ev.type === 'error') throw new Error(ev.message);
-          else if (ev.type === 'done') break;
-        }
-        if (!collected.length) throw new Error('No questions were generated.');
-        const passMark = parseInt(String(define.pass || '70').replace('%', ''), 10) || 70;
-        blocks = [{
-          id: `blk-quiz-${slot.id}`,
-          type: 'quiz',
-          content: {
-            questions: collected,
-            passRequired: define.passOn !== false,
-            passMark,
-            showExplanations: define.show || 'After attempt',
-          },
-        }];
-      } else if (objectType === 'assignment' || objectType === 'reflection') {
-        let content: Record<string, unknown> | null = null;
-        for await (const ev of generateStructuredObject(objectType, {
-          title,
-          config: objectType === 'assignment'
-            ? {
-              obj: define.obj || title,
-              aud: define.aud,
-              lvl: define.lvl,
-              tt: define.tt,
-              del: define.del,
-              el: define.el,
-              cite: define.cite !== false,
-              req: define.req,
-              rubric: define.rubric,
-            }
-            : {
-              goal: define.goal,
-              aud: define.aud,
-              voi: define.voi,
-              style: define.style,
-              who: define.who,
-              np: define.np,
-              starters: define.starters,
-            },
-          extracts: pack,
-          knowledgeBase: knowledgeBase || undefined,
-          shapeIntent: shapeIntent || undefined,
-          prompt: define.instructions || undefined,
-        }, ctrl.signal)) {
-          if (ev.type === 'progress') setProgress(ev.message);
-          else if (ev.type === 'result') content = ev.content as Record<string, unknown>;
-          else if (ev.type === 'error') throw new Error(ev.message);
-          else if (ev.type === 'done') break;
-        }
-        if (!content) throw new Error(`No ${noun} was generated.`);
-        resultTitle = String((content as any).objective || (content as any).goal || title);
-        blocks = [{ id: `blk-${objectType}-${slot.id}`, type: objectType as any, content }];
-      } else if (V3_BLOCK_TYPES.has(objectType)) {
-        /*
-          The six Tutorial V3 block types. Their Define groups are already
-          shaped to the prompt — one intent field and a count — so `define`
-          goes through as the config rather than being re-mapped field by
-          field the way the older object types are.
-        */
-        let content: Record<string, unknown> | null = null;
-        for await (const ev of generateStructuredObject(objectType as StructuredObjectKind, {
-          title,
-          config: { ...define },
-          extracts: pack,
-          knowledgeBase: knowledgeBase || undefined,
-          shapeIntent: shapeIntent || undefined,
-          prompt: define.instructions || undefined,
-        }, ctrl.signal)) {
-          if (ev.type === 'progress') setProgress(ev.message);
-          else if (ev.type === 'result') content = ev.content as Record<string, unknown>;
-          else if (ev.type === 'error') throw new Error(ev.message);
-          else if (ev.type === 'done') break;
-        }
-        if (!content) throw new Error(`No ${noun} was generated.`);
-        resultTitle = String((content as any).title || define.what || title);
-        blocks = [{ id: `blk-${objectType}-${slot.id}`, type: objectType as Block['type'], content: content as unknown as Block['content'] }];
-      } else {
-        throw new Error(`Generate pipeline for “${objectType}” is not wired yet.`);
-      }
+      const { blocks, title: resultTitle } = await generateObjectBlocks({
+        objectType,
+        noun,
+        title,
+        define,
+        extracts: pack,
+        markupUnits: unitsFromKb(),
+        knowledgeBase,
+        shapeIntent,
+        slotId: slot.id,
+        signal: ctrl.signal,
+        onProgress: setProgress,
+      });
 
       const part = makeGeneratedEmbedPart({
         id: `embed-gen-${slot.id}`,

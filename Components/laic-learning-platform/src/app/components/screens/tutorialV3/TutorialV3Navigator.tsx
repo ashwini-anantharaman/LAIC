@@ -11,6 +11,7 @@ import {
   requiredSectionsRemaining,
 } from '../../../../lib/tutorialV3/draftModel';
 import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
+import { V3_NAVY, V3_SAGE } from '../../../../lib/tutorialV3/authorTheme';
 
 const STATUS_STYLE: Record<string, { bg: string; text: string; label: string }> = {
   not_started: { bg: '#F3F4F6', text: '#6B7280', label: 'Not started' },
@@ -33,6 +34,7 @@ export function TutorialV3Navigator({
   onOpenSlot,
   onDeleteSection,
   onReview,
+  onBatchGenerate,
   onBackToSources,
   onBackToStructure,
   onBackToPlan,
@@ -46,10 +48,25 @@ export function TutorialV3Navigator({
   /** Author can remove any section from the outline. */
   onDeleteSection?: (sectionId: string) => void;
   onReview: () => void;
+  /**
+   * Mark up once, generate several. Absent on the write-yourself path, where
+   * there is no AI step to batch.
+   */
+  onBatchGenerate?: (targets: { kind: 'section' | 'slot'; id: string }[]) => void;
   onBackToSources: () => void;
   onBackToStructure: () => void;
   onBackToPlan?: () => void;
 }) {
+  /**
+   * Which rows the author has ticked for a shared markup run. Kept here rather
+   * than in the draft: it is a choice about this one action, not part of the
+   * tutorial.
+   */
+  const [selected, setSelected] = React.useState<string[]>([]);
+  const toggleSelected = (id: string) => setSelected(
+    (prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]),
+  );
+
   const { done, total } = doneCount(draft.sections);
   const remaining = requiredSectionsRemaining(draft.sections);
   const slots = draft.topLevelSlots || [];
@@ -128,6 +145,65 @@ export function TutorialV3Navigator({
         )}
       </div>
 
+      {onBatchGenerate && (draft.sections.length + slots.filter((s) => s.kind === 'generate').length) > 1 && (
+        <div
+          className="flex items-center justify-between gap-3 flex-wrap rounded-2xl px-4 py-3 mb-4"
+          style={{
+            background: selected.length ? 'rgba(77,124,90,0.08)' : 'rgba(255,255,255,0.72)',
+            border: `1px solid ${selected.length ? V3_SAGE : 'rgba(0,0,0,0.06)'}`,
+          }}
+        >
+          <div className="min-w-0">
+            <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }}>
+              {selected.length
+                ? `${selected.length} selected`
+                : 'Generating several from the same sources?'}
+            </p>
+            <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2, lineHeight: 1.45 }}>
+              {selected.length
+                ? 'Mark up your sources once — every one selected is generated from that same markup.'
+                : 'Tick the ones that share a source, then mark up once instead of repeating it for each.'}
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            {selected.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setSelected([])}
+                className="px-3 py-1.5 rounded-full border"
+                style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', borderColor: 'rgba(0,0,0,0.12)', background: '#fff' }}
+              >
+                Clear
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setSelected([
+                ...slots.filter((s) => s.kind === 'generate').map((s) => s.id),
+                ...draft.sections.map((s) => s.id),
+              ])}
+              className="px-3 py-1.5 rounded-full border"
+              style={{ fontSize: 12, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.12)', background: '#fff' }}
+            >
+              Select all
+            </button>
+            <button
+              type="button"
+              disabled={!selected.length}
+              onClick={() => onBatchGenerate(selected.map((id) => ({
+                kind: draft.sections.some((sec) => sec.id === id) ? 'section' : 'slot',
+                id,
+              })))}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white disabled:opacity-40"
+              style={{ fontSize: 12.5, fontWeight: 650, background: V3_SAGE }}
+            >
+              <Sparkles size={13} />
+              Mark up once and generate
+            </button>
+          </div>
+        </div>
+      )}
+
       {(hasLibrarySlots || hasGenerateSlots) && (
         <div className="space-y-2 mb-4">
           <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase' }}>
@@ -138,6 +214,9 @@ export function TutorialV3Navigator({
               key={slot.id}
               slot={slot}
               onOpen={slot.kind === 'generate' ? () => onOpenSlot(slot.id) : undefined}
+              selectable={!!onBatchGenerate && slot.kind === 'generate'}
+              selected={selected.includes(slot.id)}
+              onToggleSelected={() => toggleSelected(slot.id)}
             />
           ))}
         </div>
@@ -151,6 +230,9 @@ export function TutorialV3Navigator({
             sec={sec}
             onOpen={() => onOpenSection(sec.id)}
             onDelete={onDeleteSection ? () => onDeleteSection(sec.id) : undefined}
+            selectable={!!onBatchGenerate}
+            selected={selected.includes(sec.id)}
+            onToggleSelected={() => toggleSelected(sec.id)}
           />
         ))}
         {!draft.sections.length && !slots.length && (
@@ -168,12 +250,42 @@ export function TutorialV3Navigator({
   );
 }
 
+
+/** The tick that puts a row into a shared markup run. */
+function SelectBox({ checked, onToggle, label }: { checked: boolean; onToggle: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={`Include ${label} in a shared markup run`}
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      className="shrink-0 flex items-center justify-center rounded-md self-center ml-3"
+      style={{
+        width: 20,
+        height: 20,
+        border: `1.5px solid ${checked ? V3_SAGE : 'rgba(0,0,0,0.2)'}`,
+        background: checked ? V3_SAGE : '#fff',
+        color: '#fff',
+      }}
+    >
+      {checked && <Check size={13} />}
+    </button>
+  );
+}
+
 function SlotRow({
   slot,
   onOpen,
+  selectable = false,
+  selected = false,
+  onToggleSelected,
 }: {
   slot: V3TopLevelSlot;
   onOpen?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelected?: () => void;
 }) {
   const label = slot.kind === 'library'
     ? (slot.libraryTitle || embedTypeLabel(String(slot.objectType)))
@@ -221,18 +333,25 @@ function SlotRow({
 
   if (clickable) {
     return (
-      <button
-        type="button"
-        onClick={onOpen}
-        className="w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left transition-colors hover:bg-white"
+      <div
+        className="flex items-stretch rounded-2xl"
         style={{
           background: slot.done ? 'rgba(77,124,90,0.06)' : 'rgba(255,255,255,0.72)',
-          border: '1px solid rgba(0,0,0,0.06)',
+          border: `1px solid ${selected ? V3_SAGE : 'rgba(0,0,0,0.06)'}`,
           boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
         }}
       >
-        {inner}
-      </button>
+        {selectable && onToggleSelected && (
+          <SelectBox checked={selected} onToggle={onToggleSelected} label={label} />
+        )}
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex-1 min-w-0 flex items-center gap-3 px-4 py-3.5 rounded-2xl text-left"
+        >
+          {inner}
+        </button>
+      </div>
     );
   }
 
@@ -254,11 +373,17 @@ function SectionRow({
   sec,
   onOpen,
   onDelete,
+  selectable = false,
+  selected = false,
+  onToggleSelected,
 }: {
   index: number;
   sec: V3Section;
   onOpen: () => void;
   onDelete?: () => void;
+  selectable?: boolean;
+  selected?: boolean;
+  onToggleSelected?: () => void;
 }) {
   const status = deriveSectionStatus(sec);
   const style = STATUS_STYLE[status];
@@ -269,10 +394,13 @@ function SectionRow({
       className="flex items-stretch gap-1 rounded-2xl"
       style={{
         background: 'rgba(255,255,255,0.72)',
-        border: '1px solid rgba(0,0,0,0.06)',
+        border: `1px solid ${selected ? V3_SAGE : 'rgba(0,0,0,0.06)'}`,
         boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
       }}
     >
+      {selectable && onToggleSelected && (
+        <SelectBox checked={selected} onToggle={onToggleSelected} label={sec.title} />
+      )}
       <button
         type="button"
         onClick={onOpen}

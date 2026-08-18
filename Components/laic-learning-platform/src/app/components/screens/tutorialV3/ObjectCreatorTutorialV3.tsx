@@ -68,6 +68,7 @@ import {
 import type { TutorialV3Draft, TutorialV3Phase, V3SourceRef } from '../../../../lib/tutorialV3/types';
 import { TutorialV3StructurePanel } from './TutorialV3StructurePanel';
 import { TutorialV3Navigator } from './TutorialV3Navigator';
+import { TutorialV3BatchGenerate } from './TutorialV3BatchGenerate';
 import { TutorialV3SectionWorkspace } from './TutorialV3SectionWorkspace';
 import {
   TutorialV3SourcePanel,
@@ -795,6 +796,11 @@ export function ObjectCreatorTutorialV3() {
 
   const activeSection = draft.sections.find((s) => s.id === draft.activeSectionId) || null;
   const activeSlot = (draft.topLevelSlots || []).find((s) => s.id === draft.activeSlotId && s.kind === 'generate') || null;
+  /**
+   * A shared markup run, held in React rather than in the draft: it is a choice
+   * about one action, and abandoning it should leave nothing behind.
+   */
+  const [batchSelection, setBatchSelection] = useState<{ kind: 'section' | 'slot'; id: string }[] | null>(null);
 
   // Write-yourself never uses the Sources step.
   useEffect(() => {
@@ -1441,6 +1447,42 @@ export function ObjectCreatorTutorialV3() {
     );
   }
 
+  /* ── C2. Shared markup run ────────────────────────────────── */
+  if (batchSelection && batchSelection.length) {
+    return (
+      <Shell
+        onBack={() => setBatchSelection(null)}
+        onSave={saveDraft}
+        title={draft.title || 'Tutorial V3'}
+        subtitle="Mark up once, generate several"
+        rail={pipelineRail}
+        assistant={globalHoot}
+      >
+        <TutorialV3BatchGenerate
+          draft={draft}
+          selection={batchSelection}
+          onBack={() => setBatchSelection(null)}
+          onSectionDone={(sectionId, patch) => {
+            // Commit each target as it lands, so a stopped run keeps whatever
+            // already finished rather than throwing the batch away.
+            setDraft((d) => {
+              const next = updateSection(d, sectionId, patch);
+              persist(next);
+              return next;
+            });
+          }}
+          onSlotDone={(slotId, patch) => {
+            setDraft((d) => {
+              const next = updateTopLevelSlot(d, slotId, patch);
+              persist(next);
+              return next;
+            });
+          }}
+        />
+      </Shell>
+    );
+  }
+
   /* ── D. Navigator (default) ───────────────────────────────── */
   return (
     <Shell
@@ -1460,6 +1502,7 @@ export function ObjectCreatorTutorialV3() {
         onOpenSlot={(slotId) => {
           commit(touchDraft(draft, { phase: 'slot', activeSlotId: slotId, activeSectionId: null }), 'slot');
         }}
+        onBatchGenerate={writeYourself ? undefined : (sel) => setBatchSelection(sel)}
         onDeleteSection={(sectionId) => {
           void (async () => {
             const sec = draft.sections.find((s) => s.id === sectionId);
