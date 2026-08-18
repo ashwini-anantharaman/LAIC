@@ -830,6 +830,8 @@ export function ObjectCreatorTutorialV3() {
    * about one action, and abandoning it should leave nothing behind.
    */
   const [batchSelection, setBatchSelection] = useState<{ kind: 'section' | 'slot'; id: string }[] | null>(null);
+  /** Whether that run skips the markup step and reads the sources whole. */
+  const [batchNoMarkup, setBatchNoMarkup] = useState(false);
   /**
    * Deliberately asking for a new proposal. Without this, revisiting Structure
    * on the source-first path always reopened the proposal screen and there was
@@ -1146,7 +1148,7 @@ export function ObjectCreatorTutorialV3() {
             className="w-full py-3.5 rounded-full text-white disabled:opacity-40"
             style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
-            {sourceFirst ? 'Save and continue to sources' : 'Save and continue to structure'}
+            {sourceFirst ? 'Continue to sources' : 'Continue to structure'}
           </button>
         </div>
       </Shell>
@@ -1203,10 +1205,10 @@ export function ObjectCreatorTutorialV3() {
     const slots = writeYourself ? [] : (draft.topLevelSlots || []);
     const ready = structureIsReady(analysis, slots, sectionTitles, { writeYourself, freeform });
     const continueLabel = writeYourself
-      ? 'Save and continue to author'
+      ? 'Continue to author'
       : analysis.needsSources
-        ? 'Save and continue to sources'
-        : 'Save and continue';
+        ? 'Continue to sources'
+        : 'Continue';
 
     return (
       <Shell
@@ -1479,8 +1481,8 @@ export function ObjectCreatorTutorialV3() {
             style={{ fontSize: 15, fontWeight: 700, background: V3_SAGE }}
           >
             {sourceFirst
-              ? 'Save and propose a structure'
-              : hasAnySource ? 'Save and continue to author' : 'Skip sources and continue'}
+              ? 'Continue to structure'
+              : hasAnySource ? 'Continue to author' : 'Skip sources and continue'}
           </button>
         </div>
       </div>
@@ -1639,13 +1641,14 @@ export function ObjectCreatorTutorialV3() {
         onBack={() => setBatchSelection(null)}
         onSave={saveDraft}
         title={draft.title || 'Tutorial V3'}
-        subtitle="Mark up once, generate several"
+        subtitle={batchNoMarkup ? 'Generated from your sources, no markup' : 'Mark up once, generate several'}
         rail={pipelineRail}
         assistant={globalHoot}
       >
         <TutorialV3BatchGenerate
           draft={draft}
           selection={batchSelection}
+          noMarkup={batchNoMarkup}
           onBack={() => setBatchSelection(null)}
           onSectionDone={(sectionId, patch) => {
             // Commit each target as it lands, so a stopped run keeps whatever
@@ -1687,7 +1690,10 @@ export function ObjectCreatorTutorialV3() {
         onOpenSlot={(slotId) => {
           commit(touchDraft(draft, { phase: 'slot', activeSlotId: slotId, activeSectionId: null }), 'slot');
         }}
-        onBatchGenerate={writeYourself ? undefined : (sel) => setBatchSelection(sel)}
+        onBatchGenerate={writeYourself ? undefined : (sel, opts) => {
+          setBatchNoMarkup(!!opts?.noMarkup);
+          setBatchSelection(sel);
+        }}
         onReorderSections={(orderedIds) => {
           // Reordering the outline reorders the learner's pages too, so the page
           // stamps are renumbered to match rather than left pointing at the old

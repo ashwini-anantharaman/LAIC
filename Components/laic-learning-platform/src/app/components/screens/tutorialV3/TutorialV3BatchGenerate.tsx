@@ -15,6 +15,7 @@ import React, { useMemo, useRef, useState } from 'react';
 import { AlertTriangle, ArrowLeft, Check, Loader2, Sparkles } from 'lucide-react';
 import { MarkupWorkspace, type MarkupSource } from '../MarkupWorkspace';
 import { sourcePoolToMarkupSources } from '../../../../lib/tutorialV3/draftModel';
+import { unitsFromSourcePool } from '../../../../lib/tutorialV3/sourceFirst';
 import { getTutorialTemplate } from '../../../../lib/tutorialV3/tutorialTemplates';
 import { embedTypeLabel } from '../../../../lib/tutorialV3/recipeStructure';
 import {
@@ -33,9 +34,16 @@ export function TutorialV3BatchGenerate({
   onBack,
   onSectionDone,
   onSlotDone,
+  noMarkup = false,
 }: {
   draft: TutorialV3Draft;
   selection: { kind: 'section' | 'slot'; id: string }[];
+  /**
+   * Skip the markup step: the model reads the picked sources whole and decides
+   * what matters. Marking up is how an author says which passages count, so
+   * when they have chosen not to, everything counts.
+   */
+  noMarkup?: boolean;
   onBack: () => void;
   onSectionDone: (sectionId: string, patch: Partial<V3Section>) => void;
   onSlotDone: (slotId: string, patch: Partial<V3TopLevelSlot>) => void;
@@ -83,6 +91,10 @@ export function TutorialV3BatchGenerate({
   );
 
   const usable = highlights.filter((h) => h.tag === 'Use' || h.tag === 'Support' || !h.tag).length;
+  const poolUnits = useMemo(
+    () => (noMarkup ? unitsFromSourcePool(pool, picked) : []),
+    [noMarkup, pool, picked],
+  );
 
   /** `only` re-runs a subset rather than the whole set. */
   const start = async (only?: BatchTarget[]) => {
@@ -103,7 +115,9 @@ export function TutorialV3BatchGenerate({
         draft,
         template,
         targets: batch,
-        markup: { pickedSourceIds: picked, highlights, markupFlags },
+        markup: noMarkup
+          ? { pickedSourceIds: picked, highlights: [], units: poolUnits }
+          : { pickedSourceIds: picked, highlights, markupFlags },
         signal: ctrl.signal,
         onOutcome: (o) => setOutcomes((prev) => ({ ...prev, [o.target.id]: o })),
         onSectionDone,
@@ -140,11 +154,16 @@ export function TutorialV3BatchGenerate({
         <p style={{ fontSize: 12.5, color: '#44403c', marginTop: 3, lineHeight: 1.5 }}>
           {targets.map((t) => t.title).join(' · ')}
         </p>
+        <p style={{ fontSize: 12, color: '#57534e', marginTop: 6, lineHeight: 1.5 }}>
+          {noMarkup
+            ? 'No markup step — the model reads the picked sources whole and decides what matters. Anything you did not select stays yours to author.'
+            : 'One markup pass, applied to every one of them.'}
+        </p>
       </div>
 
       {/* Step rail */}
       <div className="flex flex-wrap gap-2 mb-4">
-        {(['pick', 'markup', 'run'] as Step[]).map((s, i) => (
+        {(noMarkup ? (['pick', 'run'] as Step[]) : (['pick', 'markup', 'run'] as Step[])).map((s, i) => (
           <button
             key={s}
             type="button"
@@ -196,12 +215,13 @@ export function TutorialV3BatchGenerate({
           ))}
           <button
             type="button"
-            disabled={!picked.length && !!pool.length}
-            onClick={() => setStep('markup')}
-            className="mt-3 px-4 py-2 rounded-full text-white disabled:opacity-40"
+            disabled={(!picked.length && !!pool.length) || (noMarkup && !poolUnits.length)}
+            onClick={() => (noMarkup ? void start() : setStep('markup'))}
+            className="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white disabled:opacity-40"
             style={{ fontSize: 13, fontWeight: 650, background: V3_SAGE }}
           >
-            Continue to mark up
+            {noMarkup ? <Sparkles size={14} /> : null}
+            {noMarkup ? `Generate all ${targets.length} from these sources` : 'Continue to mark up'}
           </button>
         </div>
       )}

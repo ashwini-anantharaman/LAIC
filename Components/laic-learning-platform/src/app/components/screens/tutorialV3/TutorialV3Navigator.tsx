@@ -71,7 +71,10 @@ export function TutorialV3Navigator({
    * Mark up once, generate several. Absent on the write-yourself path, where
    * there is no AI step to batch.
    */
-  onBatchGenerate?: (targets: { kind: 'section' | 'slot'; id: string }[]) => void;
+  onBatchGenerate?: (
+    targets: { kind: 'section' | 'slot'; id: string }[],
+    opts?: { noMarkup?: boolean },
+  ) => void;
   /** Reorder the outline. Absent when the caller has no way to persist it. */
   onReorderSections?: (orderedIds: string[]) => void;
   /** Remove a generate slot, the way a section can already be removed. */
@@ -86,6 +89,11 @@ export function TutorialV3Navigator({
    * tutorial.
    */
   const [selected, setSelected] = React.useState<string[]>([]);
+  /** Ticked ids, resolved to what each one actually is. */
+  const asTargets = (ids: string[]) => ids.map((id) => ({
+    kind: (draft.sections.some((sec) => sec.id === id) ? 'section' : 'slot') as 'section' | 'slot',
+    id,
+  }));
   const toggleSelected = (id: string) => setSelected(
     (prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]),
   );
@@ -198,8 +206,8 @@ export function TutorialV3Navigator({
             </p>
             <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2, lineHeight: 1.45 }}>
               {selected.length
-                ? 'Mark up your sources once — every one selected is generated from that same markup.'
-                : 'Tick the ones that share a source, then mark up once instead of repeating it for each.'}
+                ? 'Mark up once and every one selected is generated from that markup — or let the model read the sources whole and decide what matters.'
+                : 'Tick the ones that share a source, then generate them together instead of one at a time.'}
             </p>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -227,15 +235,22 @@ export function TutorialV3Navigator({
             <button
               type="button"
               disabled={!selected.length}
-              onClick={() => onBatchGenerate(selected.map((id) => ({
-                kind: draft.sections.some((sec) => sec.id === id) ? 'section' : 'slot',
-                id,
-              })))}
+              onClick={() => onBatchGenerate(asTargets(selected))}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border disabled:opacity-40"
+              style={{ fontSize: 12.5, fontWeight: 650, color: '#2f4e39', borderColor: V3_SAGE, background: '#fff' }}
+            >
+              Mark up once and generate
+            </button>
+            <button
+              type="button"
+              disabled={!selected.length}
+              onClick={() => onBatchGenerate(asTargets(selected), { noMarkup: true })}
+              title="No markup step — the model reads the whole source and decides what matters"
               className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white disabled:opacity-40"
               style={{ fontSize: 12.5, fontWeight: 650, background: V3_SAGE }}
             >
               <Sparkles size={13} />
-              Mark up once and generate
+              Generate based on what AI recommends
             </button>
           </div>
         </div>
