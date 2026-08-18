@@ -1,40 +1,22 @@
-// Learn — the club's published library, as the Figma list (906:493).
-//
-// Two shapes, one dataset. The LIST is the default: a stack of full-width bars,
-// maroon and green alternating, each carrying a title and — when the author
-// wrote one — the object's description underneath. The DECKS are the earlier
-// treatment, horizontal shelves of playing cards, kept behind the grid button in
-// the header rather than deleted; the button is the design's, and switching view
-// is the one thing it can honestly do.
+// Learn — horizontal decks of playing cards, one deck per KIND of content
+// (Figma 476:663 for the card and deck treatment).
 //
 // Everything here is real: the published learning objects of the club being
-// viewed, opening the platform's reader on tap. Sections are collapsible, and
-// every published type reaches some section — nothing published is unreachable,
-// which is the rule this screen kept breaking (a status filter and a type filter
-// each hid most of the library at different times).
+// viewed, dealt as cards and opening the platform's reader on tap. The shelves are
+// Concepts, Flashcards, Tutorials, Quizzes in that order, and then a shelf for any
+// other type that actually has content — nothing published is unreachable, which
+// is the rule this screen kept breaking (a status filter and a type filter each
+// hid most of the library at different times).
 //
-// "Browse Lessons" is the design's name for the tutorials section. An earlier
-// version of this screen had a Browse Lessons shelf with three hardcoded titles
-// and no data behind it; that is not what this is. The heading is the design's,
-// the rows underneath are the club's actual tutorials.
+// A "Browse Lessons" shelf used to sit at the bottom with three hardcoded
+// titles. It is gone: the API has no lessons or courses, and nothing on screen
+// admitted the content was invented.
 
 import { router, useFocusEffect } from "expo-router";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import {
-  ActivityIndicator,
-  AppState,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
-import { SvgXml } from "react-native-svg";
-import { Ionicons } from "@expo/vector-icons";
+import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { BrandChrome } from "../../../components/brand-chrome";
-import { tintSvg } from "../../../components/svg-tint";
-import { ICON_GRID, ICON_HOME } from "../../../constants/brand-vectors";
 import { CARD, PlayingCard } from "../../../components/playing-card";
 import { PrimaryButton } from "../../../components/ui";
 import { TabLoading } from "../../../components/tab-loading";
@@ -65,17 +47,14 @@ import { LearningObject, NexusError } from "../../../lib/nexus";
  * rule is that every published object lands on some shelf.
  */
 const SECTIONS: { heading: string; types: string[] }[] = [
-  { heading: "Concept Cards", types: ["concept-card"] },
-  // The design calls the tutorials section "Browse Lessons" — a tutorial is what
-  // a learner would call a lesson, and there is no separate lesson type.
-  { heading: "Browse Lessons", types: ["tutorial-v3", "tutorial-v2", "tutorial"] },
+  { heading: "Concepts", types: ["concept-card"] },
   { heading: "Flashcards", types: ["flashcard-set"] },
+  { heading: "Tutorials", types: ["tutorial-v2", "tutorial"] },
   { heading: "Quizzes", types: ["quiz"] },
 ];
 
 /** The Studio's type ids, as a learner would read them. */
 const TYPE_LABELS: Record<string, string> = {
-  "tutorial-v3": "Tutorial",
   "tutorial-v2": "Tutorial",
   tutorial: "Tutorial",
   quiz: "Quiz",
@@ -94,86 +73,8 @@ function typeLabel(type: string): string {
   return TYPE_LABELS[type] ?? type;
 }
 
-/**
- * A collapsible section heading — the chevron is the whole control, so the
- * heading itself is the tap target rather than a small glyph beside it.
- */
-function SectionHeading({
-  children,
-  open,
-  onToggle,
-}: {
-  children: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onToggle}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: open }}
-      accessibilityLabel={`${children}, ${open ? "collapse" : "expand"}`}
-      style={styles.sectionHeadingRow}
-    >
-      <Text style={styles.sectionHeading}>{children}</Text>
-      <Ionicons name={open ? "chevron-up" : "chevron-down"} size={22} color={Brand.ink} />
-    </Pressable>
-  );
-}
-
-/**
- * The bars are near-square in the design. A little rounding keeps them in the
- * same family as everything else in the app without contradicting it.
- */
-const ROW_RADIUS = 6;
-
-/** The row's house glyph, tinted once rather than on every render. */
-const ROW_GLYPH = tintSvg(ICON_HOME, "#c0392f");
-const HEADER_GRID = ICON_GRID;
-
-/**
- * One row of the list.
- *
- * Maroon and green alternate down a section, which is where the colour comes
- * from — it carries position, not meaning, so nothing is lost on a row that has
- * no description. The description is the author's own: it is what the Studio's
- * `description` field is for, and it is the only place in this app where that
- * text is shown.
- */
-function LessonRow({
-  title,
-  description,
-  index,
-  onPress,
-}: {
-  title: string;
-  description?: string;
-  index: number;
-  onPress: () => void;
-}) {
-  const green = index % 2 === 1;
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={description ? `${title}. ${description}` : title}
-      style={({ pressed }) => [
-        styles.row,
-        { backgroundColor: green ? Brand.green : Brand.maroon },
-        pressed && styles.rowPressed,
-      ]}
-    >
-      <View style={styles.rowText}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        {description ? (
-          <Text style={styles.rowDescription} numberOfLines={2}>
-            {description}
-          </Text>
-        ) : null}
-      </View>
-      <SvgXml xml={ROW_GLYPH} width={22} height={24} />
-    </Pressable>
-  );
+function SectionHeading({ children }: { children: string }) {
+  return <Text style={styles.sectionHeading}>{children}</Text>;
 }
 
 /** One horizontally scrolling deck. */
@@ -201,10 +102,6 @@ export default function LearnScreen() {
   const clubId = useSelectedClubId();
   const [cards, setCards] = useState<LearningObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  /** The grid button switches between the list and the earlier card decks. */
-  const [asDecks, setAsDecks] = useState(false);
-  /** Only closed sections are tracked, so a new section arrives open. */
-  const [closed, setClosed] = useState<Record<string, true>>({});
 
   const load = useCallback(
     async (refresh = false) => {
@@ -311,17 +208,7 @@ export default function LearnScreen() {
   return (
     <BrandChrome>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        <View style={styles.titleRow}>
-          <Text style={styles.title}>Learn</Text>
-          <Pressable
-            onPress={() => setAsDecks((v) => !v)}
-            accessibilityRole="button"
-            accessibilityLabel={asDecks ? "Show as a list" : "Show as decks of cards"}
-            hitSlop={12}
-          >
-            <SvgXml xml={HEADER_GRID} width={24} height={24} />
-          </Pressable>
-        </View>
+        <Text style={styles.title}>Learn</Text>
 
         {!cards && !error && (
           <View style={styles.state}>
@@ -351,62 +238,30 @@ export default function LearnScreen() {
             over no cards reads as a fault rather than as an absence. */}
         {cards &&
           !error &&
-          shelves.map((shelf) => {
-            const open = !closed[shelf.heading];
-            return (
-              <View key={shelf.heading}>
-                <SectionHeading
-                  open={open}
-                  onToggle={() =>
-                    setClosed((prev) => {
-                      const next = { ...prev };
-                      if (next[shelf.heading]) delete next[shelf.heading];
-                      else next[shelf.heading] = true;
-                      return next;
-                    })
-                  }
-                >
-                  {shelf.heading}
-                </SectionHeading>
-
-                {open && !asDecks && (
-                  <View style={styles.rows}>
-                    {shelf.items.map((item, i) => (
-                      <LessonRow
-                        key={item.id}
-                        index={i}
-                        title={item.title}
-                        description={item.description ?? undefined}
-                        onPress={() => router.push(`/learn-object/${item.id}`)}
-                      />
-                    ))}
-                  </View>
-                )}
-
-                {open && asDecks && (
-                  <Deck>
-                    {shelf.items.map((item, i) => (
-                      <PlayingCard
-                        key={item.id}
-                        index={i}
-                        title={item.title}
-                        body={item.description ?? undefined}
-                        // The shelf already says what kind of thing this is, so the
-                        // footer carries the time instead — and falls back to the type
-                        // only when no time is recorded, so it is never blank.
-                        footer={
-                          <Text style={styles.cardFooter}>
-                            {item.estimated_time || typeLabel(item.type)}
-                          </Text>
-                        }
-                        onPress={() => router.push(`/learn-object/${item.id}`)}
-                      />
-                    ))}
-                  </Deck>
-                )}
-              </View>
-            );
-          })}
+          shelves.map((shelf) => (
+            <View key={shelf.heading}>
+              <SectionHeading>{shelf.heading}</SectionHeading>
+              <Deck>
+                {shelf.items.map((item, i) => (
+                  <PlayingCard
+                    key={item.id}
+                    index={i}
+                    title={item.title}
+                    body={item.description ?? undefined}
+                    // The shelf already says what kind of thing this is, so the
+                    // footer carries the time instead — and falls back to the type
+                    // only when no time is recorded, so it is never blank.
+                    footer={
+                      <Text style={styles.cardFooter}>
+                        {item.estimated_time || typeLabel(item.type)}
+                      </Text>
+                    }
+                    onPress={() => router.push(`/learn-object/${item.id}`)}
+                  />
+                ))}
+              </Deck>
+            </View>
+          ))}
 
       </ScrollView>
 
@@ -421,58 +276,18 @@ const styles = StyleSheet.create({
   // The bar's clearance plus a little air: with several shelves the last deck ends
   // near the bottom, and the sheets set the same precedent (CLEARANCE + n).
   page: { paddingBottom: TAB_BAR_CLEARANCE + 24 },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: Spacing.screen,
-  },
   title: {
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,
     color: Brand.ink,
-  },
-  sectionHeadingRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
     paddingHorizontal: Spacing.screen,
-    paddingTop: 28,
-    paddingBottom: 4,
   },
   sectionHeading: {
     fontFamily: Fonts.heading,
     fontSize: Type.sectionHeading,
     color: Brand.ink,
-  },
-  rows: {
     paddingHorizontal: Spacing.screen,
-    gap: 10,
-    paddingTop: 10,
-  },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    // 15pt of inset and 9pt between the two lines are the design's own numbers.
-    paddingHorizontal: 15,
-    paddingVertical: 14,
-    gap: 14,
-    borderRadius: ROW_RADIUS,
-  },
-  // Pressed state is a dim rather than a colour: the row's colour already
-  // carries its position in the list, and swapping it would read as a move.
-  rowPressed: { opacity: 0.82 },
-  rowText: { flex: 1, gap: 9 },
-  rowTitle: {
-    fontFamily: Fonts.heading,
-    fontSize: Type.sectionHeading,
-    color: Brand.cream,
-  },
-  rowDescription: {
-    fontFamily: Fonts.body,
-    fontSize: Type.fieldLabel,
-    lineHeight: 21,
-    color: Brand.cream,
+    paddingTop: 28,
   },
   deck: {
     paddingHorizontal: Spacing.screen,
