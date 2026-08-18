@@ -4108,6 +4108,9 @@ function buildLessonOverviewPrompt(body) {
     'You write the FRONT COVER of one lesson as STRUCTURED JSON.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define (what the lesson teaches, audience) and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"intro":string,"objectives":string[],"coreIdea":string,"coreRule":string}',
     `Exactly ${nobj} objectives. Each is one line, learner-facing, and names something the learner will be able to DO — not a topic heading.`,
     'coreIdea is the single idea the whole lesson turns on, two or three sentences.',
@@ -4155,6 +4158,9 @@ function buildLessonCompletePrompt(body) {
     'You write the BACK COVER of one lesson as STRUCTURED JSON.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define (what the lesson taught) and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"heading":string,"subheading":string,"checklist":string[],"whatNext":string}',
     'heading congratulates without gushing and names what was understood, not that the lesson ended.',
     `checklist has exactly ${nchk} entries, each written in the learner's own voice and starting "I can" or "I know".`,
@@ -4206,6 +4212,9 @@ function buildReferenceTablePrompt(body) {
     'You build ONE reference table as STRUCTURED JSON — the key a learner reads against.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"label":string,"title":string,"columns":string[],"rows":string[][],"caption":string}',
     'Two or three columns. The FIRST column is the key being looked up — short, and the same kind of thing on every row.',
     'Every row must have exactly as many cells as there are columns.',
@@ -4266,6 +4275,9 @@ function buildQuickDecisionsPrompt(body) {
     'You write a QUICK DECISIONS drill as STRUCTURED JSON.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"label":string,"title":string,"intro":string,"decisions":[{"label":string,"tag":string,"prompt":string,"answer":string,"explanation":string}],"closing":string}',
     'This is NOT a quiz. There are no options and nothing is marked. The learner decides privately, then reveals.',
     `Exactly ${nd} decisions.`,
@@ -4344,6 +4356,9 @@ function buildMatchingPrompt(body) {
     'You write a MATCHING exercise as STRUCTURED JSON.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"label":string,"title":string,"intro":string,"reference":{"columns":string[],"rows":string[][]},"prompt":string,"options":string[],"cards":[{"label":string,"lines":string[],"correct":string,"explanation":string}],"closing":string}',
     `Exactly ${nc} cards and ${nc} options — a one-to-one matching, every option used exactly once.`,
     'Every card\'s "correct" MUST be one of the strings in "options", character for character.',
@@ -4419,6 +4434,9 @@ function buildOpeningQuestionPrompt(body) {
     'You write ONE positional question as STRUCTURED JSON — a hand, the auction so far, and the call to find.',
     groundingFromExtracts(extracts, 'No marked-up units — build from Define and the author prompt.'),
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"label":string,"title":string,"context":string,"hand":[{"suit":string,"cards":string}],"auction":[{"seat":string,"bid":string}],"prompt":string,"options":string[],"correct":number,"feedback":string,"keyIdea":string}',
     'hand has one entry per suit in the order ♠ ♥ ♦ ♣. "suit" is the glyph alone; "cards" are the ranks separated by single spaces, e.g. "K 8 6 3". Use an empty string for a void.',
     'auction runs in seat order and ends with the seat to speak, whose "bid" is exactly "?".',
@@ -4518,6 +4536,9 @@ function buildProposePrompt(body) {
   const system = [
     'You design ONE tutorial from source material and return STRUCTURED JSON.',
     'Output ONLY a JSON object. No prose, no markdown fences.',
+    // A raw double quote inside a value is the one malformation no repair
+    // pass can recover from, so it is ruled out up front.
+    'Do not use double-quote characters inside string values. Use single quotes if you need to quote.',
     'Shape: {"title":string,"objective":string,"rationale":string,"openers":string[],"sections":[{"title":string,"intent":string,"blocks":string[],"objects":string[]}],"closers":string[]}',
     `At most ${maxSecs} sections. Each teaches ONE thing and is named for what the learner will be able to do.`,
     `"blocks" are prose blocks, chosen from: ${PROPOSE_ATOMIC.join(', ')}.`,
@@ -4574,12 +4595,58 @@ async function generateStructuredObject(kind, body) {
   // Drills, matchings and quick decisions carry several complete items in one
   // response; the rest are a single object and 4096 is ample.
   const roomy = kind === 'drill' || kind === 'matching' || kind === 'quick-decisions';
-  const raw = await callAnthropic({ system, user, maxTokens: roomy ? 8192 : 4096 });
-  const parsed = extractJson(raw);
-  const obj = Array.isArray(parsed) ? parsed[0] : parsed;
-  const content = normalize(obj, {}, body?.config || {});
-  if (!content) throw new LlmError(502, 'llm_parse', `The model did not return a usable ${kind}.`);
-  return content;
+  const maxTokens = roomy ? 8192 : 4096;
+
+  /*
+    One retry, then give up with evidence.
+
+    A single object that comes back unparseable is usually a one-off — a stray
+    sentence before the brace, a fence the stripper did not expect. The error
+    text told the author to "generate again", which is the retry, so the server
+    may as well do it. Asking twice and failing is a real failure; asking once
+    and failing was mostly noise.
+
+    When it does fail, the message carries the start of what actually came back.
+    A parse error with nothing to look at is unactionable — the author cannot
+    tell a refusal from a truncation from a fence, and neither could I.
+  */
+  let lastRaw = '';
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const sys = attempt === 0
+      ? system
+      : [
+        system,
+        '',
+        'Your previous reply could not be parsed as JSON. Return ONLY the JSON object:',
+        'no explanation before or after it, no markdown fences, and no trailing commas.',
+      ].join('\n');
+    lastRaw = await callAnthropic({ system: sys, user, maxTokens });
+    let obj;
+    try {
+      const parsed = extractJson(lastRaw);
+      obj = Array.isArray(parsed) ? parsed[0] : parsed;
+    } catch (err) {
+      if (attempt === 0) continue;
+      const head = String(lastRaw || '').trim().slice(0, 160).replace(/\s+/g, ' ');
+      throw new LlmError(
+        502,
+        'llm_parse',
+        head
+          ? `The model did not return JSON for the ${kind}. It began: “${head}…”`
+          : `The model returned nothing for the ${kind}.`,
+      );
+    }
+    const content = normalize(obj, {}, body?.config || {});
+    if (content) return content;
+    if (attempt === 1) {
+      throw new LlmError(
+        502,
+        'llm_parse',
+        `The model returned JSON for the ${kind} but it was missing required fields.`,
+      );
+    }
+  }
+  throw new LlmError(502, 'llm_parse', `Could not generate the ${kind}.`);
 }
 
 function buildItemEditPrompt(kind, item, instruction) {

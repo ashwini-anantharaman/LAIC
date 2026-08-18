@@ -69,18 +69,25 @@ export function TutorialV3SourceFirstAuthor({
   const [outcomes, setOutcomes] = useState<Record<string, BatchOutcome>>({});
   const abortRef = useRef<AbortController | null>(null);
 
-  const run = async () => {
+  /** `only` re-runs a subset — what "try the failed ones again" actually means. */
+  const run = async (only?: BatchTarget[]) => {
+    const batch = only?.length ? only : targets;
     setStarted(true);
     setBusy(true);
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setOutcomes(Object.fromEntries(targets.map((t) => [t.id, { target: t, status: 'pending' as const }])));
+    // Only the rows being run are reset; anything already generated keeps its
+    // result so a retry does not make finished work look pending again.
+    setOutcomes((prev) => ({
+      ...prev,
+      ...Object.fromEntries(batch.map((t) => [t.id, { target: t, status: 'pending' as const }])),
+    }));
     try {
       await runBatchGenerate({
         draft,
         template,
-        targets,
+        targets: batch,
         markup: { pickedSourceIds, highlights: [], units },
         signal: ctrl.signal,
         onOutcome: (o) => setOutcomes((prev) => ({ ...prev, [o.target.id]: o })),
@@ -183,7 +190,9 @@ export function TutorialV3SourceFirstAuthor({
             {finished && failed > 0 && (
               <button
                 type="button"
-                onClick={() => void run()}
+                onClick={() => void run(
+                  Object.values(outcomes).filter((o) => o.status === 'failed').map((o) => o.target),
+                )}
                 className="px-4 py-2.5 rounded-full border"
                 style={{ fontSize: 13, fontWeight: 650, color: '#44403c', borderColor: 'rgba(0,0,0,0.12)', background: '#fff' }}
               >

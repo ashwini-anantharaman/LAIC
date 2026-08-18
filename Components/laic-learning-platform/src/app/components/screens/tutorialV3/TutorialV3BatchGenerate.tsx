@@ -84,18 +84,25 @@ export function TutorialV3BatchGenerate({
 
   const usable = highlights.filter((h) => h.tag === 'Use' || h.tag === 'Support' || !h.tag).length;
 
-  const start = async () => {
+  /** `only` re-runs a subset rather than the whole set. */
+  const start = async (only?: BatchTarget[]) => {
+    const batch = only?.length ? only : targets;
     setStep('run');
     setBusy(true);
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
-    setOutcomes(Object.fromEntries(targets.map((t) => [t.id, { target: t, status: 'pending' as const }])));
+    // Only the rows being run are reset; anything already generated keeps its
+    // result so a retry does not make finished work look pending again.
+    setOutcomes((prev) => ({
+      ...prev,
+      ...Object.fromEntries(batch.map((t) => [t.id, { target: t, status: 'pending' as const }])),
+    }));
     try {
       await runBatchGenerate({
         draft,
         template,
-        targets,
+        targets: batch,
         markup: { pickedSourceIds: picked, highlights, markupFlags },
         signal: ctrl.signal,
         onOutcome: (o) => setOutcomes((prev) => ({ ...prev, [o.target.id]: o })),
