@@ -91,6 +91,7 @@ export function CreateChallenge({
   initialDraft,
   draftEntryId,
   canAdvanced,
+  advancedSections,
   benOffered,
 }: Readonly<{
   people: ChallengePerson[];
@@ -104,6 +105,12 @@ export function CreateChallenge({
   draftEntryId?: string;
   /** May this creator open the multi-step form behind Quick create? */
   canAdvanced: boolean;
+  /**
+   * Which advanced SECTIONS this creator gets (challenge.advanced.* keys). A
+   * denied section does not render and its step drops out of the path — the
+   * challenge simply takes that section's defaults.
+   */
+  advancedSections: { engine: boolean; boards: boolean; controls: boolean };
   /** Is BEN reachable from this server? Without it there is no engine choice. */
   benOffered: boolean;
 }>) {
@@ -175,9 +182,16 @@ export function CreateChallenge({
       sections.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" }),
     );
   };
-  const stepAt = STEPS.findIndex((x) => x.key === step);
-  const prevStep = stepAt > 0 ? STEPS[stepAt - 1] : null;
-  const nextStep = stepAt >= 0 && stepAt < STEPS.length - 1 ? STEPS[stepAt + 1] : null;
+  // The PATH through the form is only the granted steps: a gated step is not
+  // greyed out, it is gone — chips, Back/Next and "Step N of M" all agree.
+  const steps = STEPS.filter(
+    (x) =>
+      (x.key !== "boards" || advancedSections.boards) &&
+      (x.key !== "controls" || advancedSections.controls),
+  );
+  const stepAt = steps.findIndex((x) => x.key === step);
+  const prevStep = stepAt > 0 ? steps[stepAt - 1] : null;
+  const nextStep = stepAt >= 0 && stepAt < steps.length - 1 ? steps[stepAt + 1] : null;
   const sectionRef = (key: StepKey) => (el: HTMLElement | null) => {
     sections.current[key] = el;
   };
@@ -400,7 +414,7 @@ export function CreateChallenge({
           </div>
           {advancedOpen && (
           <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-            {STEPS.map((s) => (
+            {steps.map((s) => (
               <button
                 key={s.key}
                 type="button"
@@ -567,10 +581,11 @@ export function CreateChallenge({
           <Note>{formatInfo.note}</Note>
 
           {/* ── who the robots are ──
-              Only asked where BEN can actually be reached; on a server without
-              it there is one engine and therefore no question. Whatever is
-              chosen is STAMPED on the challenge, so everyone entering meets the
-              same opponents however long the contest runs. */}
+              Gated by challenge.advanced.engine: a program that keeps the robot
+              choice to admins simply hides the row, and every challenge seats
+              the default solver. */}
+          {advancedSections.engine && (
+          <>
           {/* ── who the robots are ──
               ALWAYS SHOWN, even where BEN cannot be reached. Hiding it there
               was the first cut and it was wrong: a creator looking for the
@@ -610,6 +625,8 @@ export function CreateChallenge({
               ? (ENGINE_OPTIONS.find((e) => e.key === engine)?.blurb ?? "")
               : "BEN is not configured on this server (BEN_ENDPOINT), so every challenge is played against the solver."}
           </Note>
+          </>
+          )}
 
           {/* Scoring is a question about a FIELD of played boards. A
               bidding-only challenge has none, so it is not asked — the tally
@@ -975,7 +992,7 @@ export function CreateChallenge({
                   : `Mixed (${seatsUsed.join(", ")})`
               }
             />
-            <ReviewLine k="Controls" v={controlsSummary} />
+            {advancedSections.controls && <ReviewLine k="Controls" v={controlsSummary} />}
             <ReviewLine
               k="Opponents"
               v={
@@ -1045,7 +1062,7 @@ export function CreateChallenge({
               ← {prevStep ? prevStep.label : "Quick create"}
             </button>
             <span className="flex-1 text-center text-[11.5px] text-neutral-500">
-              Step {stepAt + 1} of {STEPS.length}
+              Step {stepAt + 1} of {steps.length}
             </span>
             {nextStep ? (
               <button

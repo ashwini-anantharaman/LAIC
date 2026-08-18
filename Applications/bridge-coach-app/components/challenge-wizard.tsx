@@ -162,8 +162,12 @@ export function ChallengeWizard({
   const programId = clubId ?? PROGRAM_ID;
   const params = useLocalSearchParams<{ draft?: string }>();
   const me = useBridgeMe();
-  // Pre-gate, everyone had the whole form — the honest offline fallback.
+  // Pre-gate, everyone had the whole form — the honest offline fallback,
+  // for the door and for each section behind it (challenge.advanced.*).
   const canAdvanced = useBridgeCan("challenge.advanced", true);
+  const canEngine = useBridgeCan("challenge.advanced.engine", true);
+  const canBoardsStep = useBridgeCan("challenge.advanced.boards", true);
+  const canControlsStep = useBridgeCan("challenge.advanced.controls", true);
   const benOffered = me?.engines?.ben === true;
 
   const [view, setView] = useState<ViewKey>("quick");
@@ -378,9 +382,15 @@ export function ChallengeWizard({
     }
   }, [token, programId, busy, draftOf, draftEntryId, personal]);
 
-  const stepAt = STEPS.findIndex((s) => s.key === view);
-  const prevStep = stepAt > 0 ? STEPS[stepAt - 1] : null;
-  const nextStep = stepAt >= 0 && stepAt < STEPS.length - 1 ? STEPS[stepAt + 1] : null;
+  // The PATH through the form is only the granted steps: a gated step is not
+  // greyed out, it is gone — chips, Back/Next and "N of M" all agree.
+  const steps = STEPS.filter(
+    (s) =>
+      (s.key !== "boards" || canBoardsStep) && (s.key !== "controls" || canControlsStep),
+  );
+  const stepAt = steps.findIndex((s) => s.key === view);
+  const prevStep = stepAt > 0 ? steps[stepAt - 1] : null;
+  const nextStep = stepAt >= 0 && stepAt < steps.length - 1 ? steps[stepAt + 1] : null;
 
   const controlsSummary = useMemo(() => {
     const overrides = controlOverridesOf(controls);
@@ -538,7 +548,7 @@ export function ChallengeWizard({
           {/* ── the advanced form's step chips ── */}
           {view !== "quick" && (
             <View style={styles.chipsRow}>
-              {STEPS.map((s) => (
+              {steps.map((s) => (
                 <Pressable
                   key={s.key}
                   onPress={() => setView(s.key)}
@@ -629,8 +639,8 @@ export function ChallengeWizard({
                 </>
               )}
 
-              <Text style={styles.fieldLabel}>ROBOT PLAYERS</Text>
-              {ENGINES.map((e) => {
+              {canEngine && <Text style={styles.fieldLabel}>ROBOT PLAYERS</Text>}
+              {canEngine && ENGINES.map((e) => {
                 const off = e.key === "ben" && !benOffered;
                 return (
                   <OptionRow
@@ -658,7 +668,7 @@ export function ChallengeWizard({
           )}
 
           {/* ── 02 · Boards ── */}
-          {view === "boards" && (
+          {view === "boards" && canBoardsStep && (
             <>
               <Text style={styles.fieldLabel}>BOARDS</Text>
               {boardCountBlock}
@@ -702,7 +712,7 @@ export function ChallengeWizard({
           )}
 
           {/* ── 03 · Table controls ── */}
-          {view === "controls" && (
+          {view === "controls" && canControlsStep && (
             <>
               <Text style={styles.fieldLabel}>AT THE TABLE</Text>
               <Text style={styles.hint}>
@@ -760,13 +770,15 @@ export function ChallengeWizard({
                   v={SCORINGS.find((s) => s.key === scoring)?.label ?? scoring}
                 />
               )}
-              <ReviewLine k="Robots" v={engine === "ben" ? "BEN · neural" : "Solver"} />
+              {canEngine && (
+                <ReviewLine k="Robots" v={engine === "ben" ? "BEN · neural" : "Solver"} />
+              )}
               <ReviewLine
                 k="Standings"
                 v={STANDINGS.find((s) => s.key === standings)?.label ?? standings}
               />
               <ReviewLine k="Boards" v={String(boards.length)} />
-              <ReviewLine k="Table" v={controlsSummary} />
+              {canControlsStep && <ReviewLine k="Table" v={controlsSummary} />}
               <ReviewLine k="Invited" v={`You + ${invited.size}`} />
               {createButton(personal ? "Create table" : "Create challenge")}
             </>
@@ -785,7 +797,7 @@ export function ChallengeWizard({
                   </Text>
                 </Pressable>
                 <Text style={styles.footerCount}>
-                  {stepAt + 1} of {STEPS.length}
+                  {stepAt + 1} of {steps.length}
                 </Text>
                 {nextStep ? (
                   <Pressable

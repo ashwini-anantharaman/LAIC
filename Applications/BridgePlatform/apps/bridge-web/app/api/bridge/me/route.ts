@@ -35,6 +35,9 @@ const FEATURE_KEYS = [
   "page.guide",
   "page.challenges",
   "challenge.advanced",
+  "challenge.advanced.engine",
+  "challenge.advanced.boards",
+  "challenge.advanced.controls",
   "library.resume",
   "table.undo",
 ] as const;
