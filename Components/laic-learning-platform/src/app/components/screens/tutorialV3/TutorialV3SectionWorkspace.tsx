@@ -3,6 +3,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { TutorialV3ReferenceTableEditor } from './TutorialV3ReferenceTableEditor';
 import {
   configToPartFields,
   isBridgeEmbedPart,
@@ -27,8 +28,12 @@ import {
   sourcePoolToMarkupSources,
 } from '../../../../lib/tutorialV3/draftModel';
 import {
+  applyReferenceTableResult,
+  emptyReferenceTable,
+  extractReferenceTable,
   isNestedEditablePart,
   isNestedPartEmpty,
+  isReferenceTablePart,
   isV3BlockEmbedPart,
   nestedEditorKindForPart,
   v3BlockEmbedLabel,
@@ -733,15 +738,24 @@ function WritePane({
               </div>
             </div>
           ) : isV3BlockEmbedPart(p) ? (
-            <div>
+            <div onClick={(e) => e.stopPropagation()} role="presentation">
               <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                 {p.libraryTitle || p.label || v3BlockEmbedLabel(p)}
                 <span style={{ color: '#9AA3AF' }}> · {v3BlockEmbedLabel(p)}</span>
               </p>
-              <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.5 }}>
-                Authored by generating it from your sources. There is no separate editor for this
-                block — regenerate to change it.
-              </p>
+              {isReferenceTablePart(p) ? (
+                <div className="mb-3">
+                  <TutorialV3ReferenceTableEditor
+                    content={extractReferenceTable(p) || emptyReferenceTable(p.libraryTitle)}
+                    onChange={(next) => onChangePart(p.id, applyReferenceTableResult(p, next))}
+                  />
+                </div>
+              ) : (
+                <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.5 }}>
+                  Authored by generating it from your sources. There is no separate editor for this
+                  block — regenerate to change it.
+                </p>
+              )}
               {onGeneratePart && (
                 <button
                   type="button"

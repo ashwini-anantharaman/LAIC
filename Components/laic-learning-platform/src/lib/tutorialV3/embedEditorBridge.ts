@@ -271,6 +271,13 @@ const V3_BLOCK_EMBEDS = new Set<string>([
   'opening-question',
 ]);
 
+/** Whether this part is a reference table — the one V3 block with a real editor. */
+export function isReferenceTablePart(part: TutorialV3Part): boolean {
+  // Generated V3 blocks always arrive as a library embed carrying a snapshot;
+  // `type` never names the block itself.
+  return part.type === 'library-embed' && String(part.objectType) === 'reference-table';
+}
+
 /** The reference table inside a part, or null when it holds something else. */
 export function extractReferenceTable(part: TutorialV3Part): ReferenceTableContent | null {
   const block = snapBlocks(part).find((b) => b?.type === 'reference-table');

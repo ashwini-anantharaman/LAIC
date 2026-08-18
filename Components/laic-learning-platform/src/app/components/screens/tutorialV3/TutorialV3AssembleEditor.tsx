@@ -11,9 +11,14 @@ import {
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
 import {
+  applyReferenceTableResult,
+  emptyReferenceTable,
+  extractReferenceTable,
   isNestedEditablePart,
+  isReferenceTablePart,
   nestedEditorKindForPart,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
+import { TutorialV3ReferenceTableEditor } from './TutorialV3ReferenceTableEditor';
 import type { TutorialV3Draft, TutorialV3Part } from '../../../../lib/tutorialV3/types';
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV3Reader } from './learner/TutorialV3Reader';
@@ -464,6 +469,18 @@ export function TutorialV3AssembleEditor({
                               caption={p.caption}
                               onChangeCaption={(caption) => updatePart(p.id, { caption })}
                               onChangeConfig={(next) => updatePart(p.id, configToPartFields(next))}
+                            />
+                          </div>
+                        ) : isReferenceTablePart(p) ? (
+                          /*
+                            A table has a shape, so it gets a grid rather than
+                            the body textarea every other part falls back to —
+                            which for a table showed nothing worth editing.
+                          */
+                          <div onClick={(e) => e.stopPropagation()} role="presentation">
+                            <TutorialV3ReferenceTableEditor
+                              content={extractReferenceTable(p) || emptyReferenceTable(p.libraryTitle)}
+                              onChange={(next) => updatePart(p.id, applyReferenceTableResult(p, next))}
                             />
                           </div>
                         ) : isNestedEditablePart(p) ? (
