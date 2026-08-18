@@ -1368,6 +1368,7 @@ function AssessedBlocks({
   onPageCountChange,
   hidePager = false,
   clusterMcqs = true,
+  renderBlockFrame,
 }: {
   blocks: Block[];
   objectId: string;
@@ -1382,6 +1383,8 @@ function AssessedBlocks({
   paginate?: boolean;
   /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
   blockOverrides?: BlockOverrides;
+  /** Wrap each rendered block — see LearningBlocksPreview. */
+  renderBlockFrame?: (blockId: string, node: React.ReactNode, index: number) => React.ReactNode;
   /**
    * Controlled paging. Tutorial V3 drives the page from its section sidebar, so
    * it owns the index; left undefined, paging stays internal exactly as before.
@@ -1477,8 +1480,10 @@ function AssessedBlocks({
     >
       {buildPreviewSegments(pageBlocks, sourceUnits, clusterMcqs).map((seg, i) => {
         const wrap = (key: string, node: React.ReactNode) => {
-          if (!animate || !visible) {
-            return <div key={key} data-block-id={key} className="w-full">{node}</div>;
+          const framed = renderBlockFrame ? renderBlockFrame(key, node, i) : node;
+          // A frame owns its own motion; animating around it fights the drag.
+          if (!animate || !visible || renderBlockFrame) {
+            return <div key={key} data-block-id={key} className="w-full">{framed}</div>;
           }
           return (
             <motion.div
@@ -1628,6 +1633,7 @@ export function LearningBlocksPreview({
   onPageCountChange,
   hidePager = false,
   clusterMcqs = true,
+  renderBlockFrame,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1641,6 +1647,12 @@ export function LearningBlocksPreview({
   glossary?: GlossaryEntry[];
   /** Knowledge-base units used to fill FROM YOUR SOURCES when questions lack quotes. */
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
+  /**
+   * Wrap each rendered block. Used by the author's preview to put a drag frame
+   * around what the learner sees, so blocks can be rearranged in place instead
+   * of only in a separate list that reads nothing like the finished lesson.
+   */
+  renderBlockFrame?: (blockId: string, node: React.ReactNode, index: number) => React.ReactNode;
   /** Split long tutorials into pages after generation (default on). */
   paginate?: boolean;
   /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
@@ -1688,6 +1700,7 @@ export function LearningBlocksPreview({
           onPageCountChange={onPageCountChange}
           hidePager={hidePager}
           clusterMcqs={clusterMcqs}
+          renderBlockFrame={renderBlockFrame}
         />
       </div>
       <GlossarySidebar

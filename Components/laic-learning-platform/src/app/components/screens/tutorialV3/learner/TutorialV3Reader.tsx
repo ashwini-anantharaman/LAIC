@@ -51,6 +51,23 @@ import { expandTutorialBlocks, parseEmbedSlotHeading } from '../../../../../lib/
 import { countBlocksWords } from '../../../../../lib/tutorialPages.js';
 import { enrichQuizQuestionsWithSources } from '../../../../../lib/mcqSources.js';
 import { LearnerProgressProvider, useLearnerProgress } from './LearnerProgressContext';
+import { GripVertical } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { AskAIChat } from '../../AskAIChat';
 import { TutorialV3SectionSidebar } from './TutorialV3SectionSidebar';
 import { TutorialV3QuizBlock } from './TutorialV3QuizBlock';
@@ -215,6 +232,82 @@ function coverRow(id: string, sectionTitle: string, page: number, index: number)
   };
 }
 
+/**
+ * Drag-to-rearrange over the student preview.
+ *
+ * Blocks could only be reordered in the parts list, which shows a label and a
+ * page number — an author moving a worked example has to picture the lesson
+ * rather than look at it. The frame goes around the block as the learner sees
+ * it, and the dashed outline is the whole affordance: nothing about the
+ * lesson's own styling changes underneath it.
+ */
+function ArrangeContext({
+  enabled,
+  blockIds,
+  onReorder,
+  children,
+}: {
+  enabled: boolean;
+  blockIds: string[];
+  onReorder?: (orderedBlockIds: string[]) => void;
+  children: React.ReactNode;
+}) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  if (!enabled) return <>{children}</>;
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={closestCenter}
+      onDragEnd={({ active, over }) => {
+        if (!over || active.id === over.id || !onReorder) return;
+        const from = blockIds.indexOf(String(active.id));
+        const to = blockIds.indexOf(String(over.id));
+        if (from < 0 || to < 0) return;
+        onReorder(arrayMove(blockIds, from, to));
+      }}
+    >
+      <SortableContext items={blockIds} strategy={verticalListSortingStrategy}>
+        {children}
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function ArrangeFrame({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className="relative rounded-2xl"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        outline: `2px dashed ${isDragging ? SAGE : 'rgba(120,113,108,0.45)'}`,
+        outlineOffset: 6,
+        opacity: isDragging ? 0.85 : 1,
+        zIndex: isDragging ? 5 : undefined,
+        background: isDragging ? '#fff' : undefined,
+      }}
+    >
+      <button
+        type="button"
+        // Sits on the frame's edge so it never covers the block's own content.
+        className="absolute -top-3 left-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full shadow-sm cursor-grab active:cursor-grabbing"
+        style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.1)', fontSize: 10.5, fontWeight: 700, color: '#78716c' }}
+        aria-label="Drag to move this block"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={11} /> Drag
+      </button>
+      {children}
+    </div>
+  );
+}
+
 function ReaderInner({
   draft,
   blocks,
@@ -228,6 +321,7 @@ function ReaderInner({
   onBack,
   learnerName,
   object,
+  arrange,
 }: {
   draft: TutorialV3Draft;
   blocks: Block[];
@@ -245,6 +339,12 @@ function ReaderInner({
    * so it needs the whole object rather than the page in front of the learner.
    */
   object?: LearningObject;
+  /**
+   * Author-only: put a drag frame around each block so the lesson can be
+   * rearranged in the view the learner actually sees, rather than only in a
+   * list of parts that reads nothing like the finished thing.
+   */
+  arrange?: { onReorder: (orderedBlockIds: string[]) => void };
 }) {
   const { progress, visitSection } = useLearnerProgress();
 
@@ -490,7 +590,13 @@ function ReaderInner({
             quiz is still half-finished when the learner comes back to it.
           */}
           <div style={{ display: onCover ? 'none' : 'block' }} aria-hidden={onCover}>
+            <ArrangeContext
+              enabled={!!arrange}
+              blockIds={streamBlocks.map((b) => b.id)}
+              onReorder={arrange?.onReorder}
+            >
             <LearningBlocksPreview
+              renderBlockFrame={arrange ? (id, node) => <ArrangeFrame key={id} id={id}>{node}</ArrangeFrame> : undefined}
               blocks={streamBlocks}
               objectId={objectId}
               cumulativePassMark={cumulativePassMark}
@@ -507,6 +613,7 @@ function ReaderInner({
               onPageCountChange={setContentPages}
               hidePager
             />
+            </ArrangeContext>
           </div>
 
           {/* Footer: the page either side of this one, by name. */}

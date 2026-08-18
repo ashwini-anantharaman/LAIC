@@ -6,7 +6,7 @@
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Eye, Pencil, Send, Sparkles, ChevronUp, ChevronDown, Trash2,
-  ExternalLink, Save, Maximize2, Minimize2,
+  ExternalLink, Save, Maximize2, Minimize2, Move,
 } from 'lucide-react';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
@@ -219,6 +219,29 @@ export function TutorialV3AssembleEditor({
    * authoring chrome above is not what you are looking at while you do either.
    */
   const [fullscreen, setFullscreen] = useState(false);
+  const [arranging, setArranging] = useState(false);
+
+  /*
+    Blocks are what a learner sees; parts are what the draft stores, and one
+    part can expand into several blocks (`partId__0`, `partId__1`). Dragging a
+    block therefore moves the whole part it came from — moving half an embedded
+    quiz somewhere else is not a thing an author can mean.
+  */
+  const reorderFromBlockIds = (orderedBlockIds: string[]) => {
+    const partIdOf = (blockId: string) => blockId.split('__')[0];
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const id of orderedBlockIds) {
+      const pid = partIdOf(id);
+      if (!seen.has(pid)) { seen.add(pid); order.push(pid); }
+    }
+    const byId = new Map(parts.map((p) => [p.id, p]));
+    const next = order.map((id) => byId.get(id)).filter(Boolean) as typeof parts;
+    // Parts with no block of their own (the covers) keep their place at the end.
+    for (const p of parts) if (!seen.has(p.id)) next.push(p);
+    if (next.length !== parts.length) return;
+    onChangeParts(next);
+  };
 
   // Escape is what people try first, so it should work.
   useEffect(() => {
@@ -337,7 +360,25 @@ export function TutorialV3AssembleEditor({
               <Maximize2 size={12} /> Full screen
             </button>
           )}
-          {mode === 'edit' && (
+          {mode === 'preview' && (
+            <button
+              type="button"
+              onClick={() => setArranging((v) => !v)}
+              title="Drag blocks to reorder them in the view a student sees"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+              style={{
+                fontSize: 12,
+                fontWeight: 650,
+                color: arranging ? '#3d6349' : '#374151',
+                borderColor: arranging ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                background: arranging ? 'rgba(77,124,90,0.08)' : '#fff',
+              }}
+            >
+              <Move size={12} />
+              {arranging ? 'Done arranging' : 'Arrange blocks'}
+            </button>
+          )}
+          {(
             <button
               type="button"
               onClick={() => setRefineOpen((v) => !v)}
@@ -366,6 +407,7 @@ export function TutorialV3AssembleEditor({
           // column, and a second scrollbar around it moved the rail too.
           <div className="flex-1 min-w-0 overflow-hidden" style={{ background: '#fff' }}>
             <TutorialV3Reader
+              arrange={arranging ? { onReorder: reorderFromBlockIds } : undefined}
               draft={draft}
               blocks={blocks as any}
               objectId={draft.id}
