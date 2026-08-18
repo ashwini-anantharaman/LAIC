@@ -1215,7 +1215,7 @@ export function ObjectCreatorTutorialV3() {
   if (phase === 'sources') {
     return (
       <>
-      <div className="min-h-full flex flex-col" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
+      <div className="min-h-full shrink-0 flex flex-col" style={{ background: V3_PAPER, fontFamily: V3_FONT }}>
         <div className="px-5 pt-5 pb-2 shrink-0">
           <div className="flex items-center justify-between gap-3 mb-3">
             <button
@@ -1225,6 +1225,14 @@ export function ObjectCreatorTutorialV3() {
               style={{ fontSize: 13, fontWeight: 600, color: '#374151' }}
             >
               <ArrowLeft size={14} /> Back to Structure
+            </button>
+            <button
+              type="button"
+              onClick={() => void saveDraft()}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white shrink-0"
+              style={{ fontSize: 13.5, fontWeight: 700, background: V3_SAGE }}
+            >
+              <Save size={15} /> {composePublisher() ? 'Publish' : 'Save'}
             </button>
           </div>
           {pipelineRail}
@@ -1331,7 +1339,6 @@ export function ObjectCreatorTutorialV3() {
           </button>
         </div>
       </div>
-      <FixedSaveButton onClick={() => void saveDraft()} />
       {globalHoot}
       </>
     );
@@ -1403,7 +1410,7 @@ export function ObjectCreatorTutorialV3() {
     const canSubmit = allRequiredDone(draft.sections, draft.topLevelSlots);
     return (
       <>
-      <div className="min-h-full flex flex-col" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
+      <div className="min-h-full shrink-0 flex flex-col" style={{ background: V3_PAPER, fontFamily: V3_FONT }}>
         <TutorialV3AssembleEditor
           draft={draft}
           parts={parts}
@@ -1542,27 +1549,6 @@ const inputStyle: React.CSSProperties = {
 };
 
 /** Always pinned bottom-left — pastel green draft save. */
-function FixedSaveButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
-      style={{
-        fontSize: 14,
-        fontWeight: 700,
-        fontFamily: V3_FONT,
-        color: '#fff',
-        background: V3_SAGE,
-        border: 'none',
-        boxShadow: '0 10px 28px -12px rgba(77,124,90,0.65)',
-      }}
-    >
-      {/* Publishes in a club compose session — see saveDraft. */}
-      <Save size={15} /> {composePublisher() ? 'Publish' : 'Save'}
-    </button>
-  );
-}
 
 function Shell({
   onBack, onSave, title, subtitle, children, rail, assistant,
@@ -1578,11 +1564,17 @@ function Shell({
   return (
     <>
       <div
-        className="min-h-full"
+        /*
+          shrink-0 matters: <main> is a flex column, so a child with only
+          min-h-full is free to be squeezed back to the viewport while its
+          content overflows — which left the page warm for one screen and the
+          app's own blue-grey below it.
+        */
+        className="min-h-full shrink-0"
         style={{
           background: V3_PAPER,
           fontFamily: V3_FONT,
-          paddingBottom: onSave ? 88 : undefined,
+          paddingBottom: 96,
         }}
       >
         {/* Back and the step rail ride together in a white bar across the top,
@@ -1600,7 +1592,23 @@ function Shell({
             >
               <ArrowLeft size={15} /> Back
             </button>
-            {rail}
+            <div className="min-w-0 flex-1 overflow-x-auto">{rail}</div>
+            {/*
+              Save lives in the bar rather than floating over the page. As a
+              fixed button bottom-left it sat on top of the content column at
+              narrow widths and competed with Hoot for the same corner; here it
+              is beside the step it applies to and covers nothing.
+            */}
+            {onSave && (
+              <button
+                type="button"
+                onClick={() => void onSave()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white shrink-0"
+                style={{ fontSize: 13.5, fontWeight: 700, background: V3_SAGE }}
+              >
+                <Save size={15} /> {composePublisher() ? 'Publish' : 'Save'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -1612,7 +1620,6 @@ function Shell({
           {children}
         </div>
       </div>
-      {onSave ? <FixedSaveButton onClick={() => void onSave()} /> : null}
       {assistant}
     </>
   );
