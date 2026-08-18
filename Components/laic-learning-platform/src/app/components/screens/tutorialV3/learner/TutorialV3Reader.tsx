@@ -51,7 +51,7 @@ import { expandTutorialBlocks, parseEmbedSlotHeading } from '../../../../../lib/
 import { countBlocksWords } from '../../../../../lib/tutorialPages.js';
 import { enrichQuizQuestionsWithSources } from '../../../../../lib/mcqSources.js';
 import { LearnerProgressProvider, useLearnerProgress } from './LearnerProgressContext';
-import { GripVertical } from 'lucide-react';
+import { GripVertical, Pencil } from 'lucide-react';
 import {
   DndContext,
   KeyboardSensor,
@@ -276,35 +276,169 @@ function ArrangeContext({
   );
 }
 
-function ArrangeFrame({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+/**
+ * The frame around one block in the author's preview.
+ *
+ * Dotted while idle, so it reads as "this can be edited" without competing
+ * with the lesson's own styling; double-click swaps the block for its editor
+ * in place. Dragging is deliberately behind the Arrange toggle — a grab handle
+ * on every block turns a page you are trying to read into a control panel.
+ */
+/**
+ * The frame around one block in the author's preview.
+ *
+ * Dotted while idle, so it reads as "this can be edited" without competing
+ * with the lesson's own styling; double-click swaps the block for its editor
+ * in place. Dragging is deliberately behind the Arrange toggle — a grab handle
+ * on every block turns a page you are trying to read into a control panel.
+ *
+ * Split in two because `useSortable` needs a DndContext above it, and the
+ * cover pages have none: they sit outside the block stream entirely.
+ */
+function FrameBody({
+  id,
+  renderInlineEditor,
+  children,
+  dnd,
+}: {
+  id: string;
+  renderInlineEditor?: (blockId: string, done: () => void) => React.ReactNode | null;
+  children: React.ReactNode;
+  dnd?: {
+    setNodeRef: (el: HTMLElement | null) => void;
+    style: React.CSSProperties;
+    dragging: boolean;
+    handle: React.ReactNode;
+  };
+}) {
+  const [editing, setEditing] = useState(false);
+  const [hover, setHover] = useState(false);
+
+  const editor = editing && renderInlineEditor ? renderInlineEditor(id, () => setEditing(false)) : null;
+  // While arranging, a double-click is far more likely to be a mis-aimed drag.
+  const editable = !!renderInlineEditor && !dnd;
+  const dragging = !!dnd?.dragging;
+
+  const border = editing
+    ? SAGE
+    : dnd
+      ? (dragging ? SAGE : 'rgba(120,113,108,0.45)')
+      : hover
+        ? 'rgba(77,124,90,0.55)'
+        : 'rgba(120,113,108,0.28)';
+
   return (
     <div
-      ref={setNodeRef}
+      ref={dnd?.setNodeRef}
       className="relative rounded-2xl"
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onDoubleClick={(e) => {
+        if (!editable || editing) return;
+        e.stopPropagation();
+        setEditing(true);
+      }}
       style={{
-        transform: CSS.Transform.toString(transform),
-        transition,
-        outline: `2px dashed ${isDragging ? SAGE : 'rgba(120,113,108,0.45)'}`,
+        ...(dnd?.style || {}),
+        outline: `2px ${editing ? 'solid' : 'dashed'} ${border}`,
         outlineOffset: 6,
-        opacity: isDragging ? 0.85 : 1,
-        zIndex: isDragging ? 5 : undefined,
-        background: isDragging ? '#fff' : undefined,
+        opacity: dragging ? 0.85 : 1,
+        zIndex: dragging || editing ? 5 : undefined,
+        background: dragging || editing ? '#fff' : undefined,
+        cursor: editable ? 'pointer' : undefined,
       }}
     >
-      <button
-        type="button"
-        // Sits on the frame's edge so it never covers the block's own content.
-        className="absolute -top-3 left-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full shadow-sm cursor-grab active:cursor-grabbing"
-        style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.1)', fontSize: 10.5, fontWeight: 700, color: '#78716c' }}
-        aria-label="Drag to move this block"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical size={11} /> Drag
-      </button>
-      {children}
+      {dnd?.handle}
+      {editable && hover && !editing && (
+        <span
+          className="absolute -top-3 left-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full shadow-sm pointer-events-none"
+          style={{ background: '#fff', border: '1px solid rgba(77,124,90,0.35)', fontSize: 10.5, fontWeight: 700, color: '#3d6349' }}
+        >
+          <Pencil size={10} /> Double-click to edit
+        </span>
+      )}
+      {editor ? (
+        <div className="p-3" onDoubleClick={(e) => e.stopPropagation()} role="presentation">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#3d6349', letterSpacing: '.04em', textTransform: 'uppercase' }}>
+              Editing
+            </span>
+            <button
+              type="button"
+              onClick={() => setEditing(false)}
+              className="inline-flex items-center gap-1 px-3 py-1 rounded-full"
+              style={{ fontSize: 12, fontWeight: 650, color: '#fff', background: SAGE }}
+            >
+              Done
+            </button>
+          </div>
+          {editor}
+        </div>
+      ) : children}
     </div>
+  );
+}
+
+/** The draggable variant — only ever rendered inside the arrange DndContext. */
+function SortableFrame({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <FrameBody
+      id={id}
+      dnd={{
+        setNodeRef,
+        style: { transform: CSS.Transform.toString(transform), transition },
+        dragging: isDragging,
+        handle: (
+          <button
+            type="button"
+            // On the frame's edge, so it never covers the block's own content.
+            className="absolute -top-3 left-2 z-10 inline-flex items-center gap-1 px-2 py-0.5 rounded-full shadow-sm cursor-grab active:cursor-grabbing"
+            style={{ background: '#fff', border: '1px solid rgba(0,0,0,0.1)', fontSize: 10.5, fontWeight: 700, color: '#78716c' }}
+            aria-label="Drag to move this block"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical size={11} /> Drag
+          </button>
+        ),
+      }}
+    >
+      {children}
+    </FrameBody>
+  );
+}
+
+function PreviewFrame({
+  id,
+  arranging,
+  renderInlineEditor,
+  children,
+}: {
+  id: string;
+  arranging: boolean;
+  renderInlineEditor?: (blockId: string, done: () => void) => React.ReactNode | null;
+  children: React.ReactNode;
+}) {
+  if (arranging) return <SortableFrame id={id}>{children}</SortableFrame>;
+  return <FrameBody id={id} renderInlineEditor={renderInlineEditor}>{children}</FrameBody>;
+}
+
+/** A cover page's frame. Same editing affordance, no place in the drag order. */
+function CoverFrame({
+  blockId,
+  renderInlineEditor,
+  children,
+}: {
+  blockId?: string;
+  renderInlineEditor?: (blockId: string, done: () => void) => React.ReactNode | null;
+  children: React.ReactNode;
+}) {
+  if (!blockId || !renderInlineEditor) return <>{children}</>;
+  return (
+    <PreviewFrame id={blockId} arranging={false} renderInlineEditor={renderInlineEditor}>
+      {children}
+    </PreviewFrame>
   );
 }
 
@@ -322,6 +456,7 @@ function ReaderInner({
   learnerName,
   object,
   arrange,
+  renderInlineEditor,
 }: {
   draft: TutorialV3Draft;
   blocks: Block[];
@@ -345,6 +480,11 @@ function ReaderInner({
    * list of parts that reads nothing like the finished thing.
    */
   arrange?: { onReorder: (orderedBlockIds: string[]) => void };
+  /**
+   * Author-only: the editor for one block, opened by double-clicking it in the
+   * preview. Returning null means that block has nothing to edit in place.
+   */
+  renderInlineEditor?: (blockId: string, done: () => void) => React.ReactNode | null;
 }) {
   const { progress, visitSection } = useLearnerProgress();
 
@@ -361,6 +501,14 @@ function ReaderInner({
   );
   const completeContent = useMemo(
     () => blocks.find((b) => b.type === 'lesson-complete')?.content as LessonCompleteContent | undefined,
+    [blocks],
+  );
+  const overviewBlockId = useMemo(
+    () => blocks.find((b) => b.type === 'lesson-overview')?.id,
+    [blocks],
+  );
+  const completeBlockId = useMemo(
+    () => blocks.find((b) => b.type === 'lesson-complete')?.id,
     [blocks],
   );
   const streamBlocks = useMemo(
@@ -565,24 +713,34 @@ function ReaderInner({
             </div>
           )}
 
+          {/*
+            The covers are lifted out of the block stream, so they get their
+            frame here rather than through renderBlockFrame — otherwise the two
+            pages an author is most likely to want to fix are the two they
+            cannot double-click.
+          */}
           {page === 1 && (
-            <WarmLessonOverview
-              draft={draft}
-              duration={duration}
-              onStart={() => goToPage(2)}
-              content={overviewContent}
-            />
+            <CoverFrame blockId={overviewBlockId} renderInlineEditor={renderInlineEditor}>
+              <WarmLessonOverview
+                draft={draft}
+                duration={duration}
+                onStart={() => goToPage(2)}
+                content={overviewContent}
+              />
+            </CoverFrame>
           )}
 
           {page === total && (
-            <WarmLessonComplete
-              draft={draft}
-              sections={contentSections}
-              progress={progress}
-              pageCount={contentPages}
-              onBack={onBack}
-              content={completeContent}
-            />
+            <CoverFrame blockId={completeBlockId} renderInlineEditor={renderInlineEditor}>
+              <WarmLessonComplete
+                draft={draft}
+                sections={contentSections}
+                progress={progress}
+                pageCount={contentPages}
+                onBack={onBack}
+                content={completeContent}
+              />
+            </CoverFrame>
           )}
 
           {/*
@@ -596,7 +754,13 @@ function ReaderInner({
               onReorder={arrange?.onReorder}
             >
             <LearningBlocksPreview
-              renderBlockFrame={arrange ? (id, node) => <ArrangeFrame key={id} id={id}>{node}</ArrangeFrame> : undefined}
+              renderBlockFrame={arrange || renderInlineEditor
+                ? (id, node) => (
+                  <PreviewFrame key={id} id={id} arranging={!!arrange} renderInlineEditor={renderInlineEditor}>
+                    {node}
+                  </PreviewFrame>
+                )
+                : undefined}
               blocks={streamBlocks}
               objectId={objectId}
               cumulativePassMark={cumulativePassMark}

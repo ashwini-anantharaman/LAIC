@@ -227,6 +227,75 @@ export function TutorialV3AssembleEditor({
     block therefore moves the whole part it came from — moving half an embedded
     quiz somewhere else is not a thing an author can mean.
   */
+  /**
+   * The editor for one block, opened by double-clicking it in the preview.
+   *
+   * A block id is its part's id, or that id with an expansion suffix — so the
+   * lookup is the same either way. Blocks with a full standalone editor (a
+   * quiz, a flashcard set) are not inlined: those are whole screens, and
+   * squeezing one into a reading column serves nobody. They offer the way in
+   * instead.
+   */
+  const renderInlineEditor = (blockId: string, done: () => void): React.ReactNode | null => {
+    const part = parts.find((x) => x.id === blockId || blockId.startsWith(`${x.id}__`));
+    if (!part) return null;
+
+    const v3Type = v3BlockTypeOf(part);
+    if (hasV3BlockEditor(v3Type)) {
+      return (
+        <TutorialV3BlockEditor
+          type={v3Type!}
+          content={extractV3BlockContent(part) || emptyV3BlockContent(v3Type!, part.libraryTitle)}
+          onChange={(next) => updatePart(part.id, applyV3BlockContent(part, next))}
+        />
+      );
+    }
+
+    if (isNestedEditablePart(part)) {
+      return (
+        <div className="space-y-2">
+          <p style={{ fontSize: 12.5, color: '#6B7280' }}>
+            {part.libraryTitle || part.label || nestedEditorKindForPart(part)} has its own editor —
+            too big to open inside the page.
+          </p>
+          <button
+            type="button"
+            onClick={() => { done(); setMode('edit'); setEditingPartId(part.id); }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
+            style={{ fontSize: 12.5, fontWeight: 650, background: '#1e2b3d' }}
+          >
+            <ExternalLink size={13} />
+            Open {nestedEditorKindForPart(part)?.replace(/-/g, ' ') || 'content'} editor
+          </button>
+        </div>
+      );
+    }
+
+    // Everything else is a heading and a body — the shape most of a lesson is.
+    if (part.heading === undefined && part.body === undefined) return null;
+    return (
+      <div className="space-y-2">
+        {part.heading !== undefined && (
+          <input
+            className="w-full"
+            value={part.heading || ''}
+            placeholder="Heading"
+            onChange={(e) => updatePart(part.id, { heading: e.target.value })}
+            style={{ fontSize: 15, fontWeight: 700, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
+          />
+        )}
+        <textarea
+          className="w-full"
+          rows={8}
+          value={part.body || ''}
+          placeholder="Body"
+          onChange={(e) => updatePart(part.id, { body: e.target.value })}
+          style={{ fontSize: 13.5, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '10px 12px', resize: 'vertical' }}
+        />
+      </div>
+    );
+  };
+
   const reorderFromBlockIds = (orderedBlockIds: string[]) => {
     const partIdOf = (blockId: string) => blockId.split('__')[0];
     const seen = new Set<string>();
@@ -408,6 +477,7 @@ export function TutorialV3AssembleEditor({
           <div className="flex-1 min-w-0 overflow-hidden" style={{ background: '#fff' }}>
             <TutorialV3Reader
               arrange={arranging ? { onReorder: reorderFromBlockIds } : undefined}
+              renderInlineEditor={renderInlineEditor}
               draft={draft}
               blocks={blocks as any}
               objectId={draft.id}
