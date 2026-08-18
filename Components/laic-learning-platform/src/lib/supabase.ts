@@ -202,7 +202,7 @@ export async function publishObject(
   // Standalone is draft-only by design: without a session there is no way to know
   // which club the content belongs to, and guessing is what the old service-role
   // route did.
-  if (!supabaseEnabled()) throw new Error('Publishing needs a Nexus launch (open the Studio from Nexus)');
+  if (!supabaseEnabled()) throw new Error('Publishing needs a Nexus session — open the Studio from Nexus');
   const res = await nexusFetch('/api/platform/learning/objects/publish', {
     method: 'POST',
     body: JSON.stringify({ object: row, share, program_id: getProgramId() }),
