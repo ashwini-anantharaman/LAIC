@@ -315,8 +315,15 @@ function ReaderInner({
     [objectId, title, sourceUnits],
   );
 
+  /*
+    The reading column scrolls, not the window — so `window.scrollTo` moved
+    nothing and a learner who paged forward from halfway down a long page
+    landed halfway down the next one. Scroll the column that actually moved.
+  */
+  const readingRef = React.useRef<HTMLElement | null>(null);
   const goToPage = (next: number) => {
     setPage(Math.max(1, Math.min(total, next)));
+    readingRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -371,7 +378,7 @@ function ReaderInner({
         </button>
       )}
 
-      <main className="flex-1 min-w-0 overflow-y-auto" style={{ height: '100%' }}>
+      <main ref={readingRef} className="flex-1 min-w-0 overflow-y-auto" style={{ height: '100%' }}>
         <div className="max-w-2xl mx-auto px-4 sm:px-8 py-6 sm:py-10">
           {/* Header */}
           <div className="mb-8">

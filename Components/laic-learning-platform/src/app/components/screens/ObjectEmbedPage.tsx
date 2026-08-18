@@ -83,11 +83,23 @@ export function ObjectEmbedPage({ objectId }: { objectId: string }) {
     );
   }
 
+  /*
+    A v3 tutorial is a full-height reader: a fixed sage rail beside a reading
+    column that scrolls inside it. That needs a definite height to resolve
+    against — with `min-h-screen` alone the reader sized itself to its content,
+    the rail stopped partway down, and the page's own background showed through
+    underneath it. Every other object type still scrolls the page as before.
+  */
+  const fullHeight = state.object.type === 'tutorial-v3';
+
   return (
     // cs-embed-root: the viewport clamp for host WebViews (see index.html).
     // This route renders before the Content Studio shell, so it inherits none
     // of the shell's mobile guards.
-    <div className="cs-embed-root min-h-screen" style={{ background }}>
+    <div
+      className={fullHeight ? 'cs-embed-root h-[100dvh] overflow-hidden' : 'cs-embed-root min-h-screen'}
+      style={fullHeight ? undefined : { background }}
+    >
       <LearnerReader objectId={objectId} object={state.object} embedded />
     </div>
   );

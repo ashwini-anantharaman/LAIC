@@ -128,6 +128,17 @@ export function buildLearnerSections(draft: TutorialV3Draft, blocks: Block[]): L
   const pages = pageOfBlocks(blocks);
   const byId = new Map(blocks.map((b) => [b.id, b]));
 
+  /*
+    The draft is authoring state and lives only in the browser that authored it.
+    A tutorial opened from a shared link arrives as blocks alone — and with no
+    `draft.sections` to trace, the sidebar collapsed to its two cover rows and
+    the learner lost every way to navigate. The blocks still say where the
+    sections are: a heading on a block is where one starts. Read them from there.
+  */
+  if (!(draft.sections || []).length && blocks.length) {
+    return sectionsFromHeadings(blocks, pages, byId);
+  }
+
   /** Every block a part produced: itself, or the children it expanded into. */
   const blocksForPart = (partId: string): string[] => {
     if (byId.has(partId)) return [partId];
@@ -146,6 +157,41 @@ export function buildLearnerSections(draft: TutorialV3Draft, blocks: Block[]): L
       pages: sectionPages.length ? sectionPages : [1],
       interactiveBlockIds: blockIds.filter((id) => INTERACTIVE_TYPES.has(String(byId.get(id)?.type))),
       blockIds,
+    };
+  });
+}
+
+/**
+ * Sidebar rows read out of the block stream itself, for readers that never had
+ * the draft. A block carrying a heading opens a section; everything after it
+ * belongs to that section until the next heading.
+ *
+ * Row ids are derived from the first block in each group rather than counted,
+ * so a learner's progress survives a reload and does not shift onto a
+ * neighbouring section when the tutorial is edited.
+ */
+function sectionsFromHeadings(
+  blocks: Block[],
+  pages: Record<string, number>,
+  byId: Map<string, Block>,
+): LearnerSection[] {
+  const groups: { title: string; ids: string[] }[] = [];
+  for (const b of blocks) {
+    const heading = String((b.content as { heading?: string } | undefined)?.heading || '').trim();
+    if (heading || !groups.length) groups.push({ title: heading, ids: [] });
+    groups[groups.length - 1].ids.push(b.id);
+  }
+  return groups.map((g, i) => {
+    const sectionPages = [...new Set(g.ids.map((id) => pages[id]).filter((p) => p != null))]
+      .sort((a, b) => a - b);
+    return {
+      id: `sec:${g.ids[0] || i}`,
+      title: g.title || `Section ${i + 1}`,
+      required: true,
+      index: i + 1,
+      pages: sectionPages.length ? sectionPages : [1],
+      interactiveBlockIds: g.ids.filter((id) => INTERACTIVE_TYPES.has(String(byId.get(id)?.type))),
+      blockIds: g.ids,
     };
   });
 }
