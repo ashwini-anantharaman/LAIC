@@ -33,6 +33,17 @@ export interface RecipeStructureAnalysis {
   sectionAtomics: RecipeItem[];
   /** Full per-section recipe when hasSections (atomics + generate embeds). */
   sectionRecipe: RecipeItem[];
+  /**
+   * Where each embed sits in the template recipe, by embed id.
+   *
+   * The author arranges blocks in a deliberate order in the template — quiz
+   * after the sections, overview before them. Structure has to show that order
+   * back, so the positions travel with the analysis rather than being lost the
+   * moment embeds are split into library and generate groups.
+   */
+  recipeOrder: Record<string, number>;
+  /** Where the Section block sits in the recipe (-1 when the template has none). */
+  sectionOrder: number;
 }
 
 function isLibraryMode(item: EmbeddedObjectItem): boolean {
@@ -53,6 +64,14 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
   const sectionCount = hasSections
     ? Math.max(1, Math.min(20, Number(template.knobDefaults?.secs) || 3))
     : 0;
+
+  const recipeOrder: Record<string, number> = {};
+  recipe.forEach((r, i) => {
+    if (r.kind === 'embedded' && (r as EmbeddedObjectItem).id) {
+      recipeOrder[String((r as EmbeddedObjectItem).id)] = i;
+    }
+  });
+  const sectionOrder = recipe.findIndex((r) => r.kind === 'atomic' && /section/i.test(String((r as any).type || '')));
 
   const embeds = recipe.filter((r): r is EmbeddedObjectItem => r.kind === 'embedded');
   const libraryEmbeds = embeds.filter(isLibraryMode);
@@ -77,6 +96,8 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
     needsSources,
     sectionAtomics,
     sectionRecipe,
+    recipeOrder,
+    sectionOrder: hasSections ? (sectionOrder >= 0 ? sectionOrder : recipe.length) : -1,
   };
 }
 
@@ -95,7 +116,8 @@ export function seedTopLevelSlots(
       objectType: item.objectType,
       authoringNote: item.authoringNote,
       required: item.required !== false,
-      recipeIndex: 0,
+      recipeIndex: analysis.recipeOrder[item.id] ?? 0,
+      order: old?.order ?? analysis.recipeOrder[item.id] ?? 0,
       versionPin: old?.versionPin || item.versionPin,
       libraryTitle: old?.libraryTitle || item.libraryTitle,
       part: old?.part,
@@ -115,7 +137,8 @@ export function seedTopLevelSlots(
       objectType: item.objectType,
       authoringNote: item.authoringNote,
       required: item.required !== false,
-      recipeIndex: 0,
+      recipeIndex: analysis.recipeOrder[item.id] ?? 0,
+      order: old?.order ?? analysis.recipeOrder[item.id] ?? 0,
       generateMeta: old?.generateMeta || item.generateMeta,
       part: old?.part || parts?.[0],
       parts,
@@ -131,11 +154,20 @@ export function seedTopLevelSlots(
   // Author-added slots (recipeIndex -1, e.g. Blank canvas "Add content") are
   // not recipe-derived — preserve them across Structure re-entries.
   const seeded = new Set(out.map((s) => s.id));
+  // Author-added slots land after the recipe's own, in the order they were added.
+  let tail = Math.max(0, ...out.map((s) => s.order ?? 0)) + 1;
   for (const s of existing || []) {
-    if (s.recipeIndex === -1 && !seeded.has(s.id)) out.push(s);
+    if (s.recipeIndex === -1 && !seeded.has(s.id)) {
+      out.push(s.order == null ? { ...s, order: tail++ } : s);
+    }
   }
 
-  return out;
+  /*
+    Library and generate embeds were collected in two passes, which is an
+    implementation detail — not an order the author asked for. Sorting by the
+    recipe position puts the list back the way the template reads.
+  */
+  return out.sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
 }
 
 export function seedSectionsFromAnalysis(
@@ -154,7 +186,14 @@ export function seedSectionsFromAnalysis(
     outline.push({ title: `Section ${outline.length + 1}`, intent: '' });
   }
 
-  return outline.map((row) => ({
+  /*
+    Every section shares the Section block's slot in the recipe, so they are
+    spread across a fractional span — enough to keep them in outline order and
+    still sit as a group wherever the template put them.
+  */
+  const base = analysis.sectionOrder >= 0 ? analysis.sectionOrder : 0;
+  return outline.map((row, i) => ({
+    order: base + i / (outline.length + 1),
     id: row.id || newSectionId(),
     title: String(row.title || '').trim() || 'Section',
     intent: row.intent || '',

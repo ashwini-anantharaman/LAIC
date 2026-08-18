@@ -460,7 +460,7 @@ export function TutorialV3SectionWorkspace({
       </div>
 
       {allowAiGenerate ? (
-        <div className="flex gap-2 mb-5">
+        <div className="flex flex-wrap gap-2 mb-5">
           <TabBtn active={tab === 'write'} onClick={() => { ensureWriteParts(); setTab('write'); }} icon={<PenLine size={13} />} label="Write myself" />
           <TabBtn
             active={tab === 'generate'}

@@ -109,6 +109,13 @@ export interface V3TopLevelSlot {
   units?: ContentUnit[];
   done: boolean;
   /**
+   * Position in the tutorial's one true running order, shared by sections and
+   * top-level slots. Seeded from where the block sits in the template recipe,
+   * then rewritten whenever the author drags a row on Structure. Absent on
+   * drafts made before ordering existed — those fall back to slots-then-sections.
+   */
+  order?: number;
+  /**
    * Student-preview page (1-based). Same number = same learner page.
    * Set on Structure; omitted means legacy auto word-budget pagination.
    */
@@ -129,6 +136,13 @@ export interface V3Section {
   authorMode: SectionAuthorMode;
   done: boolean;
   required: boolean;
+  /**
+   * Position in the tutorial's one true running order, shared by sections and
+   * top-level slots. Seeded from where the block sits in the template recipe,
+   * then rewritten whenever the author drags a row on Structure. Absent on
+   * drafts made before ordering existed — those fall back to slots-then-sections.
+   */
+  order?: number;
   /**
    * Student-preview page (1-based). Same number = same learner page.
    * Set on Structure; omitted means legacy auto word-budget pagination.

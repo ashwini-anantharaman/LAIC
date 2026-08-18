@@ -75,7 +75,11 @@ export function TutorialV3Navigator({
     targets: { kind: 'section' | 'slot'; id: string }[],
     opts?: { noMarkup?: boolean },
   ) => void;
-  /** Reorder the outline. Absent when the caller has no way to persist it. */
+  /**
+   * Reorder the outline — sections and top-level content in one running order.
+   * The ids arrive interleaved, exactly as the rows now read top to bottom.
+   * Absent when the caller has no way to persist it.
+   */
   onReorderSections?: (orderedIds: string[]) => void;
   /** Remove a generate slot, the way a section can already be removed. */
   onDeleteSlot?: (slotId: string) => void;
@@ -102,10 +106,33 @@ export function TutorialV3Navigator({
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  /*
+    Sections and top-level content are stored in two arrays, but the author
+    arranged them as one sequence in the template and reads them back as one
+    sequence here. `order` is what makes the two arrays a single list; drafts
+    made before it existed fall back to the old content-then-sections reading.
+  */
+  const rows = React.useMemo(() => {
+    const slotRows = (draft.topLevelSlots || []).map((slot, i) => ({
+      kind: 'slot' as const,
+      id: slot.id,
+      slot,
+      order: slot.order ?? i,
+    }));
+    const sectionRows = draft.sections.map((sec, i) => ({
+      kind: 'section' as const,
+      id: sec.id,
+      sec,
+      ordinal: i,
+      order: sec.order ?? slotRows.length + i,
+    }));
+    return [...slotRows, ...sectionRows].sort((a, b) => a.order - b.order);
+  }, [draft.topLevelSlots, draft.sections]);
+
   const handleReorder = (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id || !onReorderSections) return;
-    const ids = draft.sections.map((sec) => sec.id);
+    const ids = rows.map((r) => r.id);
     const from = ids.indexOf(String(active.id));
     const to = ids.indexOf(String(over.id));
     if (from < 0 || to < 0) return;
@@ -210,7 +237,7 @@ export function TutorialV3Navigator({
                 : 'Tick the ones that share a source, then generate them together instead of one at a time.'}
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto sm:shrink-0">
             {selected.length > 0 && (
               <button
                 type="button"
@@ -236,7 +263,7 @@ export function TutorialV3Navigator({
               type="button"
               disabled={!selected.length}
               onClick={() => onBatchGenerate(asTargets(selected))}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border disabled:opacity-40 flex-1 sm:flex-none justify-center"
               style={{ fontSize: 12.5, fontWeight: 650, color: '#2f4e39', borderColor: V3_SAGE, background: '#fff' }}
             >
               Mark up once and generate
@@ -246,7 +273,7 @@ export function TutorialV3Navigator({
               disabled={!selected.length}
               onClick={() => onBatchGenerate(asTargets(selected), { noMarkup: true })}
               title="No markup step — the model reads the whole source and decides what matters"
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white disabled:opacity-40"
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white disabled:opacity-40 flex-1 sm:flex-none justify-center"
               style={{ fontSize: 12.5, fontWeight: 650, background: V3_SAGE }}
             >
               <Sparkles size={13} />
@@ -256,41 +283,46 @@ export function TutorialV3Navigator({
         </div>
       )}
 
-      {(hasLibrarySlots || hasGenerateSlots) && (
-        <div className="space-y-2 mb-4">
+      {rows.length > 0 && (
+        <div className="flex items-baseline justify-between gap-2 mb-2">
           <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase' }}>
-            Recipe content
+            Tutorial outline
           </p>
-          {slots.map((slot) => (
-            <SlotRow
-              key={slot.id}
-              slot={slot}
-              onOpen={slot.kind === 'generate' ? () => onOpenSlot(slot.id) : undefined}
-              selectable={!!onBatchGenerate && slot.kind === 'generate'}
-              selected={selected.includes(slot.id)}
-              onToggleSelected={() => toggleSelected(slot.id)}
-              onDelete={onDeleteSlot ? () => onDeleteSlot(slot.id) : undefined}
-            />
-          ))}
+          {onReorderSections && rows.length > 1 && (
+            <p className="hidden sm:block" style={{ fontSize: 12, color: '#9AA3AF' }}>
+              Drag to change the order students read
+            </p>
+          )}
         </div>
       )}
 
       <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleReorder}>
-      <SortableContext items={draft.sections.map((sec) => sec.id)} strategy={verticalListSortingStrategy}>
+      <SortableContext items={rows.map((r) => r.id)} strategy={verticalListSortingStrategy}>
       <div className="space-y-2">
-        {draft.sections.map((sec, i) => (
-          <SectionRow
-            key={sec.id}
-            index={i}
-            sec={sec}
-            onOpen={() => onOpenSection(sec.id)}
-            onDelete={onDeleteSection ? () => onDeleteSection(sec.id) : undefined}
-            selectable={!!onBatchGenerate}
-            selected={selected.includes(sec.id)}
-            onToggleSelected={() => toggleSelected(sec.id)}
+        {rows.map((row) => (row.kind === 'slot' ? (
+          <SlotRow
+            key={row.id}
+            slot={row.slot}
+            onOpen={row.slot.kind === 'generate' ? () => onOpenSlot(row.slot.id) : undefined}
+            selectable={!!onBatchGenerate && row.slot.kind === 'generate'}
+            selected={selected.includes(row.id)}
+            onToggleSelected={() => toggleSelected(row.id)}
+            onDelete={onDeleteSlot ? () => onDeleteSlot(row.slot.id) : undefined}
             reorderable={!!onReorderSections}
           />
-        ))}
+        ) : (
+          <SectionRow
+            key={row.id}
+            index={row.ordinal}
+            sec={row.sec}
+            onOpen={() => onOpenSection(row.sec.id)}
+            onDelete={onDeleteSection ? () => onDeleteSection(row.sec.id) : undefined}
+            selectable={!!onBatchGenerate}
+            selected={selected.includes(row.id)}
+            onToggleSelected={() => toggleSelected(row.id)}
+            reorderable={!!onReorderSections}
+          />
+        )))}
         {!draft.sections.length && !slots.length && (
           <p style={{ fontSize: 13.5, color: '#9AA3AF' }}>
             No sections yet — go back to Structure and save a skeleton.
@@ -339,6 +371,7 @@ function SlotRow({
   selected = false,
   onToggleSelected,
   onDelete,
+  reorderable = false,
 }: {
   slot: V3TopLevelSlot;
   onOpen?: () => void;
@@ -346,7 +379,12 @@ function SlotRow({
   selected?: boolean;
   onToggleSelected?: () => void;
   onDelete?: () => void;
+  reorderable?: boolean;
 }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: slot.id,
+    disabled: !reorderable,
+  });
   const label = slot.kind === 'library'
     ? (slot.libraryTitle || embedTypeLabel(String(slot.objectType)))
     : embedTypeLabel(String(slot.objectType));
@@ -356,6 +394,18 @@ function SlotRow({
       ? 'Not authored'
       : 'Not picked';
   const clickable = !!onOpen;
+
+  const grip = reorderable ? (
+    <button
+      type="button"
+      className="shrink-0 self-center pl-2 pr-0.5 cursor-grab active:cursor-grabbing"
+      aria-label={`Reorder ${label}`}
+      {...attributes}
+      {...listeners}
+    >
+      <GripVertical size={15} style={{ color: '#C4CBD4' }} />
+    </button>
+  ) : null;
 
   const inner = (
     <>
@@ -394,13 +444,21 @@ function SlotRow({
   if (clickable) {
     return (
       <div
-        className="flex items-stretch rounded-2xl"
+        ref={setNodeRef}
+        className="flex items-stretch gap-1 rounded-2xl"
         style={{
           background: slot.done ? 'rgba(77,124,90,0.06)' : 'rgba(255,255,255,0.72)',
           border: `1px solid ${selected ? V3_SAGE : 'rgba(0,0,0,0.06)'}`,
-          boxShadow: '0 4px 16px -8px rgba(30,50,80,0.12)',
+          boxShadow: isDragging
+            ? '0 12px 28px -12px rgba(30,50,80,0.4)'
+            : '0 4px 16px -8px rgba(30,50,80,0.12)',
+          transform: CSS.Transform.toString(transform),
+          transition,
+          position: isDragging ? 'relative' : undefined,
+          zIndex: isDragging ? 5 : undefined,
         }}
       >
+        {grip}
         {selectable && onToggleSelected && (
           <SelectBox checked={selected} onToggle={onToggleSelected} label={label} />
         )}
@@ -428,12 +486,19 @@ function SlotRow({
 
   return (
     <div
-      className="flex items-center gap-3 px-4 py-3.5 rounded-2xl"
+      ref={setNodeRef}
+      className="flex items-center gap-3 pl-1 pr-4 py-3.5 rounded-2xl"
       style={{
         background: slot.done ? 'rgba(77,124,90,0.06)' : 'rgba(249,250,251,0.95)',
         border: '1px solid rgba(0,0,0,0.06)',
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: isDragging ? 'relative' : undefined,
+        zIndex: isDragging ? 5 : undefined,
       }}
     >
+      {grip}
+      {!grip && <span className="pl-3" />}
       {inner}
     </div>
   );
@@ -520,7 +585,7 @@ function SectionRow({
         </div>
         <div className="flex items-center gap-2 shrink-0">
           {mode ? (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ fontSize: 11, color: '#6B7280', background: '#F3F4F6' }}>
+            <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full" style={{ fontSize: 11, color: '#6B7280', background: '#F3F4F6' }}>
               {mode === 'generated' ? <Sparkles size={10} /> : <PenLine size={10} />}
               {mode}
             </span>

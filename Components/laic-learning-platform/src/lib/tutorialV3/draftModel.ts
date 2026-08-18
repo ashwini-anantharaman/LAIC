@@ -422,15 +422,41 @@ export function bumpAuthorMode(
   return 'mixed';
 }
 
+/**
+ * The tutorial's one running order: sections and top-level content interleaved.
+ *
+ * The draft stores them in two arrays, which says nothing about which comes
+ * first. `order` — seeded from the template recipe, rewritten when the author
+ * drags a row on Structure — is what makes them a single sequence. Drafts made
+ * before `order` existed have none, and fall back to the old reading of all
+ * content first and then the sections.
+ */
+export function outlineRows(draft: TutorialV3Draft): Array<
+  | { kind: 'slot'; order: number; slot: NonNullable<TutorialV3Draft['topLevelSlots']>[number] }
+  | { kind: 'section'; order: number; section: TutorialV3Draft['sections'][number] }
+> {
+  const slots = draft.topLevelSlots || [];
+  const rows = [
+    ...slots.map((slot, i) => ({ kind: 'slot' as const, order: slot.order ?? i, slot })),
+    ...(draft.sections || []).map((section, i) => ({
+      kind: 'section' as const,
+      order: section.order ?? slots.length + i,
+      section,
+    })),
+  ];
+  return rows.sort((a, b) => a.order - b.order);
+}
+
 /** Collect parts from recipe slots + sections (ignores assembledParts override). */
 export function collectRecipeParts(draft: TutorialV3Draft): TutorialV3Part[] {
   const out: TutorialV3Part[] = [];
-  for (const slot of draft.topLevelSlots || []) {
-    if (slot.parts?.length) out.push(...slot.parts);
-    else if (slot.part) out.push(slot.part);
-  }
-  for (const sec of draft.sections || []) {
-    if (sec.parts?.length) out.push(...sec.parts);
+  for (const row of outlineRows(draft)) {
+    if (row.kind === 'slot') {
+      if (row.slot.parts?.length) out.push(...row.slot.parts);
+      else if (row.slot.part) out.push(row.slot.part);
+    } else if (row.section.parts?.length) {
+      out.push(...row.section.parts);
+    }
   }
   return out;
 }
@@ -462,16 +488,16 @@ export function applyLearnerPageBreaksToParts(
   }
 
   const pageByPartId = new Map<string, number>();
-  const outline = [
-    ...slots.map((s, i) => ({
-      page: s.learnerPage ?? (i + 1),
-      partIds: (s.parts?.length ? s.parts : (s.part ? [s.part] : [])).map((p) => p.id),
-    })),
-    ...sections.map((s, i) => ({
-      page: s.learnerPage ?? (slots.length + i + 1),
-      partIds: (s.parts || []).map((p) => p.id),
-    })),
-  ];
+  // Rows without an explicit page fall back to their place in the running order.
+  const outline = outlineRows(draft).map((row, i) => (row.kind === 'slot'
+    ? {
+      page: row.slot.learnerPage ?? (i + 1),
+      partIds: (row.slot.parts?.length ? row.slot.parts : (row.slot.part ? [row.slot.part] : [])).map((p) => p.id),
+    }
+    : {
+      page: row.section.learnerPage ?? (i + 1),
+      partIds: (row.section.parts || []).map((p) => p.id),
+    }));
   for (const item of outline) {
     for (const id of item.partIds) pageByPartId.set(id, Math.max(1, Number(item.page) || 1));
   }

@@ -454,7 +454,12 @@ export function TutorialV3RefineSidebar({
 
   return (
     <aside
-      className="shrink-0 flex flex-col border-l min-h-0"
+      /*
+        Stacked under the editor on a phone, this panel is as tall as its
+        content and leaves the editor a sliver. Capping it keeps both usable;
+        side by side on a wide screen it takes the full column height as before.
+      */
+      className="shrink-0 flex flex-col border-t md:border-t-0 md:border-l min-h-0 max-h-[60vh] md:max-h-none"
       style={{
         width: 'min(400px, 100%)',
         background: '#fff',

@@ -2191,6 +2191,19 @@ async function refineClustersWithLlm(kb, { objective, topic, shapeIntent }) {
 
 /* ─── Tutorial: generate ──────────────────────────────────────────── */
 
+/**
+ * A section title the scaffold chose, not a person.
+ *
+ * "Section 1" is a position, not a subject. Handed to the model as the section
+ * title, it obediently echoes it back as the heading, and the finished tutorial
+ * has an outline that describes its own shape instead of its content.
+ */
+function isPlaceholderSectionTitle(title) {
+  const t = String(title || '').trim();
+  if (!t) return true;
+  return /^(section|part|chapter|module|topic|concept)\s*\d*$/i.test(t) || /^untitled/i.test(t);
+}
+
 function buildGeneratePrompt(body) {
   const { title, config, extracts, prompt, media, template, knowledgeBase, sectionPlans, tutorialDefinition } = body || {};
   const authorDirectives = collectAuthorDirectives(body);
@@ -2325,8 +2338,14 @@ function buildGeneratePrompt(body) {
         ? formatCompositeRecipe(sp.sectionRecipe, sectionIdForSlots)
         : formatFlatRecipe(sp.recipe || template.sectionBlockRecipe || []);
       const sectionDepth = sp.depth || c.dpth || 'Standard';
+      const unnamed = isPlaceholderSectionTitle(sp.title);
       return [
-        `### Section ${sp.index + 1}: ${sp.title}`,
+        unnamed
+          ? `### Section ${sp.index + 1}: (NOT YET TITLED — you choose the title)`
+          : `### Section ${sp.index + 1}: ${sp.title}`,
+        unnamed
+          ? 'TITLE THIS SECTION: nobody has named this section yet. Open it with a heading that says what it actually teaches, drawn from its source units below — concrete and specific, at most eight words. Never emit a positional placeholder such as "Section 1", "Part 2", "Introduction" or "Untitled".'
+          : '',
         sp.intent ? `Section intent (human-defined — honor this): ${sp.intent}` : '',
         sp.archetypeId ? `Section type (archetype): ${sp.archetypeId}` : '',
         `Section depth: ${sectionDepth} — size this section from its units at this depth`,

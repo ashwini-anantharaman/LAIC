@@ -89,6 +89,32 @@ function extractsFromUnits(units: ContentUnit[]): TutorialExtract[] {
   }));
 }
 
+
+/**
+ * A title nobody chose.
+ *
+ * "Section 1" is what the scaffold calls a section before anyone has said what
+ * it is about. Keeping it after generation leaves the outline describing the
+ * shape of the tutorial rather than its content — and the model has just
+ * written a heading that says exactly what the section turned out to be.
+ */
+function isPlaceholderSectionTitle(title: string): boolean {
+  const t = String(title || '').trim();
+  if (!t) return true;
+  return /^(section|part|chapter|concept)\s*\d*$/i.test(t) || /^untitled/i.test(t);
+}
+
+/** The heading the generator gave this section, if it gave one. */
+function headingFromParts(parts: TutorialV3Part[]): string | null {
+  for (const p of parts) {
+    const heading = String((p as { heading?: string }).heading || '').trim();
+    // Skip reserved embed positions — their heading is a marker, not a title.
+    if (!heading || slotKeyFromPart(p)) continue;
+    return heading;
+  }
+  return null;
+}
+
 async function generateSectionParts(opts: {
   draft: TutorialV3Draft;
   template: TutorialTemplate;
@@ -98,11 +124,20 @@ async function generateSectionParts(opts: {
   signal: AbortSignal;
 }): Promise<TutorialV3Part[]> {
   const { draft, template, section, units, highlights, signal } = opts;
+  /*
+    `sectionPlans[0].title` keeps the placeholder — the server watches for it and
+    tells the model to name the section itself. Everywhere else the placeholder
+    is just noise the model can copy, so those carry the subject instead.
+  */
+  const unnamed = isPlaceholderSectionTitle(section.title);
+  const subject = String(
+    (unnamed ? section.intent || draft.metadata.objective || draft.title : section.title) || draft.title,
+  );
   const kb: ClusteredKnowledgeBase = {
     units,
     clusters: [{
       id: section.id,
-      name: section.title,
+      name: subject,
       unitIds: units.map((u) => u.id),
       sectionId: section.id,
     }],
@@ -122,7 +157,7 @@ async function generateSectionParts(opts: {
 
   const collected: GeneratedPart[] = [];
   for await (const ev of generateTutorial({
-    title: `${draft.title} — ${section.title}`,
+    title: unnamed ? draft.title : `${draft.title} — ${section.title}`,
     config: {
       secs: 1,
       prog: draft.structure.progression,
@@ -136,7 +171,7 @@ async function generateSectionParts(opts: {
       hintN: draft.structure.hintN ?? 4,
       aiExtra: false,
       obj: String(draft.metadata.objective || section.intent || section.title),
-      topic: section.title,
+      topic: subject,
     } as any,
     template,
     knowledgeBase: kb as any,
@@ -256,6 +291,8 @@ export async function runBatchGenerate(opts: {
     onOutcome({ target, status: 'running' });
     /** Set when the target succeeded but something inside it did not. */
     let note: string | undefined;
+    /** Set when the section took the title the generator wrote for it. */
+    let renamedTo: string | undefined;
     try {
       const units = markup.units?.length
         ? markup.units
@@ -280,7 +317,18 @@ export async function runBatchGenerate(opts: {
         if (filled.failures.length) {
           note = `Written, but ${filled.failures.join(' and ')} could not be generated.`;
         }
+        /*
+          Adopt the generated heading when the section is still called whatever
+          the scaffold named it. An author who titled it themselves keeps their
+          title — this only fills a blank.
+        */
+        const generatedTitle = isPlaceholderSectionTitle(section.title)
+          ? headingFromParts(filled.parts)
+          : null;
+        if (generatedTitle) renamedTo = generatedTitle;
+
         onSectionDone(target.id, {
+          ...(generatedTitle ? { title: generatedTitle } : {}),
           parts: filled.parts,
           units,
           pickedSourceIds: markup.pickedSourceIds,
@@ -328,7 +376,11 @@ export async function runBatchGenerate(opts: {
           done: true,
         });
       }
-      onOutcome({ target, status: 'done', message: note });
+      onOutcome({
+        target: renamedTo ? { ...target, title: renamedTo } : target,
+        status: 'done',
+        message: note,
+      });
     } catch (e) {
       if (e instanceof DOMException && e.name === 'AbortError') return;
       // One target failing is not the batch failing — carry on and report it.

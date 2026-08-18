@@ -1737,8 +1737,17 @@ export function LearnerReader({
     different learner views depending on how you arrived, which is the sort of
     thing an author only finds out about after publishing.
   */
-  if (obj.type === 'tutorial-v3' && obj.tutorialV3Draft) {
-    const v3 = obj.tutorialV3Draft;
+  if (obj.type === 'tutorial-v3') {
+    /*
+      The draft is authoring state and lives only in this browser — a saved
+      object round-tripped through the server (a shared /o/<id> link, another
+      machine, a fresh tab that never authored it) comes back without one.
+      The reader reads the blocks and takes only the title from the draft, so a
+      missing draft is no reason to drop a v3 tutorial back to the generic
+      reader: that showed the same object in two different UIs depending on how
+      the learner arrived. Stand in for it and keep one learner view.
+    */
+    const v3 = obj.tutorialV3Draft || ({ title: obj.title } as NonNullable<typeof obj.tutorialV3Draft>);
     const v3Pass = parseInt(String(v3.structure?.pass || '70').replace('%', ''), 10) || 70;
     return (
       <TutorialV3Reader
@@ -1767,7 +1776,7 @@ export function LearnerReader({
   const passMark = passOpts.passMark ?? 70;
   const passRequired = passOpts.passRequired;
   const numbered = renumberBlockQuestionLabels(expandTutorialBlocks(obj.blocks)) as Block[];
-  const useCumulative = (obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3') && countQuizQuestionsInBlocks(numbered) > 0;
+  const useCumulative = (obj.type === 'tutorial' || obj.type === 'tutorial-v2') && countQuizQuestionsInBlocks(numbered) > 0;
   const glossaryEntries = buildGlossary({
     knowledgeBase: draft?.knowledgeBase,
     blocks: numbered,
@@ -1871,7 +1880,7 @@ export function LearnerReader({
           <div className="flex items-center gap-2 mb-1">
             <BookOpen size={13} style={{ color: '#9AA3AF' }} />
             <span style={{ fontSize: 11.5, color: '#9AA3AF', fontWeight: 500 }}>
-              {obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3' ? 'Tutorial'
+              {obj.type === 'tutorial' || obj.type === 'tutorial-v2' ? 'Tutorial'
                 : obj.type === 'flashcard-set' ? 'Flashcard set'
                   : obj.type === 'quiz' ? 'Quiz'
                     : obj.type === 'concept-card' ? 'Concept card'
@@ -1904,7 +1913,7 @@ export function LearnerReader({
             hintsEnabled={hintOpts.enabled}
             animate
             sourceUnits={draft?.knowledgeBase?.units}
-            paginate={!embedded && (obj.type === 'tutorial' || obj.type === 'tutorial-v2' || obj.type === 'tutorial-v3')}
+            paginate={!embedded && (obj.type === 'tutorial' || obj.type === 'tutorial-v2')}
           />
         ) : (
           <div className="flex flex-col items-center py-12 text-center">

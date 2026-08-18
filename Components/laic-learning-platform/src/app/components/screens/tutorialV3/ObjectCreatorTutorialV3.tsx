@@ -1695,24 +1695,33 @@ export function ObjectCreatorTutorialV3() {
           setBatchSelection(sel);
         }}
         onReorderSections={(orderedIds) => {
-          // Reordering the outline reorders the learner's pages too, so the page
-          // stamps are renumbered to match rather than left pointing at the old
-          // positions.
-          const byId = new Map(draft.sections.map((sec) => [sec.id, sec]));
-          const sections = orderedIds
-            .map((id, i) => {
-              const sec = byId.get(id);
-              return sec ? { ...sec, learnerPage: i + 1 } : null;
-            })
-            .filter(Boolean) as typeof draft.sections;
+          /*
+            The ids arrive as one running order with sections and top-level
+            content interleaved, because that is how the outline reads. They are
+            split back into the two arrays the draft stores, each row keeping the
+            position it was dropped at — and the learner page stamps are
+            renumbered to match rather than left pointing at the old positions.
+          */
+          const secById = new Map(draft.sections.map((sec) => [sec.id, sec]));
+          const slotById = new Map((draft.topLevelSlots || []).map((sl) => [sl.id, sl]));
+          const sections: typeof draft.sections = [];
+          const slots: NonNullable<typeof draft.topLevelSlots> = [];
+          orderedIds.forEach((id, i) => {
+            const sec = secById.get(id);
+            if (sec) { sections.push({ ...sec, order: i, learnerPage: i + 1 }); return; }
+            const slot = slotById.get(id);
+            if (slot) slots.push({ ...slot, order: i, learnerPage: i + 1 });
+          });
+          // A row that went missing means the list is stale — leave the draft alone.
           if (sections.length !== draft.sections.length) return;
+          if (slots.length !== (draft.topLevelSlots || []).length) return;
           setSectionTitles(sections.map((sec, i) => ({
             id: sec.id,
             title: sec.title,
             intent: sec.intent || '',
             learnerPage: sec.learnerPage ?? (i + 1),
           })));
-          commit(touchDraft(draft, { sections, assembledParts: undefined }));
+          commit(touchDraft(draft, { sections, topLevelSlots: slots, assembledParts: undefined }));
         }}
         onDeleteSlot={(slotId) => {
           void (async () => {

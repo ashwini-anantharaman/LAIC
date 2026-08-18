@@ -269,7 +269,9 @@ export function TutorialV3BatchGenerate({
         <div className="space-y-2">
           <p style={{ fontSize: 13, color: '#57534e', marginBottom: 8 }}>
             {busy
-              ? 'Generating one at a time from your markup — you can leave this running.'
+              ? (noMarkup
+                ? 'Generating one at a time — the model is reading your sources and deciding what matters. You can leave this running.'
+                : 'Generating one at a time from your markup — you can leave this running.')
               : `Finished · ${doneCount} generated${failedCount ? `, ${failedCount} failed` : ''}.`}
           </p>
           {targets.map((t) => {

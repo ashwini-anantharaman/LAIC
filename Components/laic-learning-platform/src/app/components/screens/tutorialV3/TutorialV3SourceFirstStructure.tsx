@@ -88,7 +88,7 @@ export function TutorialV3SourceFirstStructure({
     : p));
 
   return (
-    <div className="max-w-4xl mx-auto">
+    <div className="max-w-4xl mx-auto px-4 sm:px-0">
       <div
         className="rounded-2xl px-4 py-3 mb-5"
         style={{ background: V3_SAGE_TINT, border: `1px solid ${V3_SAGE_BORDER}` }}
