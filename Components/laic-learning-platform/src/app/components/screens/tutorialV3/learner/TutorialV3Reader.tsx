@@ -295,6 +295,19 @@ function ArrangeContext({
  * Split in two because `useSortable` needs a DndContext above it, and the
  * cover pages have none: they sit outside the block stream entirely.
  */
+/**
+ * Which block is open for editing, held above the frames.
+ *
+ * It cannot live in the frame: editing a block changes its text, which
+ * repaginates the stream, which can move the block under a different parent
+ * and unmount it — taking the open editor and the caret with it. Held here,
+ * a frame that remounts comes back open.
+ */
+const InlineEditContext = React.createContext<{
+  editingId: string | null;
+  setEditingId: (id: string | null) => void;
+}>({ editingId: null, setEditingId: () => {} });
+
 function FrameBody({
   id,
   renderInlineEditor,
@@ -311,7 +324,9 @@ function FrameBody({
     handle: React.ReactNode;
   };
 }) {
-  const [editing, setEditing] = useState(false);
+  const { editingId, setEditingId } = React.useContext(InlineEditContext);
+  const editing = editingId === id;
+  const setEditing = (on: boolean) => setEditingId(on ? id : null);
   const [hover, setHover] = useState(false);
 
   const editor = editing && renderInlineEditor ? renderInlineEditor(id, () => setEditing(false)) : null;
@@ -523,6 +538,8 @@ function ReaderInner({
   const [contentPages, setContentPages] = useState(() => countPages(expanded));
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const inlineEdit = useMemo(() => ({ editingId, setEditingId }), [editingId]);
   const [askOpen, setAskOpen] = useState(false);
 
   /**
@@ -599,6 +616,7 @@ function ReaderInner({
       dragged the rail up and out of view — it was only ever as tall as the
       viewport, so scrolling down left an empty strip where it had been.
     */
+    <InlineEditContext.Provider value={inlineEdit}>
     <div
       className="flex overflow-hidden"
       style={{ background: WARM_BG, fontFamily: WARM_FONT, height: '100%', minHeight: 520 }}
@@ -805,6 +823,7 @@ function ReaderInner({
 
       {object && <AskAIChat open={askOpen} onClose={() => setAskOpen(false)} obj={object} />}
     </div>
+    </InlineEditContext.Provider>
   );
 }
 

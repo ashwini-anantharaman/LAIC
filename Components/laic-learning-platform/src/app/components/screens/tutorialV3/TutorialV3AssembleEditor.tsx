@@ -91,6 +91,106 @@ function ImageDropZone({
   );
 }
 
+/**
+ * A structured block edited inside the preview.
+ *
+ * Same reason as the prose editor: writing each keystroke through to the draft
+ * rebuilds the lesson under the caret. The block is edited against a local
+ * copy and written back when the editor closes.
+ */
+function InlineBlockSession({
+  type,
+  initial,
+  onCommit,
+}: {
+  type: string;
+  initial: Record<string, unknown>;
+  onCommit: (next: Record<string, unknown>) => void;
+}) {
+  const [content, setContent] = useState(initial);
+  const latest = React.useRef(content);
+  latest.current = content;
+  useEffect(() => () => {
+    if (latest.current !== initial) onCommit(latest.current);
+    // Unmount only — see InlineTextEditor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="space-y-2">
+      <TutorialV3BlockEditor type={type} content={content} onChange={setContent} />
+      <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>The page updates when you press Done.</p>
+    </div>
+  );
+}
+
+/**
+ * Inline prose editing that types like a text box.
+ *
+ * Writing straight through to the draft on every keystroke re-rendered the
+ * whole lesson underneath the caret: the text changes, the stream repaginates,
+ * and the field the author is typing into is rebuilt mid-word. The edit is
+ * held locally and committed when the author leaves the field, so typing costs
+ * nothing and the preview updates once, when there is something to show.
+ */
+function InlineTextEditor({
+  heading,
+  body,
+  onCommit,
+}: {
+  heading?: string;
+  body: string;
+  onCommit: (patch: { heading?: string; body?: string }) => void;
+}) {
+  const [h, setH] = useState(heading || '');
+  const [b, setB] = useState(body);
+
+  // Commit on unmount too — closing the editor should not discard the edit.
+  const latest = React.useRef({ h, b });
+  latest.current = { h, b };
+  useEffect(() => () => {
+    const patch: { heading?: string; body?: string } = {};
+    if (heading !== undefined && latest.current.h !== heading) patch.heading = latest.current.h;
+    if (latest.current.b !== body) patch.body = latest.current.b;
+    if (Object.keys(patch).length) onCommit(patch);
+    // Only on unmount: committing on every prop change is the thing being avoided.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commit = () => {
+    const patch: { heading?: string; body?: string } = {};
+    if (heading !== undefined && h !== heading) patch.heading = h;
+    if (b !== body) patch.body = b;
+    if (Object.keys(patch).length) onCommit(patch);
+  };
+
+  return (
+    <div className="space-y-2">
+      {heading !== undefined && (
+        <input
+          className="w-full"
+          value={h}
+          placeholder="Heading"
+          onChange={(e) => setH(e.target.value)}
+          onBlur={commit}
+          style={{ fontSize: 15, fontWeight: 700, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
+        />
+      )}
+      <textarea
+        className="w-full"
+        rows={10}
+        value={b}
+        placeholder="Body"
+        onChange={(e) => setB(e.target.value)}
+        onBlur={commit}
+        style={{ fontSize: 13.5, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '10px 12px', resize: 'vertical' }}
+      />
+      <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+        The page updates when you click away or press Done.
+      </p>
+    </div>
+  );
+}
+
 export function TutorialV3AssembleEditor({
   draft,
   parts,
@@ -243,10 +343,11 @@ export function TutorialV3AssembleEditor({
     const v3Type = v3BlockTypeOf(part);
     if (hasV3BlockEditor(v3Type)) {
       return (
-        <TutorialV3BlockEditor
+        <InlineBlockSession
+          key={part.id}
           type={v3Type!}
-          content={extractV3BlockContent(part) || emptyV3BlockContent(v3Type!, part.libraryTitle)}
-          onChange={(next) => updatePart(part.id, applyV3BlockContent(part, next))}
+          initial={extractV3BlockContent(part) || emptyV3BlockContent(v3Type!, part.libraryTitle)}
+          onCommit={(next) => updatePart(part.id, applyV3BlockContent(part, next))}
         />
       );
     }
@@ -274,25 +375,12 @@ export function TutorialV3AssembleEditor({
     // Everything else is a heading and a body — the shape most of a lesson is.
     if (part.heading === undefined && part.body === undefined) return null;
     return (
-      <div className="space-y-2">
-        {part.heading !== undefined && (
-          <input
-            className="w-full"
-            value={part.heading || ''}
-            placeholder="Heading"
-            onChange={(e) => updatePart(part.id, { heading: e.target.value })}
-            style={{ fontSize: 15, fontWeight: 700, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
-          />
-        )}
-        <textarea
-          className="w-full"
-          rows={8}
-          value={part.body || ''}
-          placeholder="Body"
-          onChange={(e) => updatePart(part.id, { body: e.target.value })}
-          style={{ fontSize: 13.5, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '10px 12px', resize: 'vertical' }}
-        />
-      </div>
+      <InlineTextEditor
+        key={part.id}
+        heading={part.heading}
+        body={part.body || ''}
+        onCommit={(patch) => updatePart(part.id, patch)}
+      />
     );
   };
 
