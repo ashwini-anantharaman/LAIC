@@ -4,11 +4,29 @@
  * Also assigns student-preview pages (which outline items share a learner page).
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Library, Plus, Sparkles, Trash2 } from 'lucide-react';
+import { BookOpen, GripVertical, Library, Plus, Sparkles, Trash2 } from 'lucide-react';
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import type { LearningObject, TutorialTemplate } from '../../../../lib/types';
 import {
   analyzeTemplateRecipe,
   applyLibraryPickToSlot,
+  defaultSectionOrder,
   embedTypeLabel,
   structureIsReady,
   type RecipeStructureAnalysis,
@@ -118,24 +136,87 @@ export function TutorialV3StructurePanel({
     onChangeSectionTitles(next);
   }, [analysis.hasSections, analysis.sectionCount, writeYourself, freeform]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ensure every outline row has a learnerPage once Structure is shown.
-  useEffect(() => {
-    if (!sectionTitles.length) return;
-    if (sectionTitles.every((r) => r.learnerPage != null)) return;
-    onChangeSectionTitles(sectionTitles.map((r, i) => ({
-      ...r,
-      learnerPage: r.learnerPage ?? (i + 1),
-    })));
-  }, [sectionTitles, onChangeSectionTitles]);
+  /*
+    Ensure every outline row has a learnerPage once Structure is shown.
 
+    Both lists used to number from 1 independently, so a template's opening
+    question and its first section each claimed page 1 and the student view
+    showed them together without anyone asking for that. Numbering runs over
+    the outline as one sequence instead.
+  */
   useEffect(() => {
-    if (!slots.length) return;
-    if (slots.every((s) => s.learnerPage != null)) return;
-    onChangeSlots(slots.map((s, i) => ({
-      ...s,
-      learnerPage: s.learnerPage ?? (i + 1),
-    })));
-  }, [slots, onChangeSlots]);
+    if (sectionTitles.every((r) => r.learnerPage != null)
+      && slots.every((s) => s.learnerPage != null)) return;
+    const page = new Map<string, number>();
+    rows.forEach((r, i) => page.set(r.key, i + 1));
+    if (sectionTitles.some((r) => r.learnerPage == null)) {
+      onChangeSectionTitles(sectionTitles.map((r, i) => ({
+        ...r,
+        learnerPage: r.learnerPage ?? page.get(r.id || `sec-row-${i}`) ?? (i + 1),
+      })));
+    }
+    if (slots.some((s) => s.learnerPage == null)) {
+      onChangeSlots(slots.map((s, i) => ({
+        ...s,
+        learnerPage: s.learnerPage ?? page.get(s.id) ?? (i + 1),
+      })));
+    }
+    // `rows` is derived from the two lists this effect reads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sectionTitles, slots, onChangeSectionTitles, onChangeSlots]);
+
+  /*
+    Sections and top-level content are two arrays, but the author arranged them
+    as one sequence in the template recipe and expects Structure to read back
+    that way. `order` is what joins them; rows without one fall back to the old
+    content-then-sections reading so nothing already built shifts.
+  */
+  const rows = useMemo(() => {
+    const slotRows = slots.map((slot, i) => ({
+      kind: 'slot' as const,
+      key: slot.id,
+      slot,
+      slotIndex: i,
+      order: slot.order ?? i,
+    }));
+    const sectionRows = sectionTitles.map((row, i) => ({
+      kind: 'section' as const,
+      key: row.id || `sec-row-${i}`,
+      row,
+      index: i,
+      order: row.order ?? defaultSectionOrder(analysis, i, sectionTitles.length),
+    }));
+    return [...slotRows, ...sectionRows].sort((a, b) => a.order - b.order);
+  }, [slots, sectionTitles, analysis]);
+
+  const dndSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  /** A drop rewrites `order` on both arrays from the list's new reading. */
+  const handleReorder = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const keys = rows.map((r) => r.key);
+    const from = keys.indexOf(String(active.id));
+    const to = keys.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(rows, from, to);
+    const slotOrder = new Map<string, number>();
+    const sectionOrder = new Map<string, number>();
+    next.forEach((r, i) => {
+      if (r.kind === 'slot') slotOrder.set(r.slot.id, i);
+      else sectionOrder.set(r.key, i);
+    });
+    onChangeSlots(slots.map((sl) => (
+      slotOrder.has(sl.id) ? { ...sl, order: slotOrder.get(sl.id)! } : sl
+    )));
+    onChangeSectionTitles(sectionTitles.map((r, i) => {
+      const key = r.id || `sec-row-${i}`;
+      return sectionOrder.has(key) ? { ...r, order: sectionOrder.get(key)! } : r;
+    }));
+  };
 
   const pageOptionCount = Math.max(
     1,
@@ -150,12 +231,16 @@ export function TutorialV3StructurePanel({
     && !analysis.libraryEmbeds.length
     && !analysis.topLevelGenerateEmbeds.length;
 
+  /** Where the next added row goes: after everything already in the outline. */
+  const nextOrder = () => (rows.length ? Math.max(...rows.map((r) => r.order)) + 1 : 0);
+
   const addSection = () => onChangeSectionTitles([
     ...sectionTitles,
     {
       title: `Section ${sectionTitles.length + 1}`,
       intent: '',
-      learnerPage: sectionTitles.length + 1,
+      learnerPage: sectionTitles.length + slots.length + 1,
+      order: nextOrder(),
     },
   ]);
 
@@ -170,6 +255,7 @@ export function TutorialV3StructurePanel({
       recipeIndex: -1,
       done: false,
       learnerPage: sectionTitles.length + slots.length + 1,
+      order: nextOrder(),
     }]);
     if (kind === 'library') {
       setPickerSlotId(id);
@@ -310,75 +396,16 @@ export function TutorialV3StructurePanel({
         </div>
       )}
 
-      {!writeYourself && slots.filter((s) => s.kind === 'library').length > 0 && (
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 8 }}>
-            From Content Library
-          </p>
-          <div className="space-y-2">
-            {slots.filter((s) => s.kind === 'library').map((slot, idx) => (
-              <LibrarySlotRow
-                key={slot.id}
-                slot={slot}
-                pageOptionCount={pageOptionCount}
-                learnerPage={slot.learnerPage ?? (idx + 1)}
-                onChangePage={(page) => {
-                  onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
-                }}
-                onBrowse={() => {
-                  setPickerSlotId(slot.id);
-                  setPickerType(slot.objectType);
-                }}
-                onRemove={freeform && slot.recipeIndex === -1
-                  ? () => onChangeSlots(slots.filter((s) => s.id !== slot.id))
-                  : undefined}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {!writeYourself && slots.filter((s) => s.kind === 'generate').length > 0 && (
-        <div>
-          <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 8 }}>
-            To generate
-          </p>
-          <div className="space-y-2">
-            {slots.filter((s) => s.kind === 'generate').map((slot, idx) => (
-              <GenerateSlotRow
-                key={slot.id}
-                slot={slot}
-                pageOptionCount={pageOptionCount}
-                learnerPage={slot.learnerPage ?? (idx + 1)}
-                onChangePage={(page) => {
-                  onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
-                }}
-                onRemove={freeform && slot.recipeIndex === -1
-                  ? () => onChangeSlots(slots.filter((s) => s.id !== slot.id))
-                  : undefined}
-              />
-            ))}
-          </div>
-        </div>
-      )}
-
-      {(writeYourself || analysis.hasSections) && (
+      {rows.length > 0 && (
         <div>
           <div className="flex items-center justify-between gap-2 mb-2">
             <p style={{ fontSize: 12, fontWeight: 650, color: '#9AA3AF', letterSpacing: '.04em', textTransform: 'uppercase' }}>
-              Sections ({sectionTitles.length || ((writeYourself || freeform) ? 0 : analysis.sectionCount)})
+              Tutorial outline ({rows.length})
             </p>
             {(writeYourself || freeform) && (
               <button
                 type="button"
-                onClick={() => onChangeSectionTitles([
-                  ...sectionTitles,
-                  {
-                    title: `Section ${sectionTitles.length + 1}`,
-                    intent: '',
-                    learnerPage: sectionTitles.length + 1,
-                  },
-                ])}
+                onClick={addSection}
                 className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border"
                 style={{ fontSize: 12, fontWeight: 600, color: '#374151', borderColor: 'rgba(0,0,0,0.1)', background: '#fff' }}
               >
@@ -387,78 +414,114 @@ export function TutorialV3StructurePanel({
             )}
           </div>
           <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 8 }}>
-            {(writeYourself || freeform)
-              ? 'Add as many sections as you need. Use the page dropdown to control student preview paging.'
-              : (
-                <>
-                  Sources and markup apply to these sections
-                  {analysis.sectionRecipe.some((r) => r.kind === 'embedded')
-                    ? ' (including per-section generated content from the recipe).'
-                    : '.'}
-                  {' '}Set student page per section below.
-                </>
-              )}
+            This is the order students read, taken from your template. Drag any row to change it.
+            {' '}Sources and markup apply to the sections.
           </p>
+
+          <DndContext sensors={dndSensors} collisionDetection={closestCenter} onDragEnd={handleReorder}>
+          <SortableContext items={rows.map((r) => r.key)} strategy={verticalListSortingStrategy}>
           <div className="space-y-2">
-            {sectionTitles.map((row, i) => (
-              <div
-                key={row.id || `sec-row-${i}`}
-                className="rounded-xl px-3 py-2.5 flex items-start gap-2"
-                style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)' }}
-              >
-                <span
-                  className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
-                  style={{ background: '#e9f0ea', color: '#3d6349', fontSize: 12, fontWeight: 700 }}
-                >
-                  {i + 1}
-                </span>
-                <div className="flex-1 min-w-0 space-y-1.5">
-                  <input
-                    className="w-full"
-                    value={row.title}
-                    onChange={(e) => {
-                      const next = sectionTitles.map((r, j) => (j === i ? { ...r, title: e.target.value } : r));
-                      onChangeSectionTitles(next);
-                    }}
-                    placeholder={`Section ${i + 1} title`}
-                    style={{ fontSize: 14, fontWeight: 650, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
-                  />
-                  <input
-                    className="w-full"
-                    value={row.intent || ''}
-                    onChange={(e) => {
-                      const next = sectionTitles.map((r, j) => (j === i ? { ...r, intent: e.target.value } : r));
-                      onChangeSectionTitles(next);
-                    }}
-                    placeholder="What this section teaches (optional)"
-                    style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10, padding: '6px 10px', color: '#374151' }}
-                  />
-                  <label className="flex items-center gap-2">
-                    <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>Student page</span>
-                    <PageSelect
-                      value={row.learnerPage ?? (i + 1)}
-                      max={pageOptionCount}
-                      onChange={(page) => {
-                        onChangeSectionTitles(sectionTitles.map((r, j) => (
-                          j === i ? { ...r, learnerPage: page } : r
-                        )));
-                      }}
-                    />
-                  </label>
-                </div>
-                {(writeYourself || freeform) && sectionTitles.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => onChangeSectionTitles(sectionTitles.filter((_, j) => j !== i))}
-                    className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 shrink-0 mt-0.5"
-                    title="Remove section"
+            {rows.map((r) => {
+              if (r.kind === 'slot') {
+                if (writeYourself) return null;
+                const slot = r.slot;
+                const onChangePage = (page: number) => {
+                  onChangeSlots(slots.map((s) => (s.id === slot.id ? { ...s, learnerPage: page } : s)));
+                };
+                const onRemove = freeform && slot.recipeIndex === -1
+                  ? () => onChangeSlots(slots.filter((s) => s.id !== slot.id))
+                  : undefined;
+                return (
+                  <SortableRow key={r.key} id={r.key}>
+                    {slot.kind === 'library' ? (
+                      <LibrarySlotRow
+                        slot={slot}
+                        pageOptionCount={pageOptionCount}
+                        learnerPage={slot.learnerPage ?? (r.slotIndex + 1)}
+                        onChangePage={onChangePage}
+                        onBrowse={() => {
+                          setPickerSlotId(slot.id);
+                          setPickerType(slot.objectType);
+                        }}
+                        onRemove={onRemove}
+                      />
+                    ) : (
+                      <GenerateSlotRow
+                        slot={slot}
+                        pageOptionCount={pageOptionCount}
+                        learnerPage={slot.learnerPage ?? (r.slotIndex + 1)}
+                        onChangePage={onChangePage}
+                        onRemove={onRemove}
+                      />
+                    )}
+                  </SortableRow>
+                );
+              }
+
+              if (!writeYourself && !analysis.hasSections) return null;
+              const { row, index: i } = r;
+              const ordinal = rows.filter((x) => x.kind === 'section').findIndex((x) => x.key === r.key) + 1;
+              return (
+                <SortableRow key={r.key} id={r.key}>
+                  <div
+                    className="rounded-xl px-3 py-2.5 flex items-start gap-2 flex-1 min-w-0"
+                    style={{ background: 'white', border: '1px solid rgba(0,0,0,0.06)' }}
                   >
-                    <Trash2 size={13} style={{ color: '#EF4444' }} />
-                  </button>
-                )}
-              </div>
-            ))}
+                    <span
+                      className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                      style={{ background: '#e9f0ea', color: '#3d6349', fontSize: 12, fontWeight: 700 }}
+                    >
+                      {ordinal}
+                    </span>
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <input
+                        className="w-full"
+                        value={row.title}
+                        onChange={(e) => {
+                          onChangeSectionTitles(sectionTitles.map((x, j) => (j === i ? { ...x, title: e.target.value } : x)));
+                        }}
+                        placeholder={`Section ${ordinal} title`}
+                        style={{ fontSize: 14, fontWeight: 650, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
+                      />
+                      <input
+                        className="w-full"
+                        value={row.intent || ''}
+                        onChange={(e) => {
+                          onChangeSectionTitles(sectionTitles.map((x, j) => (j === i ? { ...x, intent: e.target.value } : x)));
+                        }}
+                        placeholder="What this section teaches (optional)"
+                        style={{ fontSize: 12.5, border: '1px solid rgba(0,0,0,0.06)', borderRadius: 10, padding: '6px 10px', color: '#374151' }}
+                      />
+                      <label className="flex items-center gap-2">
+                        <span style={{ fontSize: 11.5, fontWeight: 650, color: '#6B7280' }}>Student page</span>
+                        <PageSelect
+                          value={row.learnerPage ?? (i + 1)}
+                          max={pageOptionCount}
+                          onChange={(page) => {
+                            onChangeSectionTitles(sectionTitles.map((x, j) => (
+                              j === i ? { ...x, learnerPage: page } : x
+                            )));
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {(writeYourself || freeform) && sectionTitles.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => onChangeSectionTitles(sectionTitles.filter((_, j) => j !== i))}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-50 shrink-0 mt-0.5"
+                        title="Remove section"
+                      >
+                        <Trash2 size={13} style={{ color: '#EF4444' }} />
+                      </button>
+                    )}
+                  </div>
+                </SortableRow>
+              );
+            })}
           </div>
+          </SortableContext>
+          </DndContext>
         </div>
       )}
 
@@ -489,6 +552,42 @@ export function TutorialV3StructurePanel({
           setPickerSlotId(null);
         }}
       />
+    </div>
+  );
+}
+
+/**
+ * One draggable row of the outline.
+ *
+ * The grip is a handle rather than the whole row: these rows hold text inputs
+ * and page dropdowns, and a row that drags from anywhere would swallow every
+ * attempt to put a cursor in a title.
+ */
+function SortableRow({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className="flex items-stretch gap-1"
+      style={{
+        transform: CSS.Transform.toString(transform),
+        transition,
+        position: isDragging ? 'relative' : undefined,
+        zIndex: isDragging ? 5 : undefined,
+        boxShadow: isDragging ? '0 12px 28px -12px rgba(30,50,80,0.4)' : undefined,
+        borderRadius: 12,
+      }}
+    >
+      <button
+        type="button"
+        className="shrink-0 self-center px-1 cursor-grab active:cursor-grabbing"
+        aria-label="Reorder this item"
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical size={15} style={{ color: '#C4CBD4' }} />
+      </button>
+      <div className="flex-1 min-w-0 flex">{children}</div>
     </div>
   );
 }
@@ -543,7 +642,7 @@ function LibrarySlotRow({
   const picked = !!slot.versionPin?.objectId;
   return (
     <div
-      className="rounded-xl px-3.5 py-3"
+      className="rounded-xl px-3.5 py-3 flex-1 min-w-0"
       style={{
         background: picked ? 'rgba(77,124,90,0.06)' : 'rgba(254,243,199,0.55)',
         border: `1px solid ${picked ? 'rgba(77,124,90,0.25)' : '#FCD34D'}`,
@@ -606,7 +705,7 @@ function GenerateSlotRow({
   const label = embedTypeLabel(String(slot.objectType));
   return (
     <div
-      className="rounded-xl px-3.5 py-3 flex items-start gap-2"
+      className="rounded-xl px-3.5 py-3 flex items-start gap-2 flex-1 min-w-0"
       style={{ background: 'rgba(237,233,254,0.7)', border: '1px solid rgba(77,124,90,0.2)' }}
     >
       <Sparkles size={14} style={{ color: '#4d7c5a', marginTop: 2 }} />

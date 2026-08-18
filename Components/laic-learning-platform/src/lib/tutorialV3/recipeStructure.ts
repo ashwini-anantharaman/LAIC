@@ -71,7 +71,10 @@ export function analyzeTemplateRecipe(template: TutorialTemplate): RecipeStructu
       recipeOrder[String((r as EmbeddedObjectItem).id)] = i;
     }
   });
-  const sectionOrder = recipe.findIndex((r) => r.kind === 'atomic' && /section/i.test(String((r as any).type || '')));
+  // The Section block is where the recipe's sections belong in the reading order.
+  const sectionOrder = recipe.findIndex(
+    (r) => r.kind === 'atomic' && String((r as { blockType?: string }).blockType || '') === 'section-heading',
+  );
 
   const embeds = recipe.filter((r): r is EmbeddedObjectItem => r.kind === 'embedded');
   const libraryEmbeds = embeds.filter(isLibraryMode);
@@ -215,7 +218,21 @@ export type StructureSectionTitle = {
   intent?: string;
   /** Student-preview page (1-based). */
   learnerPage?: number;
+  /** Position in the outline's one running order, shared with top-level slots. */
+  order?: number;
 };
+
+/**
+ * Where a section sits in the running order when nothing has said otherwise.
+ *
+ * Every section shares the Section block's one position in the recipe, so they
+ * are spread across a fractional span — enough to keep them in outline order
+ * and still sit as a group wherever the template put the block.
+ */
+export function defaultSectionOrder(analysis: RecipeStructureAnalysis, i: number, n: number): number {
+  const base = analysis.sectionOrder >= 0 ? analysis.sectionOrder : 0;
+  return base + i / (Math.max(1, n) + 1);
+}
 
 export function seedWriteYourselfSections(
   analysis: RecipeStructureAnalysis,
@@ -273,6 +290,7 @@ export function applySectionOutline(
         (s) => unused.has(s.id) && s.title.trim().toLowerCase() === needle,
       );
     }
+    const order = row.order ?? defaultSectionOrder(analysis, i, outline.length);
     if (prev) {
       unused.delete(prev.id);
       return {
@@ -280,9 +298,11 @@ export function applySectionOutline(
         title,
         intent: row.intent !== undefined ? String(row.intent) : prev.intent,
         learnerPage,
+        order,
       };
     }
     return {
+      order,
       id: row.id || newSectionId(),
       title,
       intent: row.intent || '',

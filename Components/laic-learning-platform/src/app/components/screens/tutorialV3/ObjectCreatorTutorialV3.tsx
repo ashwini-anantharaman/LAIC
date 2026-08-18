@@ -61,6 +61,7 @@ import {
 import type { AssistantMessage, EditAction, ObjectSelection } from '../../../../lib/types';
 import {
   analyzeTemplateRecipe,
+  defaultSectionOrder,
   applySectionOutline,
   seedTopLevelSlots,
   structureIsReady,
@@ -588,6 +589,7 @@ export function ObjectCreatorTutorialV3() {
           title: s.title,
           intent: s.intent || '',
           learnerPage: s.learnerPage ?? (i + 1),
+          order: s.order,
         })));
       }
       const pRaw = existing.phase || (existing.sections.length || (existing.topLevelSlots || []).length ? 'navigator' : existing.title ? 'structure' : 'start');
@@ -764,6 +766,7 @@ export function ObjectCreatorTutorialV3() {
           title: s.title,
           intent: s.intent || '',
           learnerPage: s.learnerPage ?? (i + 1),
+          order: s.order,
         })));
       }
       commit(touchDraft(synced, {
@@ -865,12 +868,14 @@ export function ObjectCreatorTutorialV3() {
           title: s.title,
           intent: s.intent || '',
           learnerPage: s.learnerPage ?? (i + 1),
+          order: s.order,
         })));
       } else if (analysis.hasSections) {
         setSectionTitles(Array.from({ length: analysis.sectionCount }, (_, i) => ({
           title: `Section ${i + 1}`,
           intent: '',
           learnerPage: i + 1,
+          order: defaultSectionOrder(analysis, i, analysis.sectionCount),
         })));
       }
     }
