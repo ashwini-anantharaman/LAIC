@@ -1,4 +1,4 @@
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
@@ -33,6 +33,14 @@ import { clearLearningCache } from "../lib/learning";
 export default function StudioScreen() {
   const { token } = useAuth();
   const clubId = useSelectedClubId();
+  /**
+   * Whose content this will be, chosen in the club's + sheet before we got here.
+   *
+   * Passed to the Studio rather than decided by it: the Studio is one screen shared
+   * by several entry points, and the entry point is what knows the intent.
+   */
+  const { scope } = useLocalSearchParams<{ scope?: string }>();
+  const personal = scope === "user";
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -48,6 +56,11 @@ export default function StudioScreen() {
         program_id: clubId ?? PROGRAM_ID,
         // The club's own compose screen: four types, one Publish, nothing else.
         screen: "club-compose",
+        // "Just for me" travels as its own parameter, and the SERVER decides whether
+        // it is allowed — a client asking for a personal scope it has no grant for
+        // gets a club-scoped object, not an error, because the work is worth more
+        // than the preference.
+        ...(personal ? { content_scope: "user" } : {}),
         // `embed=1`, NOT `ui=mobile`. Mobile keeps every tab and only turns the
         // sidebar into a drawer — which is what made this open as a full desktop
         // Studio with no obvious way forward. Embed renders the screen alone, and
@@ -70,7 +83,7 @@ export default function StudioScreen() {
               : "Couldn't open the Content Studio.",
       );
     }
-  }, [token, clubId]);
+  }, [token, clubId, personal]);
 
   useEffect(() => {
     void load();

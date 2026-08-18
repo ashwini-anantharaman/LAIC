@@ -1286,6 +1286,55 @@ offeringsRouter.put("/programs/:program_id/header-image", async (c) => {
   return c.json({ header_image: req.header_image });
 });
 
+
+const descriptionSchema = z.object({
+  description: z.string().max(200, "Keep it under 200 characters").transform((v) => v.trim()),
+});
+
+/**
+ * The club's own one-line description.
+ *
+ * A club could SET this when it was created and never change it again — the console's
+ * program PATCH routes cover name, categories, theme, features and the catalogue, and
+ * there was no description among them. Write-once is the wrong shape for a label a
+ * club chooses for itself.
+ *
+ * AUTHORITY mirrors the header image exactly, and for the same reason: this is what a
+ * club looks like to everyone who sees it. A fine-grained role governs alone; only a
+ * caller with NO role at all falls back to the coarse club-staff check. Deliberately
+ * NOT `_assertProgramConfigAccess` like /programs/:id/name — that requires org or
+ * program ADMIN, which a club's coach is not, and this is a club's own business.
+ */
+offeringsRouter.patch("/programs/:program_id/description", async (c) => {
+  const { user, programId, orgId } = await _clubChatActor(c);
+  const staff = user.memberships.some(
+    (m) =>
+      m.org_id === orgId &&
+      _CLUB_STAFF.has(m.role) &&
+      (m.program_id === programId || (!m.program_id && m.role === "owner")),
+  );
+  const req = parseBody(descriptionSchema, await c.req.json());
+  const caps = await capabilitiesFor(user, { providerId: "club-app", orgId, programId });
+  if (caps.size > 0) {
+    if (!caps.has("app.club.description.set")) {
+      throw new HttpError(403, "Missing capability: app.club.description.set");
+    }
+  } else if (!staff) {
+    throw new HttpError(403, "Only a club's coaches can change its description");
+  }
+
+  const row = await db.updateProgramDescription(programId, req.description);
+  if (!row) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.description.updated", {
+    orgId,
+    actorUserId: user.id,
+    scopeType: "program",
+    scopeId: programId,
+    metadata: { description: req.description },
+  });
+  return c.json({ description: req.description });
+});
+
 offeringsRouter.get("/programs/:program_id/chat", async (c) => {
   const { orgId, programId, profileId } = await _clubChatActor(c);
   return c.json(await clubChat.listClubChatMessages(orgId, programId, profileId));

@@ -9,6 +9,12 @@
 export const Brand = {
   /** Page background: warm cream. */
   cream: "#fff4d7",
+  /**
+   * The home tree's sky. Only the home screen paints it — every other screen is
+   * still cream — but it lives here because the sky gradient fades to `cream`
+   * and the two have to be picked together.
+   */
+  sky: "#a3ccd4",
   /** Sheets and the tab bar scrim: deep maroon. */
   maroon: "#541015",
   /** Inputs and selectable cards: forest green. */
@@ -98,7 +104,7 @@ export const Fonts = {
 
 /** Type scale taken from the designs. */
 export const Type = {
-  wordmark: 25.9,
+  wordmark: 31.1,
   sheetTitle: 25.9,
   /** A screen's main title — Fonts.display (Neco Bold). */
   screenTitle: 25.9,
@@ -110,7 +116,8 @@ export const Type = {
   cardBody: 9.56,
   /** Club blurb and challenge details — Fonts.body. */
   clubDetail: 16.26,
-  nestLabel: 18,
+  /** Coach and Club. Play and Learn hang higher and are set a step smaller. */
+  nestLabel: 20.3,
   sectionLabel: 16.95,
   fieldLabel: 15.74,
   fieldValue: 16,

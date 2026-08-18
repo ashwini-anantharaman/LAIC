@@ -47,18 +47,24 @@ import { TabLoading } from "../../components/tab-loading";
 import { useAuth } from "../../lib/auth-context";
 import { loadAvatars, loadClubHeader, subscribeToClubHeader } from "../../lib/avatar-store";
 import {
+  deleteChallenge,
   fetchClubChallenges,
   pickPinned,
   type ClubChallenge,
 } from "../../lib/challenges";
+import { confirmDestructive, notify } from "../../lib/dialogs";
 import { useClubs } from "../../lib/club-context";
-import { useCan } from "../../lib/use-can";
-import type { LearningObject } from "../../lib/nexus";
+import { useCan, useClubScopedContext } from "../../lib/use-can";
+import { deleteLearningObject, type LearningObject } from "../../lib/nexus";
 import {
   canAuthorLearning,
+  canAuthorPersonal,
+  canDeleteLearning,
+  describeLearningError,
   getLearningContext,
   getLearningObjects,
   splitByOwner,
+  type LearningLoad,
 } from "../../lib/learning";
 import {
   fetchAppMembers,
@@ -123,6 +129,19 @@ const BTN = {
   /** Icon to label, and the pair's optical centre inside the face. */
   iconGap: 10,
 };
+
+/**
+ * What a long press picked up.
+ *
+ * Two kinds of thing live on the Activities row and they are erased through
+ * different APIs with different authority — a challenge is the bridge platform's and
+ * only its creator may delete it; content is Nexus's and needs the delete capability
+ * (plus ownership, for a personal row). Carrying the kind means the sheet can say the
+ * right thing and call the right endpoint without guessing from the id.
+ */
+type HeldActivity =
+  | { kind: "challenge"; id: string; title: string; canDelete: boolean; boards: number }
+  | { kind: "content"; id: string; title: string; canDelete: boolean; personal: boolean };
 
 type View2 = "home" | "members";
 /**
@@ -284,13 +303,50 @@ export default function ClubScreen() {
   // Creating a CHALLENGE is a club-app capability; creating CONTENT is a learning
   // one, from the Studio's own catalogue — two catalogues, so two questions.
   const canCreateChallenge = useCan("app.challenge.create", true);
+  /**
+   * The club's own line, under its name.
+   *
+   * Off the club-scoped context the capability gates on this screen already fetch, so
+   * this costs no extra round-trip. Falls back to the ORGANISATION's name, which is
+   * what this line said before a club could write its own — a club that has set no
+   * description keeps exactly the header it had.
+   */
+  const clubScoped = useClubScopedContext();
+  const clubDescription = clubScoped?.app?.program_description?.trim() || null;
   const [canAuthor, setCanAuthor] = useState(false);
+  /** May they keep something to themselves? A separate grant from authoring for the
+   *  club — see canAuthorPersonal. */
+  const [canAuthorMine, setCanAuthorMine] = useState(false);
   /** The club's OWN authored content, which the Activities row lists after the
    *  pinned challenges. The curriculum above the club is the Learn tab's, not this
-   *  row's — a club's row is about the club. */
-  const [clubContent, setClubContent] = useState<LearningObject[]>([]);
+   *  row's — a club's row is about the club.
+   *
+   *  A LOAD STATE, not a bare array: this used to swallow every failure into `[]`,
+   *  so a club with the Content Studio switched off looked exactly like a club that
+   *  had published nothing. */
+  const [clubContent, setClubContent] = useState<LearningLoad>({ state: "loading" });
+  /**
+   * The club the screen is CURRENTLY showing, readable from inside an async tail.
+   *
+   * `club?.id` captured in the closure is the club we started the read for; this is
+   * the club we are on when it lands. Comparing them is what stops a slow answer for
+   * a club we have left from painting over the one we switched to — the same
+   * discipline the pinned-challenge read uses with its `loaded.clubId` guard.
+   */
+  const clubRef = useRef<string | null>(null);
   /** Which "add" options to offer; null while closed. */
   const [addOpen, setAddOpen] = useState(false);
+  /**
+   * The activity being held down, or null. Its presence IS the sheet's visibility.
+   *
+   * Held here rather than on the card so only one can ever be open, and so a club
+   * switch or a refresh that removes the card takes the sheet with it instead of
+   * leaving a menu pointing at something that is gone.
+   */
+  const [held, setHeld] = useState<HeldActivity | null>(null);
+  const [removing, setRemoving] = useState(false);
+  /** Whether this person may erase CONTENT — challenges answer for themselves. */
+  const [canDeleteContent, setCanDeleteContent] = useState(false);
   const canChallenges = useCan("app.challenge.view", true);
   const canMembers = useCan("app.club.members.view", true);
 
@@ -489,23 +545,49 @@ export default function ClubScreen() {
    */
 // The club's own authored content, and whether this person may add more. Both
   // are per club, so both re-resolve on a club switch.
+  // Assigned during RENDER, not in an effect. An effect runs after the first
+  // useFocusEffect fires, so the ref would still be null when the very first load
+  // landed and the guard below would throw away the answer it was waiting for.
+  clubRef.current = club?.id ?? null;
+
   const loadClubContent = useCallback(
     async (opts: { refresh?: boolean } = {}) => {
       if (!token || !club?.id) {
         setCanAuthor(false);
-        setClubContent([]);
+        setCanAuthorMine(false);
+        setCanDeleteContent(false);
+        setClubContent({ state: "ready", objects: [] });
         return;
       }
-      const [ctx, objects] = await Promise.all([
-        getLearningContext(token, club.id),
-        // `refresh` matters: the module cache is one slot shared with the Learn tab,
-        // so without it a list warmed seconds ago by that tab is reused verbatim —
-        // and the whole point of coming back here is to see something new.
-        getLearningObjects(token, { programId: club.id, ...opts }).catch(() => []),
-      ]);
-      setCanAuthor(canAuthorLearning(ctx));
-      // Only the club's half: the parent's curriculum belongs to the Learn tab.
-      setClubContent(splitByOwner(objects, club.id).club);
+      const forClub = club.id;
+      try {
+        const [ctx, objects] = await Promise.all([
+          getLearningContext(token, forClub),
+          // `refresh` matters: the module cache is one slot shared with the Learn tab,
+          // so without it a list warmed seconds ago by that tab is reused verbatim —
+          // and the whole point of coming back here is to see something new.
+          getLearningObjects(token, { programId: forClub, ...opts }),
+        ]);
+        // Same discipline as the pinned-challenge read above: a slower answer for the
+        // club we have just left must not land on the club we are now looking at.
+        if (clubRef.current !== forClub) return;
+        setCanAuthor(canAuthorLearning(ctx));
+        setCanAuthorMine(canAuthorPersonal(ctx));
+        setCanDeleteContent(canDeleteLearning(ctx));
+        // Only the club's half: the parent's curriculum belongs to the Learn tab.
+        // The club's shelf, then this person's own. `mine` is content the server
+        // already decided we may see — ours, or shared with us — and it is kept
+        // apart from the club's so a private draft never appears under a heading
+        // that says the club's name.
+        const split = splitByOwner(objects, forClub);
+        setClubContent({ state: "ready", objects: [...split.club, ...split.mine] });
+      } catch (e) {
+        if (clubRef.current !== forClub) return;
+        // The `.catch(() => [])` that used to be here is the whole reason this screen
+        // could not tell a refusal from an empty club. Shared with the Learn tab so
+        // the two cannot drift.
+        setClubContent({ state: "failed", message: describeLearningError(e) });
+      }
     },
     [token, club?.id],
   );
@@ -533,6 +615,63 @@ export default function ClubScreen() {
     return () => sub.remove();
   }, [loadClubContent]);
 
+  /**
+   * Erase what is being held, after asking.
+   *
+   * The prompt names the thing and what goes with it — "and its 4 boards" is the
+   * difference between a warning and a warning someone reads — and it says the word
+   * "permanently", because archive exists and this is not it.
+   *
+   * A refusal is SHOWN, not swallowed. The server is the authority on ownership, and
+   * "That content belongs to someone else" tells the person something true that the
+   * app could not have known: a row shared with them at edit is theirs to change and
+   * not theirs to destroy.
+   */
+  const removeHeld = useCallback(() => {
+    const target = held;
+    if (!token || !target || removing) return;
+    // Content lives under a club by definition, and the row only renders with one
+    // selected, so a missing club here means the sheet is stale — refuse rather than
+    // fall back to the app-wide program and delete from the wrong place.
+    const clubForDelete = club?.id ?? null;
+    if (target.kind === "content" && !clubForDelete) return;
+    const detail =
+      target.kind === "challenge"
+        ? `“${target.title}” and its ${target.boards} board${target.boards === 1 ? "" : "s"} will be erased, along with everyone's results.`
+        : target.personal
+          ? `“${target.title}” will be erased. Only you could see it, so nobody else will notice — but it cannot be brought back.`
+          : `“${target.title}” will be erased for everyone in the club.`;
+    confirmDestructive(
+      "Delete permanently?",
+      `${detail} This cannot be undone.`,
+      "Delete",
+      () => {
+        setRemoving(true);
+        const done = () => {
+          setRemoving(false);
+          setHeld(null);
+        };
+        const work =
+          target.kind === "challenge"
+            ? deleteChallenge(token, clubForDelete, target.id)
+            : deleteLearningObject(token, target.id, clubForDelete as string);
+        work
+          .then(() => {
+            done();
+            // Both lists are read from the same two loaders, so refreshing both is
+            // simpler than reaching into either one's state — and it is what the
+            // screen already does on focus.
+            void loadClubContent({ refresh: true });
+            loadPinned();
+          })
+          .catch((e) => {
+            done();
+            notify("Couldn't delete that", e instanceof Error ? e.message : "Please try again.");
+          });
+      },
+    );
+  }, [held, token, removing, club?.id, loadClubContent, loadPinned]);
+
   const activities: Activity[] = [
     {
       id: "latest-challenge",
@@ -552,6 +691,23 @@ export default function ClubScreen() {
         pinned.latest
           ? router.push({ pathname: "/challenge-info", params: { id: pinned.latest.id } })
           : router.push("/club-challenges"),
+      // Only once there IS a challenge behind the card. Holding the placeholder that
+      // stands in while the summary loads would offer to delete nothing.
+      ...(pinned.latest
+        ? {
+            onLongPress: () =>
+              setHeld({
+                kind: "challenge",
+                id: pinned.latest!.id,
+                title: pinned.latest!.name,
+                // CREATOR ONLY, which the server enforces and the row already knows.
+                // Narrower than archiving on purpose: this destroys other people's
+                // plays too.
+                canDelete: pinned.latest!.isCreator === true,
+                boards: pinned.latest!.boards,
+              }),
+          }
+        : {}),
     },
     ...(pinned.resume
       ? [
@@ -564,6 +720,14 @@ export default function ClubScreen() {
             detail: `${pinned.resume.name} · ${pinned.resume.finishedBoards}/${pinned.resume.boards}`,
             onPress: () =>
               router.push({ pathname: "/challenge-info", params: { id: pinned.resume!.id } }),
+            onLongPress: () =>
+              setHeld({
+                kind: "challenge",
+                id: pinned.resume!.id,
+                title: pinned.resume!.name,
+                canDelete: pinned.resume!.isCreator === true,
+                boards: pinned.resume!.boards,
+              }),
           },
         ]
       : []),
@@ -571,12 +735,31 @@ export default function ClubScreen() {
     // boxes exist so a new challenge and one you are mid-way through are always
     // both visible, and content filling the front of the row would push the thing
     // you were doing out of sight — the exact problem the pinning solved.
-    ...clubContent.map((o) => ({
+    ...(clubContent.state === "ready" ? clubContent.objects : []).map((o) => ({
       id: `content-${o.id}`,
       kind: "document" as const,
       title: o.title,
-      ...(o.estimated_time ? { detail: o.estimated_time } : {}),
+      // "Just you" WINS over the running time on a personal card. Of the two facts
+      // the caption can hold, who can see it is the one worth the space — a private
+      // draft sitting on a club's row with nothing to distinguish it is the mistake
+      // this scope exists to prevent.
+      ...((o.scope_level ?? "program") === "user"
+        ? { detail: "Just you" }
+        : o.estimated_time
+          ? { detail: o.estimated_time }
+          : {}),
       onPress: () => router.push({ pathname: "/learn-object/[id]", params: { id: o.id } }),
+      onLongPress: () =>
+        setHeld({
+          kind: "content",
+          id: o.id,
+          title: o.title,
+          // The capability half only. Ownership is the server's to enforce, and its
+          // refusal names whose it is — better than hiding the control for a reason
+          // the person cannot see.
+          canDelete: canDeleteContent,
+          personal: (o.scope_level ?? "program") === "user",
+        }),
     })),
   ];
 
@@ -676,15 +859,29 @@ export default function ClubScreen() {
             <Text
               style={[
                 styles.blurb,
-                { marginLeft: HEAD.left * s, marginTop: HEAD.blurbGap * s, color: headText },
+                {
+                  marginLeft: HEAD.left * s,
+                  marginTop: HEAD.blurbGap * s,
+                  color: headText,
+                  // Room to the right so a long description does not run under the
+                  // Members pill on the title's line.
+                  marginRight: (HEAD.pillRight + 44) * s,
+                },
               ]}
+              numberOfLines={1}
             >
-              {/* The organisation's name on its own. It read "Under Life in AI Center"
-                  before — the preposition added nothing a reader needed, and the line
-                  is a label rather than a sentence. Still suppressed when the club and
-                  the org share a name, where it would just repeat the title, and the
-                  space keeps the header's height fixed either way. */}
-              {club && club.org !== club.name ? club.org : " "}
+              {/* The club's OWN description when it has written one, else the
+                  organisation's name. That fallback is what this line always said —
+                  "Under Life in AI Center" once, until the preposition was dropped as
+                  adding nothing — and it is suppressed when the club and the org share
+                  a name, where it would just repeat the title. The space keeps the
+                  header's height fixed when there is nothing to say.
+
+                  ONE LINE, and that is a constraint rather than a preference: the
+                  banner's height is computed from the safe area plus the title's line
+                  plus this one (see BANNER above), so a second line would overflow the
+                  artwork behind it. The full text is readable where it is edited. */}
+              {clubDescription ?? (club && club.org !== club.name ? club.org : " ")}
             </Text>
           </View>
 
@@ -714,9 +911,13 @@ export default function ClubScreen() {
               <ActivityCarousel
                 activities={activities}
                 scale={s}
+                loading={clubContent.state === "loading"}
+                error={clubContent.state === "failed" ? clubContent.message : null}
                 // No + at all for someone who may create neither: an inert button
                 // that opens an empty sheet is worse than no button.
-                {...(canCreateChallenge || canAuthor ? { onAdd: () => setAddOpen(true) } : {})}
+                {...(canCreateChallenge || canAuthor || canAuthorMine
+                  ? { onAdd: () => setAddOpen(true) }
+                  : {})}
               />
             </View>
 
@@ -939,11 +1140,91 @@ export default function ClubScreen() {
                 router.push("/studio");
               }}
               accessibilityRole="button"
-              accessibilityLabel="New content in the Content Studio"
+              accessibilityLabel="New content for the club"
               style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
             >
               <Ionicons name="document-text-outline" size={20} color={Brand.cream} />
-              <Text style={styles.checkLabel}>Tutorial or other content</Text>
+              <Text style={styles.checkLabel}>
+                {canAuthorMine ? "For the club" : "Tutorial or other content"}
+              </Text>
+            </Pressable>
+          ) : null}
+          {/* The scope choice is made HERE, before the Studio opens, rather than as a
+              toggle inside it. Whose content this is decides who can ever see it, and
+              a decision that consequential should not be a setting someone can miss
+              on a screen they came to for something else. Only shown when the two are
+              actually different grants. */}
+          {canAuthorMine ? (
+            <Pressable
+              onPress={() => {
+                setAddOpen(false);
+                router.push({ pathname: "/studio", params: { scope: "user" } });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="New content just for you"
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons name="lock-closed-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>Just for me</Text>
+            </Pressable>
+          ) : null}
+        </ScrollView>
+      </BrandSheet>
+
+      {/* Held down on an activity.
+          Swipe-to-dismiss and a tap on the dimmed backdrop both come from BrandSheet,
+          so an accidental long press costs a flick — which is the whole reason this is
+          a sheet and not an action menu pinned to the card.
+
+          Nothing here is destructive on its own: Delete opens the permanence prompt,
+          and the prompt is what erases. Two steps for one irreversible act. */}
+      <BrandSheet
+        visible={held !== null}
+        onClose={() => setHeld(null)}
+        title={held?.title ?? "Activity"}
+        top={insets.top + CONTENT_TOP_GAP}
+      >
+        <ScrollView style={{ flex: 1 }} showsVerticalScrollIndicator={false}>
+          {held?.canDelete ? (
+            <Pressable
+              onPress={removeHeld}
+              disabled={removing}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${held.title} permanently`}
+              style={({ pressed }) => [
+                styles.checkRow,
+                pressed && styles.pressed,
+                removing && { opacity: 0.5 },
+              ]}
+            >
+              <Ionicons name="trash-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>
+                {removing ? "Deleting…" : "Delete permanently"}
+              </Text>
+            </Pressable>
+          ) : (
+            // Said rather than shown as a disabled row: "why is this greyed out" is a
+            // question the sheet can simply answer. The two reasons are different and
+            // lead different places.
+            <Text style={styles.sheetNote}>
+              {held?.kind === "challenge"
+                ? "Only the person who created a challenge can delete it. If you just want it out of the way, archive it from the challenge's own screen."
+                : "You don't have permission to delete content in this club."}
+            </Text>
+          )}
+          {held?.kind === "challenge" ? (
+            <Pressable
+              onPress={() => {
+                const id = held.id;
+                setHeld(null);
+                router.push({ pathname: "/challenge-info", params: { id } });
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Open the challenge"
+              style={({ pressed }) => [styles.checkRow, pressed && styles.pressed]}
+            >
+              <Ionicons name="open-outline" size={20} color={Brand.cream} />
+              <Text style={styles.checkLabel}>Open — archive, invites, standings</Text>
             </Pressable>
           ) : null}
         </ScrollView>
@@ -1277,6 +1558,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingTop: 40,
     paddingHorizontal: 24,
+  },
+  /** A sentence inside a sheet, where a row would have been. */
+  sheetNote: {
+    fontFamily: Fonts.body,
+    fontSize: 14,
+    lineHeight: 21,
+    color: "rgba(255,244,215,0.75)",
+    paddingHorizontal: 22,
+    paddingTop: 14,
+    paddingBottom: 6,
   },
   checkRow: {
     flexDirection: "row",

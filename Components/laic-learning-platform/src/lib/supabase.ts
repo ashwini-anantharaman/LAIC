@@ -7,7 +7,7 @@
  * Nexus session?). The file name is kept to minimise churn.
  */
 import type { LearningObject } from './types';
-import { nexusFetch, getToken, getProgramId, clearDeadSession } from './nexus';
+import { nexusFetch, getToken, getProgramId, clearDeadSession, getContentScope } from './nexus';
 
 /** Remote persistence is available when we have a Nexus session (post-launch). */
 export function supabaseEnabled(): boolean {
@@ -70,6 +70,11 @@ export function objectToPublishRow(
     ...toRow(obj),
     collection_names: collectionNames,
     ...(versionNumber != null ? { version_number: versionNumber } : {}),
+    // Whose content this is, from the launch that opened this session. Only ever
+    // honoured by the server on a row it is CREATING — an existing object's scope is
+    // not something a save may change — and only when the caller's club role grants
+    // it. Absent means the club's, which is the default and the old behaviour.
+    ...(getContentScope() ? { scope_level: getContentScope() } : {}),
   };
   // Carry the authoring draft so reopening synced content resumes where it
   // left off instead of showing only the rendered blocks. pipeline_draft is

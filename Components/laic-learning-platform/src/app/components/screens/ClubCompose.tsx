@@ -26,6 +26,7 @@ import { Copy, FileText, HelpCircle, Layers, Loader2 } from 'lucide-react';
 
 import { useApp } from '../../App';
 import { setComposePublisher } from '../../../lib/clubComposeBridge';
+import { getContentScope } from '../../../lib/nexus';
 import { ObjectCreator } from './ObjectCreator';
 import { ObjectCreatorStructuredV2 } from './objectV2/ObjectCreatorStructuredV2';
 import { ObjectCreatorTutorialV2 } from './tutorialV2/ObjectCreatorTutorialV2';
@@ -55,7 +56,16 @@ export function ClubCompose() {
   const [pending, setPending] = useState<string | null>(null);
   const [phase, setPhase] = useState<'pick' | 'author' | 'publishing' | 'done' | 'error'>('pick');
   const [error, setError] = useState<string | null>(null);
-  const where = nexusClubName ? `${nexusClubName}’s Activities` : 'the shared library';
+  // Whose content this will be, decided in the app's + sheet before this opened.
+  // Saying it plainly is the whole job of this line: "just you" and "the club can
+  // read this" are the two states, and an author must not have to guess which one
+  // they picked two screens ago.
+  const personal = getContentScope() === 'user';
+  const where = personal
+    ? 'your own content — only you, and anyone you share it with'
+    : nexusClubName
+      ? `${nexusClubName}’s Activities`
+      : 'the shared library';
 
   /**
    * Register this session's ending for as long as we are mounted.
@@ -204,7 +214,9 @@ export function ClubCompose() {
       >
         {/* Stated here because `embed=1` removes the app-wide banner with the rest of
             the chrome, and where it lands is the one thing an author must know. */}
-        <span style={{ fontSize: 12.5 }}>Publishing to <strong>{where}</strong></span>
+        <span style={{ fontSize: 12.5 }}>
+          {personal ? <>Saving as <strong>just for you</strong></> : <>Publishing to <strong>{where}</strong></>}
+        </span>
         <button type="button" onClick={() => { setPicked(null); setPhase('pick'); }}
           style={{ fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}>
           Change kind

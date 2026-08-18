@@ -8,12 +8,12 @@
     "kind": "application",
     "id": "club-app"
   },
-  "catalogueVersion": "1.0",
+  "catalogueVersion": "1.2",
   "capabilities": [
     {
       "id": "app.club.view",
       "label": "Open the Club tab",
-      "description": "See the club at all \u2014 its name, header and buttons",
+      "description": "See the club at all — its name, header and buttons",
       "group": "club_home"
     },
     {
@@ -61,7 +61,7 @@
     {
       "id": "app.challenge.create",
       "label": "Create challenges",
-      "description": "Add a challenge \u2014 the + beside Challenges",
+      "description": "Add a challenge — the + beside Challenges",
       "group": "club_challenges"
     },
     {
@@ -91,7 +91,7 @@
     {
       "id": "app.deal.create",
       "label": "Create practice deals",
-      "description": "Add a practice deal \u2014 the + beside Practice Deals",
+      "description": "Add a practice deal — the + beside Practice Deals",
       "group": "club_deals"
     },
     {
@@ -165,6 +165,54 @@
       "label": "Open the Learn tab",
       "description": "See concept cards and lessons",
       "group": "learn"
+    },
+    {
+      "id": "app.content.view",
+      "label": "See the club's content",
+      "description": "Open the club's tutorials, quizzes, flashcards and summaries",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.create",
+      "label": "Add content for the club",
+      "description": "The + beside Activities — what is made this way belongs to the club",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.create.personal",
+      "label": "Add content just for themselves",
+      "description": "Author privately, without publishing it to the club",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.edit",
+      "label": "Edit content",
+      "description": "Change content after it has been saved",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.publish",
+      "label": "Publish content to the club",
+      "description": "Make a version live on the club's Activities row, and withdraw it again",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.delete",
+      "label": "Delete content",
+      "description": "Remove content permanently",
+      "group": "club_content"
+    },
+    {
+      "id": "app.content.manage_others",
+      "label": "Act on content someone else authored",
+      "description": "Edit, publish or delete another member's work — club housekeeping",
+      "group": "club_content"
+    },
+    {
+      "id": "app.club.description.set",
+      "label": "Change the club's description",
+      "description": "Edit the one line under the club's name",
+      "group": "club_management"
     }
   ],
   "resourceTypes": [],
@@ -392,6 +440,57 @@
       "requiredAnyCapabilities": [
         "app.learn.view"
       ]
+    },
+    {
+      "id": "club.content.library",
+      "label": "Club content",
+      "kind": "navigation",
+      "group": "club_content",
+      "routeOrComponent": "/(tabs)/club#activities",
+      "requiredAnyCapabilities": [
+        "app.content.view"
+      ]
+    },
+    {
+      "id": "club.content.add",
+      "label": "Add content",
+      "kind": "action",
+      "group": "club_content",
+      "routeOrComponent": "ClubContentAdd",
+      "requiredAnyCapabilities": [
+        "app.content.create",
+        "app.content.create.personal"
+      ]
+    },
+    {
+      "id": "club.content.publish",
+      "label": "Publish",
+      "kind": "action",
+      "group": "club_content",
+      "routeOrComponent": "ClubContentPublish",
+      "requiredAnyCapabilities": [
+        "app.content.publish"
+      ]
+    },
+    {
+      "id": "club.content.delete",
+      "label": "Delete",
+      "kind": "action",
+      "group": "club_content",
+      "routeOrComponent": "ClubContentDelete",
+      "requiredAnyCapabilities": [
+        "app.content.delete"
+      ]
+    },
+    {
+      "id": "club.description.set",
+      "label": "Edit description",
+      "kind": "action",
+      "group": "club_management",
+      "routeOrComponent": "ClubDescriptionEdit",
+      "requiredAnyCapabilities": [
+        "app.club.description.set"
+      ]
     }
   ],
   "groups": [
@@ -469,16 +568,18 @@
     {
       "id": "club_management",
       "label": "Club Management",
-      "description": "The club's own presentation \u2014 its header image.",
+      "description": "The club's own presentation — its header image.",
       "order": 5,
       "capabilityIds": [
         "app.club.header.set",
-        "app.club.header.remove"
+        "app.club.header.remove",
+        "app.club.description.set"
       ],
       "uiSurfaceIds": [
         "menu.club_management",
         "menu.header_set",
-        "menu.header_remove"
+        "menu.header_remove",
+        "club.description.set"
       ]
     },
     {
@@ -522,6 +623,26 @@
       "uiSurfaceIds": [
         "tab.learn"
       ]
+    },
+    {
+      "id": "club_content",
+      "label": "Club content",
+      "order": 9,
+      "capabilityIds": [
+        "app.content.view",
+        "app.content.create",
+        "app.content.create.personal",
+        "app.content.edit",
+        "app.content.publish",
+        "app.content.delete",
+        "app.content.manage_others"
+      ],
+      "uiSurfaceIds": [
+        "club.content.library",
+        "club.content.add",
+        "club.content.publish",
+        "club.content.delete"
+      ]
     }
   ],
   "sampleRoleTemplates": [
@@ -541,7 +662,8 @@
             "app.deal.view",
             "app.deal.discuss",
             "app.play.view",
-            "app.learn.view"
+            "app.learn.view",
+            "app.content.view"
           ]
         }
       ]
@@ -572,7 +694,12 @@
             "app.coaching.assignments.view",
             "app.coaching.assignments.create",
             "app.coaching.reviews.view",
-            "app.coaching.library.view"
+            "app.coaching.library.view",
+            "app.content.view",
+            "app.content.create",
+            "app.content.create.personal",
+            "app.content.edit",
+            "app.content.publish"
           ]
         }
       ]
@@ -580,7 +707,7 @@
     {
       "id": "club-manager",
       "name": "Club Manager",
-      "description": "A mentor who also manages the club itself \u2014 its header, and moderation.",
+      "description": "A mentor who also manages the club itself — its header, and moderation.",
       "grants": [
         {
           "capabilityIds": [
@@ -609,7 +736,15 @@
             "app.challenge.delete",
             "app.deal.edit",
             "app.club.header.set",
-            "app.club.header.remove"
+            "app.club.header.remove",
+            "app.content.view",
+            "app.content.create",
+            "app.content.create.personal",
+            "app.content.edit",
+            "app.content.publish",
+            "app.content.delete",
+            "app.content.manage_others",
+            "app.club.description.set"
           ]
         }
       ]

@@ -15,11 +15,19 @@
 // stripped when it is a full-bleed <rect> — never from a path.
 //
 // The tree is additionally SPLIT so wind can move the leaves independently of
-// the trunk: the trunk is a single #421313 path and the leaves are 47 paths
-// (#618C52 green, #F389AC pink), all with coordinates baked in and no
-// transforms. Leaves are sorted by height and dealt into bands, so the home
-// screen can sway the upper canopy harder than the lower — which is what makes
-// it read as wind rather than a wobble.
+// the trunk: the trunk is a single #421313 path and the leaves are 57 paths
+// (#348E48 green, #F389AC pink), all with coordinates baked in and no
+// transforms.
+//
+// tree-back.svg is the SECOND canopy — 136 darker #286836 suits that sit BEHIND
+// the trunk and read as depth, the far side of a fuller tree. It stays one flat
+// SVG rather than being split into sprites: it never moves (a background layer
+// that drifts reads as the whole scene sliding), and 136 more animated views
+// would cost far more than the depth is worth.
+//
+// Both are exported in the FRAME's coordinate space (390x848) rather than a
+// tree-local box, so the trunk, both canopies, the hills and the nests all share
+// one origin and nothing needs a hand-tuned offset.
 
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -32,6 +40,17 @@ const outFile = join(root, "constants", "brand-vectors.ts");
 /** file basename → exported const name. `tree.svg` is handled separately. */
 const NAMES = {
   "hills.svg": "HILLS_SVG",
+  // The far canopy. One flat SVG on purpose — see the header note.
+  "tree-back.svg": "TREE_BACK_SVG",
+  // The wordmark's two accents: a heart over the i of "Bridge", a bird over the
+  // i of "Bird". They replace the trailing ICON_BIRD_GLYPH the old lockup used.
+  // The bird arrives from Figma as a luminance mask over a filled rect; it is
+  // stored here as the mask's own path, stroked in the same colour it fills
+  // (the mask's stroke is what gives the glyph its weight), because
+  // react-native-svg's mask support is partial and a mask it cannot resolve
+  // would leave the bare 15x11 rectangle sitting on the wordmark.
+  "logo-heart.svg": "LOGO_HEART",
+  "logo-bird.svg": "LOGO_BIRD",
   "icon-challenge-card.svg": "ICON_CHALLENGE_CARD",
   "icon-bird-flight.svg": "ICON_BIRD_FLIGHT",
   "icon-learners.svg": "ICON_LEARNERS",
@@ -39,6 +58,13 @@ const NAMES = {
   "icon-card-play.svg": "ICON_CARD_PLAY",
   "icon-card-history.svg": "ICON_CARD_HISTORY",
   "icon-card-envelope.svg": "ICON_CARD_ENVELOPE",
+  // Private Table's own glyph (Figma 870:752) — a table seen end-on. It had been
+  // borrowing New Play's plus, which said "make one" on a card that also opens the
+  // ones you already have.
+  "icon-card-table.svg": "ICON_CARD_TABLE",
+  // Curated Deals' four-point sparkle. Symmetric under 180°, which is why the
+  // frame draws both corners unrotated and the card can still mirror it.
+  "icon-card-sparkle.svg": "ICON_CARD_SPARKLE",
   "icon-assignments.svg": "ICON_ASSIGNMENTS",
   "icon-home.svg": "ICON_HOME",
   "icon-learn.svg": "ICON_LEARN",
@@ -50,7 +76,6 @@ const NAMES = {
   "icon-cards.svg": "ICON_CARDS",
   "icon-gear.svg": "ICON_GEAR",
   "icon-menu.svg": "ICON_MENU",
-  "icon-birdglyph.svg": "ICON_BIRD_GLYPH",
   "icon-pin.svg": "ICON_PIN",
   // Friends (Figma 851:434). The bell is the notification glyph only — its
   // count badge is a live number, so it is drawn as a view, not baked in here.
@@ -67,10 +92,37 @@ const NAMES = {
   "icon-friend-add.svg": "ICON_FRIEND_ADD",
   "icon-bell.svg": "ICON_BELL",
   "icon-search.svg": "ICON_SEARCH",
+  // Coach tab (Figma 869:597). The Hire button's plus is stored on its OWN,
+  // rebased to its glyph box, because the design draws it inside a filled green
+  // circle — a two-colour export cannot be tinted, and the circle is a view.
+  "icon-coach-assignments.svg": "ICON_COACH_ASSIGNMENTS",
+  "icon-feedback-bubble.svg": "ICON_FEEDBACK_BUBBLE",
+  "icon-plus.svg": "ICON_PLUS",
+  // Coach's own view (Figma 870:699). The circled plus arrives from Figma as the
+  // SAME path drawn twice, the second at 0.2 opacity — kept once, or tinting
+  // would darken every edge where the copies overlap.
+  "icon-grad-cap.svg": "ICON_GRAD_CAP",
+  "icon-reviews-doc.svg": "ICON_REVIEWS_DOC",
+  "icon-plus-circle.svg": "ICON_PLUS_CIRCLE",
+  // Play screen (Figma 894:337). The four suits are the decorative band behind the
+  // Play-with-Friends stack; identified by geometry rather than by the export's
+  // names, which were all "Vector": heart is widest at the top and narrow at the
+  // base, spade the reverse, diamond is a point at each end and widest exactly at
+  // mid-height, and the club is the only one wide across all three thirds.
+  "icon-suit-heart.svg": "ICON_SUIT_HEART",
+  "icon-suit-spade.svg": "ICON_SUIT_SPADE",
+  "icon-suit-diamond.svg": "ICON_SUIT_DIAMOND",
+  "icon-suit-club.svg": "ICON_SUIT_CLUB",
+  "icon-people-pair.svg": "ICON_PEOPLE_PAIR",
+  // Learn's list view (Figma 906:417). The grid is the toggle shown WHILE in the
+  // list, offering the way back; the chevron points up as drawn and is turned 180°
+  // for an open section, so one asset carries both states.
+  "icon-view-grid.svg": "ICON_VIEW_GRID",
+  "icon-chevron-up.svg": "ICON_CHEVRON_UP",
 };
 
 const TRUNK_FILL = "#421313";
-const LEAF_FILLS = ["#618C52", "#F389AC"];
+const LEAF_FILLS = ["#348E48", "#F389AC"];
 /**
  * Breathing room around each leaf sprite, in design units.
  *
@@ -218,7 +270,11 @@ const lines = [
   "//",
   "// The tree arrives pre-split: TREE_TRUNK_SVG, plus TREE_LEAVES — one sprite",
   "// per leaf with its own tight viewBox and its position in design space, so",
-  "// each leaf can drift on its own without the branches moving.",
+  "// each leaf can drift on its own without the branches moving. TREE_BACK_SVG",
+  "// is the darker far canopy and stays whole, because it never moves.",
+  "//",
+  "// Tree space IS frame space (390x848): the trunk, both canopies, the hills",
+  "// and the nests all measure from the same origin.",
   "//",
   "// Re-run the script after re-exporting any SVG.",
   "",
@@ -236,7 +292,7 @@ const lines = [
     " */",
     `export const LEAF_PAD = ${LEAF_PAD};`,
     "",
-    "/** One leaf: its own SVG, and where it sits in the 390x720 design space. */",
+    "/** One leaf: its own SVG, and where it sits in the 390x848 design space. */",
     "export type LeafSprite = { svg: string; x: number; y: number; w: number; h: number };",
     "",
     "export const TREE_LEAVES: LeafSprite[] = [",

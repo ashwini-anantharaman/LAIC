@@ -10,7 +10,9 @@
 // about the membership, and the API still exposes no phone number. Those keep the
 // dimmed, inert pencil rather than a control that would do nothing.
 
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -333,6 +335,26 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
         editable={false}
       />
 
+      {/* A password you can set once and never change is not really yours.
+          Same screen the forced first-time flow uses — it decides which mode it is
+          in from `must_set_password`, so there is one place that validates a
+          password and one place that talks to the API. Dismiss the sheet first, or
+          it stays mounted over the screen we are pushing. */}
+      <Pressable
+        onPress={() => {
+          onClose();
+          router.push("/set-password");
+        }}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Change your password"
+        style={({ pressed }) => [styles.actionRow, pressed && styles.pressed]}
+      >
+        <Ionicons name="key-outline" size={19} color={Brand.cream} />
+        <Text style={styles.actionText}>Change password</Text>
+        <Ionicons name="chevron-forward" size={18} color="rgba(255,244,215,0.5)" />
+      </Pressable>
+
       <Pressable
         onPress={() => {
           // Dismiss first: signing out sends the AuthGate to the landing screen,
@@ -353,6 +375,25 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
 
 const styles = StyleSheet.create({
   scroll: { flex: 1 },
+  /** A row that GOES somewhere, as opposed to a Field that edits in place. The
+   *  chevron is what says which of the two it is. */
+  actionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 26,
+    marginHorizontal: 22,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,244,215,0.08)",
+  },
+  actionText: {
+    flex: 1,
+    fontFamily: Fonts.body,
+    fontSize: 15,
+    color: Brand.cream,
+  },
   /**
    * The sheet opens over the tab bar, and the bar draws ON TOP of it — the bar
    * belongs to the navigator, the sheet to the screen inside it. So Sign out

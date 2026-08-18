@@ -33,13 +33,18 @@ import { SvgXml } from "react-native-svg";
 
 import {
   LEAF_PAD,
+  TREE_BACK_SVG,
   TREE_LEAVES,
   TREE_TRUNK_SVG,
   type LeafSprite,
 } from "../constants/brand-vectors";
 
-/** Design-space size of the tree artwork. */
-const TREE = { width: 390, height: 720 } as const;
+/**
+ * Design-space size of the tree artwork — the whole frame, not a tree-local box.
+ * The trunk, both canopies, the hills and the nests are all exported against the
+ * same 390x848 origin, so nothing here needs a hand-tuned offset.
+ */
+const TREE = { width: 390, height: 848 } as const;
 
 /** Cycle lengths in ms. Leaves are dealt across these for speed variety. */
 const CLOCK_PERIODS = [2300, 2900, 3500];
@@ -141,6 +146,22 @@ function Leaf({
     >
       <SvgXml xml={sprite.svg} width={sprite.w * s} height={sprite.h * s} />
     </Animated.View>
+  );
+}
+
+/**
+ * The far canopy: the darker suits that sit BEHIND the trunk and make the tree
+ * read as full rather than flat. It goes under the hills as well as under the
+ * trunk, so the home screen mounts it as its own layer rather than folding it
+ * into WindTree.
+ *
+ * It does not move. A background layer that drifts reads as the whole scene
+ * sliding, and 136 more animated views would cost far more than the depth is
+ * worth — the near canopy moving over a still one is what sells the parallax.
+ */
+export function BackFoliage({ scale }: { scale: number }) {
+  return (
+    <SvgXml xml={TREE_BACK_SVG} width={TREE.width * scale} height={TREE.height * scale} />
   );
 }
 

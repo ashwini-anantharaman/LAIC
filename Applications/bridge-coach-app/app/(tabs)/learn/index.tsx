@@ -11,12 +11,30 @@
 // A "Browse Lessons" shelf used to sit at the bottom with three hardcoded
 // titles. It is gone: the API has no lessons or courses, and nothing on screen
 // admitted the content was invented.
+//
+// TWO VIEWS of the same shelves (Figma 906:417). Cards are the default and the
+// browsing view — a deck you swipe through. The LIST is the finding view: every
+// title on one screen, one row each, with each shelf collapsible so a learner can
+// fold away the kinds they are not looking for. The toggle in the title's row
+// always shows the view you would GO TO rather than the one you are in, which is
+// the convention that stops it reading as a state indicator.
 
 import { router, useFocusEffect } from "expo-router";
 import { ReactNode, useCallback, useEffect, useMemo, useState } from "react";
-import { ActivityIndicator, AppState, ScrollView, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
+import { SvgXml } from "react-native-svg";
 
 import { BrandChrome } from "../../../components/brand-chrome";
+import { tintSvg } from "../../../components/svg-tint";
+import { ICON_CHEVRON_UP, ICON_MENU, ICON_VIEW_GRID } from "../../../constants/brand-vectors";
 import { CARD, PlayingCard } from "../../../components/playing-card";
 import { PrimaryButton } from "../../../components/ui";
 import { TabLoading } from "../../../components/tab-loading";
@@ -31,9 +49,8 @@ import {
 import { useAuth } from "../../../lib/auth-context";
 import { useSelectedClubId } from "../../../lib/club-context";
 import { prefetchLaunch } from "../../../lib/launch-cache";
-import { getLearningObjects, splitByOwner, primeLearningCache } from "../../../lib/learning";
-import { subscribeToLiveLearning } from "../../../lib/learning-live";
-import { LearningObject, NexusError } from "../../../lib/nexus";
+import { describeLearningError, getLearningObjects, splitByOwner } from "../../../lib/learning";
+import { LearningObject } from "../../../lib/nexus";
 
 /**
  * The shelves, top to bottom, and which Studio type ids belong on each.
@@ -94,6 +111,115 @@ function Deck({ children }: { children: ReactNode }) {
   );
 }
 
+
+/**
+ * The list view's measurements (Figma 906:417), in the design's 390-wide space.
+ *
+ * Not scaled by screen width like the tiled screens: these rows stretch to the
+ * available width, so only the fixed insets and heights come from the frame. The
+ * row's SQUARE corners are the frame's own — every other card in the app is
+ * rounded, and the list reads as a list precisely because these are not.
+ */
+const LIST = {
+  /** Row height and the gap to the next one (208 → 253 in the frame). */
+  rowHeight: 35,
+  rowGap: 10,
+  /** The row's own left inset, and the label's inside it (26 → 41). */
+  inset: 26,
+  labelInset: 15,
+  labelSize: 16.437,
+  /** Heading to its first row (208 − 175 in the frame, less the heading's line). */
+  headingToRows: 20,
+  /**
+   * Above every heading, including the first.
+   *
+   * The frame uses two different gaps — 34 under the title, 24 above a later
+   * heading — but the CARD view already spaces its headings at a uniform 28, and
+   * two views that jump when you toggle between them is worse than six points of
+   * Figma precision. One value, matching the deck.
+   */
+  rowsToHeading: 28,
+  /** The chevron beside a heading. */
+  chevron: { w: 13.4, h: 7.4, gap: 10 },
+  /** The view toggle on the title's line. */
+  toggle: 18,
+} as const;
+
+/**
+ * One shelf as a foldable list.
+ *
+ * Collapsed state lives with the caller, not here, so folding a shelf survives a
+ * refresh — the list re-renders from new data several times a minute on focus, and
+ * a shelf that sprang back open every time would be unusable.
+ */
+function ListSection({
+  heading,
+  items,
+  open,
+  onToggle,
+  onOpenItem,
+}: {
+  heading: string;
+  items: LearningObject[];
+  open: boolean;
+  onToggle: () => void;
+  onOpenItem: (id: string) => void;
+}) {
+  return (
+    <View>
+      <Pressable
+        onPress={onToggle}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={`${heading}, ${items.length} item${items.length === 1 ? "" : "s"}`}
+        hitSlop={10}
+        style={({ pressed }) => [styles.listHeadingRow, pressed && styles.pressed]}
+      >
+        <Text style={styles.listHeading}>{heading}</Text>
+        {/* ONE asset for both states. The export points up (collapsed, as the frame
+            draws "Browse Lessons"); an open shelf turns it 180°, which is the same
+            trick the deck's mirrored card indices use. */}
+        <View
+          style={{
+            marginLeft: LIST.chevron.gap,
+            ...(open ? { transform: [{ rotate: "180deg" }] } : {}),
+          }}
+        >
+          <SvgXml
+            xml={tintSvg(ICON_CHEVRON_UP, Brand.ink)}
+            width={LIST.chevron.w}
+            height={LIST.chevron.h}
+          />
+        </View>
+      </Pressable>
+
+      {open ? (
+        <View style={styles.listRows}>
+          {items.map((item, i) => (
+            <Pressable
+              key={item.id}
+              onPress={() => onOpenItem(item.id)}
+              accessibilityRole="button"
+              accessibilityLabel={item.title}
+              style={({ pressed }) => [
+                styles.listRow,
+                // Alternating suits, dealt from the POSITION — the same rule the
+                // decks use, so a title keeps its colour between the two views.
+                { backgroundColor: i % 2 === 0 ? Brand.maroon : Brand.green },
+                pressed && styles.pressed,
+              ]}
+            >
+              <Text style={styles.listRowLabel} numberOfLines={1}>
+                {item.title}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 export default function LearnScreen() {
   const { token } = useAuth();
   // The library belongs to the club being viewed. Asking about the app-wide
@@ -102,6 +228,25 @@ export default function LearnScreen() {
   const clubId = useSelectedClubId();
   const [cards, setCards] = useState<LearningObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  /** Cards is the default: browsing is the commoner errand, and it is the view
+   *  this tab has always opened in. */
+  const [view, setView] = useState<"cards" | "list">("cards");
+  /**
+   * Which shelves are FOLDED, by heading — the absence of a heading means open.
+   *
+   * Tracking the folded ones rather than the open ones is what makes a new shelf
+   * arrive expanded: content that appears while you are looking at the list should
+   * be visible, not hidden behind a fold you never made.
+   */
+  const [folded, setFolded] = useState<Set<string>>(() => new Set());
+  const toggleFold = useCallback((heading: string) => {
+    setFolded((prev) => {
+      const next = new Set(prev);
+      if (next.has(heading)) next.delete(heading);
+      else next.add(heading);
+      return next;
+    });
+  }, []);
 
   const load = useCallback(
     async (refresh = false) => {
@@ -121,16 +266,12 @@ export default function LearnScreen() {
         // here would make one club's material everyone's reading list.
         setCards(splitByOwner(all, clubId).curriculum);
       } catch (e) {
-        // Show the SERVER'S own 403 reason. It distinguishes "this feature is not
-        // enabled for the program" (a Features toggle on the club) from "your role
-        // does not grant access" (a role grant) — two different fixes that the old
-        // single message flattened into one, sending anyone who hit it looking in
-        // the wrong place.
-        setError(
-          e instanceof NexusError && e.status === 403
-            ? `${e.message} (learning access for this club)`
-            : "Couldn't load content. Check that the Nexus backend is running.",
-        );
+        // Shared with the Club tab so the two cannot drift. It keeps the SERVER'S own
+        // 403 reason — which distinguishes "this feature is not enabled for the
+        // program" from "your role does not grant access", two different fixes — and
+        // adds the 404 case this screen used to mistranslate as "check that the Nexus
+        // backend is running", sending anyone who hit it to look at the wrong thing.
+        setError(describeLearningError(e));
       }
     },
     [token, clubId],
@@ -139,26 +280,6 @@ export default function LearnScreen() {
   useEffect(() => {
     load();
   }, [load]);
-
-  /**
-   * Live updates: an author publishes elsewhere and this list changes under us.
-   *
-   * The subscription hands back the whole fresh list (see subscribeToLiveLearning),
-   * which is primed into the shared cache so the reader screen and a later focus
-   * both see the same rows rather than the tab holding a private newer copy.
-   *
-   * Does nothing when the direct path is unavailable — the foreground and focus
-   * refetches below are then the only liveness, which is the behaviour that shipped
-   * before this and remains the fallback.
-   */
-  useEffect(() => {
-    if (!token) return;
-    return subscribeToLiveLearning(token, (objects) => {
-      // Same split as the fetch above: a live push must not put club-authored
-      // content on the curriculum shelves that the initial load keeps off them.
-      setCards(splitByOwner(primeLearningCache(token, clubId ?? undefined, objects), clubId).curriculum);
-    });
-  }, [token, clubId]);
 
   /**
    * Refetch when the app comes back to the foreground.
@@ -208,7 +329,31 @@ export default function LearnScreen() {
   return (
     <BrandChrome>
       <ScrollView contentContainerStyle={styles.page} showsVerticalScrollIndicator={false}>
-        <Text style={styles.title}>Learn</Text>
+        <View style={styles.titleRow}>
+          <Text style={styles.title}>Learn</Text>
+          {/* Shows the view you would GO TO, never the one you are in: in cards it
+              offers the list, in the list it offers the grid. A toggle that showed
+              the current view would read as a state badge and get tapped by people
+              expecting nothing to happen. Hidden until there is something to look
+              at either way. */}
+          {cards && !error && shelves.length > 0 ? (
+            <Pressable
+              onPress={() => setView((v) => (v === "cards" ? "list" : "cards"))}
+              accessibilityRole="button"
+              accessibilityLabel={view === "cards" ? "Show as a list" : "Show as cards"}
+              hitSlop={14}
+              style={({ pressed }) => pressed && styles.pressed}
+            >
+              <SvgXml
+                xml={tintSvg(view === "cards" ? ICON_MENU : ICON_VIEW_GRID, Brand.ink)}
+                width={LIST.toggle}
+                // The list glyph is 18x12 and the grid 18x18; forcing one box on
+                // both would squash whichever loses, so each keeps its own ratio.
+                height={view === "cards" ? 12 : LIST.toggle}
+              />
+            </Pressable>
+          ) : null}
+        </View>
 
         {!cards && !error && (
           <View style={styles.state}>
@@ -234,10 +379,25 @@ export default function LearnScreen() {
           </Text>
         )}
 
-        {/* One shelf per kind. An empty shelf renders nothing at all — a heading
-            over no cards reads as a fault rather than as an absence. */}
+        {/* One shelf per kind, in whichever view is showing. An empty shelf renders
+            nothing at all — a heading over no cards reads as a fault rather than as
+            an absence — so the same `shelves` list drives both. */}
+        {cards && !error && view === "list"
+          ? shelves.map((shelf) => (
+              <ListSection
+                key={shelf.heading}
+                heading={shelf.heading}
+                items={shelf.items}
+                open={!folded.has(shelf.heading)}
+                onToggle={() => toggleFold(shelf.heading)}
+                onOpenItem={(id) => router.push(`/learn-object/${id}`)}
+              />
+            ))
+          : null}
+
         {cards &&
           !error &&
+          view === "cards" &&
           shelves.map((shelf) => (
             <View key={shelf.heading}>
               <SectionHeading>{shelf.heading}</SectionHeading>
@@ -280,7 +440,6 @@ const styles = StyleSheet.create({
     fontFamily: Fonts.display,
     fontSize: Type.screenTitle,
     color: Brand.ink,
-    paddingHorizontal: Spacing.screen,
   },
   sectionHeading: {
     fontFamily: Fonts.heading,
@@ -289,6 +448,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.screen,
     paddingTop: 28,
   },
+  /** The title and the view toggle share one line, as the frame draws them. */
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: Spacing.screen,
+  },
+  listHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: LIST.inset,
+    paddingTop: LIST.rowsToHeading,
+  },
+  listHeading: {
+    fontFamily: Fonts.heading,
+    fontSize: Type.sectionHeading,
+    color: Brand.ink,
+  },
+  listRows: { paddingTop: LIST.headingToRows, gap: LIST.rowGap },
+  /** SQUARE corners, from the frame. Every other card here is rounded; that is
+   *  what makes these read as a list rather than as a stack of small cards. */
+  listRow: {
+    height: LIST.rowHeight,
+    marginHorizontal: LIST.inset,
+    justifyContent: "center",
+    paddingHorizontal: LIST.labelInset,
+  },
+  listRowLabel: {
+    fontFamily: Fonts.displayMedium,
+    fontSize: LIST.labelSize,
+    color: Brand.white,
+  },
+  pressed: { opacity: 0.75 },
   deck: {
     paddingHorizontal: Spacing.screen,
     paddingTop: 16,

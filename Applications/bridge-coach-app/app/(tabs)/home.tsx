@@ -1,16 +1,21 @@
-// Home — the Bridge Bird tree. Five nests are the five destinations; the top
-// app bar carries the menu, settings, cards and profile.
+// Home — the Bridge Bird tree. Four nests are the four destinations; the top
+// app bar carries the wordmark.
 //
 // The artwork and the nests are laid out in the Figma frame's coordinate space
-// (390x852) and scaled to the real screen width, so a nest always lands on its
-// branch. The block is anchored to the BOTTOM: the tree and hills run to the
-// screen edge, and any extra height on a taller phone opens up at the top,
-// where only the cream app bar sits.
+// (390x848) and scaled to the real screen width, so a nest always lands on its
+// branch. That space is now shared by EVERY layer — sky, far canopy, hills,
+// trunk, near canopy, nests — so each one is drawn at design coordinates with no
+// per-layer offset to keep in sync. The block is anchored to the BOTTOM: the
+// tree and hills run to the screen edge, and any extra height on a taller phone
+// opens up at the top, which is solid sky.
 //
 // The tree is IDENTICAL for both roles. Everything coach-specific lives behind
 // the Menu drawer's coach-only "Other" section instead of changing the tree or
 // the tab bar, so there is one
 // home screen to design and one navigation model to reason about.
+//
+// There is no Analysis nest. Analysis is gone as a destination, and the branch
+// it sat on now carries foliage instead.
 
 import { Image } from "expo-image";
 import { router } from "expo-router";
@@ -22,30 +27,25 @@ import { JigglingOwl } from "../../components/jiggling-owl";
 import { TabLoading } from "../../components/tab-loading";
 import { BrandAppBar } from "../../components/brand-app-bar";
 import { CONTENT_TOP_GAP } from "../../components/brand-chrome";
-import { WindTree } from "../../components/wind-tree";
+import { Sky } from "../../components/sky";
+import { BackFoliage, WindTree } from "../../components/wind-tree";
 import { BrandArt } from "../../constants/brand-assets";
 import { HILLS_SVG } from "../../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../../constants/theme";
 
-const DESIGN = { width: 390, height: 852 };
+const DESIGN = { width: 390, height: 848 };
 
-/** Nest positions, labels and destinations — all in design coordinates. */
+/**
+ * Nest positions, labels and destinations — all in design coordinates, straight
+ * from the frame. Play and Learn hang from the upper branches and are drawn
+ * larger than Coach and Club, which is why their labels carry their own size:
+ * the design sets the two pairs at 23pt and 26pt line boxes respectively.
+ */
 const NESTS = [
-  { key: "play", label: "Play", href: "/play", x: 30, y: 203, w: 151, h: 91.5, ly: 220 },
-  { key: "learn", label: "Learn", href: "/learn", x: 204, y: 229, w: 151, h: 91.5, ly: 246 },
-  { key: "coach", label: "Coach", href: "/coach", x: 49, y: 416, w: 151, h: 91.5, ly: 434 },
-  { key: "club", label: "Club", href: "/club", x: 231, y: 446, w: 151, h: 91.5, ly: 462 },
-  {
-    key: "analysis",
-    label: "Analysis",
-    href: "/analysis",
-    x: 221,
-    y: 562,
-    w: 163,
-    h: 98.8,
-    ly: 582,
-    labelSize: Type.nestLabel - 1.2,
-  },
+  { key: "play", label: "Play", href: "/play", x: -6, y: 206, w: 188, h: 114, ly: 233, labelSize: 18 },
+  { key: "learn", label: "Learn", href: "/learn", x: 179, y: 210, w: 188, h: 114, ly: 236, labelSize: 18 },
+  { key: "coach", label: "Coach", href: "/coach", x: 37, y: 411, w: 172, h: 104.3, ly: 432 },
+  { key: "club", label: "Club", href: "/club", x: 227, y: 444, w: 158, h: 95.8, ly: 463 },
 ] as const;
 
 export default function HomeScreen() {
@@ -64,14 +64,26 @@ export default function HomeScreen() {
         style={[styles.art, { top: artTop, width: DESIGN.width * s, height: artHeight }]}
         pointerEvents="box-none"
       >
-        {/* Hills + sun, then the tree over them — both true vectors, so they
-            stay sharp at any density and the tree's transparency lets the
-            sunset read through the branches. The trunk is static (the nests are
-            pinned to its branches); only the leaves catch the wind. */}
+        {/* Sky, far canopy, hills + sun, then the tree over all of it — true
+            vectors throughout, so they stay sharp at any density and the tree's
+            transparency lets the sunset read through the branches.
+
+            The order is what makes the tree read as having depth: the darker
+            suits go BEHIND the trunk (and behind the hills, which is where the
+            design puts them), the lit ones in front, so the canopy has a far
+            side. The trunk is static — the nests are pinned to its branches —
+            and only the near leaves catch the wind, which the still far layer
+            gives something to move against. */}
+        <View style={StyleSheet.absoluteFill}>
+          <Sky width={DESIGN.width * s} height={artHeight} />
+        </View>
+        <View style={StyleSheet.absoluteFill}>
+          <BackFoliage scale={s} />
+        </View>
         <View style={{ position: "absolute", left: 0, top: 625 * s }}>
           <SvgXml xml={HILLS_SVG} width={390 * s} height={223 * s} />
         </View>
-        <View style={{ position: "absolute", left: 0, top: 132 * s }}>
+        <View style={StyleSheet.absoluteFill}>
           <WindTree scale={s} />
         </View>
 
@@ -137,7 +149,7 @@ export default function HomeScreen() {
         style={[styles.chrome, { paddingTop: insets.top + CONTENT_TOP_GAP }]}
         pointerEvents="box-none"
       >
-        <BrandAppBar showActions={false} />
+        <BrandAppBar showActions={false} transparent />
       </View>
 
       {/* Nothing to wait for here — the veil fades at once, so entering the
@@ -148,7 +160,9 @@ export default function HomeScreen() {
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Brand.cream, overflow: "hidden" },
+  /** Sky, not cream: the artwork is bottom-anchored, so on a tall phone this is
+      what fills the band above it — and the top of the design is solid sky. */
+  screen: { flex: 1, backgroundColor: Brand.sky, overflow: "hidden" },
   art: { position: "absolute", left: 0 },
   fill: { width: "100%", height: "100%" },
   chrome: { position: "absolute", left: 0, right: 0, top: 0 },

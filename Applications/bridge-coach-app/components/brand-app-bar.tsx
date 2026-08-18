@@ -21,9 +21,10 @@ import { SvgXml } from "react-native-svg";
 
 import {
   ICON_AVATAR,
-  ICON_BIRD_GLYPH,
   ICON_GEAR,
   ICON_MENU,
+  LOGO_BIRD,
+  LOGO_HEART,
 } from "../constants/brand-vectors";
 import { Brand, Fonts, Type } from "../constants/theme";
 import { useAuth } from "../lib/auth-context";
@@ -105,6 +106,44 @@ function ProfileButton({ onPress }: { onPress: () => void }) {
   );
 }
 
+/**
+ * The lockup: "BridgeBird" with a heart over the i of "Bridge" and a bird over
+ * the i of "Bird". It replaces the old wordmark-plus-trailing-glyph — the marks
+ * are now part of the word, not an ornament beside it.
+ *
+ * The two marks are placed by measurement, not by the layout engine: they are
+ * absolutely positioned inside the text's own box at the offsets Figma gives,
+ * divided by the design's font size so they hold at any WORDMARK size. That
+ * makes three things load-bearing, and all three are set explicitly below:
+ *
+ *  - `letterSpacing`. The design tracks +0.622, and the second i is seven
+ *    characters in — drop the tracking and the bird lands ~4pt left of its stem.
+ *  - `lineHeight`. The offsets are measured from the top of a 45pt text frame,
+ *    so the box has to be that tall (45/31.098 em) for the vertical offset to
+ *    mean the same thing.
+ *  - `Fonts.display` (Neco Bold), which is what the offsets were measured
+ *    against. A fallback face would shift every stem.
+ */
+function Wordmark() {
+  const size = Type.wordmark;
+  return (
+    <View style={styles.wordmarkRow}>
+      <Text style={[styles.wordmark, { fontSize: size, lineHeight: 1.4471 * size }]}>
+        BridgeBird
+      </Text>
+      <View style={[styles.mark, { left: 1.2075 * size, top: 0.2727 * size }]}>
+        <SvgXml xml={LOGO_HEART} width={0.3089 * size} height={0.2703 * size} />
+      </View>
+      {/* The bird's box is its STROKED extent. Figma reports the mask group at
+          9.6x6.2, which is neither the path's bounds nor the mask rect's, and
+          cropping to it shears the beak and the near wing off. */}
+      <View style={[styles.mark, { left: 4.0252 * size, top: 0.217 * size }]}>
+        <SvgXml xml={LOGO_BIRD} width={0.4027 * size} height={0.3273 * size} />
+      </View>
+    </View>
+  );
+}
+
 export function BrandAppBar({
   onBack,
   onMenu,
@@ -115,6 +154,11 @@ export function BrandAppBar({
   showMenu = true,
   /** Home only. Elsewhere the bar keeps its height but carries no actions. */
   showActions = true,
+  /**
+   * Home only. Its sky is a blue-to-cream gradient, so the bar's own cream fill
+   * would sit on it as a visible band.
+   */
+  transparent = false,
 }: {
   onMenu?: () => void;
   onSettings?: () => void;
@@ -122,11 +166,12 @@ export function BrandAppBar({
   showWordmark?: boolean;
   showMenu?: boolean;
   showActions?: boolean;
+  transparent?: boolean;
   /** Given on pushed screens, which are not tabs and so need a way back. */
   onBack?: () => void;
 }) {
   return (
-    <View style={styles.host}>
+    <View style={transparent ? undefined : styles.host}>
       {showActions ? (
       <View style={styles.bar}>
         <View style={styles.side}>
@@ -158,12 +203,7 @@ export function BrandAppBar({
       </View>
       ) : null}
 
-      {showWordmark ? (
-        <View style={styles.wordmarkRow}>
-          <Text style={styles.wordmark}>BridgeBird</Text>
-          <SvgXml xml={ICON_BIRD_GLYPH} width={21} height={16.99} />
-        </View>
-      ) : null}
+      {showWordmark ? <Wordmark /> : null}
     </View>
   );
 }
@@ -178,18 +218,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: 22,
   },
   side: { flexDirection: "row", alignItems: "center", gap: 20 },
+  /** `alignSelf` keeps the box the width of the word, so `mark` measures from
+      the "B", not from the screen edge. */
   wordmarkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    paddingLeft: 25,
+    alignSelf: "flex-start",
+    position: "relative",
+    marginLeft: 25,
     paddingBottom: 6,
   },
   wordmark: {
     fontFamily: Fonts.display,
-    fontSize: Type.wordmark,
+    letterSpacing: 0.622,
     color: Brand.ink,
   },
+  mark: { position: "absolute" },
   /** Matches the glyph's 30.5pt box, circular like everywhere else. */
   avatarPhoto: { width: 30, height: 30, borderRadius: 15 },
   pressed: { opacity: 0.55 },

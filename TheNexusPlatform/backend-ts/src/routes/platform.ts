@@ -28,6 +28,8 @@ import { getStorage, orgKey } from "../storage";
 import { slugify } from "../platformLocalStore";
 import * as catalogue from "../accessCatalogue/store";
 import * as provisioning from "../accessCatalogue/provisioning";
+import * as clubAppAccess from "../accessCatalogue/clubAppAccess";
+import * as contentCaps from "../accessCatalogue/contentCapMap";
 import type { CapabilityCatalogueDocument } from "../accessCatalogue/types";
 import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } from "../accessCatalogue/resolver";
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
@@ -1009,36 +1011,12 @@ platformRouter.get("/bridge/context", async (c) => {
     try {
       const clubProgram = await db.getProgram(access.partnerProgramId);
       const clubOrgId = (clubProgram?.org_id as string | undefined) ?? null;
-      const structuralTier =
-        !!clubOrgId &&
-        user.memberships.some(
-          (m) =>
-            m.org_id === clubOrgId &&
-            ["owner", "administrator"].includes(m.role) &&
-            (!m.program_id || m.program_id === access.partnerProgramId),
-        );
-      let clubRoleName: string | null = null;
-      let granted: string[] = [];
-      let clubAreaLevel: string | null = null;
-      if (!structuralTier && user.email) {
-        const role = await graph
-          .getProgramRoleForEmail(access.partnerProgramId, user.email)
-          .catch(() => null);
-        if (role) {
-          clubRoleName = (role.role_name as string | null) ?? null;
-          const perms = (role.perms as Record<string, unknown>) ?? {};
-          granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
-          // The role's grant level on the app's own area — "administrator"
-          // means the whole catalogue and stores no per-capability ids.
-          clubAreaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
-        }
-      }
-      const resolved = await appRoles.appAccessFor(access.partnerProgramId, {
-        structuralTier,
-        areaLevel: clubAreaLevel,
-        roleName: clubRoleName,
-        programRoleCapabilities: granted,
-      });
+      const resolved = await clubAppAccess.clubAppAccessFor(
+        user,
+        access.partnerProgramId,
+        clubOrgId,
+        (programId, email) => graph.getProgramRoleForEmail(programId, email),
+      );
       appCapabilities = resolved.capabilities;
       // The org's CEILING, separate from the role's grants — canCreateChallenge
       // falls back to a coarse "a mentor may create" rule when the grants are
@@ -1782,40 +1760,26 @@ async function _clubAppActor(c: Context) {
     (m) => isAdminRole(m) && (!m.program_id || m.program_id === programId),
   );
 
-  return { user, programId, orgId, programName: (program.name as string) ?? null, structuralTier };
+  return {
+    user,
+    programId,
+    orgId,
+    programName: (program.name as string) ?? null,
+    programDescription: (program.description as string | null) ?? null,
+    structuralTier,
+  };
 }
 
 platformRouter.get("/club-app/context", async (c) => {
-  const { user, programId, programName, structuralTier } = await _clubAppActor(c);
+  const { user, programId, orgId, programName, programDescription, structuralTier } =
+    await _clubAppActor(c);
 
-  // The ONE role they hold in this club, and what it grants.
-  let roleName: string | null = null;
-  let granted: string[] = [];
-  let areaLevel: string | null = null;
-  if (!structuralTier && user.email) {
-    const role = await graph.getProgramRoleForEmail(programId, user.email).catch(() => null);
-    if (role) {
-      roleName = (role.role_name as string | null) ?? null;
-      const perms = (role.perms as Record<string, unknown>) ?? {};
-      granted = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
-      // The role's grant level on the app's own area — "administrator" means
-      // the whole catalogue and stores no per-capability ids.
-      areaLevel = typeof perms.clubapp === "string" ? perms.clubapp : null;
-    }
-  }
-
-  let result: { roleName: string | null; capabilities: string[] } = { roleName, capabilities: [] };
-  try {
-    result = await appRoles.appAccessFor(programId, {
-      structuralTier,
-      areaLevel,
-      roleName,
-      programRoleCapabilities: granted,
-    });
-  } catch (e) {
-    // A bad role or catalogue must never lock someone out of the app entirely.
-    console.error("club-app/context capability computation failed (using empty set):", e);
-  }
+  // The ONE role they hold in this club, and what it grants. Shared with
+  // /bridge/context and the learning path so the three cannot disagree; it also
+  // absorbs the "a bad role must never lock someone out" guard that used to sit here.
+  const result = await clubAppAccess.clubAppAccessFor(user, programId, orgId, (pid, email) =>
+    graph.getProgramRoleForEmail(pid, email),
+  );
   // The org's CEILING, sent as its own fact. The app cannot derive it from
   // `capabilities` above: an empty set there means "no fine role" (and the app
   // falls back to coarse behaviour), while an admin skips capabilities entirely.
@@ -1828,6 +1792,9 @@ platformRouter.get("/club-app/context", async (c) => {
   return c.json({
     program_id: programId,
     program_name: programName,
+    // The club's own one-line label, so the app can show it and offer to change it
+    // without a second round-trip. Nullable: most clubs have never set one.
+    program_description: programDescription,
     role_name: result.roleName,
     capabilities: result.capabilities,
     is_admin: structuralTier,
@@ -2036,6 +2003,11 @@ platformRouter.get("/learning/context", async (c) => {
     permissions: [`learning:${access.level}`],
     accessLevel: prebuiltLearning ?? mapped.accessLevel,
     capabilities, // effective learning-catalogue capability ids (screen gating)
+    // The club role's raw app.content.* grants, sent as their own fact. One of them
+    // — app.content.create.personal — has NO learning image on purpose: "for myself
+    // or for the club" is a scope question and the learning catalogue has no id for
+    // it, so faking one would be inventing a permission that governs nothing.
+    app_content_capabilities: eff.appContentCaps,
     displayName: await _platformDisplayName(access.profileId, user),
     program_name: access.programName,
     role_name: access.roleName,
@@ -2057,13 +2029,17 @@ platformRouter.get("/learning/objects", async (c) => {
   // run to tens of MB once authored content accumulates; list screens should
   // never pay that — fetch one object's content via GET /learning/objects/:id.
   // Program-scoped either way: each program is its own Content Studio instance.
+  // WHO is asking now matters, not just which program: personal content is its
+  // owner's plus whoever it was shared with.
+  const effList = await _learningEffective(user, access);
+  const viewer = _learningViewer(access, effList.clubRoleId);
   if (c.req.query("meta") === "1") {
     return c.json(
-      await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null),
+      await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
     );
   }
   return c.json(
-    await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null),
+    await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
   );
 });
 
@@ -2091,11 +2067,13 @@ platformRouter.get("/learning/objects/:object_id", async (c) => {
   // Scoped like the list: club ∪ parent. The embed chain survives this because the
   // mobile launch carries the club id and the Studio sends it back on every by-id
   // call, so a by-id fetch resolves to a SUPERSET of the list that offered the item.
+  const effRead = await _learningEffective(user, access);
   const row = await graph.getLearningObject(
     access.orgId,
     c.req.param("object_id"),
     access.programId,
     access.partnerProgramId ?? null,
+    _learningViewer(access, effRead.clubRoleId),
   );
   if (!row) throw new HttpError(404, "Learning object not found");
   return c.json(row);
@@ -2127,7 +2105,18 @@ platformRouter.put("/learning/objects", async (c) => {
     probe ? "learning.object.edit" : "learning.object.create",
     (probe?.type ?? (body.type as string | null)) ?? null,
   );
-  const wrote = await graph.upsertLearningObject(access.orgId, body, _learningWriteScope(access));
+  // Capability said "you may edit content"; this says "you may edit THIS content".
+  await _requireObjectOwnership(probe, access, eff, String(body.id), eff.clubRoleId);
+  // A NEW object may be filed as the author's own rather than the club's. Existing
+  // rows keep their scope — moving one is a deliberate act, not a save.
+  const wantsPersonal = !probe && String(body.scope_level ?? "") === "user";
+  if (wantsPersonal) {
+    _requireLearningCap(eff, "learning.object.create", (body.type as string | null) ?? null);
+  }
+  const wrote = await graph.upsertLearningObject(access.orgId, body, _learningWriteScope(access), {
+    ownerId: access.profileId,
+    ownerName: (body.owner_name as string | null) ?? null,
+  });
   if (!wrote) {
     // The id exists, in this org or another, under a different program. Refusing is
     // the point — see upsertLearningObject — but it must SAY so: answering {ok:true}
@@ -2135,6 +2124,7 @@ platformRouter.put("/learning/objects", async (c) => {
     // is not. 409, not 404: the object is there, it is just not theirs to write.
     throw new HttpError(409, "That object belongs to another program");
   }
+  if (wantsPersonal) await graph.setLearningObjectPersonal(access.orgId, String(body.id), access.profileId);
   return c.json({ ok: true });
 });
 
@@ -2153,6 +2143,52 @@ platformRouter.put("/learning/objects", async (c) => {
 // /share applies. Per-capability and per-content-type enforcement (a role scoped to
 // Tutorials but not Quizzes) is the next pass and belongs in _learningEffective,
 // which already resolves typeScopes for it.
+
+
+/**
+ * Who is asking, for the personal tier — the profile id `owner_id` holds, plus any
+ * club role they hold, so grants addressed to "Club Mentor" resolve.
+ *
+ * Cheap and cached upstream: `_learningEffective` has already resolved the club role
+ * for its own branch, so this reuses that answer rather than asking again.
+ */
+function _learningViewer(
+  access: ResolvedPlatformAccess,
+  clubRoleId: string | null,
+): graph.LearningViewer {
+  return { profileId: access.profileId, roleIds: clubRoleId ? [clubRoleId] : [] };
+}
+
+/**
+ * May this caller mutate THIS row, given who owns it?
+ *
+ * Capability answers "may you edit content"; this answers "may you edit THIS
+ * content". They are different questions and only the second one knows about the
+ * personal tier.
+ *
+ * Silent on anything that is not personal — club content stays governed by the
+ * club's capabilities exactly as before, which is what keeps this additive. A
+ * personal row is its owner's alone, unless they shared it at `edit`, or the caller
+ * is the club's structural tier, or holds `app.content.manage_others` for
+ * housekeeping.
+ */
+async function _requireObjectOwnership(
+  probe: { ownerId: string | null; scopeLevel: string | null } | null,
+  access: ResolvedPlatformAccess,
+  eff: { appContentCaps: string[]; isAdmin: boolean; clubTier: boolean },
+  objectId: string,
+  clubRoleId: string | null,
+): Promise<void> {
+  if (!probe || probe.scopeLevel !== "user") return;
+  if (probe.ownerId && probe.ownerId === access.profileId) return;
+  if (eff.isAdmin || eff.clubTier) return;
+  if (eff.appContentCaps.includes("app.content.manage_others")) return;
+  const granted = await graph.learningGrantLevelFor(objectId, _learningViewer(access, clubRoleId));
+  if (granted === "edit") return;
+  // 404-shaped on purpose would be wrong here: the caller can SEE the object (they
+  // got this far), so hiding the reason only wastes their time.
+  throw new HttpError(403, "That content belongs to someone else");
+}
 
 /**
  * The program a write is stamped with — ONE expression, so club ownership arrives
@@ -2258,12 +2294,22 @@ platformRouter.post("/learning/objects/publish", async (c) => {
   );
   if (isPublish) _requireLearningCap(eff, "learning.publish.release", objectType);
   if (share) _requireLearningCap(eff, "learning.publish.audience", objectType);
+  await _requireObjectOwnership(probe, access, eff, String(row.id), eff.clubRoleId);
   const wrote =
     !isPublish && !share && probe?.published
       ? await graph.backupLearningObjectDraft(access.orgId, scope, String(row.id), row)
-      : await graph.publishLearningObject(access.orgId, scope, row, { publish: isPublish, share });
+      : await graph.publishLearningObject(access.orgId, scope, row, { publish: isPublish, share }, {
+          ownerId: access.profileId,
+          ownerName: (row.owner_name as string | null) ?? null,
+        });
 
   if (!wrote) throw new HttpError(409, "That object belongs to another program");
+  // The compose flow creates through THIS route, not only through autosave, so the
+  // scope choice has to be honoured in both places or "Just me" silently means "the
+  // club" whenever publishing happens to be the first write.
+  if (!probe && String(row.scope_level ?? "") === "user") {
+    await graph.setLearningObjectPersonal(access.orgId, String(row.id), access.profileId);
+  }
   return c.json({ ok: true, id: row.id });
 });
 
@@ -2276,6 +2322,7 @@ platformRouter.post("/learning/objects/unpublish", async (c) => {
   if (!body.id) throw new HttpError(422, "id is required");
   const probe = await graph.probeLearningObject(access.orgId, body.id);
   _requireLearningCap(eff, "learning.publish.release", probe?.type);
+  await _requireObjectOwnership(probe, access, eff, body.id, eff.clubRoleId);
   const ok = await graph.unpublishLearningObject(access.orgId, _learningWriteScope(access), body.id);
   if (!ok) throw new HttpError(404, "Learning object not found");
   return c.json({ ok: true });
@@ -2285,12 +2332,110 @@ platformRouter.delete("/learning/objects/:object_id", async (c) => {
   const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
   const probe = await graph.probeLearningObject(access.orgId, c.req.param("object_id"));
   _requireLearningCap(eff, "learning.object.delete", probe?.type);
+  await _requireObjectOwnership(probe, access, eff, c.req.param("object_id"), eff.clubRoleId);
   const ok = await graph.deleteLearningObject(
     access.orgId,
     _learningWriteScope(access),
     c.req.param("object_id"),
   );
   if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true });
+});
+
+
+// ── Sharing one object with named people ───────────────────────────────────
+//
+// The Docs model, and deliberately NOT a second visibility system running beside
+// program scope. An object's default audience is still its scope + program; a grant
+// is the exception to that default, for one named subject.
+//
+// CONFINEMENT: a grant may only name someone who is in the club that owns the
+// object, or a role that club has authored. Enforced HERE rather than by a foreign
+// key, because no key can express "this profile belongs to the club on that row" —
+// the club is on the object and the membership is in another table. Club isolation
+// is the property the whole system rests on, and sharing narrows within a club; it
+// never reaches across one.
+
+/** Who may change who an object is shared with: its owner, the club's tier, or
+ *  someone holding the housekeeping capability. Editors do not re-share. */
+async function _requireGrantAuthority(
+  c: Context,
+  objectId: string,
+): Promise<{
+  access: ResolvedPlatformAccess;
+  eff: Awaited<ReturnType<typeof _learningEffective>>;
+  probe: NonNullable<Awaited<ReturnType<typeof graph.probeLearningObject>>>;
+}> {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", c.req.query("program_id") ?? null);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const eff = await _learningEffective(user, access);
+  const probe = await graph.probeLearningObject(access.orgId, objectId);
+  if (!probe) throw new HttpError(404, "Learning object not found");
+  const owns = !!probe.ownerId && probe.ownerId === access.profileId;
+  if (!owns && !eff.isAdmin && !eff.clubTier && !eff.appContentCaps.includes("app.content.manage_others")) {
+    throw new HttpError(403, "Only the author can change who this is shared with");
+  }
+  return { access, eff, probe };
+}
+
+/** Everyone this object is shared with. */
+platformRouter.get("/learning/objects/:object_id/grants", async (c) => {
+  const objectId = c.req.param("object_id");
+  await _requireGrantAuthority(c, objectId);
+  return c.json({ grants: await graph.listLearningObjectGrants(objectId) });
+});
+
+/** Invite someone, or change the level they hold. */
+platformRouter.put("/learning/objects/:object_id/grants", async (c) => {
+  const objectId = c.req.param("object_id");
+  const body = (await c.req.json()) as {
+    subject_type?: string;
+    subject_id?: string;
+    level?: string;
+  };
+  const { access, probe } = await _requireGrantAuthority(c, objectId);
+
+  const subjectType = body.subject_type === "role" ? "role" : "profile";
+  const subjectId = String(body.subject_id ?? "").trim();
+  const level = body.level === "edit" ? "edit" : "view";
+  if (!subjectId) throw new HttpError(422, "subject_id is required");
+
+  // The owning club, from the ROW — never from the request. A caller naming another
+  // club's program would otherwise widen their own confinement check.
+  const owningProgram = probe.programId ?? _learningWriteScope(access);
+  if (!owningProgram) {
+    throw new HttpError(409, "That content has no club, so it cannot be shared with one");
+  }
+
+  if (subjectType === "profile") {
+    const members = await graph.listProgramMembers(access.orgId, owningProgram);
+    const inClub = members.some((m) => String((m as Row).profile_id ?? "") === subjectId);
+    if (!inClub) throw new HttpError(403, "That person is not in this club");
+  } else {
+    const roles = await graph.listProgramRoles(owningProgram).catch(() => [] as Row[]);
+    const isClubRole = roles.some((r) => String((r as Row).id ?? "") === subjectId);
+    if (!isClubRole) throw new HttpError(403, "That role does not belong to this club");
+  }
+
+  await graph.setLearningObjectGrant(
+    objectId,
+    { subjectType, subjectId, level },
+    access.profileId ?? null,
+  );
+  return c.json({ ok: true, subject_type: subjectType, subject_id: subjectId, level });
+});
+
+/** Withdraw a share. Idempotent — removing one nobody holds is the state asked for. */
+platformRouter.delete("/learning/objects/:object_id/grants", async (c) => {
+  const objectId = c.req.param("object_id");
+  const subjectType = c.req.query("subject_type") === "role" ? "role" : "profile";
+  const subjectId = String(c.req.query("subject_id") ?? "").trim();
+  if (!subjectId) throw new HttpError(422, "subject_id is required");
+  await _requireGrantAuthority(c, objectId);
+  await graph.removeLearningObjectGrant(objectId, subjectType, subjectId);
   return c.json({ ok: true });
 });
 
@@ -2314,6 +2459,20 @@ platformRouter.put("/learning/objects/:object_id/share", async (c) => {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   const shared = body.shared !== false; // default: publish
+  // This route had NO capability check at all, and setLearningObjectShared is
+  // org-scoped rather than write-scoped — so any club member could make ANY object
+  // in the organization, including a sibling club's, readable by the whole internet
+  // with nothing more than its id. Publishing to the world is the widest act in this
+  // file and was the only one ungated.
+  const effShare = await _learningEffective(user, access);
+  const probeShare = await graph.probeLearningObject(access.orgId, c.req.param("object_id"));
+  _requireLearningCap(effShare, "learning.publish.audience", probeShare?.type);
+  await _requireObjectOwnership(probeShare, access, effShare, c.req.param("object_id"), effShare.clubRoleId);
+  // And the object must be in the caller's own write scope, not merely their org.
+  const shareScope = _learningWriteScope(access);
+  if (shareScope && probeShare && probeShare.programId && probeShare.programId !== shareScope) {
+    throw new HttpError(409, "That object belongs to another program");
+  }
   let ok: boolean;
   try {
     ok = await graph.setLearningObjectShared(access.orgId, c.req.param("object_id"), shared);
@@ -2400,6 +2559,13 @@ async function _learningEffective(
   capabilities: string[];
   typeScopes: Record<string, string[]>;
   customRole: Row | null;
+  /** The club role's raw `app.content.*` grants. `manage_others` has no learning
+   *  image — it answers an ownership question — so it is read from here. */
+  appContentCaps: string[];
+  /** The club role's id, for grants addressed to a role. */
+  clubRoleId: string | null;
+  /** Club administrator or the org's owner/admin — bypasses ownership. */
+  clubTier: boolean;
 }> {
   const isAdmin = access.level === "admin";
   const customRole = !isAdmin && user.email
@@ -2409,6 +2575,36 @@ async function _learningEffective(
     // them. One footing, or per-club permissions cannot be expressed at all.
     ? await graph.getLearningRoleForEmail(access.partnerProgramId ?? access.programId, user.email)
     : null;
+
+  /**
+   * The club role's content grants, or null when this is not a club, the switch is
+   * off, or the role says nothing about content.
+   *
+   * `null` IS THE BACKWARD-COMPATIBILITY HINGE. A club that has never been granted an
+   * `app.content.*` id falls straight through to the branches below and gets exactly
+   * the answer it gets today. Absent is not denial, here as everywhere.
+   */
+  let clubContent: { roleName: string | null; capabilities: string[] } | null = null;
+  let clubRoleId: string | null = null;
+  let clubTier = false;
+  if (process.env.NEXUS_CLUB_CONTENT_CAPS !== "off" && access.partnerClub && access.partnerProgramId) {
+    try {
+      const clubProgram = await db.getProgram(access.partnerProgramId);
+      const resolved = await clubAppAccess.clubAppAccessFor(
+        user,
+        access.partnerProgramId,
+        (clubProgram?.org_id as string | undefined) ?? null,
+        (pid, email) => graph.getProgramRoleForEmail(pid, email),
+      );
+      clubRoleId = resolved.roleId;
+      clubTier = resolved.structuralTier;
+      if (contentCaps.hasContentCaps(resolved.capabilities)) clubContent = resolved;
+    } catch (e) {
+      // A club-app failure must not decide a learning question. Falls through to
+      // today's branches, which is the answer this person already had.
+      console.error("club content capability resolution failed (falling back):", e);
+    }
+  }
 
   let capabilities: string[] = [];
   let fineGrained = false;
@@ -2424,6 +2620,40 @@ async function _learningEffective(
     } else if (Array.isArray(roleCaps) && roleCaps.length) {
       capabilities = roleCaps as string[];
       fineGrained = true;
+    } else if (clubContent) {
+      // The club role governs CONTENT, the same way it already governs challenges
+      // and chat. See accessCatalogue/contentCapMap.ts for why this exists: without
+      // it, a club member's content authority is the club's PROVISIONING envelope,
+      // so every member of a provisioned club has identical authority and "who in
+      // this club may author?" has nowhere to be answered.
+      //
+      // UNION, not replacement. Only the ids in GOVERNED_LEARNING_CAPS are ever
+      // enforced here or drive a button; the rest of the catalogue is Studio screen
+      // gating, and taking it away would remove screens a member reaches today
+      // through their level — a silent revocation on surfaces nobody tests.
+      capabilities = contentCaps.unionWithLevel(
+        contentCaps.mapContentCaps(clubContent.capabilities),
+        _learningCapsForLevel(learningDoc, access.level as "edit" | "comment" | "view"),
+      );
+      // STILL FALSE in this phase, deliberately — this is the dry run. Turning it on
+      // is what makes _requireLearningCap start refusing, and it must not happen
+      // until the log below has shown who that would affect. One line, one flip.
+      fineGrained = false;
+      const wouldRefuse = [...contentCaps.GOVERNED_LEARNING_CAPS].filter(
+        (id) => !capabilities.includes(id),
+      );
+      if (wouldRefuse.length) {
+        console.log(
+          "[club-content dry-run]",
+          JSON.stringify({
+            club: access.partnerProgramId,
+            email: user.email ?? null,
+            role: clubContent.roleName,
+            appCaps: clubContent.capabilities.filter((c) => c.startsWith("app.content.")),
+            wouldRefuse,
+          }),
+        );
+      }
     } else if (programCaps.length) {
       capabilities = programCaps;
       fineGrained = true;
@@ -2453,7 +2683,16 @@ async function _learningEffective(
   const typeScopes =
     rawScopes && typeof rawScopes === "object" ? (rawScopes as Record<string, string[]>) : {};
 
-  return { isAdmin, fineGrained, capabilities, typeScopes, customRole };
+  return {
+    isAdmin,
+    fineGrained,
+    capabilities,
+    typeScopes,
+    customRole,
+    appContentCaps: (clubContent?.capabilities ?? []).filter((c) => c.startsWith("app.content.")),
+    clubRoleId,
+    clubTier,
+  };
 }
 
 /** The capability ids a launch LEVEL implies, sourced from the learning
@@ -3420,6 +3659,10 @@ function _assertCanManageCredentials(user: PlatformUser, target: Row): void {
  * Set a member's username and/or password. Admin-initiated, never self-service —
  * a person changing their OWN password goes through the auth provider's flow.
  *
+ * Setting a password for someone who already owns theirs is ALLOWED and releases
+ * their claim, so the app makes them choose again at the next sign in. See the
+ * password branch below for why that trade is the one being made.
+ *
  * The password is written straight to the auth backend and never stored,
  * returned, or logged; the audit event records only WHICH fields changed.
  */
@@ -3449,19 +3692,34 @@ platformRouter.patch("/members/:member_id/credentials", async (c) => {
   }
 
   if (req.password !== undefined) {
-    // A credential is SHARED across every club its owner belongs to. While it is
-    // unclaimed nobody owns it, so a starting password is a courtesy; once the
-    // person has set their own, setting it here would hand this club a working
-    // key to another club's member. Refuse, and point at the code instead.
+    /**
+     * An admin may set a password even for someone who owns theirs — somebody has
+     * to be able to help a person who is locked out and cannot work a claim code.
+     * What makes that safe enough to allow is that the reset is TEMPORARY BY
+     * CONSTRUCTION rather than by promise.
+     *
+     * A credential is shared across every club its owner belongs to, so an admin
+     * who sets one holds a working key to that person's OTHER clubs. Releasing the
+     * claim is what closes that: `must_set_password` goes true again, the app's
+     * gate opens nothing else until the person chooses their own, and ownership
+     * returns to them at the next sign in.
+     *
+     * THE WINDOW IS REAL AND WORTH NAMING: between the reset and that next sign
+     * in, the admin knows a working password. It is narrower than the alternative
+     * (an admin-set password that stays valid indefinitely) and wider than zero,
+     * which is why the claim code — where nobody but the person ever learns the
+     * password — remains the preferred path and the one the console offers first.
+     */
     const claim = await db.getClaimState(membership.profile_id as string);
-    if (claim?.claimed) {
-      throw new HttpError(
-        409,
-        "This person has set their own password, so it cannot be changed here. " +
-          "Issue a claim code instead — they redeem it in the app and choose a new one.",
-      );
-    }
+    const wasClaimed = claim?.claimed === true;
     await setAuthUserPassword(email, req.password);
+    if (wasClaimed) {
+      await db.releasePasswordClaim(membership.profile_id as string);
+      // Recorded separately from "password": an audit reader needs to be able to
+      // tell a courtesy starting password for a new member from a reset that took
+      // an owned credential back off its owner.
+      changed.push("password_reset_reclaim_required");
+    }
     changed.push("password");
   }
 

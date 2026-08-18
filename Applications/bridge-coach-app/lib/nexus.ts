@@ -202,6 +202,15 @@ export type LearningObject = {
    *  latter. Absent entirely on a server that predates the migration. */
   version_number?: number | null;
   published_at?: string | null;
+  /**
+   * Whose content this is (0006). `"program"` — the default, and every row written
+   * before the column — means the club's: anyone who can see the club sees it.
+   * `"user"` means the author's own, visible to them and to whoever they invited.
+   *
+   * Absent on a server that predates the migration, which is why callers must read
+   * it as `?? "program"` rather than checking for `"user"` by inequality.
+   */
+  scope_level?: "user" | "program" | null;
 };
 
 /** What the Content Studio says this person may do in a given club. */
@@ -209,6 +218,13 @@ export type LearningContext = {
   programId: string | null;
   /** The club, when they arrived through one — the parent otherwise. */
   nexus_club_program_id?: string | null;
+  /**
+   * The club role's own `app.content.*` grants, alongside the learning ids they map
+   * to. Sent as its own fact because one of them — `app.content.create.personal` —
+   * has no learning image: "for myself or for the club" is a scope question, and the
+   * learning catalogue has no id for it. Absent on an older server.
+   */
+  app_content_capabilities?: string[] | null;
   capabilities?: string[];
   is_admin?: boolean;
   program_name?: string | null;
@@ -606,6 +622,8 @@ export type BridgeContext = {
 export type AppContext = {
   program_id: string | null;
   program_name: string | null;
+  /** The club's own one-line label. Null when never set, absent on an older server. */
+  program_description?: string | null;
   role_name: string | null;
   capabilities: string[];
   is_admin: boolean;
@@ -755,4 +773,97 @@ export async function hireCoach(
     { method: "POST", token, body: { coach_id: coachId } },
   );
   return res.coach;
+}
+
+// ── Sharing one object with named people ───────────────────────────────────
+// The Docs model. A grant is the deliberate exception to a row's default audience
+// (its scope + club), for one named subject — a person, or a club role. The server
+// confines every subject to the club that owns the content; the app never has to
+// police that, and should not pretend to.
+
+export type LearningGrant = {
+  subject_type: "profile" | "role";
+  subject_id: string;
+  level: "view" | "edit";
+};
+
+/** Who this object is shared with. Author-only on the server. */
+export async function fetchLearningGrants(
+  token: string,
+  objectId: string,
+  programId: string,
+): Promise<LearningGrant[]> {
+  const res = await request<{ grants: LearningGrant[] }>(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/grants?program_id=${programId}`,
+    { token },
+  );
+  return res.grants ?? [];
+}
+
+/** Invite someone, or change the level they already hold. Idempotent. */
+export async function setLearningGrant(
+  token: string,
+  objectId: string,
+  programId: string,
+  grant: LearningGrant,
+): Promise<void> {
+  await request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/grants?program_id=${programId}`,
+    { method: "PUT", token, body: grant },
+  );
+}
+
+/** Withdraw a share. */
+export async function removeLearningGrant(
+  token: string,
+  objectId: string,
+  programId: string,
+  subjectType: "profile" | "role",
+  subjectId: string,
+): Promise<void> {
+  await request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/grants` +
+      `?program_id=${programId}&subject_type=${subjectType}&subject_id=${encodeURIComponent(subjectId)}`,
+    { method: "DELETE", token },
+  );
+}
+
+/**
+ * Erase a learning object, for good.
+ *
+ * Authority is the SERVER's: `learning.object.delete` (or the club role's
+ * `app.content.delete`, which maps to it), and for a personal row, ownership. A
+ * refusal comes back as a NexusError whose message is worth showing — "That content
+ * belongs to someone else" is actionable in a way "couldn't delete" is not.
+ */
+export async function deleteLearningObject(
+  token: string,
+  objectId: string,
+  programId: string,
+): Promise<void> {
+  await request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}?program_id=${programId}`,
+    { method: "DELETE", token },
+  );
+}
+
+/**
+ * Change the club's one-line description.
+ *
+ * Authority mirrors the club banner: `app.club.description.set`, falling back on the
+ * server to the coarse club-staff check for a caller with no fine role at all. It was
+ * previously settable only when the club was created — the console's program routes
+ * cover name, theme, features and the catalogue, and never had a description among
+ * them.
+ */
+export async function setClubDescription(
+  token: string,
+  programId: string,
+  description: string,
+): Promise<void> {
+  await request(`/api/programs/${programId}/description`, {
+    method: "PATCH",
+    token,
+    body: { description },
+  });
 }

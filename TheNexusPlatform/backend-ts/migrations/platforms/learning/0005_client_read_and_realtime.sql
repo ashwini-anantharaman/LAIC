@@ -51,20 +51,31 @@
 -- This policy has NO program_id term. It is org-wide by design, from a time when
 -- one org meant one library. Content is now CLUB-SCOPED: a club owns its content
 -- and additionally sees its parent's curriculum, enforced in the API's read path.
--- The mobile app PREFERS this direct path and falls back to the API only when it
--- returns nothing (`Applications/bridge-coach-app/lib/learning.ts:63-64`), and its
--- query filters organization_id alone with no program filter
--- (`lib/learning-live.ts:108-117`). So turning this on would let the WIDER path
--- front-run the correctly-scoped one, and every signed-in member of the org would
--- read every club's published content. That is not a hidden-content bug; it is a
--- disclosure, which is why the gate is closed rather than the file deleted.
+--
+-- UPDATED: THERE IS NO LONGER A CLIENT TO GRANT THIS TO. The mobile app used to
+-- prefer a direct Supabase read and fall back to the API; that path (`lib/
+-- learning-live.ts`) has been DELETED, and content now travels one way, through
+-- the Nexus API, which scopes reads to club ∪ parent. Two things follow:
+--
+--   1. Nothing breaks while this stays closed — which is the state it has always
+--      been in, so nothing changes today either way.
+--   2. Anyone reopening it is not re-enabling a feature, they are introducing a
+--      SECOND read path with different scoping from the one the app uses. That is
+--      the disclosure this gate exists to prevent: the direct query could not
+--      carry a program at all, so every signed-in member of the org would read
+--      every club's published content.
+--
+-- The gate stays closed and the file stays here rather than being deleted,
+-- because the analysis below is the thing worth keeping.
 --
 -- A structural limit worth knowing before anyone reopens this: RLS can see which
 -- clubs a person BELONGS TO, never which club they are currently looking at. So
 -- this path can be club-BOUNDED but never club-CORRECT — someone in two clubs
 -- would be permitted both clubs' rows and the per-club answer would have to be
 -- re-imposed client-side. Enabling it therefore needs a program arm added to the
--- policy below AND the app's query and subscription filtered by program.
+-- policy below AND whatever client is added filtered by program — and a
+-- client-side filter is not a security boundary, which is the whole argument
+-- against reopening this rather than extending the API.
 --
 -- ── THE GATE ───────────────────────────────────────────────────────────────
 -- To enable, deliberately and durably:

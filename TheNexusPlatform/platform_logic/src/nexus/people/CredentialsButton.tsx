@@ -14,12 +14,16 @@
  *  • The backend rejects a caller who is not an admin at the right altitude, and
  *    refuses anyone outranking the actor. This UI hides the button in the same
  *    cases, but the server is the authority.
- *  • ONCE THE PERSON HAS SET THEIR OWN PASSWORD, the server refuses to change it
- *    (409) and this dialog offers a CLAIM CODE instead. One credential is shared
- *    across every club someone belongs to, so a reset here would hand this club a
- *    working key to another club's member. A code lets the admin help without
- *    ever holding that key: they read it out, the person redeems it in the app
- *    and chooses a password nobody else sees.
+ *  • TWO WAYS TO HELP SOMEONE LOCKED OUT, and the dialog offers both because they
+ *    are not interchangeable. One credential is shared across every club someone
+ *    belongs to, so an admin who types a password holds a working key to that
+ *    person's other clubs until they next sign in.
+ *      · A CLAIM CODE is the preferred path: read it out, they redeem it in the
+ *        app, and nobody but them ever learns the password.
+ *      · Setting one directly is for someone who cannot work a code. The server
+ *        allows it even for a person who owns their password, and RELEASES that
+ *        ownership — the app then makes them choose their own before anything
+ *        else opens, so what the admin knows stops working at the next sign in.
  */
 import { useEffect, useState } from "react";
 import { KeyRound } from "lucide-react";
@@ -75,8 +79,8 @@ export function CredentialsButton({
   const somethingToSave = (usernameChanged && usernameValid) || password.length > 0;
   const canSave = somethingToSave && usernameValid && passwordValid && !saving;
 
-  /** Set when the server refuses a password change because they own it. */
-  const [ownsPassword, setOwnsPassword] = useState(false);
+  /** Offer the code path instead of typing a password. */
+  const [showCodeOption, setShowCodeOption] = useState(false);
   /** An issued code, shown once — the server stores only its hash. */
   const [claimCode, setClaimCode] = useState<string | null>(null);
 
@@ -108,19 +112,19 @@ export function CredentialsButton({
       if (res.changed.includes("username_cleared")) parts.push("username cleared");
       if (res.changed.includes("password")) parts.push("password updated");
       toast.success(`${personLabel}: ${parts.join(", ")}`);
+      // The server releases an owned password when it is reset, so say what that
+      // means for the person — they will be stopped at the door until they choose
+      // their own, and an admin who does not expect that reads it as a bug.
+      if (res.changed.includes("password_reset_reclaim_required")) {
+        toast.info(
+          `${personLabel} will be asked to choose their own password the next time they sign in.`,
+        );
+      }
       setPassword("");
       setOpen(false);
       onSaved?.();
     } catch (exc) {
-      const message = (exc as Error)?.message ?? "Could not update the sign-in details";
-      // 409 from the server: they own their password now. Explain it here rather
-      // than as a toast that vanishes, and offer the way forward.
-      if (/set their own password/i.test(message)) {
-        setOwnsPassword(true);
-        setPassword("");
-      } else {
-        toast.error(message);
-      }
+      toast.error((exc as Error)?.message ?? "Could not update the sign-in details");
     } finally {
       setSaving(false);
     }
@@ -185,20 +189,23 @@ export function CredentialsButton({
                   again — issue a new one if it is lost.
                 </p>
               </div>
-            ) : ownsPassword ? (
-              /* They own their password now, so there is nothing to set here. */
-              <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/5 p-3">
-                <p className="text-sm text-foreground">
-                  {personLabel} has set their own password, so it cannot be changed here.
-                </p>
+            ) : showCodeOption ? (
+              /* The path where nobody but the person ever learns the password. */
+              <div className="space-y-2 rounded-md border border-border bg-muted/40 p-3">
+                <p className="text-sm text-foreground">Send them a claim code instead</p>
                 <p className="text-xs text-muted-foreground">
-                  One sign-in covers every club they belong to, so changing it from one
-                  club would give that club access to the others. Issue a claim code
-                  instead: they redeem it in the app and pick a password only they know.
+                  You read the code out, they redeem it in the app and pick a password
+                  only they know. Safer than typing one here, because one sign-in covers
+                  every club they belong to.
                 </p>
-                <Button size="sm" onClick={() => void issueCode()} disabled={saving}>
-                  {saving ? "Issuing…" : "Issue claim code"}
-                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={() => void issueCode()} disabled={saving}>
+                    {saving ? "Issuing…" : "Issue claim code"}
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setShowCodeOption(false)}>
+                    Back
+                  </Button>
+                </div>
               </div>
             ) : (
               <div className="space-y-1.5">
@@ -217,10 +224,21 @@ export function CredentialsButton({
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">
-                    A starting password, for someone who has not signed in yet — the app
-                    asks them to choose their own on first use. Tell them what you set.
+                    A temporary one. The app asks them to choose their own before anything
+                    else opens, whether or not they had set one before — so what you type
+                    here stops working the next time they sign in. Tell them what you set.
                   </p>
                 )}
+                <button
+                  type="button"
+                  className="text-xs underline text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setShowCodeOption(true);
+                    setPassword("");
+                  }}
+                >
+                  Or issue a claim code, so only they ever see the password
+                </button>
               </div>
             )}
           </div>

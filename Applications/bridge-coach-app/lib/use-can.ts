@@ -65,7 +65,15 @@ export function useRoleContext(): RoleContext | null {
  * to resolve, and gates fall back to their pre-roles behaviour — which is what
  * the whole-app surfaces (Play, Learn) want anyway.
  */
-function useClubScopedContext(): RoleContext | null {
+/**
+ * Exported because `useCan` answers ONE capability and some screens need several.
+ *
+ * `useRoleContext` is NOT a substitute: `getRoleContext` always leaves `app` null, so
+ * `can()` against it finds an empty capability set and returns the fallback for every
+ * id — which is exactly how the menu sheet's nine club capabilities silently degraded
+ * to a plain coach check, with the fine-grained ids never consulted.
+ */
+export function useClubScopedContext(): RoleContext | null {
   const { token } = useAuth();
   const base = useRoleContext();
   const clubId = useSelectedClubId();
