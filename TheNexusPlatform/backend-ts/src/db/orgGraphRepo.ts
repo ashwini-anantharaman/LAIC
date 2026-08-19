@@ -11,7 +11,7 @@ import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 
 import { HttpError } from "../httpError";
 import * as localKeys from "../platformLocalStore";
-import { asPrivileged } from "./context";
+import { asPrivileged, type Tx } from "./context";
 import { resolveProfileId, ensureOrgProfile } from "./resolveProfile";
 import { scoped } from "./tenantRepo";
 import {
@@ -2689,7 +2689,11 @@ export async function upsertAppUserData(opts: {
  * opposite — these queries already filtered `program_id = X` strictly, so unstamped
  * rows are invisible today and an `is null` arm would newly EXPOSE them.
  */
-function _programScope(programId?: string | null, clubProgramId?: string | null) {
+function _programScope(
+  programId?: string | null,
+  clubProgramId?: string | null,
+  withGrants = true,
+) {
   const ids = [...new Set([programId, clubProgramId].filter(Boolean) as string[])];
   if (!ids.length) return sql``; // no program pinned → org-wide, as before
   // UNPINNED ROWS COUNT AS EVERY PROGRAM'S. program_id is nullable (0001) and
@@ -2705,7 +2709,30 @@ function _programScope(programId?: string | null, clubProgramId?: string | null)
   // club authored carries an id and stays behind the predicate. These reads are
   // org-scoped above regardless, and org-wide is exactly what an unpinned row
   // was visible to before programs could own content at all.
-  return sql`and (program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)}) or program_id is null)`;
+  //
+  // THE THIRD ARM: explicit grants to a CLUB (learning_object_grants, subject_type
+  // 'club'). A content manager can hand one object to particular clubs, and this is
+  // where that grant becomes visibility.
+  //
+  // Same table as the personal tier below, deliberately. Both questions are "who
+  // else may see this object", and answering them from two tables would mean two
+  // predicates that have to agree forever — the kind of pair that drifts. They stay
+  // separate FUNCTIONS because they sit on different axes: this one decides which
+  // PROGRAMS' content is in scope, _personalScope decides whose.
+  //
+  // It only ever ADDS — beside the two arms above rather than replacing them — so
+  // writing the first grant for an object cannot take it away from anyone reading it
+  // today. See 0008 for why the widening semantics beat the file-sharing ones.
+  //
+  // Matched against every id in scope, not just the club: a parent program can be
+  // granted a club's object the same way, and the set is already deduped.
+  const granted = withGrants
+    ? sql` or exists (select 1 from learning_object_grants g
+                       where g.object_id = learning_objects.id
+                         and g.subject_type = 'club'
+                         and g.subject_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)}))`
+    : sql``;
+  return sql`and (program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)}) or program_id is null${granted})`;
 }
 
 /** Who is asking, for the personal-visibility arm below. */
@@ -2781,7 +2808,10 @@ async function _listLearningObjects(
     : sql``;
   // One query, not two near-identical ones: the pinned/unpinned pair had to be kept
   // in step by hand, which is exactly where a program predicate drifts.
-  const scope = _programScope(programId, clubProgramId);
+  // Both layers ride the same flag, and both read learning_object_grants: the
+  // club arm of _programScope answers "which programs' content", _personalScope
+  // answers "whose". One fallback covers both because one table backs both.
+  const scope = _programScope(programId, clubProgramId, withCollections);
   const personal = withCollections ? _personalScope(viewer) : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
@@ -2831,7 +2861,10 @@ async function _listLearningObjectsMeta(
             published_at::text as published_at,
             coalesce(scope_level, 'program') as scope_level`
     : sql``;
-  const scope = _programScope(programId, clubProgramId);
+  // Both layers ride the same flag, and both read learning_object_grants: the
+  // club arm of _programScope answers "which programs' content", _personalScope
+  // answers "whose". One fallback covers both because one table backs both.
+  const scope = _programScope(programId, clubProgramId, withCollections);
   const personal = withCollections ? _personalScope(viewer) : sql``;
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
@@ -2887,7 +2920,11 @@ async function _getLearningObject(
   clubProgramId: string | null | undefined,
   viewer: LearningViewer | null | undefined,
 ): Promise<Row | null> {
-  const scope = _programScope(programId, clubProgramId);
+  // A club grant confers the right to OPEN an object, not merely to see its title
+  // in a list, so the club arm has to be here too — otherwise a shared object
+  // renders as a row that 404s when someone clicks it. `viewer === null` is the
+  // caller's signal that the grants table is unavailable; both arms drop together.
+  const scope = _programScope(programId, clubProgramId, viewer !== null);
   const personal = viewer === null ? sql`` : _personalScope(viewer);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
@@ -3018,10 +3055,13 @@ export interface LearningGrant {
 export async function listLearningObjectGrants(objectId: string): Promise<LearningGrant[]> {
   try {
     return await asPrivileged(async (tx) => {
+      // People and roles only. 'club' rows share this table (0008) but answer a
+      // different question and belong to a different picker; returning them here
+      // would list a club in the UI that invites colleagues, typed as a person.
       const rows = await tx.execute(sql`
         select subject_type, subject_id, level
         from learning_object_grants
-        where object_id = ${objectId}
+        where object_id = ${objectId} and subject_type in ('profile', 'role')
         order by subject_type, subject_id`);
       return (rows as unknown as Row[]).map((r) => ({
         subjectType: r.subject_type as "profile" | "role",
@@ -3136,6 +3176,163 @@ async function _setLearningObjectShared(
       returning id`);
     return (rows as unknown as Row[]).length > 0;
   });
+}
+
+// ── Per-CLUB shares — the same grants table, subject_type 'club' (0008) ──────
+//
+// Three words that all mean "shared" live near each other; keep them apart:
+//   • learning_objects.shared_at — the anonymous /o/<id> capability link.
+//   • a 'profile' or 'role' grant — the personal tier, above.
+//   • a 'club' grant — this: a content manager handing one object to a club.
+// Route names carry the distinction too (/share vs /shares).
+
+/** Is this object the caller's org's? learning_object_grants carries no
+ *  organization_id — the object it points at is the only org anchor — so every
+ *  club write checks the object first rather than trusting the caller's id. */
+async function _objectInOrg(tx: Tx, orgId: string, objectId: string): Promise<boolean> {
+  const rows = await tx.execute(sql`
+    select 1 from learning_objects
+    where organization_id = ${orgId} and id = ${objectId} limit 1`);
+  return (rows as unknown as Row[]).length > 0;
+}
+
+/**
+ * The clubs one object is currently granted to.
+ *
+ * THROWS when the table is missing, where the personal-tier reads return []. The
+ * difference is what the caller does next: those render a list, this one backs a
+ * picker whose save writes the whole set, so a swallowed error would read as
+ * "granted to nobody" and then revoke everything.
+ */
+export async function listLearningObjectClubShares(orgId: string, objectId: string): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select g.subject_id as club_program_id, g.level, g.created_at::text as granted_at
+      from learning_object_grants g
+      join learning_objects o on o.id = g.object_id
+      where g.object_id = ${objectId} and g.subject_type = 'club'
+        and o.organization_id = ${orgId}
+      order by g.created_at asc`);
+    return rows as unknown as Row[];
+  });
+}
+
+/**
+ * Reconcile one object's CLUB grants to exactly `clubProgramIds`.
+ *
+ * A whole-set write rather than add/remove calls, because the picker is a
+ * checklist: the client knows the state it wants, and sending it entire removes
+ * the read-modify-write race where two managers each toggle one club and the
+ * second save resurrects what the first revoked.
+ *
+ * Only 'club' rows are touched. A profile or role grant on the same object is
+ * somebody else's decision and survives untouched — which is the reason the
+ * delete carries `subject_type = 'club'` rather than just the object id.
+ *
+ * Returns false when the object is not this org's, so the route can 404 rather
+ * than silently writing nothing.
+ */
+export async function setLearningObjectClubShares(
+  orgId: string,
+  objectId: string,
+  clubProgramIds: string[],
+  grantedBy: string | null,
+): Promise<boolean> {
+  const ids = [...new Set(clubProgramIds.filter(Boolean))];
+  return asPrivileged(async (tx) => {
+    if (!(await _objectInOrg(tx, orgId, objectId))) return false;
+    // Revocations first, inside the one transaction, so a shrinking set never
+    // momentarily holds both old and new rows.
+    if (ids.length) {
+      await tx.execute(sql`
+        delete from learning_object_grants
+        where object_id = ${objectId} and subject_type = 'club'
+          and subject_id not in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
+      await tx.execute(sql`
+        insert into learning_object_grants (object_id, subject_type, subject_id, level, granted_by)
+        values ${sql.join(
+          ids.map((i) => sql`(${objectId}, 'club', ${i}, 'view', ${grantedBy}::uuid)`),
+          sql`, `,
+        )}
+        on conflict (object_id, subject_type, subject_id)
+        do update set level = excluded.level, granted_by = excluded.granted_by, created_at = now()`);
+    } else {
+      await tx.execute(sql`
+        delete from learning_object_grants
+        where object_id = ${objectId} and subject_type = 'club'`);
+    }
+    return true;
+  });
+}
+
+// ── App targets (learning_object_app_targets, 0007) ─────────────────────────
+
+/** The apps one object is published to. */
+export async function listLearningObjectAppTargets(orgId: string, objectId: string): Promise<Row[]> {
+  try {
+    return await asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        select app_key, published_at::text as published_at, published_by
+        from learning_object_app_targets
+        where organization_id = ${orgId} and object_id = ${objectId}
+        order by app_key asc`);
+      return rows as unknown as Row[];
+    });
+  } catch (e) {
+    if (_isUndefinedRelation(e)) return [];
+    throw e;
+  }
+}
+
+/**
+ * Stamp an object as published to these apps.
+ *
+ * Additive like the shares, but for a different reason: publishing to app B does
+ * not un-publish from app A, because the two are separate acts by separate
+ * people. Clearing a target is an explicit empty-set PUT, not a side effect of
+ * publishing somewhere else.
+ */
+export async function setLearningObjectAppTargets(
+  orgId: string,
+  objectId: string,
+  appKeys: string[],
+  publishedBy: string | null,
+): Promise<boolean> {
+  const keys = [...new Set(appKeys.filter(Boolean))];
+  try {
+    return await asPrivileged(async (tx) => {
+      if (!(await _objectInOrg(tx, orgId, objectId))) return false;
+      // Reconcile, like the shares: the caller sends the set it wants. Returning
+      // early on an empty list made "untick every app and save" answer {ok:true}
+      // and change nothing — the modal then re-opened with the app still ticked,
+      // which is the worst kind of failure: a success message and no effect.
+      if (keys.length) {
+        await tx.execute(sql`
+          delete from learning_object_app_targets
+          where organization_id = ${orgId} and object_id = ${objectId}
+            and app_key not in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`);
+        await tx.execute(sql`
+          insert into learning_object_app_targets
+            (organization_id, object_id, app_key, published_at, published_by)
+          values ${sql.join(
+            keys.map((k) => sql`(${orgId}::uuid, ${objectId}, ${k}, now(), ${publishedBy})`),
+            sql`, `,
+          )}
+          on conflict (object_id, app_key)
+          do update set published_at = now(), published_by = excluded.published_by`);
+      } else {
+        await tx.execute(sql`
+          delete from learning_object_app_targets
+          where organization_id = ${orgId} and object_id = ${objectId}`);
+      }
+      return true;
+    });
+  } catch (e) {
+    if (_isUndefinedRelation(e)) {
+      throw new Error("app-targets-unavailable: learning_object_app_targets missing (run migrations)");
+    }
+    throw e;
+  }
 }
 
 /**

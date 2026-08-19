@@ -28,6 +28,7 @@ import {
 } from '../../../lib/accessPolicy';
 import { getToken, listLearningRoster, assignLearningRole, inviteLearningPerson, testAsPerson, type RosterPerson } from '../../../lib/nexus';
 import { useConfirm } from '../ConfirmDialog';
+import { useApp } from '../../App';
 
 const ROLE_LABELS: Record<Role, string> = {
   'content-developer': 'Content Dev',
@@ -132,11 +133,22 @@ interface RoleEditorValue {
 function RoleEditorModal({
   catalogue,
   initial,
+  ceiling,
   onSave,
   onClose,
 }: {
   catalogue: CapabilityCatalogueDocument;
   initial: RoleEditorValue | null;
+  /**
+   * What the CREATOR holds, when they are a delegate rather than an admin.
+   * `null` = unconfined (admin or club structural tier).
+   *
+   * The server clamps to this regardless (_clampToCeiling in routes/platform.ts).
+   * Filtering here as well is not belt-and-braces for its own sake: without it a
+   * delegate ticks a capability, saves, and the role comes back quietly missing
+   * it — a UI that offers a grant it cannot make.
+   */
+  ceiling: string[] | null;
   onSave: (role: RoleEditorValue) => void;
   onClose: () => void;
 }) {
@@ -217,7 +229,11 @@ function RoleEditorModal({
           </div>
 
           {groupsSorted(catalogue).map((group) => {
-            const groupCaps = catalogue.capabilities.filter((c) => c.group === group.id);
+            const groupCaps = catalogue.capabilities
+              .filter((c) => c.group === group.id)
+              // roles.delegate is withheld from delegates by the server too: a
+              // sub-role that can mint sub-roles turns one grant into a tree.
+              .filter((c) => !ceiling || (c.id !== 'learning.roles.delegate' && ceiling.includes(c.id)));
             if (!groupCaps.length) return null;
             return (
               <div key={group.id}>
@@ -337,6 +353,12 @@ export function AdminPeopleRoles() {
   // Live roster (Nexus mode). null → not loaded / demo mode (fall back to PEOPLE).
   const [roster, setRoster] = useState<RosterPerson[] | null>(null);
   const nexusMode = !!getToken();
+
+  // A DELEGATE's ceiling — the capabilities they may pass on. Admins, and anyone
+  // running without a Nexus session, are unconfined (null): absent is not denial.
+  const { learningCapabilities, learningIsAdmin } = useApp();
+  const roleCeiling =
+    learningIsAdmin || learningCapabilities === null ? null : learningCapabilities;
 
   const reloadRoster = React.useCallback(() => {
     if (!nexusMode) return;
@@ -742,6 +764,7 @@ export function AdminPeopleRoles() {
         <RoleEditorModal
           catalogue={catalogue}
           initial={editorState.initial}
+          ceiling={roleCeiling}
           onSave={saveRole}
           onClose={() => setEditorState({ open: false, initial: null })}
         />

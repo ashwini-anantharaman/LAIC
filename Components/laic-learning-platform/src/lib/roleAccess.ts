@@ -48,7 +48,10 @@ export const ROUTE_TO_SCREEN: Record<string, string> = {
 const CAPABILITY_SCREEN_EXTRAS: { anyOf: string[]; screen: string; label: string }[] = [
   { anyOf: ['learning.analytics.view'], screen: 'cd-analytics', label: 'Author Analytics' },
   {
-    anyOf: ['learning.repository.organize', 'learning.analytics.view'],
+    // roles.delegate belongs here or delegation has no door: a Content Manager
+    // whose whole purpose is minting sub-roles would hold the capability and
+    // have no screen on which to use it.
+    anyOf: ['learning.repository.organize', 'learning.analytics.view', 'learning.roles.delegate'],
     screen: 'admin-people',
     label: 'People & Roles',
   },

@@ -29,6 +29,19 @@ export const PROGRAM_FEATURES: { key: ProgramFeatureKey; label: string }[] = [
   { key: "partners", label: "Partners" },
 ];
 
+// ── Apps content can be published TO ────────────────────────────────────────
+//
+// The destination a publisher picks for a piece of content. Mirrors
+// CONTENT_APP_TARGETS in backend-ts/src/schemas.ts — keep them in step; the
+// server validates against its own copy and 422s anything it does not know.
+//
+// A constant rather than a fetch because there is nothing to fetch:
+// `registered_apps` exists but holds no row for Bridge Bird, which is a
+// hardcoded client. When it becomes a real record this becomes a query.
+export const CONTENT_APP_TARGETS: { key: string; label: string }[] = [
+  { key: "clubapp", label: "Bridge Bird" },
+];
+
 export const DEFAULT_PROGRAM_FEATURES: ProgramFeatures = {
   learning: true,
   bridge: true,

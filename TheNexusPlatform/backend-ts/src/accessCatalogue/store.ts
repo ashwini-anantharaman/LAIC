@@ -35,8 +35,72 @@ export async function getCatalogue(providerId: ProviderId, instanceId?: string |
   // A stored doc must be well-formed to be trusted — a corrupted/partial save
   // (missing the capabilities/groups arrays) must never poison consumers
   // (context resolution, role builders). Fall back to the shipped default.
-  if (stored && Array.isArray(stored.capabilities) && Array.isArray(stored.groups)) return stored;
+  if (stored && Array.isArray(stored.capabilities) && Array.isArray(stored.groups)) {
+    return _withShippedAdditions(stored, DEFAULT_CATALOGUES[providerId]);
+  }
   return DEFAULT_CATALOGUES[providerId];
+}
+
+/**
+ * Fold capabilities the PLATFORM has since shipped into a customized catalogue.
+ *
+ * A stored document is a snapshot of the defaults at the moment someone first
+ * pressed Save. Returning it verbatim meant that any deployment which had ever
+ * customized its catalogue could never see a capability added later: the id is
+ * absent, so the role builder never offers it and `validGrantsAcross` silently
+ * drops it from anything that asks for it anyway. A new feature would appear to
+ * ship and then simply not exist there, with nothing on screen to say why.
+ *
+ * ADD-ONLY, and stored entries always win. A customization — a renamed label, a
+ * regrouped capability, an extra one of the org's own — is never overwritten or
+ * removed; this only appends ids the stored doc has no entry for at all.
+ *
+ * The known cost: a capability an admin deliberately DELETED comes back. That is
+ * the deliberate trade. A resurrected capability is merely grantable and shows
+ * up in a builder where someone can ignore it; a missing one is a feature that
+ * cannot be switched on and gives no reason. `resetCatalogue` remains the way to
+ * go back to the shipped set wholesale.
+ */
+export function _withShippedAdditions(
+  stored: CapabilityCatalogueDocument,
+  shipped: CapabilityCatalogueDocument | undefined,
+): CapabilityCatalogueDocument {
+  if (!shipped) return stored;
+  const missing = <T extends { id: string }>(mine: T[] | undefined, theirs: T[] | undefined): T[] => {
+    const have = new Set((mine ?? []).map((x) => x.id));
+    return (theirs ?? []).filter((x) => !have.has(x.id));
+  };
+
+  const newCaps = missing(stored.capabilities, shipped.capabilities);
+  const newSurfaces = missing(stored.uiSurfaces, shipped.uiSurfaces);
+  const newResources = missing(stored.resourceTypes, shipped.resourceTypes);
+  const newGroups = missing(stored.groups, shipped.groups);
+  // A new capability in an EXISTING group has to be listed there too, or the
+  // group renders without it in builders that read groups[].capabilityIds.
+  const storedGroupIds = new Set((stored.groups ?? []).map((g) => g.id));
+  const groups = (stored.groups ?? []).map((g) => {
+    const shippedGroup = (shipped.groups ?? []).find((x) => x.id === g.id);
+    if (!shippedGroup) return g;
+    const have = new Set(g.capabilityIds ?? []);
+    const add = (shippedGroup.capabilityIds ?? []).filter(
+      (id) => !have.has(id) && newCaps.some((c) => c.id === id),
+    );
+    return add.length ? { ...g, capabilityIds: [...(g.capabilityIds ?? []), ...add] } : g;
+  });
+
+  if (
+    !newCaps.length && !newSurfaces.length && !newResources.length && !newGroups.length &&
+    groups.every((g, i) => g === (stored.groups ?? [])[i])
+  ) {
+    return stored;
+  }
+  return {
+    ...stored,
+    capabilities: [...(stored.capabilities ?? []), ...newCaps],
+    uiSurfaces: [...(stored.uiSurfaces ?? []), ...newSurfaces],
+    resourceTypes: [...(stored.resourceTypes ?? []), ...newResources],
+    groups: [...groups, ...newGroups.filter((g) => !storedGroupIds.has(g.id))],
+  };
 }
 
 /** All GLOBAL providers with whether each has a stored (customized) catalogue. */

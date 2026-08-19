@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
   BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
-  GripVertical, Upload,
+  GripVertical, Upload, Users,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -38,6 +38,7 @@ import {
   isBuiltinObjectCollection,
 } from '../../../lib/objectCollectionsStore';
 import { GlassFolder, GlassFolderTile } from '../GlassFolder';
+import { ShareWithClubsModal } from './ShareWithClubsModal';
 import { useConfirm } from '../ConfirmDialog';
 import { ObjectVersionsModal } from './ObjectVersionsModal';
 
@@ -199,6 +200,7 @@ export function ObjectLibrary() {
   const [viewMode, setViewMode] = useState<ViewMode>('folders');
   const [versionsFor, setVersionsFor] = useState<LearningObject | null>(null);
   const [versionToast, setVersionToast] = useState<string | null>(null);
+  const [sharingFor, setSharingFor] = useState<LearningObject | null>(null);
 
   const {
     activeUserId,
@@ -217,7 +219,22 @@ export function ObjectLibrary() {
     objectVersionsTick,
     pendingLibraryFolderId,
     clearPendingLibraryFolderId,
+    learningCapabilities,
+    learningIsAdmin,
   } = useApp();
+
+  // Capability gates for the actions this screen offers.
+  //
+  // `learningCapabilities === null` means no Nexus session (standalone/demo) —
+  // absent is not denial anywhere else in this codebase and must not become it
+  // here, or opening the Studio on its own would strip the library bare. Admins
+  // are likewise unconfined.
+  const can = (id: string) =>
+    learningIsAdmin || learningCapabilities === null || learningCapabilities.includes(id);
+  const canShareClubs = can('learning.library.share_club');
+  const canViewShares = can('learning.library.share_view');
+  const canTargetApp = can('learning.publish.app_target');
+  const canExport = can('learning.library.export');
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
@@ -670,6 +687,19 @@ export function ObjectLibrary() {
               >
                 <Eye size={13} />
               </button>
+              {/* Shown to anyone who may SEE the grants; the modal itself goes
+                  read-only when they may not change them, so "who can see this?"
+                  stays answerable without also being editable. */}
+              {canViewShares && (
+                <button
+                  type="button"
+                  onClick={() => setSharingFor(item)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                  title={canShareClubs ? 'Share with clubs' : 'Who can see this'}
+                >
+                  <Users size={13} />
+                </button>
+              )}
               {canEdit(item) && (
                 <button
                   type="button"
@@ -763,6 +793,15 @@ export function ObjectLibrary() {
       {versionsFor && (
         <ObjectVersionsModal object={versionsFor} onClose={() => setVersionsFor(null)} />
       )}
+      {sharingFor && (
+        <ShareWithClubsModal
+          objectId={sharingFor.id}
+          objectTitle={sharingFor.title}
+          canShare={canShareClubs}
+          canTargetApp={canTargetApp}
+          onClose={() => setSharingFor(null)}
+        />
+      )}
       {savedCount > 0 && !opened && (
         <p style={{ fontSize: 12.5, color: '#6B7280', marginBottom: 12 }}>
           <span style={{ fontWeight: 650, color: '#0B1220' }}>{savedCount} saved</span>
@@ -816,15 +855,21 @@ export function ObjectLibrary() {
               >
                 <Plus size={14} /> New folder
               </button>
-              <button
-                type="button"
-                onClick={() => exportLibrarySnapshot(activeUserId, createdObjects || [])}
-                title="Download the whole library (folders + content) as a snapshot JSON — commit it as src/lib/seed/librarySnapshot.json to make it the baseline for every visitor."
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
-                style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
-              >
-                <Download size={14} /> Export snapshot
-              </button>
+              {/* This downloads EVERY object and folder in one click. It ran
+                  ungoverned until learning.library.export existed — a purely
+                  client-side blob, so no server check ever saw it, which is
+                  exactly why the gate has to be right here. */}
+              {canExport && (
+                <button
+                  type="button"
+                  onClick={() => exportLibrarySnapshot(activeUserId, createdObjects || [])}
+                  title="Download the whole library (folders + content) as a snapshot JSON — commit it as src/lib/seed/librarySnapshot.json to make it the baseline for every visitor."
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
+                  style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
+                >
+                  <Download size={14} /> Export snapshot
+                </button>
+              )}
             </div>
           </div>
 

@@ -64,6 +64,7 @@ import {
   updateMemberSchema,
   usernameSchema,
   avatarDataUrlSchema,
+  CONTENT_APP_TARGET_KEYS,
 } from "../schemas";
 import {
   BRIDGE_ROLE_MAP,
@@ -2232,6 +2233,36 @@ function _learningWriteScope(access: ResolvedPlatformAccess): string | null {
  * An absent or empty type list means EVERY type — the pruning never stores an empty
  * one, and absence has to keep meaning "unrestricted" here as everywhere else.
  */
+/**
+ * Like _requireLearningCap, but WITHOUT the level-derived escape hatch.
+ *
+ * The escape above exists for backwards compatibility: the sample templates are
+ * incomplete and every partner club member is pinned to level "edit", so gating
+ * old routes on capability alone would have stripped publishing and deleting
+ * from every club member on day one. That argument is about not breaking what
+ * already worked.
+ *
+ * It does not extend to a NEW surface. Per-club sharing has no incumbent users
+ * to protect, and letting it inherit the hatch would mean any ordinary member of
+ * any club could hand the parent program's library to sibling clubs — the exact
+ * cross-club exposure this feature exists to govern, ungated on the day it
+ * shipped. Admins still pass: their capability set is the whole catalogue.
+ */
+function _requireLearningCapStrict(
+  eff: { fineGrained: boolean; capabilities: string[]; typeScopes: Record<string, string[]> },
+  capId: string,
+  objectType: string | null | undefined,
+): void {
+  if (!eff.capabilities.includes(capId)) {
+    throw new HttpError(403, `Missing capability: ${capId}`);
+  }
+  const types = eff.typeScopes[capId];
+  if (!types?.length) return;
+  if (!objectType || !types.includes(objectType)) {
+    throw new HttpError(403, `That role's ${capId} is limited to specific content types`);
+  }
+}
+
 function _requireLearningCap(
   eff: { fineGrained: boolean; capabilities: string[]; typeScopes: Record<string, string[]> },
   capId: string,
@@ -2264,13 +2295,20 @@ async function _learningAuthor(c: Context, pinned: string | null) {
 }
 
 platformRouter.post("/learning/objects/publish", async (c) => {
-  const body = (await c.req.json()) as { object?: Row; share?: boolean; program_id?: string };
+  const body = (await c.req.json()) as {
+    object?: Row;
+    share?: boolean;
+    program_id?: string;
+    /** Destination apps for this publish. Optional — omitting it leaves whatever
+     *  targets the object already had, so an autosave never clears a choice. */
+    app_keys?: string[];
+  };
   const row = (body.object ?? (body as unknown as Row)) as Row;
   // AUTH FIRST, then shape. Validating ahead of the session let an unauthenticated
   // caller tell a real route from a missing one by the error it got back.
   // program_id is only the launch PIN fed to access resolution — resolvePlatformAccess
   // verifies membership, and the id that gets WRITTEN comes from the resolved access.
-  const { access, eff } = await _learningAuthor(
+  const { user, access, eff } = await _learningAuthor(
     c,
     body.program_id ?? (row?.program_id as string) ?? c.req.query("program_id") ?? null,
   );
@@ -2310,7 +2348,29 @@ platformRouter.post("/learning/objects/publish", async (c) => {
   if (!probe && String(row.scope_level ?? "") === "user") {
     await graph.setLearningObjectPersonal(access.orgId, String(row.id), access.profileId);
   }
-  return c.json({ ok: true, id: row.id });
+
+  // App targets ride along with a real publish so "publish this, to there" is one
+  // act rather than two requests that can half-succeed. Checked separately from
+  // publish.release: a role may be allowed to press Publish without choosing a
+  // destination, and the reverse.
+  const appKeys = Array.isArray(body.app_keys) ? body.app_keys.map(String) : null;
+  if (appKeys?.length) {
+    _requireLearningCapStrict(eff, "learning.publish.app_target", objectType);
+    const unknown = appKeys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+    if (unknown.length) throw new HttpError(422, `Unknown app: ${unknown.join(", ")}`);
+    try {
+      await graph.setLearningObjectAppTargets(access.orgId, String(row.id), appKeys, user.email ?? null);
+    } catch (e) {
+      // The content is already saved; a missing targets table must not turn a
+      // successful publish into a 500. Say it in the response instead of lying
+      // by omission.
+      if (e instanceof Error && e.message.startsWith("app-targets-unavailable")) {
+        return c.json({ ok: true, id: row.id, app_keys: [], app_targets_unavailable: true });
+      }
+      throw e;
+    }
+  }
+  return c.json({ ok: true, id: row.id, ...(appKeys ? { app_keys: appKeys } : {}) });
 });
 
 platformRouter.post("/learning/objects/unpublish", async (c) => {
@@ -2487,6 +2547,137 @@ platformRouter.put("/learning/objects/:object_id/share", async (c) => {
   }
   if (!ok) throw new HttpError(404, "Learning object not found");
   return c.json({ ok: true, shared });
+});
+
+// ── Per-club shares ─────────────────────────────────────────────────────────
+//
+// NOT the route above. `/share` (singular) is the anonymous /o/<id> capability
+// link — one boolean, no audience. `/shares` (plural) is the named grant: this
+// object, those clubs. They share a word and nothing else.
+
+/** The clubs this program may share TO — its partner programs. Validated against
+ *  on every write, so a hand-rolled request cannot grant an object to a club in
+ *  someone else's program (or to a program id that is not a club at all). */
+/** 42P01 — learning_object_grants (0007) or its club constraint (0008) has not
+ *  run. A content manager granting access must never be told it worked when
+ *  there is nowhere to write it, so this becomes a 503 rather than an empty list. */
+function _missingGrantsTable(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
+    ?? (e as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "42P01";
+}
+
+async function _clubIdsFor(access: ResolvedPlatformAccess): Promise<Set<string>> {
+  // Always the PARENT's partner list: a club sharing onward still picks from the
+  // siblings its parent program defines, and access.programId is already the
+  // parent for a club-scoped caller (platformAccess.ts).
+  const partners = await db.listPartnersForProgram(access.programId).catch(() => []);
+  return new Set(partners.map((p) => String(p.id)));
+}
+
+platformRouter.get("/learning/objects/:object_id/shares", async (c) => {
+  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const objectId = c.req.param("object_id");
+  // Scoped read first: "who is this shared with?" must not answer for an object
+  // the caller could not open, or the share list becomes an existence oracle for
+  // another club's library.
+  const object = await graph.getLearningObject(
+    access.orgId, objectId, access.programId, access.partnerProgramId ?? null,
+  );
+  if (!object) throw new HttpError(404, "Learning object not found");
+  _requireLearningCapStrict(eff, "learning.library.share_view", (object.type as string | null) ?? null);
+  try {
+    return c.json(await graph.listLearningObjectClubShares(access.orgId, objectId));
+  } catch (e) {
+    if (_missingGrantsTable(e)) {
+      throw new HttpError(503, "Per-club sharing is not enabled yet on this deployment");
+    }
+    throw e;
+  }
+});
+
+platformRouter.put("/learning/objects/:object_id/shares", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    club_program_ids?: string[];
+    program_id?: string;
+  };
+  const { access, eff } = await _learningAuthor(
+    c, body.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const objectId = c.req.param("object_id");
+  const object = await graph.getLearningObject(
+    access.orgId, objectId, access.programId, access.partnerProgramId ?? null,
+  );
+  if (!object) throw new HttpError(404, "Learning object not found");
+  _requireLearningCapStrict(eff, "learning.library.share_club", (object.type as string | null) ?? null);
+
+  const requested = Array.isArray(body.club_program_ids) ? body.club_program_ids.map(String) : [];
+  const allowed = await _clubIdsFor(access);
+  const unknown = requested.filter((id) => !allowed.has(id));
+  // Loud, not silent. Dropping an unrecognised club would report success on a
+  // grant that never happened — a content manager would believe a club has
+  // access it does not, which is the one failure this whole feature must not have.
+  if (unknown.length) {
+    throw new HttpError(422, `Not a club of this program: ${unknown.join(", ")}`);
+  }
+
+  let ok: boolean;
+  try {
+    // granted_by is a uuid column — the acting PROFILE, not the email the older
+    // learning writes carry, or the insert fails its cast at the last moment.
+    ok = await graph.setLearningObjectClubShares(
+      access.orgId, objectId, requested, access.profileId ?? null,
+    );
+  } catch (e) {
+    if (_missingGrantsTable(e)) {
+      throw new HttpError(503, "Per-club sharing is not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  if (!ok) throw new HttpError(404, "Learning object not found");
+  return c.json({ ok: true, club_program_ids: requested });
+});
+
+// ── App targets ─────────────────────────────────────────────────────────────
+
+platformRouter.get("/learning/objects/:object_id/app-targets", async (c) => {
+  const { access } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const objectId = c.req.param("object_id");
+  const object = await graph.getLearningObject(
+    access.orgId, objectId, access.programId, access.partnerProgramId ?? null,
+  );
+  if (!object) throw new HttpError(404, "Learning object not found");
+  // No capability gate on the READ: an author who can open an object may see where
+  // it went. Choosing the destination is the governed act, not knowing it.
+  return c.json(await graph.listLearningObjectAppTargets(access.orgId, objectId));
+});
+
+platformRouter.put("/learning/objects/:object_id/app-targets", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { app_keys?: string[]; program_id?: string };
+  const { user, access, eff } = await _learningAuthor(
+    c, body.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const objectId = c.req.param("object_id");
+  const object = await graph.getLearningObject(
+    access.orgId, objectId, access.programId, access.partnerProgramId ?? null,
+  );
+  if (!object) throw new HttpError(404, "Learning object not found");
+  _requireLearningCapStrict(eff, "learning.publish.app_target", (object.type as string | null) ?? null);
+
+  const keys = Array.isArray(body.app_keys) ? body.app_keys.map(String) : [];
+  const unknown = keys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+  if (unknown.length) throw new HttpError(422, `Unknown app: ${unknown.join(", ")}`);
+
+  try {
+    const ok = await graph.setLearningObjectAppTargets(access.orgId, objectId, keys, user.email ?? null);
+    if (!ok) throw new HttpError(404, "Learning object not found");
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("app-targets-unavailable")) {
+      throw new HttpError(503, "App targeting is not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  return c.json({ ok: true, app_keys: keys });
 });
 
 // ── Learning Platform custom roles (the learning app's own People tab) ──────
@@ -2738,12 +2929,191 @@ function _clubStructuralTier(user: PlatformUser, access: ResolvedPlatformAccess)
  * one program" is supposed to mean.
  */
 async function _learningAdmin(c: Context, programId: string) {
+  const { access } = await _learningAdminWithCeiling(c, programId);
+  return access;
+}
+
+/**
+ * STRUCTURAL admin only — a delegate is refused however many capabilities they hold.
+ *
+ * `learning.roles.delegate` widens `_learningAdmin` to anyone who may mint
+ * sub-roles, and that is right for the role routes. It is wrong for the
+ * CATALOGUE, which is the definition of what capabilities exist at all:
+ *
+ *   • sampleRoleTemplates feed _learningCapsForLevel, and every partner club
+ *     member is pinned to level "edit" → the content-developer template. Editing
+ *     it hands capabilities to everyone on that level at once.
+ *   • deleting a capability from the catalogue makes validGrantsAcross drop it
+ *     from every role that is saved afterwards, including an admin's.
+ *
+ * Neither is escalation for the delegate themselves — their own set is a custom
+ * role, unaffected — but both let someone whose remit is "curate the library"
+ * rewrite the permission system for the whole program. The ceiling exists so a
+ * delegate cannot exceed their own grants; being able to redefine the grants
+ * would make it decorative.
+ */
+async function _learningStructuralAdmin(c: Context, programId: string) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", programId);
   if (access.level !== "admin" && !_clubStructuralTier(user, access)) {
     throw new HttpError(403, "Learning admin access required");
   }
   return access;
+}
+
+/**
+ * The same gate, plus the answer to "what may this caller GRANT?".
+ *
+ * Three ways in, and the third is new. Two are STRUCTURAL — a learning admin, or a
+ * club's own owner/administrator — and hold everything. The third is a CAPABILITY:
+ * `learning.roles.delegate`, mirroring the one existing precedent for
+ * capability-gated role creation (`org.roles.manage`, further down this file). It
+ * is what lets a Content Manager mint sub-roles without being made an admin.
+ *
+ * A delegated creator is CEILINGED to their own effective capabilities. Without
+ * that clamp `roles.delegate` is not a delegation primitive but a privilege-
+ * escalation one: hold it, write yourself a role granting everything, assign it,
+ * and the gate has bought nothing. `ceiling === null` means structural — no clamp.
+ */
+export interface LearningCeiling {
+  capabilities: string[];
+  /** capability id → the content types the CREATOR is limited to. */
+  typeScopes: Record<string, string[]>;
+}
+
+async function _learningAdminWithCeiling(
+  c: Context,
+  programId: string,
+): Promise<{ access: ResolvedPlatformAccess; ceiling: LearningCeiling | null }> {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", programId);
+  if (access.level === "admin" || _clubStructuralTier(user, access)) {
+    return { access, ceiling: null };
+  }
+  const eff = await _learningEffective(user, access);
+  if (eff.capabilities.includes("learning.roles.delegate")) {
+    return { access, ceiling: { capabilities: eff.capabilities, typeScopes: eff.typeScopes } };
+  }
+  throw new HttpError(403, "Learning admin access required");
+}
+
+/**
+ * Trim a requested capability set to what the creator actually holds.
+ *
+ * Silent, not an error: the role builder shows a delegated creator only the
+ * capabilities they hold, so anything outside the ceiling arriving here is a
+ * stale client or a hand-rolled request, and dropping it is the same shape as
+ * `validGrantsAcross` dropping an unknown id. `roles.delegate` itself is
+ * withheld — a sub-role that can mint further sub-roles turns one grant into an
+ * unbounded tree, and nothing in the described use needs it.
+ */
+export function _clampToCeiling(requested: string[], ceiling: LearningCeiling | null): string[] {
+  if (ceiling === null) return requested;
+  const allowed = new Set(ceiling.capabilities);
+  return requested.filter((id) => id !== "learning.roles.delegate" && allowed.has(id));
+}
+
+/**
+ * A sub-role's type scopes may only NARROW the creator's, never widen them.
+ *
+ * Capability ids alone are not the whole of a grant. A Content Manager limited
+ * to `publish.release` on quizzes still reports `publish.release` in their
+ * capability list, so an id-only ceiling would happily mint a sub-role holding
+ * it for every content type — and then they assign it to themselves. Wherever
+ * the creator is scoped, the sub-role inherits at least that narrowing;
+ * requested types outside it are dropped, and an empty intersection falls back
+ * to the creator's own list rather than to "unrestricted", because absent means
+ * EVERY type here (_requireLearningCap) and would be an escalation.
+ */
+export function _clampScopesToCeiling(
+  requested: Record<string, string[]> | undefined,
+  capabilities: string[],
+  ceiling: LearningCeiling | null,
+): Record<string, string[]> | undefined {
+  if (ceiling === null) return requested;
+  const out: Record<string, string[]> = { ...(requested ?? {}) };
+  for (const capId of capabilities) {
+    const mine = ceiling.typeScopes[capId];
+    if (!mine?.length) continue; // creator unrestricted → nothing to inherit
+    const theirs = out[capId];
+    const narrowed = theirs?.length ? theirs.filter((t) => mine.includes(t)) : [];
+    out[capId] = narrowed.length ? narrowed : mine;
+  }
+  return Object.keys(out).length ? out : requested;
+}
+
+/**
+ * A delegate may never leave a role with NO capabilities.
+ *
+ * This is the sharpest edge in the whole delegation design and it is worth being
+ * explicit about. `_requireLearningCap` opens with `if (!eff.fineGrained) return;`
+ * — every fine-grained gate is a no-op for a caller whose capabilities came from
+ * their launch LEVEL rather than from a role, which is the accommodation that
+ * keeps ordinary club members working. So a capability-less role is not a weak
+ * role: it is an UNGATED one, governed only by each route's coarse admin|edit
+ * guard.
+ *
+ * Which means "strip my own role down to nothing" is a privilege ESCALATION, and
+ * an id-set clamp cannot see it — the empty set is trivially within any ceiling.
+ * A structural admin may still do this (they already hold everything); a delegate
+ * may not.
+ */
+export function _assertNotDisarming(capabilities: string[], ceiling: LearningCeiling | null): void {
+  if (ceiling === null) return;
+  if (!capabilities.length) {
+    throw new HttpError(
+      422,
+      "A role you create must grant at least one capability — an empty role is not a limited one",
+    );
+  }
+}
+
+/**
+ * A delegated caller may only touch a role that sits inside their own ceiling.
+ *
+ * Minting roles is clamped by _clampToCeiling, but that is not the whole of the
+ * escalation surface: ASSIGNING an existing role, and DELETING one, both reach
+ * roles the delegate never wrote. Without this check a Content Manager could
+ * hand themselves whatever role the org admin had already created — a longer
+ * path to the same privilege, and one the create-side clamp does not see.
+ *
+ * Structural callers (`ceiling === null`) are unaffected.
+ */
+async function _assertRoleWithinCeiling(
+  roleId: string | null,
+  ceiling: LearningCeiling | null,
+  programId?: string,
+): Promise<void> {
+  if (!roleId) return;
+  const role = await graph.getLearningRole(roleId).catch(() => null);
+  if (!role) throw new HttpError(404, "Role not found");
+  // SCOPE FIRST, for everyone including structural admins. getLearningRole and
+  // its update/delete siblings filter on the role id ALONE, under asPrivileged —
+  // so without this an id from another org's program is editable by anyone who
+  // can reach the route at all. 404, not 403: whether a role exists elsewhere is
+  // not this caller's business.
+  if (programId && role.program_id && String(role.program_id) !== programId) {
+    throw new HttpError(404, "Role not found");
+  }
+  if (ceiling === null) return;
+  const caps = ((role.perms as Row | undefined)?.capabilities ?? []) as string[];
+  const allowed = new Set(ceiling.capabilities);
+  // A role with NO capabilities is a coarse/legacy role whose power comes from the
+  // level path, not from a set this can compare — refuse rather than guess.
+  if (!caps.length || caps.some((id) => !allowed.has(id))) {
+    throw new HttpError(403, "That role grants more than your own role does");
+  }
+  // And its scopes must be at least as narrow as the creator's, for the same
+  // reason _clampScopesToCeiling exists: an unscoped capability is a wider one.
+  const scopes = ((role.perms as Row | undefined)?.typeScopes ?? {}) as Record<string, string[]>;
+  for (const capId of caps) {
+    const mine = ceiling.typeScopes[capId];
+    if (!mine?.length) continue;
+    const theirs = scopes[capId];
+    if (!theirs?.length || theirs.some((t) => !mine.includes(t))) {
+      throw new HttpError(403, "That role grants more than your own role does");
+    }
+  }
 }
 
 // The shared learning catalogue — the app's own inventory of surfaces +
@@ -2756,7 +3126,7 @@ platformRouter.get("/learning/catalogue", async (c) => {
   return c.json(await catalogue.getCatalogue("learning"));
 });
 platformRouter.put("/learning/catalogue", async (c) => {
-  await _learningAdmin(c, c.req.query("program_id") ?? "");
+  await _learningStructuralAdmin(c, c.req.query("program_id") ?? "");
   const doc = (await c.req.json()) as CapabilityCatalogueDocument;
   if (doc?.documentType !== "capability_catalogue" || !Array.isArray(doc.capabilities) || !Array.isArray(doc.groups)) {
     throw new HttpError(422, "Not a valid catalogue document");
@@ -2765,7 +3135,7 @@ platformRouter.put("/learning/catalogue", async (c) => {
   return c.json(await catalogue.saveCatalogue("learning", doc));
 });
 platformRouter.delete("/learning/catalogue", async (c) => {
-  await _learningAdmin(c, c.req.query("program_id") ?? "");
+  await _learningStructuralAdmin(c, c.req.query("program_id") ?? "");
   return c.json(await catalogue.resetCatalogue("learning"));
 });
 
@@ -2779,8 +3149,19 @@ platformRouter.get("/learning/roles", async (c) => {
 
 platformRouter.post("/learning/roles", async (c) => {
   const req = parseBody(learningRoleCreateSchema, await c.req.json());
-  const access = await _learningAdmin(c, req.program_id);
-  const perms = await _learningPermsWithCaps(req.perms, req.capabilities, req.type_scopes);
+  const { access, ceiling } = await _learningAdminWithCeiling(c, req.program_id);
+  const caps = req.capabilities && _clampToCeiling(req.capabilities, ceiling);
+  // Omitting `capabilities` entirely reaches the same ungated state as sending an
+  // empty list, just by a quieter door — refuse both before doing any work.
+  if (ceiling !== null && caps === undefined) {
+    throw new HttpError(422, "A role you create must grant at least one capability");
+  }
+  if (caps) _assertNotDisarming(caps, ceiling);
+  const perms = await _learningPermsWithCaps(
+    req.perms,
+    caps,
+    _clampScopesToCeiling(req.type_scopes, caps ?? [], ceiling),
+  );
   // Stored under the CLUB when there is one, matching where getLearningRoleForEmail
   // now reads. Both sides move together or a club's roles are written where nothing
   // looks for them.
@@ -2797,14 +3178,39 @@ platformRouter.post("/learning/roles", async (c) => {
 platformRouter.patch("/learning/roles/:id", async (c) => {
   const body = parseBody(learningRoleUpdateSchema, await c.req.json());
   const pid = c.req.query("program_id") ?? "";
-  await _learningAdmin(c, pid);
+  const { access, ceiling } = await _learningAdminWithCeiling(c, pid);
+  // The TARGET too, not just the incoming capabilities: `perms` carries the legacy
+  // area grants, which _clampToCeiling never sees, so editing someone else's
+  // stronger role has to be refused at the door rather than trimmed on the way in.
+  // Also scopes the role to this program for EVERY caller — see the helper.
+  await _assertRoleWithinCeiling(
+    c.req.param("id"), ceiling, access.partnerProgramId ?? access.programId,
+  );
   // Merge capabilities into whatever perms are being written (or the existing
   // blob) so the area perms and capabilities don't clobber each other.
   let perms = body.perms as Record<string, unknown> | undefined;
   if (body.capabilities !== undefined || body.type_scopes !== undefined) {
     const existing = await graph.getLearningRole(c.req.param("id")).catch(() => null);
     const base = (perms ?? (existing?.perms as Record<string, unknown>) ?? {}) as Record<string, unknown>;
-    perms = await _learningPermsWithCaps(base, body.capabilities, body.type_scopes);
+    const nextCaps = body.capabilities && _clampToCeiling(body.capabilities, ceiling);
+    if (nextCaps) _assertNotDisarming(nextCaps, ceiling);
+    perms = await _learningPermsWithCaps(
+      base,
+      nextCaps,
+      _clampScopesToCeiling(
+        body.type_scopes,
+        nextCaps ?? ((base.capabilities as string[] | undefined) ?? []),
+        ceiling,
+      ),
+    );
+  } else if (perms !== undefined) {
+    // A bare `perms` write REPLACES the blob, capabilities and all — the quiet
+    // way to empty a role without ever naming `capabilities`. Carry the existing
+    // grants across so a delegate cannot disarm a role by omission.
+    const existing = await graph.getLearningRole(c.req.param("id")).catch(() => null);
+    const prior = (existing?.perms as Record<string, unknown> | undefined) ?? {};
+    perms = { ...perms, capabilities: prior.capabilities, typeScopes: prior.typeScopes };
+    _assertNotDisarming((prior.capabilities as string[] | undefined) ?? [], ceiling);
   }
   const row = await graph.updateLearningRole(c.req.param("id"), { name: body.name, perms });
   if (!row) throw new HttpError(404, "Role not found");
@@ -2813,7 +3219,10 @@ platformRouter.patch("/learning/roles/:id", async (c) => {
 
 platformRouter.delete("/learning/roles/:id", async (c) => {
   const pid = c.req.query("program_id") ?? "";
-  await _learningAdmin(c, pid);
+  const { access, ceiling } = await _learningAdminWithCeiling(c, pid);
+  await _assertRoleWithinCeiling(
+    c.req.param("id"), ceiling, access.partnerProgramId ?? access.programId,
+  );
   await graph.deleteLearningRole(c.req.param("id"));
   return c.json({ ok: true });
 });
@@ -2828,7 +3237,17 @@ platformRouter.get("/learning/roster", async (c) => {
 
 platformRouter.put("/learning/assign", async (c) => {
   const req = parseBody(learningAssignSchema, await c.req.json());
-  const access = await _learningAdmin(c, req.program_id);
+  const { access, ceiling } = await _learningAdminWithCeiling(c, req.program_id);
+  // UNASSIGNING IS NOT THE SAFE DIRECTION. Removing someone's role drops them to
+  // their launch level, where `fineGrained` is false and every _requireLearningCap
+  // gate stops firing — so "take away their role" hands them the ungated path,
+  // themselves included. A structural admin may do it; a delegate may not.
+  if (ceiling !== null && !req.role_id) {
+    throw new HttpError(403, "Removing a role needs a learning administrator");
+  }
+  await _assertRoleWithinCeiling(
+    req.role_id, ceiling, access.partnerProgramId ?? access.programId,
+  );
   // The club again: an assignment must live where the role and the lookup do.
   await graph.setLearningRoleAssignment(
     access.orgId,

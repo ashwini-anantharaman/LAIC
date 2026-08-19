@@ -143,6 +143,19 @@ function Routed() {
           </RequireAuth>
         }
       />
+      {/* The Content Library tab — the same Studio launch, landed on the library
+          instead of the overview. A separate route rather than a query string so
+          the sidebar can highlight it and a person can bookmark it. Access is the
+          Studio's to decide: it falls back to their own landing screen if their
+          role does not expose the library. */}
+      <Route
+        path="/o/:orgId/p/:programId/learning/library"
+        element={
+          <RequireAuth>
+            <LearningLaunch screen="cd-library" />
+          </RequireAuth>
+        }
+      />
       <Route
         path="/o/:orgId/p/:programId/bridge"
         element={
