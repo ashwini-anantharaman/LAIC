@@ -53,9 +53,10 @@ export async function POST(request: NextRequest) {
     // not depend on whether your club lets its members run club challenges.
     //
     // What makes that safe is not a weaker check, it is a narrower reach: a private
-    // table can only invite people who have already accepted this person as a friend
-    // (see the directory below), so removing the gate grants no new access to anyone
-    // else's club, roster or content. Everything else still needs create access.
+    // table can only invite people this person already has — friends who accepted
+    // them, and the roster of the club they are themselves in (see the directory
+    // below) — so removing the gate grants no new access to anyone ELSE's club,
+    // roster or content. Everything else still needs create access.
     if (!personal && !(await canCreateChallenge(context))) {
       throw new AccessError("No create access");
     }
@@ -140,9 +141,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Invite only people this creator can actually reach — plus the creator. For a
-    // private table that is their FRIENDS; for a club challenge, the club. Both are
-    // resolved server-side from the caller's own identity, so the draft cannot name
-    // somebody it has no business naming: "never invite blind" holds either way.
+    // private table that is their FRIENDS AND THEIR OWN CLUB; for a club challenge,
+    // the club. Both are resolved server-side from the caller's own identity, so the
+    // draft cannot name somebody it has no business naming: an id this client made
+    // up is simply not in the map, and falls out below. "Never invite blind" holds
+    // either way — and note that it falls out SILENTLY, so a client offering a wider
+    // list than this one would drop players with no error to show for it.
     //
     const directory = new Map(
       (personal ? await listFriendPeople(context) : await listChallengePeople(context)).map(
