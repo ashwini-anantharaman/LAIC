@@ -3,13 +3,14 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { BridgeEmbedBlock } from './BridgeEmbedBlock';
+import { TutorialV3BlockEditor, hasV3BlockEditor } from './TutorialV3BlockEditors';
 import {
   configToPartFields,
   isBridgeEmbedPart,
   readBridgeConfig,
 } from '../../../../lib/tutorialV3/bridgeEmbed';
 import {
-  ArrowLeft, Check, Loader2, PenLine, Sparkles, AlertTriangle,
+  ArrowLeft, Check, Loader2, PenLine, RotateCcw, Sparkles, AlertTriangle,
   Image as ImageIcon, Youtube, Upload, ExternalLink, Plus, Trash2, Type,
 } from 'lucide-react';
 import { MarkupWorkspace, type MarkupSource } from '../MarkupWorkspace';
@@ -27,9 +28,13 @@ import {
   sourcePoolToMarkupSources,
 } from '../../../../lib/tutorialV3/draftModel';
 import {
+  applyV3BlockContent,
+  emptyV3BlockContent,
+  extractV3BlockContent,
   isNestedEditablePart,
   isNestedPartEmpty,
   isV3BlockEmbedPart,
+  v3BlockTypeOf,
   nestedEditorKindForPart,
   v3BlockEmbedLabel,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
@@ -449,14 +454,32 @@ export function TutorialV3SectionWorkspace({
             </p>
           )}
         </div>
-        <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer" style={{ borderColor: 'rgba(0,0,0,0.1)', fontSize: 13 }}>
-          <input
-            type="checkbox"
-            checked={!!section.done}
-            onChange={(e) => onMarkDone(e.target.checked)}
-          />
-          <Check size={14} /> {isSlot ? 'Mark content done' : 'Mark section done'}
-        </label>
+        <div className="flex flex-wrap items-center gap-2">
+          {allowAiGenerate && (section.parts || []).length > 0 && (
+            /*
+              Written once already and it came out wrong — the only way back to
+              the generator was to notice the tab and switch to it, which reads
+              as a place to go rather than a thing to do.
+            */
+            <button
+              type="button"
+              onClick={() => setTab('generate')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-full border"
+              style={{ fontSize: 13, fontWeight: 650, color: '#3d6349', borderColor: 'rgba(77,124,90,0.4)', background: '#fff' }}
+              title={isSlot ? 'Generate this again' : 'Write this section again, in its place in the lesson'}
+            >
+              <RotateCcw size={13} /> Redo with AI
+            </button>
+          )}
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded-full border cursor-pointer" style={{ borderColor: 'rgba(0,0,0,0.1)', fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={!!section.done}
+              onChange={(e) => onMarkDone(e.target.checked)}
+            />
+            <Check size={14} /> {isSlot ? 'Mark content done' : 'Mark section done'}
+          </label>
+        </div>
       </div>
 
       {allowAiGenerate ? (
@@ -715,15 +738,25 @@ function WritePane({
               </div>
             </div>
           ) : isV3BlockEmbedPart(p) ? (
-            <div>
+            <div onClick={(e) => e.stopPropagation()} role="presentation">
               <p style={{ fontSize: 13.5, color: '#374151', marginBottom: 8 }}>
                 {p.libraryTitle || p.label || v3BlockEmbedLabel(p)}
                 <span style={{ color: '#9AA3AF' }}> · {v3BlockEmbedLabel(p)}</span>
               </p>
-              <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.5 }}>
-                Authored by generating it from your sources. There is no separate editor for this
-                block — regenerate to change it.
-              </p>
+              {hasV3BlockEditor(v3BlockTypeOf(p)) ? (
+                <div className="mb-3">
+                  <TutorialV3BlockEditor
+                    type={v3BlockTypeOf(p)!}
+                    content={extractV3BlockContent(p) || emptyV3BlockContent(v3BlockTypeOf(p)!, p.libraryTitle)}
+                    onChange={(next) => onChangePart(p.id, applyV3BlockContent(p, next))}
+                  />
+                </div>
+              ) : (
+                <p style={{ fontSize: 12.5, color: '#9AA3AF', marginBottom: 10, lineHeight: 1.5 }}>
+                  Authored by generating it from your sources. There is no separate editor for this
+                  block — regenerate to change it.
+                </p>
+              )}
               {onGeneratePart && (
                 <button
                   type="button"

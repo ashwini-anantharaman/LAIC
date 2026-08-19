@@ -8,7 +8,7 @@
     "status": "in-review",
     "scope": "bridge",
     "reuseCount": 0,
-    "description": "",
+    "description": "Answer partner's 1NT when you hold a four-card major, using Stayman to hunt for a fit. Also covers ducking, and the distribution points that change what a hand is worth.",
     "estimatedTime": "10 min",
     "blocks": [
       {
@@ -407,7 +407,7 @@
     "status": "in-review",
     "scope": "bridge",
     "reuseCount": 0,
-    "description": "",
+    "description": "Open the auction: count high-card points, learn what twelve of them buys you, and choose a first bid. Then re-evaluate for trump contracts and play your first finesse.",
     "estimatedTime": "10 min",
     "blocks": [
       {

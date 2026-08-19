@@ -6,14 +6,19 @@
 import React, { useEffect, useState } from 'react';
 import {
   ArrowLeft, Eye, Pencil, Send, Sparkles, ChevronUp, ChevronDown, Trash2,
-  ExternalLink, Save, Maximize2, Minimize2,
+  ExternalLink, Save, Maximize2, Minimize2, Move,
 } from 'lucide-react';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
 import {
+  applyV3BlockContent,
+  emptyV3BlockContent,
+  extractV3BlockContent,
   isNestedEditablePart,
   nestedEditorKindForPart,
+  v3BlockTypeOf,
 } from '../../../../lib/tutorialV3/embedEditorBridge';
+import { TutorialV3BlockEditor, hasV3BlockEditor } from './TutorialV3BlockEditors';
 import type { TutorialV3Draft, TutorialV3Part } from '../../../../lib/tutorialV3/types';
 import { LearningBlocksPreview } from '../LearnerReader';
 import { TutorialV3Reader } from './learner/TutorialV3Reader';
@@ -82,6 +87,106 @@ function ImageDropZone({
           Drop image here
         </span>
       )}
+    </div>
+  );
+}
+
+/**
+ * A structured block edited inside the preview.
+ *
+ * Same reason as the prose editor: writing each keystroke through to the draft
+ * rebuilds the lesson under the caret. The block is edited against a local
+ * copy and written back when the editor closes.
+ */
+function InlineBlockSession({
+  type,
+  initial,
+  onCommit,
+}: {
+  type: string;
+  initial: Record<string, unknown>;
+  onCommit: (next: Record<string, unknown>) => void;
+}) {
+  const [content, setContent] = useState(initial);
+  const latest = React.useRef(content);
+  latest.current = content;
+  useEffect(() => () => {
+    if (latest.current !== initial) onCommit(latest.current);
+    // Unmount only — see InlineTextEditor.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <div className="space-y-2">
+      <TutorialV3BlockEditor type={type} content={content} onChange={setContent} />
+      <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>The page updates when you press Done.</p>
+    </div>
+  );
+}
+
+/**
+ * Inline prose editing that types like a text box.
+ *
+ * Writing straight through to the draft on every keystroke re-rendered the
+ * whole lesson underneath the caret: the text changes, the stream repaginates,
+ * and the field the author is typing into is rebuilt mid-word. The edit is
+ * held locally and committed when the author leaves the field, so typing costs
+ * nothing and the preview updates once, when there is something to show.
+ */
+function InlineTextEditor({
+  heading,
+  body,
+  onCommit,
+}: {
+  heading?: string;
+  body: string;
+  onCommit: (patch: { heading?: string; body?: string }) => void;
+}) {
+  const [h, setH] = useState(heading || '');
+  const [b, setB] = useState(body);
+
+  // Commit on unmount too — closing the editor should not discard the edit.
+  const latest = React.useRef({ h, b });
+  latest.current = { h, b };
+  useEffect(() => () => {
+    const patch: { heading?: string; body?: string } = {};
+    if (heading !== undefined && latest.current.h !== heading) patch.heading = latest.current.h;
+    if (latest.current.b !== body) patch.body = latest.current.b;
+    if (Object.keys(patch).length) onCommit(patch);
+    // Only on unmount: committing on every prop change is the thing being avoided.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const commit = () => {
+    const patch: { heading?: string; body?: string } = {};
+    if (heading !== undefined && h !== heading) patch.heading = h;
+    if (b !== body) patch.body = b;
+    if (Object.keys(patch).length) onCommit(patch);
+  };
+
+  return (
+    <div className="space-y-2">
+      {heading !== undefined && (
+        <input
+          className="w-full"
+          value={h}
+          placeholder="Heading"
+          onChange={(e) => setH(e.target.value)}
+          onBlur={commit}
+          style={{ fontSize: 15, fontWeight: 700, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '8px 10px' }}
+        />
+      )}
+      <textarea
+        className="w-full"
+        rows={10}
+        value={b}
+        placeholder="Body"
+        onChange={(e) => setB(e.target.value)}
+        onBlur={commit}
+        style={{ fontSize: 13.5, lineHeight: 1.6, border: '1px solid rgba(0,0,0,0.08)', borderRadius: 10, padding: '10px 12px', resize: 'vertical' }}
+      />
+      <p style={{ fontSize: 11.5, color: '#9AA3AF' }}>
+        The page updates when you click away or press Done.
+      </p>
     </div>
   );
 }
@@ -214,6 +319,86 @@ export function TutorialV3AssembleEditor({
    * authoring chrome above is not what you are looking at while you do either.
    */
   const [fullscreen, setFullscreen] = useState(false);
+  const [arranging, setArranging] = useState(false);
+
+  /*
+    Blocks are what a learner sees; parts are what the draft stores, and one
+    part can expand into several blocks (`partId__0`, `partId__1`). Dragging a
+    block therefore moves the whole part it came from — moving half an embedded
+    quiz somewhere else is not a thing an author can mean.
+  */
+  /**
+   * The editor for one block, opened by double-clicking it in the preview.
+   *
+   * A block id is its part's id, or that id with an expansion suffix — so the
+   * lookup is the same either way. Blocks with a full standalone editor (a
+   * quiz, a flashcard set) are not inlined: those are whole screens, and
+   * squeezing one into a reading column serves nobody. They offer the way in
+   * instead.
+   */
+  const renderInlineEditor = (blockId: string, done: () => void): React.ReactNode | null => {
+    const part = parts.find((x) => x.id === blockId || blockId.startsWith(`${x.id}__`));
+    if (!part) return null;
+
+    const v3Type = v3BlockTypeOf(part);
+    if (hasV3BlockEditor(v3Type)) {
+      return (
+        <InlineBlockSession
+          key={part.id}
+          type={v3Type!}
+          initial={extractV3BlockContent(part) || emptyV3BlockContent(v3Type!, part.libraryTitle)}
+          onCommit={(next) => updatePart(part.id, applyV3BlockContent(part, next))}
+        />
+      );
+    }
+
+    if (isNestedEditablePart(part)) {
+      return (
+        <div className="space-y-2">
+          <p style={{ fontSize: 12.5, color: '#6B7280' }}>
+            {part.libraryTitle || part.label || nestedEditorKindForPart(part)} has its own editor —
+            too big to open inside the page.
+          </p>
+          <button
+            type="button"
+            onClick={() => { done(); setMode('edit'); setEditingPartId(part.id); }}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full text-white"
+            style={{ fontSize: 12.5, fontWeight: 650, background: '#1e2b3d' }}
+          >
+            <ExternalLink size={13} />
+            Open {nestedEditorKindForPart(part)?.replace(/-/g, ' ') || 'content'} editor
+          </button>
+        </div>
+      );
+    }
+
+    // Everything else is a heading and a body — the shape most of a lesson is.
+    if (part.heading === undefined && part.body === undefined) return null;
+    return (
+      <InlineTextEditor
+        key={part.id}
+        heading={part.heading}
+        body={part.body || ''}
+        onCommit={(patch) => updatePart(part.id, patch)}
+      />
+    );
+  };
+
+  const reorderFromBlockIds = (orderedBlockIds: string[]) => {
+    const partIdOf = (blockId: string) => blockId.split('__')[0];
+    const seen = new Set<string>();
+    const order: string[] = [];
+    for (const id of orderedBlockIds) {
+      const pid = partIdOf(id);
+      if (!seen.has(pid)) { seen.add(pid); order.push(pid); }
+    }
+    const byId = new Map(parts.map((p) => [p.id, p]));
+    const next = order.map((id) => byId.get(id)).filter(Boolean) as typeof parts;
+    // Parts with no block of their own (the covers) keep their place at the end.
+    for (const p of parts) if (!seen.has(p.id)) next.push(p);
+    if (next.length !== parts.length) return;
+    onChangeParts(next);
+  };
 
   // Escape is what people try first, so it should work.
   useEffect(() => {
@@ -332,7 +517,25 @@ export function TutorialV3AssembleEditor({
               <Maximize2 size={12} /> Full screen
             </button>
           )}
-          {mode === 'edit' && (
+          {mode === 'preview' && (
+            <button
+              type="button"
+              onClick={() => setArranging((v) => !v)}
+              title="Drag blocks to reorder them in the view a student sees"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border"
+              style={{
+                fontSize: 12,
+                fontWeight: 650,
+                color: arranging ? '#3d6349' : '#374151',
+                borderColor: arranging ? 'rgba(77,124,90,0.35)' : 'rgba(0,0,0,0.1)',
+                background: arranging ? 'rgba(77,124,90,0.08)' : '#fff',
+              }}
+            >
+              <Move size={12} />
+              {arranging ? 'Done arranging' : 'Arrange blocks'}
+            </button>
+          )}
+          {(
             <button
               type="button"
               onClick={() => setRefineOpen((v) => !v)}
@@ -361,6 +564,8 @@ export function TutorialV3AssembleEditor({
           // column, and a second scrollbar around it moved the rail too.
           <div className="flex-1 min-w-0 overflow-hidden" style={{ background: '#fff' }}>
             <TutorialV3Reader
+              arrange={arranging ? { onReorder: reorderFromBlockIds } : undefined}
+              renderInlineEditor={renderInlineEditor}
               draft={draft}
               blocks={blocks as any}
               objectId={draft.id}
@@ -464,6 +669,20 @@ export function TutorialV3AssembleEditor({
                               caption={p.caption}
                               onChangeCaption={(caption) => updatePart(p.id, { caption })}
                               onChangeConfig={(next) => updatePart(p.id, configToPartFields(next))}
+                            />
+                          </div>
+                        ) : hasV3BlockEditor(v3BlockTypeOf(p)) ? (
+                          /*
+                            These blocks have a shape, so they get a real editor
+                            rather than the body textarea every other part falls
+                            back to — which for a table or a question showed
+                            nothing worth editing.
+                          */
+                          <div onClick={(e) => e.stopPropagation()} role="presentation">
+                            <TutorialV3BlockEditor
+                              type={v3BlockTypeOf(p)!}
+                              content={extractV3BlockContent(p) || emptyV3BlockContent(v3BlockTypeOf(p)!, p.libraryTitle)}
+                              onChange={(next) => updatePart(p.id, applyV3BlockContent(p, next))}
                             />
                           </div>
                         ) : isNestedEditablePart(p) ? (
@@ -604,7 +823,12 @@ export function TutorialV3AssembleEditor({
         </div>
         )}
 
-        {mode === 'edit' && (
+        {/*
+          Reading as a student is when an author notices the thing they want to
+          ask Hoot about. Gating the panel on edit mode meant the button was
+          there in preview and pressing it did nothing visible.
+        */}
+        {(
           <TutorialV3RefineSidebar
             open={refineOpen}
             onOpenChange={setRefineOpen}
