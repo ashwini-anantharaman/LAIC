@@ -2680,6 +2680,185 @@ platformRouter.put("/learning/objects/:object_id/app-targets", async (c) => {
   return c.json({ ok: true, app_keys: keys });
 });
 
+// ── The Nexus-level Content Library ─────────────────────────────────────────
+//
+// The console renders folders, content and their sharing WITHOUT opening the
+// Content Studio. These three endpoints are that screen's whole API: what is in
+// the library, who it can be shared with, and the two bulk writes.
+//
+// Why not reuse GET /learning/objects: that answers "the library" for an
+// AUTHOR and carries blocks/pipeline_draft or a meta subset. This screen needs
+// the share state beside each row, and fetching it per object would be a
+// waterfall the length of the library.
+
+platformRouter.get("/learning/library", async (c) => {
+  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  _requireLearningCapStrict(eff, "learning.library.share_view", null);
+
+  const objects = await graph.listLearningObjectsMeta(
+    access.orgId,
+    access.programId,
+    access.partnerProgramId ?? null,
+    // Personal rows belong to their owner, not to a governance screen: a
+    // content manager curating what reaches a club has no business listing
+    // someone's "just for me" drafts. Passing no viewer excludes them.
+    null,
+  );
+  const ids = objects.map((o) => String(o.id));
+  const [grants, targets] = await Promise.all([
+    graph.listLearningGrantsForObjects(access.orgId, ids),
+    graph.listLearningAppTargetsForObjects(access.orgId, ids),
+  ]);
+
+  const shape = (objectId: string) => ({
+    clubs: grants
+      .filter((g) => g.object_id === objectId && g.subject_type === "club")
+      .map((g) => String(g.subject_id)),
+    people: grants
+      .filter((g) => g.object_id === objectId && g.subject_type === "profile")
+      .map((g) => String(g.subject_id)),
+    apps: targets.filter((t) => t.object_id === objectId).map((t) => String(t.app_key)),
+  });
+
+  return c.json({
+    objects: objects.map((o) => ({
+      id: String(o.id),
+      title: (o.title as string) ?? "",
+      type: (o.type as string) ?? "",
+      status: (o.status as string) ?? "draft",
+      published_at: (o.published_at as string | null) ?? null,
+      collection_ids: (o.collection_ids as string[]) ?? [],
+      collection_names: (o.collection_names as string[]) ?? [],
+      ...shape(String(o.id)),
+    })),
+  });
+});
+
+/**
+ * The clubs this program can share to, each with its members.
+ *
+ * Its own endpoint rather than the console's /programs/:id/partners because that
+ * one requires ORG-level staff, and a Content Manager is scoped to a program —
+ * they would be refused the very list their job depends on. Gated instead on the
+ * capability that means "you may see who content reaches".
+ *
+ * Members ride along: the picker offers a club and the people inside it in one
+ * tree, and a request per club would be a waterfall for a dialog that opens on a
+ * click.
+ */
+platformRouter.get("/learning/clubs", async (c) => {
+  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  _requireLearningCapStrict(eff, "learning.library.share_view", null);
+
+  const partners = await db.listPartnersForProgram(access.programId).catch(() => []);
+  const clubs = await Promise.all(
+    partners.map(async (p) => {
+      const members = await graph
+        .listProgramMembers(access.orgId, String(p.id))
+        .catch(() => [] as Row[]);
+      return {
+        id: String(p.id),
+        name: (p.name as string) ?? "Club",
+        members: members
+          // Only people who can actually be granted to: a grant keys on
+          // profile_id, and an invited-but-not-activated member has none yet.
+          .filter((m) => m.profile_id)
+          .map((m) => ({
+            profile_id: String(m.profile_id),
+            display_name: (m.display_name as string | null) ?? (m.email as string | null) ?? "Member",
+            email: (m.email as string | null) ?? null,
+          })),
+      };
+    }),
+  );
+  return c.json({ clubs });
+});
+
+const _bulkSharesSchema = z.object({
+  program_id: z.string().optional(),
+  object_ids: z.array(z.string()).min(1).max(2000),
+  club_program_ids: z.array(z.string()).default([]),
+  profile_ids: z.array(z.string()).default([]),
+});
+
+platformRouter.put("/learning/shares/bulk", async (c) => {
+  const req = parseBody(_bulkSharesSchema, await c.req.json());
+  const { access, eff } = await _learningAuthor(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  // No object type is in hand for a batch, so a type-scoped role cannot be
+  // checked per item here. Refuse the bulk route for such a role rather than
+  // silently ignoring the scope — the per-object endpoint still serves them.
+  _requireLearningCapStrict(eff, "learning.library.share_club", null);
+
+  const clubs = await _clubIdsFor(access);
+  const unknownClubs = req.club_program_ids.filter((id) => !clubs.has(id));
+  if (unknownClubs.length) {
+    throw new HttpError(422, `Not a club of this program: ${unknownClubs.join(", ")}`);
+  }
+  // A person may only be granted content through a club they belong to. Without
+  // this the endpoint would share to any profile id in the org — a wider reach
+  // than the picker offers, and not one anybody asked for.
+  if (req.profile_ids.length) {
+    const allowed = new Set<string>();
+    for (const clubId of clubs) {
+      const members = await graph.listProgramMembers(access.orgId, clubId).catch(() => [] as Row[]);
+      for (const m of members) if (m.profile_id) allowed.add(String(m.profile_id));
+    }
+    const strangers = req.profile_ids.filter((p) => !allowed.has(p));
+    if (strangers.length) {
+      throw new HttpError(422, `Not a member of any club in this program: ${strangers.join(", ")}`);
+    }
+  }
+
+  let written: string[];
+  try {
+    written = await graph.setLearningGrantsBulk(
+      access.orgId, req.object_ids, req.club_program_ids, req.profile_ids, access.profileId ?? null,
+    );
+  } catch (e) {
+    if (_missingGrantsTable(e)) {
+      throw new HttpError(503, "Per-club sharing is not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  // Say what was skipped rather than reporting a clean success over a partial
+  // one — a folder that shared eleven of twelve items must not look like twelve.
+  const skipped = req.object_ids.filter((id) => !written.includes(id));
+  return c.json({ ok: true, shared: written.length, skipped });
+});
+
+const _bulkAppTargetsSchema = z.object({
+  program_id: z.string().optional(),
+  object_ids: z.array(z.string()).min(1).max(2000),
+  app_keys: z.array(z.string()).default([]),
+});
+
+platformRouter.put("/learning/app-targets/bulk", async (c) => {
+  const req = parseBody(_bulkAppTargetsSchema, await c.req.json());
+  const { access, eff } = await _learningAuthor(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  _requireLearningCapStrict(eff, "learning.publish.app_target", null);
+
+  const unknown = req.app_keys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+  if (unknown.length) throw new HttpError(422, `Unknown app: ${unknown.join(", ")}`);
+
+  let written: string[];
+  try {
+    written = await graph.setLearningAppTargetsBulk(
+      access.orgId, req.object_ids, req.app_keys, access.profileId ?? null,
+    );
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("app-targets-unavailable")) {
+      throw new HttpError(503, "App targeting is not enabled yet on this deployment");
+    }
+    throw e;
+  }
+  const skipped = req.object_ids.filter((id) => !written.includes(id));
+  return c.json({ ok: true, published: written.length, skipped });
+});
+
 // ── Learning Platform custom roles (the learning app's own People tab) ──────
 const _learningPerms = z.record(z.string(), z.enum(["view", "edit"]));
 // A learning role now binds fine-grained capability ids from the learning
