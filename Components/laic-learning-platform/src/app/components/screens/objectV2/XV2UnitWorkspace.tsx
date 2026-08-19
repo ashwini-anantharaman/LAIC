@@ -371,6 +371,34 @@ function highlightsToExtracts(highlights: any[]): TutorialExtract[] {
     }));
 }
 
+/**
+ * Extracts straight from a curated source, with no markup pass.
+ *
+ * Marking up a PDF is how a generator is told which of a thousand sentences
+ * matter. Content pulled from the Content Library has already been through
+ * that: someone wrote the tutorial, chose what went in it, and the author here
+ * has already narrowed it to particular sections. Asking them to highlight it a
+ * second time is asking them to re-do a decision they already made.
+ *
+ * Only content sources qualify. A PDF sitting in the same pool still needs its
+ * markup, so this never silently generates from unread material.
+ */
+function extractsFromCuratedSources(
+  pool: { id: string; label: string; kind: string; sentences?: { text: string }[] }[],
+  pickedIds: string[],
+): TutorialExtract[] {
+  const picked = pickedIds.length ? pool.filter((s) => pickedIds.includes(s.id)) : pool;
+  const out: TutorialExtract[] = [];
+  for (const src of picked.filter((s) => s.kind === 'content')) {
+    for (const sen of src.sentences || []) {
+      const text = String(sen?.text || '').trim();
+      if (text.length < 12) continue;
+      out.push({ kind: 'Key point', text, from: src.label || 'Content Library' });
+    }
+  }
+  return out;
+}
+
 function UnitGeneratePane({
   draft, unit, onChangeUnit, onDone,
 }: {
@@ -394,6 +422,16 @@ function UnitGeneratePane({
   const picked = unit.pickedSourceIds || [];
   const highlights = unit.highlights || [];
   const markupFlags = unit.markupFlags || [];
+
+  /** Ready-made extracts, when the picked sources are already curated. */
+  const curatedExtracts = useMemo(
+    () => extractsFromCuratedSources(pool as any, picked),
+    [pool, picked],
+  );
+  const allPickedAreCurated = useMemo(() => {
+    const chosen = picked.length ? pool.filter((s) => picked.includes(s.id)) : pool;
+    return chosen.length > 0 && chosen.every((s) => s.kind === 'content');
+  }, [pool, picked]);
 
   const markupBundle = useMemo(
     () => sourcePoolToMarkupSources(pool, picked.length ? picked : undefined),
@@ -428,7 +466,9 @@ function UnitGeneratePane({
   };
 
   const runGenerate = async () => {
-    const extracts = highlightsToExtracts(highlights);
+    // Markup wins when it exists — an author who highlighted meant it.
+    const marked = highlightsToExtracts(highlights);
+    const extracts = marked.length ? marked : curatedExtracts;
     if (!extracts.length) {
       setError('Mark up Use/Support passages first — generation is grounded in your markup.');
       setStep('markup');
@@ -717,15 +757,39 @@ function UnitGeneratePane({
               </div>
             </label>
           ))}
-          <button
-            type="button"
-            disabled={!picked.length && !!pool.length}
-            onClick={() => setStep('markup')}
-            className="mt-2 px-4 py-2 rounded-full text-white disabled:opacity-40"
-            style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
-          >
-            Continue to mark up →
-          </button>
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            <button
+              type="button"
+              disabled={!picked.length && !!pool.length}
+              onClick={() => setStep('markup')}
+              className="px-4 py-2 rounded-full text-white disabled:opacity-40"
+              style={{ fontSize: 13, fontWeight: 600, background: '#0B0F1A' }}
+            >
+              Continue to mark up →
+            </button>
+            {/*
+              Only when every picked source is already curated. Offering it
+              beside a PDF would generate from material nobody has read, which is
+              the failure markup exists to prevent.
+            */}
+            {curatedExtracts.length > 0 && allPickedAreCurated && (
+              <button
+                type="button"
+                onClick={() => void runGenerate()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border"
+                style={{ fontSize: 13, fontWeight: 650, color: '#2f4e39', borderColor: 'rgba(77,124,90,0.45)', background: '#fff' }}
+                title="This content was curated when it was written — generate straight from it"
+              >
+                <Sparkles size={13} /> Generate without markup
+              </button>
+            )}
+          </div>
+          {curatedExtracts.length > 0 && allPickedAreCurated && (
+            <p style={{ fontSize: 12, color: '#6B7280', marginTop: 6, lineHeight: 1.45 }}>
+              These sections came from a published tutorial, so they have been through an author's
+              hands already. Mark up anyway if you want to steer what gets asked about.
+            </p>
+          )}
         </div>
       )}
 

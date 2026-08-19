@@ -241,15 +241,26 @@ function coverRow(id: string, sectionTitle: string, page: number, index: number)
  * it, and the dashed outline is the whole affordance: nothing about the
  * lesson's own styling changes underneath it.
  */
+/**
+ * How far sideways a drag has to travel before it means "another page".
+ *
+ * The list is vertical, so horizontal travel is unambiguous — nothing else in
+ * this gesture wants it. It has to clear the width of an accidental diagonal
+ * though, which is why it is a good deal more than the 6px that starts a drag.
+ */
+const PAGE_FLICK = 110;
+
 function ArrangeContext({
   enabled,
   blockIds,
   onReorder,
+  onMovePage,
   children,
 }: {
   enabled: boolean;
   blockIds: string[];
   onReorder?: (orderedBlockIds: string[]) => void;
+  onMovePage?: (blockId: string, delta: 1 | -1) => void;
   children: React.ReactNode;
 }) {
   const sensors = useSensors(
@@ -261,7 +272,19 @@ function ArrangeContext({
     <DndContext
       sensors={sensors}
       collisionDetection={closestCenter}
-      onDragEnd={({ active, over }) => {
+      onDragEnd={({ active, over, delta }) => {
+        /*
+          Sideways wins over the reorder.
+
+          A block carried off to the right is going to the next page, and while
+          it was travelling it also passed over other blocks — so the drop target
+          under it says "put me here", which is not what the author meant. The
+          horizontal reading is checked first and returns.
+        */
+        if (onMovePage && Math.abs(delta.x) >= PAGE_FLICK) {
+          onMovePage(String(active.id), delta.x > 0 ? 1 : -1);
+          return;
+        }
         if (!over || active.id === over.id || !onReorder) return;
         const from = blockIds.indexOf(String(active.id));
         const to = blockIds.indexOf(String(over.id));

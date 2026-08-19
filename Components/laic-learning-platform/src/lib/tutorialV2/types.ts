@@ -16,7 +16,7 @@ import type { GeneratedPart } from '../api';
 export type SectionStatus = 'not_started' | 'in_progress' | 'done';
 export type SectionAuthorMode = 'empty' | 'written' | 'generated' | 'mixed';
 
-export type V2SourceKind = 'pdf' | 'text' | 'web' | 'youtube' | 'library';
+export type V2SourceKind = 'pdf' | 'text' | 'web' | 'youtube' | 'library' | 'content';
 
 /** Tutorial-level source pool entry (shared; sections sub-select). */
 export interface V2SourceRef {

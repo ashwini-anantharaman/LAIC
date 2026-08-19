@@ -58,6 +58,12 @@ import {
   type YtSrc,
 } from '../tutorialV2/TutorialV2SourcePanel';
 import type { PickedLibrarySource } from '../CDSources';
+import {
+  contentSourceLabel,
+  sentencesFromPickedContent,
+  type PickedContentSource,
+} from '../../../../lib/contentAsSource';
+import { ContentLibrarySourcePicker } from './ContentLibrarySourcePicker';
 import type { V2SourceRef } from '../../../../lib/tutorialV2/types';
 import { useConfirm } from '../../ConfirmDialog';
 import { getCollectionPath, objectCollectionIds } from '../../../../lib/objectCollectionsStore';
@@ -132,6 +138,15 @@ export function ObjectCreatorStructuredV2() {
   const [webSources, setWebSources] = useState<WebSrc[]>([]);
   const [libraryDoc, setLibraryDoc] = useState<ParsedDoc | null>(null);
   const [librarySource, setLibrarySource] = useState<PickedLibrarySource | null>(null);
+  /**
+   * A published tutorial used as source material.
+   *
+   * Kept beside the other sources rather than replacing them: a quiz is often
+   * "this tutorial, plus the errata sheet", and making the two exclusive would
+   * force a choice nobody asked for.
+   */
+  const [contentSource, setContentSource] = useState<PickedContentSource | null>(null);
+  const [contentPickerOpen, setContentPickerOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [ytUrl, setYtUrl] = useState('');
   const [ytLoading, setYtLoading] = useState(false);
@@ -267,7 +282,7 @@ export function ObjectCreatorStructuredV2() {
   const updateMedia = (id: string, patch: any) => setMedia((p) => p.map((m) => (m.id === id ? { ...m, ...patch } : m)));
   const removeMedia = (id: string) => setMedia((p) => p.filter((m) => m.id !== id));
 
-  const hasAnySource = !!(pdfSources.length || textSources.length || ytSources.length || webSources.length || librarySource);
+  const hasAnySource = !!(pdfSources.length || textSources.length || ytSources.length || webSources.length || librarySource || contentSource);
 
   /* ── persistence ──────────────────────────────────────────── */
   /** Versions the author may overwrite instead of adding another. */
@@ -413,6 +428,25 @@ export function ObjectCreatorStructuredV2() {
         id: s.id, url: s.sourceUrl || '',
         doc: { fileName: s.label, pageCount: 1, sentences: s.sentences || [], html: s.html, sourceUrl: s.sourceUrl },
       })));
+      /*
+        Content read back from the pool keeps its label and its sentences but not
+        the tutorial's outline — that came from the live object, which may have
+        changed since. Reopening the picker re-reads it; until then the Sources
+        step shows what was used rather than pretending to know the outline.
+      */
+      const contentRef = pool.find((s) => s.kind === 'content');
+      if (contentRef) {
+        const meta = (contentRef.meta || {}) as Record<string, unknown>;
+        const sectionIds = Array.isArray(meta.sectionIds) ? (meta.sectionIds as string[]) : [];
+        setContentSource({
+          objectId: String(meta.objectId || ''),
+          title: contentRef.label,
+          type: String(meta.objectType || 'tutorial'),
+          versionId: meta.versionId ? String(meta.versionId) : undefined,
+          sections: [],
+          pickedSectionIds: sectionIds,
+        });
+      }
     }
     if (existing?.media?.length) setMedia(existing.media);
   }, [editingObjectId, createdObjects, typeId]);
@@ -448,6 +482,26 @@ export function ObjectCreatorStructuredV2() {
       for (const y of ytSources) pool.push({ id: y.id, label: y.doc.fileName || y.videoTitle || 'YouTube transcript', kind: 'youtube', sentences: y.doc.sentences || [], sourceUrl: y.url });
       for (const w of webSources) pool.push({ id: w.id, label: w.doc.fileName || w.url || 'Website', kind: 'web', sentences: w.doc.sentences || [], html: w.doc.html, sourceUrl: w.doc.sourceUrl || w.url });
       if (libraryDoc && librarySource) pool.push({ id: `library-${librarySource.id}`, label: librarySource.title, kind: 'library', sentences: libraryDoc.sentences || [] });
+      if (contentSource) {
+        const sentences = sentencesFromPickedContent(contentSource);
+        if (sentences.length) {
+          pool.push({
+            id: `content-${contentSource.objectId}`,
+            label: contentSourceLabel(contentSource),
+            kind: 'content',
+            sentences,
+            // What it was read from, so a later version of the tutorial can be
+            // recognised as a different thing rather than silently assumed.
+            meta: {
+              objectId: contentSource.objectId,
+              objectType: contentSource.type,
+              versionId: contentSource.versionId,
+              sectionIds: contentSource.pickedSectionIds,
+              sectionCount: contentSource.sections.length,
+            },
+          });
+        }
+      }
 
       const yt = ytSources[0];
       commit(touchXDraft(draft, {
@@ -767,6 +821,9 @@ export function ObjectCreatorStructuredV2() {
               objectNoun={noun}
               librarySource={librarySource}
               onPickLibrarySource={pickLibrarySource}
+              contentSource={contentSource}
+              onPickContentSource={setContentSource}
+              onOpenContentPicker={() => setContentPickerOpen(true)}
               media={media}
               addImagesFromFiles={addImagesFromFiles}
               addVideo={addVideoAsset}
@@ -801,6 +858,15 @@ export function ObjectCreatorStructuredV2() {
             </button>
           </div>
         </div>
+        <ContentLibrarySourcePicker
+          open={contentPickerOpen}
+          onClose={() => setContentPickerOpen(false)}
+          onConfirm={(src) => { setContentSource(src); setPathModeState('material'); }}
+          createdObjects={createdObjects || []}
+          initialObjectId={contentSource?.objectId}
+          initialSectionIds={contentSource?.pickedSectionIds}
+          noun={noun}
+        />
         {saveButton}
         {globalHoot}
       </>
