@@ -18,7 +18,7 @@ import { orgPortalPath } from "@/nexus/branding";
 
 type Handshake = "pending" | "verified" | "failed";
 
-export function LearningLaunch({ screen }: { screen?: string } = {}) {
+export function LearningLaunch() {
   const { orgId = "", programId = "" } = useParams();
   const { logout } = useSession();
   const access = useProgramAccess(programId);
@@ -44,15 +44,10 @@ export function LearningLaunch({ screen }: { screen?: string } = {}) {
           // A real LP exists — hand it the token and go, with a return address
           // so the platform can offer "Back to Nexus".
           const returnUrl = `${window.location.origin}/o/${orgId}/p/${programId}`;
-          // `screen` names where to land — the Content Library tab launches the
-          // same Studio, just not on its overview. The Studio validates it
-          // against the person's own access and falls back if they lack it, so
-          // this is a preference, never a way in (App.tsx, `wanted`/`allowed`).
           window.location.href =
             `${l.launch_url}?launch_token=${encodeURIComponent(l.launch_token)}` +
             `&return_url=${encodeURIComponent(returnUrl)}` +
-            `&program_id=${encodeURIComponent(programId)}` +
-            (screen ? `&screen=${encodeURIComponent(screen)}` : "");
+            `&program_id=${encodeURIComponent(programId)}`;
           return;
         }
         // Placeholder interior: prove the handshake ourselves (the LP's side

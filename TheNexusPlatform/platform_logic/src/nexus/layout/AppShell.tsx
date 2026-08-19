@@ -88,6 +88,10 @@ function programNav(orgId: string, programId: string, isPartner = false): NavIte
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
+    // Admins get it too. It is a confined role's ONLY door to the Studio, but it
+    // is also the one screen where "which clubs see this?" is answered — and an
+    // administrator who cannot open the tab cannot check what they granted.
+    { to: `${base}/learning/library`, label: "Content Library", icon: FolderTree },
     { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
