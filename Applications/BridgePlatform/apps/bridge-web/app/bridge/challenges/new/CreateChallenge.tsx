@@ -43,6 +43,7 @@ import {
 import type { ChallengeEngine } from "@bridge/challenges";
 import type { ChallengePerson } from "../people";
 import { BoardCard, type BoardDraftState } from "./BoardCard";
+import { emptyPuzzle, PuzzleEditor } from "./PuzzleEditor";
 import { SUIT_ORDER, suitTextsFromCards } from "@/lib/dealText";
 
 const STEPS = [
@@ -137,6 +138,7 @@ export function CreateChallenge({
             dealer: b.dealer,
             humanSeat: b.humanSeat,
             ...(b.vul ? { vul: b.vul } : {}),
+            ...(b.puzzle ? { puzzle: b.puzzle } : {}),
             // A hand-edited pack travels card-by-card; anything else is the
             // seed's own deal, which re-derives identically.
             ...(edited && "hands" in edited
@@ -344,6 +346,7 @@ export function CreateChallenge({
       humanSeat: b.humanSeat,
       vul: b.vul,
       ...(b.edited ? { pack: serializePack(b.hands) } : {}),
+      ...(format === "puzzle" && b.puzzle ? { puzzle: b.puzzle } : {}),
     })),
     controlOverrides: controlOverridesOf(controls),
     invites: invited,
@@ -584,7 +587,7 @@ export function CreateChallenge({
               Gated by challenge.advanced.engine: a program that keeps the robot
               choice to admins simply hides the row, and every challenge seats
               the default solver. */}
-          {advancedSections.engine && (
+          {advancedSections.engine && format !== "puzzle" && (
           <>
           {/* ── who the robots are ──
               ALWAYS SHOWN, even where BEN cannot be reached. Hiding it there
@@ -631,7 +634,7 @@ export function CreateChallenge({
           {/* Scoring is a question about a FIELD of played boards. A
               bidding-only challenge has none, so it is not asked — the tally
               is "matched BEN's contract on N of M boards" and nothing else. */}
-          {!biddingOnly && (
+          {format === "full" && (
             <>
               <Label className="mt-4">Scoring</Label>
               <div className="flex gap-1.5">
@@ -768,13 +771,28 @@ export function CreateChallenge({
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {boards.map((board, i) => (
-              <BoardCard
-                key={board.boardNo}
-                board={board}
-                onChange={(patch) => patchBoard(i, patch)}
-                onReroll={() => rerollBoard(i)}
-                onOpenEditor={() => openedEditor(i)}
-              />
+              <div key={board.boardNo} className={format === "puzzle" ? "sm:col-span-2 xl:col-span-3" : undefined}>
+                <BoardCard
+                  board={board}
+                  onChange={(patch) => patchBoard(i, patch)}
+                  onReroll={() => rerollBoard(i)}
+                  onOpenEditor={() => openedEditor(i)}
+                />
+                {/* The puzzle's frozen story — written one LEGAL action at a
+                    time against this very deal, so an illegal position cannot
+                    be typed. Full-width: an auction needs the room. */}
+                {format === "puzzle" && (
+                  <PuzzleEditor
+                    boardNo={board.boardNo}
+                    dealer={board.dealer}
+                    vul={board.vul}
+                    hands={board.hands}
+                    humanSeat={board.humanSeat}
+                    value={board.puzzle ?? emptyPuzzle()}
+                    onChange={(puzzle) => patchBoard(i, { puzzle })}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </Section>

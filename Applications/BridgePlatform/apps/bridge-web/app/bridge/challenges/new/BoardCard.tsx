@@ -12,6 +12,7 @@
 // not changing them.
 
 import type { Card, Seat, Vul } from "@bridge/events";
+import type { ChallengeBoardDraft } from "../draft";
 import { parseBbo } from "@bridge/formats";
 import { SeatDiagram } from "@bridge/table-ui";
 import { useState } from "react";
@@ -33,6 +34,8 @@ export interface BoardDraftState {
   touched: boolean;
   /** The pack differs from the seeded deal, so it travels card-by-card. */
   edited: boolean;
+  /** The frozen story, when the challenge's format is "puzzle". */
+  puzzle?: NonNullable<ChallengeBoardDraft["puzzle"]>;
 }
 
 export const nextSeat = (seat: Seat): Seat =>

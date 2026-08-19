@@ -183,12 +183,58 @@ describe("the challenge FORMAT (bid & play vs bidding only)", () => {
     expect(validateDraft(d)).toContain("Pick a scoring method.");
   });
 
-  it("offers exactly the two formats the model knows about", () => {
-    expect(FORMAT_OPTIONS.map((f) => f.key)).toEqual(["full", "bidding-only"]);
+  it("offers exactly the formats the model knows about", () => {
+    expect(FORMAT_OPTIONS.map((f) => f.key)).toEqual(["full", "puzzle", "bidding-only"]);
   });
 });
 
 describe("normalizeDraft", () => {
+  it("round-trips a puzzle board, and drops a malformed puzzle whole", () => {
+    const good = normalizeDraft({
+      title: "Discovery play",
+      format: "puzzle",
+      scoring: "imps",
+      boards: [
+        {
+          boardNo: 1,
+          seed: 7,
+          dealer: "W",
+          humanSeat: "S",
+          puzzle: {
+            auction: [
+              { seat: "W", call: "P" },
+              { seat: "N", call: "P" },
+              { seat: "E", call: "P" },
+              { seat: "S", call: "1S" },
+            ],
+            play: [{ seat: "W", card: "CK" }],
+            brief: "Make four spades.",
+            solution: { kind: "goal" },
+            explanation: "Lead the king of hearts to discover the trump ace.",
+          },
+        },
+        {
+          boardNo: 2,
+          seed: 8,
+          dealer: "N",
+          humanSeat: "S",
+          // One corrupt card drops the WHOLE puzzle, never half of one.
+          puzzle: {
+            auction: [],
+            play: [{ seat: "W", card: "C15" }],
+            brief: "x",
+            solution: { kind: "goal" },
+            explanation: "y",
+          },
+        },
+      ],
+    });
+    expect(good.boards[0]?.puzzle?.brief).toBe("Make four spades.");
+    expect(good.boards[0]?.puzzle?.play).toEqual([{ seat: "W", card: "CK" }]);
+    expect(good.boards[0]?.puzzle?.solution).toEqual({ kind: "goal" });
+    expect(good.boards[1]?.puzzle).toBeUndefined();
+  });
+
   it("reopens a draft saved by an older build", () => {
     // Every field missing, and one that was legal once. A parked draft must
     // still OPEN — a draft you cannot reopen is worse than one never saved.

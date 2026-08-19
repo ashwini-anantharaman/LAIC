@@ -53,6 +53,14 @@ export const FORMAT_OPTIONS: readonly {
     short: "bid & play",
   },
   {
+    key: "puzzle",
+    label: "Puzzle",
+    sub: "A frozen position to solve",
+    note: "A board frozen mid-story — history already on the table, a brief, and an authored answer revealed after the attempt. An unfinished auction asks for one call; a settled one is played out toward a goal.",
+    review: "Puzzle — a frozen position with an authored answer",
+    short: "puzzle",
+  },
+  {
     key: "bidding-only",
     label: "Bidding only",
     sub: "The auction is the board",
@@ -197,6 +205,18 @@ export interface ChallengeBoardDraft {
   vul?: Vul;
   /** Set once the creator hand-edited this board: ♠.♥.♦.♣ text per seat. */
   pack?: Record<Seat, string>;
+  /**
+   * A PUZZLE board's frozen story (format "puzzle"): the history already on
+   * the table, the brief, and the authored answer. Cards travel as "SK"/"HT"
+   * text — the same two-character form BEN's API and the deal text use.
+   */
+  puzzle?: {
+    auction: { seat: Seat; call: string }[];
+    play: { seat: Seat; card: string }[];
+    brief: string;
+    solution: { kind: "call"; call: string } | { kind: "goal"; tricks?: number };
+    explanation: string;
+  };
 }
 
 export interface ChallengeInviteDraft {
@@ -312,6 +332,7 @@ export function normalizeDraft(input: unknown): ChallengeDraft {
         humanSeat,
         ...(VUL_SET.has(str(b.vul)) ? { vul: b.vul as Vul } : {}),
         ...(pack && "hands" in packFromDraft(pack) ? { pack } : {}),
+        ...(normalizePuzzle(b.puzzle) ?? {}),
       },
     ];
   });
@@ -352,6 +373,53 @@ export function normalizeDraft(input: unknown): ChallengeDraft {
     ...(o.personal === true ? { personal: true } : {}),
     editorBadge: o.editorBadge === true,
   };
+}
+
+const CALL_RE = /^([1-7][CDHSN]|P|X|XX)$/;
+/** Clockwise rotation — who calls after whom. */
+const NEXT_SEAT: Record<Seat, Seat> = { N: "E", E: "S", S: "W", W: "N" };
+const CARD_RE = /^[SHDC]([2-9]|10|[TJQKA])$/;
+
+/**
+ * A draft board's puzzle, re-read defensively. Anything malformed drops the
+ * WHOLE puzzle rather than half of one — a position missing a card is not a
+ * smaller puzzle, it is a different (and probably illegal) one.
+ */
+function normalizePuzzle(
+  input: unknown,
+): { puzzle: NonNullable<ChallengeBoardDraft["puzzle"]> } | null {
+  if (!input || typeof input !== "object") return null;
+  const o = input as Record<string, unknown>;
+  const auction: { seat: Seat; call: string }[] = [];
+  for (const raw of Array.isArray(o.auction) ? o.auction : []) {
+    const r = raw as Record<string, unknown>;
+    if (typeof r?.seat !== "string" || !SEAT_SET.has(r.seat)) return null;
+    if (typeof r?.call !== "string" || !CALL_RE.test(r.call)) return null;
+    auction.push({ seat: r.seat as Seat, call: r.call });
+  }
+  const play: { seat: Seat; card: string }[] = [];
+  for (const raw of Array.isArray(o.play) ? o.play : []) {
+    const r = raw as Record<string, unknown>;
+    if (typeof r?.seat !== "string" || !SEAT_SET.has(r.seat)) return null;
+    if (typeof r?.card !== "string" || !CARD_RE.test(r.card)) return null;
+    play.push({ seat: r.seat as Seat, card: r.card });
+  }
+  const brief = typeof o.brief === "string" ? o.brief : "";
+  const explanation = typeof o.explanation === "string" ? o.explanation : "";
+  const sol = o.solution as Record<string, unknown> | undefined;
+  const solution =
+    sol?.kind === "call" && typeof sol.call === "string" && CALL_RE.test(sol.call)
+      ? ({ kind: "call", call: sol.call } as const)
+      : sol?.kind === "goal"
+        ? ({
+            kind: "goal",
+            ...(typeof sol.tricks === "number" && sol.tricks >= 1 && sol.tricks <= 13
+              ? { tricks: Math.floor(sol.tricks) }
+              : {}),
+          } as const)
+        : null;
+  if (!solution) return null;
+  return { puzzle: { auction, play, brief, solution, explanation } };
 }
 
 /** A hand-edited pack, parsed and legality-checked. */
@@ -407,6 +475,46 @@ export function validateDraft(draft: ChallengeDraft): string[] {
     if (board.pack) {
       const parsed = packFromDraft(board.pack);
       if ("error" in parsed) errors.push(`Board ${board.boardNo} pack — ${parsed.error}.`);
+    }
+    // PUZZLE boards carry their story and their answer, and the two must
+    // agree: an unfinished auction is a bidding puzzle whose answer is a call
+    // and whose next turn is the learner's; a settled auction is a play puzzle
+    // whose answer is a goal. (Whether the story is LEGAL — follows suit, right
+    // turn order — is the engine's to judge: the server replays the prefix on
+    // create and refuses with the engine's own sentence.)
+    if (draft.format === "puzzle") {
+      const pz = board.puzzle;
+      if (!pz) {
+        errors.push(`Board ${board.boardNo} has no puzzle position yet.`);
+      } else {
+        if (!pz.brief.trim()) errors.push(`Board ${board.boardNo} needs a brief.`);
+        if (!pz.explanation.trim())
+          errors.push(`Board ${board.boardNo} needs an answer explanation.`);
+        const settled =
+          pz.auction.length >= 4 && pz.auction.slice(-3).every((c) => c.call === "P");
+        if (settled && pz.solution.kind !== "goal")
+          errors.push(
+            `Board ${board.boardNo}: the auction is finished, so the answer is a goal, not a call.`,
+          );
+        if (!settled) {
+          if (pz.solution.kind !== "call")
+            errors.push(
+              `Board ${board.boardNo}: the auction is still open, so the answer is a call.`,
+            );
+          if (pz.play.length)
+            errors.push(`Board ${board.boardNo}: no card can be played before the auction ends.`);
+          const next =
+            pz.auction.length === 0
+              ? board.dealer
+              : NEXT_SEAT[pz.auction[pz.auction.length - 1]!.seat];
+          if (next !== board.humanSeat)
+            errors.push(
+              `Board ${board.boardNo}: it must be YOUR turn at the frozen point — next to call is ${next}, your seat is ${board.humanSeat}.`,
+            );
+        }
+      }
+    } else if (board.puzzle) {
+      errors.push(`Board ${board.boardNo} carries a puzzle but the format is not "puzzle".`);
     }
   });
 

@@ -33,6 +33,7 @@ import type { CoachData } from "@/components/table/play/coachContent";
 import { CoachDock, type CoachPanelData } from "@/components/table/play/CoachPanel";
 import { patchAppearanceAction, saveTableAppearanceAction } from "./actions";
 import { ChallengeTableChrome } from "./ChallengeTableChrome";
+import { gradeBiddingPuzzle, gradePlayPuzzle, puzzleKind } from "@bridge/challenges";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -776,10 +777,38 @@ export default async function PlayTablePage({
             subtitle={challenge.subtitle}
             done={challenge.done}
             onward={challenge.onward}
-            resultLine={score ? resultLabel(score) : ""}
-            resultScore={
-              score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""
+            // A puzzle's done line is its VERDICT, not the raw score — the
+            // score line stays for ordinary boards. Graded with the same
+            // client-safe helpers the freeze used, from the same state.
+            resultLine={
+              challenge.board.puzzle
+                ? puzzleKind(challenge.board.puzzle) === "bidding"
+                  ? gradeBiddingPuzzle(challenge.board.puzzle, state.auction)
+                    ? "Solved — the authored call"
+                    : "Not this time — see the answer below"
+                  : state.contract &&
+                      gradePlayPuzzle(
+                        challenge.board.puzzle,
+                        state.contract.level,
+                        state.contract.declarer === "N" || state.contract.declarer === "S"
+                          ? state.trickCount.NS
+                          : state.trickCount.EW,
+                      )
+                    ? "Solved — goal met"
+                    : "Not this time — see the answer below"
+                : score
+                  ? resultLabel(score)
+                  : ""
             }
+            resultScore={
+              challenge.board.puzzle
+                ? ""
+                : score
+                  ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
+                  : ""
+            }
+            puzzleBrief={challenge.board.puzzle?.brief}
+            puzzleExplanation={challenge.board.puzzle?.explanation}
           >
             {table}
           </ChallengeTableChrome>

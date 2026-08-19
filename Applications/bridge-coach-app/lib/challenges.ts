@@ -46,6 +46,8 @@ export type ClubChallenge = {
   boards: number;
   scoring: "imps" | "mp" | "total";
   scoringLabel: string;
+  /** "full" | "bidding-only" | "puzzle" — absent on an older platform = full. */
+  format: string;
   /** "accepted"/"none" opens play directly; "pending" still needs the
    *  platform's accept flow (the challenges list) first. */
   inviteStatus: "pending" | "accepted" | "declined" | "none";
@@ -117,10 +119,20 @@ function bridgeApiBase(): string | null {
 }
 
 function mapRow(row: SummaryRow): ClubChallenge {
+  const format = (row as { format?: string }).format ?? "full";
   const scoringLabel =
-    row.scoring === "mp" ? "MP score" : row.scoring === "total" ? "Total points" : "IMP score";
+    format === "puzzle"
+      ? "Puzzle"
+      : format === "bidding-only"
+        ? "Bidding only"
+        : row.scoring === "mp"
+          ? "MP score"
+          : row.scoring === "total"
+            ? "Total points"
+            : "IMP score";
   return {
     id: row.challengeId,
+    format,
     name: row.title,
     description: row.description ?? "",
     createdByName: row.createdByName ?? "",

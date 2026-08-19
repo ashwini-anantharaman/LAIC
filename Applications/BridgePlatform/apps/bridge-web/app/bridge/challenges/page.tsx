@@ -1,4 +1,4 @@
-import { isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
+import { challengeFormat, isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
 import { saveChallengeToLibraryAction } from "./actions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -21,10 +21,14 @@ const scoringLabel = (key: string) =>
  * scored against a field, so naming its (unused) scoring mode would be a lie —
  * it names the format instead.
  */
-const unitLabel = (challenge: Challenge) =>
-  isBiddingOnly(challenge)
-    ? (FORMAT_OPTIONS.find((f) => f.key === "bidding-only")?.label ?? "Bidding only")
-    : scoringLabel(challenge.scoring);
+const unitLabel = (challenge: Challenge) => {
+  const format = challengeFormat(challenge);
+  // Neither a puzzle nor a bidding-only board is scored against a field, so
+  // naming the (unused) scoring mode would be a lie — name the format.
+  if (format !== "full")
+    return FORMAT_OPTIONS.find((f) => f.key === format)?.label ?? format;
+  return scoringLabel(challenge.scoring);
+};
 const standingsLabel = (key: string) =>
   STANDINGS_OPTIONS.find((s) => s.key === key)?.label ?? key;
 

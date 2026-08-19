@@ -139,7 +139,7 @@ export interface LibraryEntry {
   // exercise. Additive jsonb, like every field above: an older entry has none
   // of this and is still a valid entry of some other kind.
   challengeBoards?: LibraryChallengeBoard[];
-  challengeFormat?: "full" | "bidding-only";
+  challengeFormat?: "full" | "bidding-only" | "puzzle";
   challengeScoring?: string;
   /** How many boards, for the shelf row — a DRAFT has seeds, not packs yet. */
   challengeBoardCount?: number;

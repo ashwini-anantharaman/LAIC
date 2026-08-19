@@ -25,7 +25,12 @@
 //
 // SERVER-ONLY.
 
-import { isBiddingOnly, type ChallengeBoard, type ChallengePlay } from "@bridge/challenges";
+import {
+  isBiddingOnly,
+  puzzleBoardIsOver,
+  type ChallengeBoard,
+  type ChallengePlay,
+} from "@bridge/challenges";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import type { SessionView } from "@bridge/sessions";
 import type {
@@ -155,19 +160,23 @@ export async function challengeTableContext(
   // challenge record, and `getChallenge` is the same request-cached reader
   // `challengeViewerAccess` will use below.
   const biddingOnly = isBiddingOnly((await getChallenge(challengeId)) ?? {});
-
-  // COMPLETION: the board has run out — the last trick resolved, or (bidding
-  // only) the auction closed — so freeze the snapshot into the play record.
-  // This also advances the pointer: `nextBoardNo` is the first board without a
-  // completed play.
-  if (play.status === "in_progress" && challengeBoardIsOver(view.state.phase, biddingOnly)) {
-    play = await freezeChallengePlay(play);
-  }
-
+  // The board too, ahead of the over-check: a PUZZLE ends by its own rule —
+  // the moment the answer is given (bidding), the ordinary last trick (play).
   const [access, board] = await Promise.all([
     challengeViewerAccess(challengeId, userId),
     getChallengeBoard(challengeId, boardNo),
   ]);
+  const attemptOver = board?.puzzle
+    ? puzzleBoardIsOver(board.puzzle, view.state.phase, view.state.auction.length)
+    : challengeBoardIsOver(view.state.phase, biddingOnly);
+
+  // COMPLETION: the board has run out — the last trick resolved, (bidding
+  // only) the auction closed, or the puzzle answered — so freeze the snapshot
+  // into the play record. This also advances the pointer: `nextBoardNo` is the
+  // first board without a completed play.
+  if (play.status === "in_progress" && attemptOver) {
+    play = await freezeChallengePlay(play);
+  }
   const challenge = access.challenge;
   if (!challenge || !board) return null;
 

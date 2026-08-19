@@ -27,6 +27,7 @@ import { listChallengePeople, listFriendPeople } from "@/app/bridge/challenges/p
 import { canCreateChallenge, canUse } from "@/lib/access";
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
+import { boardPuzzleFromDraft } from "@/lib/challengePuzzles";
 import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 
@@ -121,6 +122,19 @@ export async function POST(request: NextRequest) {
         vul: board.vul ?? standardVul(board.boardNo),
         humanSeat: board.humanSeat,
         controlOverrides: draft.controlOverrides,
+        // A puzzle board stores its frozen story, replay-validated against
+        // this very pack — the engine refuses an illegal history here, at
+        // create, rather than in front of the first participant.
+        ...(board.puzzle
+          ? {
+              puzzle: boardPuzzleFromDraft(board.puzzle, {
+                boardRef: `${challengeId}#${board.boardNo}`,
+                dealer: board.dealer,
+                vul: board.vul ?? standardVul(board.boardNo),
+                pack,
+              }),
+            }
+          : {}),
       };
       await store.putBoard(record);
     }

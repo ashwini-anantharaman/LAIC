@@ -240,7 +240,7 @@ describe("club scope (0029)", () => {
       boardNo: BOARD.boardNo,
       userId: "user_a",
       sessionId: "sess_1",
-      status: "in-progress",
+      status: "in_progress",
       startedAt: CH.createdAt,
     });
 

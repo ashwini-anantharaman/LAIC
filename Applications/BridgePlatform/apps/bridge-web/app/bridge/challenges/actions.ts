@@ -27,6 +27,7 @@ import { redirect } from "next/navigation";
 import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
+import { boardPuzzleFromDraft } from "@/lib/challengePuzzles";
 import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
 import { libraryStore } from "@/lib/sessions";
 import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
@@ -121,16 +122,30 @@ export async function createChallengeAction(
   // The checklist is challenge-wide; it is STORED per board, which is where
   // the table reads it from when it opens one.
   for (const board of draft.boards) {
+    const pack = packOf(board);
     const record: ChallengeBoard = {
       challengeId,
       boardNo: board.boardNo,
-      pack: packOf(board),
+      pack,
       dealer: board.dealer,
       // An imported board carries its own vulnerability; a random one follows
       // the standard cycle for its position.
       vul: board.vul ?? standardVul(board.boardNo),
       humanSeat: board.humanSeat,
       controlOverrides: draft.controlOverrides,
+      // A puzzle board stores its frozen story, replay-validated against this
+      // very pack — the engine refuses an illegal history here, at create,
+      // rather than in front of the first participant.
+      ...(board.puzzle
+        ? {
+            puzzle: boardPuzzleFromDraft(board.puzzle, {
+              boardRef: `${challengeId}#${board.boardNo}`,
+              dealer: board.dealer,
+              vul: board.vul ?? standardVul(board.boardNo),
+              pack,
+            }),
+          }
+        : {}),
     };
     await store.putBoard(record);
   }

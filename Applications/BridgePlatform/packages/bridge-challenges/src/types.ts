@@ -31,7 +31,7 @@ export type ChallengeScoring = "imps" | "mp" | "total";
  * record lives in one `record jsonb` column, db/migrations/0027_challenges.sql).
  * Read it through `challengeFormat`, never by touching the field.
  */
-export type ChallengeFormat = "full" | "bidding-only";
+export type ChallengeFormat = "full" | "bidding-only" | "puzzle";
 
 /** Which robot fills a challenge's non-human seats. */
 export type ChallengeEngine = "ben" | "dd";
@@ -147,7 +147,9 @@ export function challengeIsEditable(challenge: Challenge): boolean {
  * not a missing value — it is `full`.
  */
 export function challengeFormat(challenge: Pick<Challenge, "format">): ChallengeFormat {
-  return challenge.format === "bidding-only" ? "bidding-only" : "full";
+  return challenge.format === "bidding-only" || challenge.format === "puzzle"
+    ? challenge.format
+    : "full";
 }
 
 /**
@@ -222,6 +224,97 @@ export interface ChallengeBoard {
    * BEN elsewhere) — read it through `boardParticipants`, never by assuming.
    */
   participants?: BoardParticipant[];
+  /**
+   * Present exactly when the challenge's format is "puzzle": the frozen
+   * position, the brief, and the authored answer. Additive jsonb, like every
+   * field before it.
+   */
+  puzzle?: BoardPuzzle;
+}
+
+// ── puzzles ─────────────────────────────────────────────────────────────────
+// A PUZZLE is a board frozen mid-story (owner, 2026-08-19; the Frank Stewart
+// column shape): a position with history already on the table, a brief saying
+// what to solve for, and an authored ANSWER revealed after the attempt. The
+// KIND is derived from the position itself rather than stored beside it: an
+// unfinished auction means the learner's one call IS the answer (a bidding
+// puzzle); a settled auction means the rest of the board is played out against
+// the solver toward a goal (a play puzzle). One field fewer to disagree.
+
+export interface BoardPuzzle {
+  /** Calls already made, in order from the dealer. */
+  auction: { seat: Seat; call: Call }[];
+  /** Cards already played, in play order (empty for a bidding puzzle). */
+  play: { seat: Seat; card: Card }[];
+  /** What to solve for — shown at the table before the first decision. */
+  brief: string;
+  solution: PuzzleSolution;
+  /** The column's ANSWER paragraph — revealed once the attempt is over. */
+  explanation: string;
+}
+
+export type PuzzleSolution =
+  /** Bidding puzzle: the one correct call. */
+  | { kind: "call"; call: Call }
+  /**
+   * Play puzzle: the goal. `tricks` omitted means "make the contract" — the
+   * target derives from the contract level at grading time.
+   */
+  | { kind: "goal"; tricks?: number };
+
+/**
+ * Is this prefix a finished auction? Mirrors the engine's auctionComplete —
+ * duplicated here for the same reason SEAT_ORDER mirrors SEATS: this package
+ * deliberately depends on nothing but @bridge/events, because the embedded
+ * solo player and the server must both read it.
+ */
+export function puzzleAuctionSettled(calls: readonly { call: Call }[]): boolean {
+  if (calls.length < 4) return false;
+  return calls.slice(-3).every((c) => c.call === "P");
+}
+
+/** The kind, derived from the position: see BoardPuzzle. */
+export function puzzleKind(puzzle: Pick<BoardPuzzle, "auction">): "bidding" | "play" {
+  return puzzleAuctionSettled(puzzle.auction) ? "play" : "bidding";
+}
+
+/**
+ * A BIDDING puzzle is over the moment the learner has answered: the auction
+ * grew past the authored prefix by one call. Play puzzles use
+ * challengeBoardIsOver's ordinary full-board rule.
+ */
+export function puzzleBoardIsOver(
+  puzzle: Pick<BoardPuzzle, "auction">,
+  phase: "auction" | "play" | "complete",
+  auctionLength: number,
+): boolean {
+  if (puzzleKind(puzzle) === "bidding")
+    return auctionLength > puzzle.auction.length || phase !== "auction";
+  return phase === "complete";
+}
+
+/** Grade a finished BIDDING puzzle: the call after the prefix, against the answer. */
+export function gradeBiddingPuzzle(
+  puzzle: Pick<BoardPuzzle, "auction" | "solution">,
+  finalAuction: readonly { call: Call }[],
+): boolean {
+  if (puzzle.solution.kind !== "call") return false;
+  const answered = finalAuction[puzzle.auction.length];
+  return answered !== undefined && answered.call === puzzle.solution.call;
+}
+
+/**
+ * Grade a finished PLAY puzzle from the declarer's side of the trick count.
+ * `tricks` in the solution overrides the contract's own target (level + 6).
+ */
+export function gradePlayPuzzle(
+  puzzle: Pick<BoardPuzzle, "solution">,
+  contractLevel: number,
+  declarerTricks: number,
+): boolean {
+  if (puzzle.solution.kind !== "goal") return false;
+  const target = puzzle.solution.tricks ?? contractLevel + 6;
+  return declarerTricks >= target;
 }
 
 /** Clockwise seat order, matching @bridge/events SEATS. */
@@ -333,6 +426,12 @@ export interface ChallengePlay {
    * Because every participant plays the same seat, raw scores compare directly.
    */
   rawScore?: number;
+  /**
+   * A PUZZLE board's verdict, graded once at the freeze where the final state
+   * is in hand — the moment the answer was given (bidding) or the last trick
+   * fell (play). Absent on every non-puzzle board.
+   */
+  puzzleSolved?: boolean;
   startedAt: string;
   completedAt?: string;
 }

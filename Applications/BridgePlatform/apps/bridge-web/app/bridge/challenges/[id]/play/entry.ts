@@ -21,6 +21,10 @@ import {
   boardParticipants,
   challengeBoardIsOver,
   challengeEngine,
+  gradeBiddingPuzzle,
+  gradePlayPuzzle,
+  puzzleBoardIsOver,
+  puzzleKind,
   isBiddingOnly,
   type Challenge,
   type ChallengeEngine,
@@ -30,7 +34,7 @@ import {
 } from "@bridge/challenges";
 import type { Seat } from "@bridge/events";
 import type { CompiledKb } from "@bridge/kb";
-import { SessionService, type SeatConfig } from "@bridge/sessions";
+import { eventsFromRecording, SessionService, type SeatConfig } from "@bridge/sessions";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { audit } from "@/lib/audit";
 import { BEN_SEAT_LABEL, benAvailable } from "@/lib/benSeat";
@@ -84,12 +88,16 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
   // conservative answer, which never ends a board early.
   const challenge = await getChallenge(play.challengeId);
   const biddingOnly = challenge ? isBiddingOnly(challenge) : false;
-  if (!challengeBoardIsOver(state.phase, biddingOnly)) return play;
+  const board = await getChallengeBoard(play.challengeId, play.boardNo);
+  // A puzzle board ends by ITS rule: the moment the answer is given (bidding),
+  // or the ordinary last trick (play). Everything else keeps the format rule.
+  const over = board?.puzzle
+    ? puzzleBoardIsOver(board.puzzle, state.phase, state.auction.length)
+    : challengeBoardIsOver(state.phase, biddingOnly);
+  if (!over) return play;
 
   const { resultLabel, scoreBoard, seededDeal } = await import("@bridge/engine");
   const { contractLabel } = await import("@bridge/events");
-
-  const board = await getChallengeBoard(play.challengeId, play.boardNo);
   // Null on a bidding-only board that stopped at the end of the auction —
   // there are no tricks to score, and that absence is the point.
   const score = scoreBoard(state);
@@ -122,10 +130,27 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
     contract: state.contract,
   };
 
+  // THE PUZZLE VERDICT, graded here because here is where the truth is whole:
+  // the final auction for a bidding puzzle, the trick count for a play one.
+  const puzzleSolved = board?.puzzle
+    ? puzzleKind(board.puzzle) === "bidding"
+      ? gradeBiddingPuzzle(board.puzzle, state.auction)
+      : state.contract
+        ? gradePlayPuzzle(
+            board.puzzle,
+            state.contract.level,
+            state.contract.declarer === "N" || state.contract.declarer === "S"
+              ? state.trickCount.NS
+              : state.trickCount.EW,
+          )
+        : false
+    : undefined;
+
   const completed: ChallengePlay = {
     ...play,
     status: "completed",
     snapshot,
+    ...(puzzleSolved === undefined ? {} : { puzzleSolved }),
     ...(rawScore === undefined ? {} : { rawScore }),
     completedAt: record.updatedAt ?? new Date().toISOString(),
   };
@@ -265,6 +290,21 @@ export async function enterChallenge(
     seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
+    // A PUZZLE board opens mid-story: the authored history replays into the
+    // session as a primed event prefix — the same machinery the library's
+    // Resume rides — so every participant starts at the identical moment.
+    ...(board.puzzle
+      ? {
+          primedEvents: eventsFromRecording({
+            boardRef: `${challengeId}#${boardNo}`,
+            dealer: board.dealer,
+            vul: board.vul,
+            hands: board.pack,
+            auction: board.puzzle.auction,
+            play: board.puzzle.play,
+          }).events,
+        }
+      : {}),
     dealer: board.dealer,
     vul: board.vul,
     boardName: `${challenge.title} · Board ${boardNo}`,
@@ -391,6 +431,21 @@ export async function enterChallengePractice(
     seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
+    // A PUZZLE board opens mid-story: the authored history replays into the
+    // session as a primed event prefix — the same machinery the library's
+    // Resume rides — so every participant starts at the identical moment.
+    ...(board.puzzle
+      ? {
+          primedEvents: eventsFromRecording({
+            boardRef: `${challengeId}#${boardNo}`,
+            dealer: board.dealer,
+            vul: board.vul,
+            hands: board.pack,
+            auction: board.puzzle.auction,
+            play: board.puzzle.play,
+          }).events,
+        }
+      : {}),
     dealer: board.dealer,
     vul: board.vul,
     boardName: `${challenge.title} · Board ${boardNo} · practice`,

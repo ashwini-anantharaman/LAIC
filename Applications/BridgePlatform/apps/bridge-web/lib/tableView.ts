@@ -14,6 +14,7 @@
 // door they came through.
 
 import type { Seat } from "@bridge/events";
+import { puzzleBoardIsOver, puzzleKind } from "@bridge/challenges";
 import { controllingSeat, type SessionView } from "@bridge/sessions";
 import type { TableAppearance } from "@bridge/table-config";
 import { after } from "next/server";
@@ -179,7 +180,18 @@ export async function loadTableView(
   // From the challenge's format — or, for a chrome-less practice replay, the
   // session's own stamp — never from the freeze.
   const biddingOnly = challenge ? challenge.biddingOnly : await practiceIsBiddingOnly(view);
-  const auctionWasTheBoard = biddingOnly && state.phase !== "auction";
+  // A PUZZLE ends by its own rule. An answered bidding puzzle joins
+  // auctionWasTheBoard's family — the auction was the whole story, the felt
+  // freezes, no card is ever legal — which also buys the reveal for free:
+  // canSee() below opens every hand at boardOver, exactly as the printed
+  // column shows the full deal beside the answer.
+  const puzzle = challenge?.board.puzzle;
+  const answeredBiddingPuzzle =
+    !!puzzle &&
+    puzzleKind(puzzle) === "bidding" &&
+    puzzleBoardIsOver(puzzle, state.phase, state.auction.length);
+  const auctionWasTheBoard =
+    (biddingOnly && state.phase !== "auction") || answeredBiddingPuzzle;
   const boardOver = playedOut || auctionWasTheBoard;
 
   // Access catalogue first, then the board's controlOverrides laid OVER it in
