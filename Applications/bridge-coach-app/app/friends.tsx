@@ -11,7 +11,7 @@
 // Everything is laid out in the design's 390-wide space and multiplied by
 // `s = width / DESIGN_WIDTH`, the same way every other screen here scales.
 
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -69,7 +69,12 @@ export default function FriendsScreen() {
   const insets = useSafeAreaInsets();
   const s = width / DESIGN_WIDTH;
 
-  const [tab, setTab] = useState<Tab>("friends");
+  // ?tab=find opens on Find people. Somewhere else needed to hand a person the
+  // add-a-friend flow — the private table, when there is nobody to add yet —
+  // and the choice was this or a second copy of the search. An INITIAL value,
+  // not a controlled one: once here, the segmented control is in charge.
+  const params = useLocalSearchParams<{ tab?: string }>();
+  const [tab, setTab] = useState<Tab>(params.tab === "find" ? "find" : "friends");
   const [data, setData] = useState<FriendsSnapshot>(
     () => (token ? peekFriends(token) : null) ?? EMPTY_FRIENDS,
   );

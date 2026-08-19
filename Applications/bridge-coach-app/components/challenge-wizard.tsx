@@ -4,10 +4,13 @@
 // table ("play with friends"). The five steps, the drafts, the robot picker and
 // the review are identical; what differs is exactly what SHOULD differ and
 // nothing else:
-//   · the invite directory — the club's members vs YOUR FRIENDS. Both lists
-//     are resolved server-side from the caller's own identity (challenges/
-//     people vs the friends API), so neither screen can name someone it has no
-//     business naming, whatever this client renders;
+//   · WHO IS AT THE TABLE, in shape and in reach. A club challenge asks "who,
+//     out of the club, is in?" and gets a directory with a tick beside every
+//     name. A private table asks "who is at MY table?" and gets a roster: you
+//     first and undeletable, then whoever was added, then "+ Add friends" —
+//     which opens the two places a private table may reach, your friends and
+//     your own club. Both of those, and the club challenge's single list, are
+//     resolved from the caller's own identity rather than named by this client;
 //   · moderators — a private table has none (nobody to police; the creator can
 //     already archive), so the chip never renders there;
 //   · defaults — friends see standings from board one (a table between friends
@@ -73,8 +76,17 @@ import {
 } from "../lib/challenge-create";
 import { useSelectedClubId } from "../lib/club-context";
 import { PROGRAM_ID } from "../lib/config";
+import { fetchProgramMembers } from "../lib/nexus";
 import type { Seat } from "../lib/plays";
 import { useBridgeCan, useBridgeMe } from "../lib/use-bridge-can";
+import { useCan } from "../lib/use-can";
+import { useIsCoach } from "../lib/use-is-coach";
+
+/** The two places a private table may reach for a player. */
+const ADD_SOURCES: { key: "friends" | "club"; label: string }[] = [
+  { key: "friends", label: "Friends" },
+  { key: "club", label: "Club members" },
+];
 
 const FORMATS: { key: ChallengeFormat; label: string; note: string }[] = [
   { key: "full", label: "Bid & play", note: "The whole board, scored against the field." },
@@ -157,14 +169,34 @@ export function ChallengeWizard({
   /** Rendered above Quick create — the host screen's blurb, lists, shelves. */
   topContent?: ReactNode;
 }) {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const clubId = useSelectedClubId();
   const programId = clubId ?? PROGRAM_ID;
   const params = useLocalSearchParams<{ draft?: string }>();
   const me = useBridgeMe();
   // Pre-gate, everyone had the whole form — the honest offline fallback,
   // for the door and for each section behind it (challenge.advanced.*).
-  const canAdvanced = useBridgeCan("challenge.advanced", true);
+  const platformAdvanced = useBridgeCan("challenge.advanced", true);
+  // WHO MAY ASSEMBLE A TABLE, as opposed to sit down at one.
+  //
+  // Quick create is the private table: boards, who is playing, go. The advanced
+  // form is challenge ASSEMBLY — per-board dealer and vulnerability, the table
+  // control checklist, the robot picker, the review — and in a club that is the
+  // mentor's job, not every member's.
+  //
+  // The catalogue already draws that exact line: app.challenge.create is held by
+  // Club Mentor and Club Manager and withheld from Club Member. So this asks the
+  // capability rather than a role name, with the same coarse fallback the club's
+  // own challenge list uses (app/club-challenges.tsx) — a club that has assigned
+  // no roles yet still gets mentor-only, instead of the key silently opening to
+  // everyone. `can()` also passes a structural coach through regardless, so a
+  // club's owner or administrator keeps it.
+  //
+  // ONLY the private table: a club challenge's advanced form is left exactly as
+  // it was, and it is already behind create rights to reach at all.
+  const coach = useIsCoach();
+  const canAssemble = useCan("app.challenge.create", coach);
+  const canAdvanced = platformAdvanced && (!personal || canAssemble);
   const canEngine = useBridgeCan("challenge.advanced.engine", true);
   const canBoardsStep = useBridgeCan("challenge.advanced.boards", true);
   const canControlsStep = useBridgeCan("challenge.advanced.controls", true);
@@ -185,6 +217,14 @@ export function ChallengeWizard({
   );
   const [controls, setControls] = useState<Record<string, ControlState>>(defaultControlStates);
   const [people, setPeople] = useState<ChallengePerson[] | null>(null);
+  // A private table's SECOND directory. `people` above is one place its players
+  // come from (your friends); this is the other (your club). Null until it
+  // lands — and never asked for at all by a club challenge, whose players are
+  // this list already.
+  const [clubPeople, setClubPeople] = useState<ChallengePerson[] | null>(null);
+  /** Whether "+ Add friends" is open, and which of the two it is showing. */
+  const [adding, setAdding] = useState(false);
+  const [addFrom, setAddFrom] = useState<"friends" | "club">("friends");
   const [invited, setInvited] = useState<Set<string>>(new Set());
   const [moderators, setModerators] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +268,42 @@ export function ChallengeWizard({
     }, [token, programId, personal]),
   );
 
+  // THE CLUB, as a private table's other directory.
+  //
+  // Read from Nexus rather than from the challenge route above, deliberately:
+  // /challenges/people is gated behind the club's CREATE right, and a private
+  // table is not gated by it (playing a few boards with people you already know
+  // does not depend on whether your club lets its members run club challenges).
+  // /programs/:id/members is readable by any member of the program, which is the
+  // same rule this screen wants — and it returns the org-scoped profile id, the
+  // one id space invites key on.
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || !personal) return;
+      let cancelled = false;
+      fetchProgramMembers(token, programId)
+        .then((rows) => {
+          if (cancelled) return;
+          setClubPeople(
+            // Exactly the server directory's own rule: a row without a profile
+            // id (an invitation nobody has redeemed) cannot be named by an
+            // invite, so it is not offered as though it could.
+            rows
+              .filter((r) => r.profile_id)
+              .map((r) => ({
+                userId: r.profile_id!,
+                name: r.display_name?.trim() || r.email || r.profile_id!,
+                ...(r.email ? { handle: r.email } : {}),
+              })),
+          );
+        })
+        .catch(() => !cancelled && setClubPeople([]));
+      return () => {
+        cancelled = true;
+      };
+    }, [token, programId, personal]),
+  );
+
   // PICKING PARKED WORK BACK UP. ?draft=<entryId> seeds every field from the
   // stored draft and opens the advanced form — that is where the work was
   // done, and dropping someone back on Quick create would hide it. Loaded
@@ -253,7 +329,11 @@ export function ChallengeWizard({
           setControls({ ...defaultControlStates(), ...draft.controlOverrides });
           setInvited(new Set(draft.invites.map((i) => i.userId)));
           setModerators(new Set(draft.invites.filter((i) => i.moderator).map((i) => i.userId)));
-          setView("basics");
+          // …and back into the form the work was DONE in, which for somebody
+          // without the advanced form is Quick create. Reopening used to land
+          // on "basics" unconditionally — a way into the advanced form that went
+          // around the door, so the gate below is only a gate with this line.
+          setView(canAdvanced ? "basics" : "quick");
         })
         .catch(() => {
           if (!cancelled) setError("That draft couldn't be opened — it may have been deleted.");
@@ -262,7 +342,7 @@ export function ChallengeWizard({
       return () => {
         cancelled = true;
       };
-    }, [token, programId, params.draft]),
+    }, [token, programId, params.draft, canAdvanced]),
   );
 
   const setBoardCount = (n: number) => {
@@ -312,13 +392,37 @@ export function ChallengeWizard({
     setModerators(next);
   };
 
+  /**
+   * EVERYONE EITHER DIRECTORY CAN NAME, id-keyed.
+   *
+   * Two lists, one table. Keying by id is what stops somebody who is both a
+   * friend and a club member from being two people — and it is also what lets a
+   * REOPENED DRAFT still put a name to whoever it invited, since the draft
+   * stores ids and nothing else.
+   *
+   * Friends are inserted first and win the row: their handle is an @username,
+   * where the club's is an email address.
+   */
+  const directory = useMemo(() => {
+    const byId = new Map<string, ChallengePerson>();
+    for (const p of people ?? []) byId.set(p.userId, p);
+    for (const p of clubPeople ?? []) if (!byId.has(p.userId)) byId.set(p.userId, p);
+    return byId;
+  }, [people, clubPeople]);
+
+  /** Your own row. `me` is the platform's answer about the very id an invite
+   *  keys on, so it is the one name certain to match the seat; the session's
+   *  user stands in until it lands. */
+  const myName = me?.displayName?.trim() || user?.display_name?.trim() || "You";
+
   const autoTitle = useCallback(() => {
     if (!personal) return clubAutoTitle();
-    const picked = (people ?? []).filter((p) => invited.has(p.userId));
+    const picked = [...invited].flatMap((id) => directory.get(id) ?? []);
     if (picked.length === 1) return `Table with ${picked[0]!.name}`;
-    if (picked.length > 1) return `Table with ${picked.length} friends`;
+    // "friends" no longer, now that a club member can be at the table too.
+    if (picked.length > 1) return `Table with ${picked.length} players`;
     return "Private table";
-  }, [personal, people, invited]);
+  }, [personal, directory, invited]);
   const effectiveTitle = title.trim() || autoTitle();
 
   const draftOf = useCallback(
@@ -410,20 +514,17 @@ export function ChallengeWizard({
     </Pressable>
   );
 
+  // THE CLUB CHALLENGE'S BLOCK. Its question is "who, out of the club, is in?",
+  // so it is a directory with a tick beside every name. A private table asks a
+  // different question and gets a different shape — playersBlock, below.
   const invitesBlock = (
     <>
-      <Text style={styles.fieldLabel}>{personal ? "WHO'S PLAYING" : "WHO'S IN"}</Text>
-      <Text style={styles.hint}>
-        {personal ? "You're in automatically." : "You're in automatically, as a moderator."}
-      </Text>
+      <Text style={styles.fieldLabel}>WHO&apos;S IN</Text>
+      <Text style={styles.hint}>You&apos;re in automatically, as a moderator.</Text>
       {people === null ? (
-        <Text style={styles.emptyBox}>{personal ? "Finding your friends…" : "Finding your club…"}</Text>
+        <Text style={styles.emptyBox}>Finding your club…</Text>
       ) : people.length === 0 ? (
-        <Text style={styles.emptyBox}>
-          {personal
-            ? "No friends yet — add some from the Friends screen first."
-            : "Nobody else to invite in this club yet."}
-        </Text>
+        <Text style={styles.emptyBox}>Nobody else to invite in this club yet.</Text>
       ) : (
         <>
           {/* A SNAPSHOT of today's members, not a standing rule. */}
@@ -468,7 +569,7 @@ export function ChallengeWizard({
                     </Text>
                   ) : null}
                 </View>
-                {on && !personal && (
+                {on && (
                   <Pressable onPress={() => toggleModerator(p.userId)} hitSlop={8}>
                     <Text style={[styles.modChip, mod && styles.modChipOn]}>
                       {mod ? "moderator ✓" : "make moderator"}
@@ -478,6 +579,158 @@ export function ChallengeWizard({
               </Pressable>
             );
           })}
+        </>
+      )}
+    </>
+  );
+
+  // ── THE PRIVATE TABLE'S PLAYERS ──────────────────────────────────────────
+  //
+  // A ROSTER, not a directory. You are at your own table from the start and
+  // cannot be taken off it — there is no table without you — and everyone else
+  // is there because they were added, which is why they can be removed again
+  // with the ✕ rather than by hunting for a tick to clear.
+  //
+  // "+ Add friends" opens the two places a private table may reach: the people
+  // who have accepted you as a friend, and the people in your club. They are
+  // one id space, so somebody in both appears in both lists and is one player
+  // either way — `invited` is a Set of ids, so adding them twice is not a state
+  // this screen can reach.
+
+  /** Whichever directory the picker is showing, minus your own row — you are
+   *  already at the table, and the server ignores an invite naming yourself.
+   *
+   *  The club roster is the list that CONTAINS you, and `me` is what identifies
+   *  your row in it, so that list waits for `me` rather than spending a frame
+   *  offering to add yourself to your own table. Friends never contain you. */
+  const addSource = addFrom === "friends" ? people : me ? clubPeople : null;
+  const addRows = addSource?.filter((p) => p.userId !== me?.nexusUserId);
+
+  const addList =
+    addRows === undefined ? (
+      <Text style={styles.emptyBox}>
+        {addFrom === "friends" ? "Finding your friends…" : "Finding your club…"}
+      </Text>
+    ) : addRows.length === 0 ? (
+      addFrom === "friends" ? (
+        // NOT a dead end, and not a second friend-search either: this is the
+        // Find tab of the Friends screen — the same one a new account uses —
+        // and whoever accepts is in this list when you come back.
+        <Pressable
+          onPress={() => router.push({ pathname: "/friends", params: { tab: "find" } })}
+          accessibilityRole="button"
+          accessibilityLabel="Find people to add as friends"
+        >
+          <Text style={styles.emptyBox}>
+            No friends yet. Find someone by username or email → they&apos;re here to add
+            once you&apos;re friends.
+          </Text>
+        </Pressable>
+      ) : (
+        <Text style={styles.emptyBox}>Nobody else in this club yet.</Text>
+      )
+    ) : (
+      addRows.map((p) => {
+        const on = invited.has(p.userId);
+        return (
+          <Pressable
+            key={p.userId}
+            onPress={() => toggleInvite(p.userId)}
+            style={({ pressed }) => [styles.personRow, pressed && styles.pressed]}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: on }}
+            accessibilityLabel={p.name}
+          >
+            <View style={[styles.checkbox, on && styles.checkboxOn]}>
+              {on ? <Text style={styles.checkboxTick}>✓</Text> : null}
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.personName} numberOfLines={1}>
+                {p.name}
+              </Text>
+              {p.handle ? (
+                <Text style={styles.personHandle} numberOfLines={1}>
+                  {p.handle}
+                </Text>
+              ) : null}
+            </View>
+          </Pressable>
+        );
+      })
+    );
+
+  const playersBlock = (
+    <>
+      <Text style={styles.fieldLabel}>WHO&apos;S PLAYING</Text>
+      <Text style={styles.hint}>
+        You&apos;re at the table already. Add the people you want on the same boards —
+        each of you plays when it suits you.
+      </Text>
+
+      {/* Your own row: first, and with no ✕. */}
+      <View style={styles.personRow}>
+        <Text style={[styles.personName, { flex: 1 }]} numberOfLines={1}>
+          {myName} (you)
+        </Text>
+      </View>
+
+      {/* Set insertion order, so the table reads in the order people joined it.
+          A name comes from the merged directory — or, for a draft reopened
+          before either list has landed, the placeholder holds the seat rather
+          than dropping a player nobody can see. */}
+      {[...invited].map((userId) => {
+        const p = directory.get(userId);
+        return (
+          <View key={userId} style={styles.personRow}>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={styles.personName} numberOfLines={1}>
+                {p?.name ?? "Invited player"}
+              </Text>
+              {p?.handle ? (
+                <Text style={styles.personHandle} numberOfLines={1}>
+                  {p.handle}
+                </Text>
+              ) : null}
+            </View>
+            <Pressable
+              onPress={() => toggleInvite(userId)}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${p?.name ?? "this player"} from the table`}
+            >
+              <Text style={styles.removeMark}>✕</Text>
+            </Pressable>
+          </View>
+        );
+      })}
+
+      <Pressable
+        onPress={() => setAdding((open) => !open)}
+        style={({ pressed }) => [styles.addButton, pressed && styles.pressed]}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: adding }}
+      >
+        <Text style={styles.addButtonText}>{adding ? "Done adding" : "+ Add friends"}</Text>
+      </Pressable>
+
+      {adding && (
+        <>
+          <View style={[styles.pickRow, { marginTop: 10 }]}>
+            {ADD_SOURCES.map((source) => (
+              <Pressable
+                key={source.key}
+                onPress={() => setAddFrom(source.key)}
+                style={[styles.pick, addFrom === source.key && styles.pickOn]}
+                accessibilityRole="tab"
+                accessibilityState={{ selected: addFrom === source.key }}
+              >
+                <Text style={[styles.pickText, addFrom === source.key && styles.pickTextOn]}>
+                  {source.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {addList}
         </>
       )}
     </>
@@ -568,12 +821,12 @@ export function ChallengeWizard({
               {topContent}
               <Text style={styles.quickNote}>
                 {personal
-                  ? "Pick the boards and the friends — everything else takes its default: bid & play, IMPs, solver robots, standings visible from board one."
+                  ? "Pick the boards and who's playing — everything else takes its default: bid & play, IMPs, solver robots, standings visible from board one."
                   : "Pick the boards and who's in — everything else takes its default: bid & play, IMPs, solver robots, spoiler-safe standings."}
               </Text>
               <Text style={styles.fieldLabel}>BOARDS</Text>
               {boardCountBlock}
-              {invitesBlock}
+              {personal ? playersBlock : invitesBlock}
               {createButton(personal ? "Create table" : "Create challenge")}
               {saveDraftButton}
               {canAdvanced && (
@@ -753,7 +1006,7 @@ export function ChallengeWizard({
           )}
 
           {/* ── 04 · Invites ── */}
-          {view === "invites" && invitesBlock}
+          {view === "invites" && (personal ? playersBlock : invitesBlock)}
 
           {/* ── 05 · Review ── */}
           {view === "review" && (
@@ -1042,6 +1295,22 @@ const styles = StyleSheet.create({
   },
   checkboxOn: { backgroundColor: Brand.cream },
   checkboxTick: { fontSize: 13, lineHeight: 15, color: Brand.green, fontFamily: Fonts.bodySemibold },
+  removeMark: {
+    fontFamily: Fonts.bodySemibold,
+    fontSize: 15,
+    color: "rgba(255,244,215,0.8)",
+    paddingHorizontal: 4,
+  },
+  addButton: {
+    borderWidth: 1,
+    borderStyle: "dashed",
+    borderColor: "#d3ccbb",
+    borderRadius: 999,
+    paddingVertical: 11,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  addButtonText: { fontFamily: Fonts.bodySemibold, fontSize: 13, color: Brand.green },
   modChip: {
     fontFamily: Fonts.bodySemibold,
     fontSize: 11,
