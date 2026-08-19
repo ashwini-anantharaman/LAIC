@@ -7,7 +7,7 @@ import { useApp } from '../../App';
 import { StatusPill } from './StatusPill';
 
 const OBJECT_TYPE_ICONS: Record<string, string> = {
-  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', quiz: '✅', 'flashcard-set': '🃏',
+  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', 'tutorial-v3': '🎓', quiz: '✅', 'flashcard-set': '🃏',
   'concept-card': '💡', summary: '📋', reflection: '🪞', scenario: '🎭',
   assignment: '📝', drill: '🔁',
 };

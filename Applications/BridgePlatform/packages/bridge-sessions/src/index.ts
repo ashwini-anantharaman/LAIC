@@ -28,6 +28,7 @@ import {
   applyEvent,
   createGame,
   createKbDecider,
+  hcp,
   initialState,
   legalCalls,
   legalPlays,
@@ -132,6 +133,38 @@ export interface SessionRecord {
      * against the challenge — no play record, no pointer, no lock.
      */
     practice?: boolean;
+  };
+  /**
+   * THE COACH'S STUDIO stamp (curated v2; owner direction 2026-08-19) — this
+   * session is an AUTHORING sitting, and `learnerSeat` is the chair the board
+   * is being built for, which is the chair the coach is sitting in.
+   *
+   * Same additive-jsonb pattern as `challenge` and `curated`, and the same
+   * reason: the host needs one fact about the session without asking the
+   * client for it. Here the fact is that this sitting is being AUTHORED at all
+   * — the studio seats and plays exactly like any other table (coach in one
+   * chair, robots in the other three), so nothing in the seat layout gives it
+   * away any more. The package itself neither plays nor decides; it carries
+   * the stamp.
+   *
+   * Absent on every ordinary table, and on the one-day-old studio sittings
+   * that held all four chairs; the host recognizes those by their seats
+   * instead (its studioSession helper), so they keep working.
+   */
+  authoring?: {
+    learnerSeat: Seat;
+  };
+  /**
+   * CURATED DEAL stamp (owner design 2026-08-15) — this session replays a
+   * coach's annotated board. Same pattern as `challenge` above: the stamp is
+   * how the host picks per-session behavior with no store round-trip — the
+   * robots follow the coach's recorded line until the learner diverges
+   * (SessionServiceOptions.curatedDecider), and the coach-overlay API finds
+   * the annotations from the sessionId. `entryId` is the LEARNER'S copy of
+   * the curated library entry (copy-on-assign).
+   */
+  curated?: {
+    entryId: string;
   };
 }
 
@@ -372,6 +405,28 @@ export interface SessionServiceOptions {
     compiled: CompiledKb;
     seat: Seat;
   }) => SeatDecider;
+  /**
+   * A KB seat's CARD, from the host's double-dummy solver (owner direction
+   * 2026-08-15: robots bid the KB but play DDS). Injected because the WASM
+   * solver lives in the app, not this package. Return null to decline a
+   * position; throwing is treated the same. Never consulted for the opening
+   * lead — see withKbPlayOverride's rails.
+   */
+  kbPlayOverride?: (state: GameState, seat: Seat) => Promise<Card | null>;
+  /**
+   * CURATED-DEAL robots (owner design 2026-08-15): when a session carries
+   * `record.curated`, every robot seat's decider is built by the HOST
+   * through this factory instead — the host follows the coach's recorded
+   * line while the learner stays on it, and hands control to `fallback`
+   * (the seat's ordinary decider) the moment the line is left. Injected
+   * because the line lives in the library store, which this package
+   * cannot read.
+   */
+  curatedDecider?: (args: {
+    record: SessionRecord;
+    seat: Seat;
+    fallback: SeatDecider;
+  }) => SeatDecider;
 }
 
 /**
@@ -404,6 +459,32 @@ export function controllingSeat(
 }
 
 const TAKEOVER_PARTNER: Record<Seat, Seat> = { N: "S", S: "N", E: "W", W: "E" };
+
+/**
+ * THE COACH BIDS ALL FOUR HANDS (owner direction 2026-08-19).
+ *
+ * An authoring sitting (`record.authoring` — the coach's studio) seats the coach
+ * in the learner's chair with robots in the other three, and the CARD PLAY runs
+ * exactly like any other table: the robots play their own cards. The AUCTION
+ * does not. A board built to teach a 3NT hold-up has to arrive at 3NT, so every
+ * call in the studio is the coach's, whichever chair it comes from — the
+ * contract is the frame of the lesson, not something to be negotiated with a
+ * robot that cannot be told what the board is for.
+ *
+ * So this is a PHASE-DEPENDENT control rule, and it lives here beside
+ * `controllingSeat` because the same four places that ask who controls a chair
+ * have to ask this too: the deciders (a robot chair must refuse to bid), `step`
+ * (nothing to advance during a studio auction), `act` (the coach's call is
+ * legal on a robot's chair), and `actingIsHuman` (so the client waits for a
+ * person instead of auto-playing).
+ *
+ * Deliberately NOT identity-aware: which human may act is the caller's gate,
+ * exactly as it is for `controllingSeat` and the seat-kind check beside it.
+ */
+export const coachBidsThisSeat = (
+  record: Pick<SessionRecord, "authoring">,
+  state: GameState,
+): boolean => !!record.authoring && state.phase === "auction";
 
 export class SessionService {
   private readonly now: () => string;
@@ -452,6 +533,10 @@ export class SessionService {
     status?: SessionStatus;
     /** Challenge stamp — see SessionRecord.challenge. */
     challenge?: SessionRecord["challenge"];
+    /** Studio stamp — see SessionRecord.authoring. */
+    authoring?: SessionRecord["authoring"];
+    /** Curated-deal stamp — see SessionRecord.curated. */
+    curated?: SessionRecord["curated"];
   }): Promise<SessionRecord> {
     const record: SessionRecord = {
       sessionId: newId("bs"),
@@ -474,6 +559,8 @@ export class SessionService {
       programOrganizationId: input.programOrganizationId,
       nexusProgramId: input.nexusProgramId,
       ...(input.challenge ? { challenge: input.challenge } : {}),
+      ...(input.authoring ? { authoring: input.authoring } : {}),
+      ...(input.curated ? { curated: input.curated } : {}),
     };
     await this.store.putSession(record);
     return record;
@@ -528,6 +615,57 @@ export class SessionService {
     return compiled;
   }
 
+  /**
+   * GUARD-RAILED DOUBLE-DUMMY PLAY (owner direction 2026-08-15): a KB seat's
+   * CALLS stay with the KB — the system the coach teaches — but its CARDS
+   * come from the host-injected solver. Two rails keep the solver honest:
+   *   · the OPENING LEAD stays with the KB's lead rules — a solver's lead is
+   *     chosen by peeking at the whole deal, which no human lead is;
+   *   · any solver miss (null, or a throw) falls back to the KB whole, so a
+   *     table never stalls on its robots.
+   */
+  private withKbPlayOverride(kb: SeatDecider): SeatDecider {
+    const override = this.options.kbPlayOverride;
+    if (!override) return kb;
+    return {
+      decideBid: (state, seat) => kb.decideBid(state, seat),
+      decidePlay: async (state, seat) => {
+        const openingLead = !state.tricks.some((t) => t.plays.length > 0);
+        if (!openingLead) {
+          try {
+            const card = await override(state, seat);
+            if (card) {
+              return {
+                action: card,
+                candidates: [card],
+                trace: [],
+                citedSettings: [],
+                facts: { hcp: hcp(state.hands[seat] ?? []) },
+                reason: "Double-dummy: keeps the maximum tricks from here.",
+                rejected: [],
+                fallback: false,
+              };
+            }
+          } catch {
+            // Solver unavailable — the KB plays on rather than the table stalling.
+          }
+        }
+        return kb.decidePlay(state, seat);
+      },
+    };
+  }
+
+  /**
+   * A curated session's robots follow the COACH'S RECORDED LINE first
+   * (owner design 2026-08-15) — the host's curatedDecider wraps the seat's
+   * ordinary decider and defers to it once the learner leaves the line.
+   * Ordinary sessions (no stamp, or no injected factory) pass through.
+   */
+  private withCuratedLine(record: SessionRecord, seat: Seat, fallback: SeatDecider): SeatDecider {
+    if (!record.curated || !this.options.curatedDecider) return fallback;
+    return this.options.curatedDecider({ record, seat, fallback });
+  }
+
   /** The injected BEN decider, or a loud failure if the host never wired one. */
   private benSeatDecider(record: SessionRecord, compiled: CompiledKb, seat: Seat): SeatDecider {
     if (this.options.benDecider) return this.options.benDecider({ record, compiled, seat });
@@ -560,20 +698,29 @@ export class SessionService {
         config.kind === "human"
           ? humanDecider
           : config.kind === "ben"
-            ? this.benSeatDecider(record, compiled, seat)
+            ? this.withCuratedLine(record, seat, this.benSeatDecider(record, compiled, seat))
           : config.kind === "dd"
             // No `compiled` — the solver seat needs no knowledge base at all.
-            ? createDdDecider({ sessionId: record.sessionId, seat })
-          : createKbDecider({
-              compiled,
-              player: {
-                enabledPackIds: config.enabledPackIds,
-                settingOverrides: config.settingOverrides,
-                decisionPolicyId: config.decisionPolicyId,
-                levelOrdinal: config.levelOrdinal,
-              },
-              seed: `${record.sessionId}_${seat}`,
-            }),
+            // Still wrapped: withCuratedLine hands back the fallback untouched
+            // unless the board carries an authored line, and where one exists it
+            // is what every robot seat follows, solver included.
+            ? this.withCuratedLine(record, seat, createDdDecider({ sessionId: record.sessionId, seat }))
+          : this.withCuratedLine(
+              record,
+              seat,
+              this.withKbPlayOverride(
+                createKbDecider({
+                  compiled,
+                  player: {
+                    enabledPackIds: config.enabledPackIds,
+                    settingOverrides: config.settingOverrides,
+                    decisionPolicyId: config.decisionPolicyId,
+                    levelOrdinal: config.levelOrdinal,
+                  },
+                  seed: `${record.sessionId}_${seat}`,
+                }),
+              ),
+            ),
       ]),
     ) as Record<Seat, ReturnType<typeof createKbDecider>>;
 
@@ -596,6 +743,10 @@ export class SessionService {
       // THIS chair.
       deciders[chair] = {
         decideBid: async (state: GameState, s: Seat) => {
+          // THE STUDIO'S AUCTION IS THE COACH'S, every chair of it. The robot
+          // sitting here plays its own cards later; it does not get to choose
+          // the contract the lesson is built on.
+          if (coachBidsThisSeat(record, state)) throw new AwaitingHumanError(chair);
           const owner = controllingSeat(record.seats, state, chair);
           if (owner !== chair) throw new AwaitingHumanError(owner);
           return inner.decideBid(state, s);
@@ -632,7 +783,9 @@ export class SessionService {
       record,
       state,
       actingSeat,
-      actingIsHuman: record.seats[controllingSeat(record.seats, state, actingSeat)].kind === "human",
+      actingIsHuman:
+        coachBidsThisSeat(record, state) ||
+        record.seats[controllingSeat(record.seats, state, actingSeat)].kind === "human",
     };
   }
 
@@ -644,6 +797,11 @@ export class SessionService {
     if (game.getState().phase === "complete") return this.view(sessionId);
 
     const actingSeat = game.actingSeat();
+    // A studio auction has nothing to step: every call is the coach's, so the
+    // answer to "advance one AI decision" is that there isn't one. Said here
+    // rather than left to the decider so the tempo controls read it as a human
+    // turn instead of a robot that keeps failing.
+    if (coachBidsThisSeat(record, game.getState())) throw new AwaitingHumanError(actingSeat);
     // The controller, not the chair: under a takeover the acting chair is a
     // robot's but a person is holding it (see `controllingSeat`).
     const controller = controllingSeat(record.seats, game.getState(), actingSeat);
@@ -704,7 +862,9 @@ export class SessionService {
     // Not `actingSeat` directly: a learner who would be dummy declares their
     // robot partner's contract themselves (see `controllingSeat`).
     const controller = controllingSeat(record.seats, state, actingSeat);
-    if (record.seats[controller].kind !== "human")
+    // A studio auction accepts the coach's call at ANY chair (see
+    // `coachBidsThisSeat`); every other position needs a person in the seat.
+    if (!coachBidsThisSeat(record, state) && record.seats[controller].kind !== "human")
       throw new Error(`Seat ${actingSeat} is not a human seat`);
     await replay.step();
     return this.persistNewEvents(record, log.getAll(), replay);
@@ -796,6 +956,7 @@ export class SessionService {
       state: nextState,
       actingSeat,
       actingIsHuman:
+        coachBidsThisSeat(record, nextState) ||
         record.seats[controllingSeat(record.seats, nextState, actingSeat)].kind === "human",
     };
   }

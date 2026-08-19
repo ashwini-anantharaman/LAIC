@@ -2,7 +2,11 @@
 // (Figma 894:337).
 //
 // WHAT WENT, and where it went:
-//   Curated Deals   moving elsewhere; its route and placeholder screen stay put.
+//   Curated Deals   coaches only (curated v2, 2026-08-18): a maroon row under
+//                   Resume/History opening /curate-new (the studio's deal
+//                   picker, embedded). Everyone else
+//                   never sees it — hidden, not dimmed, even while the role is
+//                   still resolving.
 //   From Coach      already on the Learn tab, so a second door to it was noise.
 //   Resume Board  → Resume    (same behaviour, shorter word)
 //   My Plays      → History   (same screen)
@@ -52,6 +56,7 @@ import {
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { TabLoading } from "../../components/tab-loading";
 import { useAuth } from "../../lib/auth-context";
+import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { useClubs } from "../../lib/club-context";
 import { peekBridgeOrigin, prefetchLaunch } from "../../lib/launch-cache";
 import { type BridgeSummary } from "../../lib/nexus";
@@ -98,6 +103,16 @@ const D = {
      *  shape, and forcing one box on both stretches whichever loses. */
     resumeGlyph: { w: 11.8, h: 14.1, left: 12, top: 21 },
     historyGlyph: { w: 19, h: 19, left: 11, top: 19 },
+  },
+
+  /** Curated Deals (coaches only): one wider small button, centred on the small
+   *  row's span, maroon like the other authoring door (New Play). Wider because
+   *  "Curated Deals" does not fit the two-slot width at the row's type size. */
+  curated: {
+    width: 180,
+    left: 103,
+    gap: 15,
+    glyph: { w: 16, h: 16, left: 13, top: 20 },
   },
 
   /**
@@ -178,6 +193,27 @@ export default function PlayScreen() {
     token ? peekSummary(token, clubId ?? undefined) : null,
   );
   const [error, setError] = useState<string | null>(null);
+  // Coaches get the Curated Deals door (owner design 2026-08-15). Same
+  // role discipline as the Coach tab: unknown (null) shows no card rather
+  // than flashing one in or out once the context resolves.
+  const [coach, setCoach] = useState<boolean | null>(() => {
+    const peeked = token ? peekRoleContext(token, clubId ?? undefined) : null;
+    return peeked ? isCoach(peeked) : null;
+  });
+  useFocusEffect(
+    useCallback(() => {
+      if (!token || clubsLoading) return;
+      let cancelled = false;
+      const peeked = peekRoleContext(token, clubId ?? undefined);
+      setCoach(peeked ? isCoach(peeked) : null);
+      getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
+        if (!cancelled) setCoach(isCoach(ctx));
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [token, clubId, clubsLoading]),
+  );
 
   // Refresh on every visit: what is resumable changes as boards are played.
   useFocusEffect(
@@ -351,6 +387,33 @@ export default function PlayScreen() {
           />
         </View>
 
+        {/* ── Curated Deals — COACHES ONLY (curated v2, owner design
+            2026-08-18): the STUDIO. Build the board card by card, play all
+            four seats, publish the line, assign from Assignments. (v1 —
+            deal a random board and annotate your own sitting — was this
+            card's old door, /new-board?curate=1.)
+            Hidden (not dimmed) for everyone else; while the role is UNKNOWN it
+            stays hidden rather than flashing in — TabLoading holds the veil
+            until the role resolves, so nobody watches the row appear. */}
+        {coach === true ? (
+          <View
+            style={{
+              height: (D.small.height + D.small.offset.y) * s,
+              marginTop: D.curated.gap * s,
+            }}
+          >
+            <SmallButton
+              scale={s}
+              left={D.curated.left}
+              width={D.curated.width}
+              tone="maroon"
+              label="Curated Deals"
+              glyph={{ xml: ICON_CARD_PLUS, ...D.curated.glyph }}
+              onPress={() => router.push("/curate-new")}
+            />
+          </View>
+        ) : null}
+
         {/* ── Play with Friends, on its band of suits ────────────────────── */}
         <View style={{ height: D.friends.rowHeight * s, marginTop: D.friends.gap * s }}>
           {/* Behind everything, and inert: wallpaper, not a control. */}
@@ -461,9 +524,15 @@ export default function PlayScreen() {
         {error ? <Text style={styles.stateText}>{error}</Text> : null}
       </ScrollView>
 
-      {/* Ready once the club is known and the summary (or its error) is in — the
-          buttons' state arrives with the content, not after it. */}
-      <TabLoading ready={!clubsLoading && (summary !== null || error !== null)} />
+      {/* Ready once the club is known, the summary (or its error) is in, AND
+          the role has resolved — the buttons' state and the page's SHAPE
+          arrive with the content, not after it. Without the role in that
+          list a coach watched the page paint and then grow the Curated Deals
+          row; the sign-in prime warms it, so this waits on nothing.
+          (TabLoading has its own failsafe, and lifts for good once lifted.) */}
+      <TabLoading
+        ready={!clubsLoading && (summary !== null || error !== null) && coach !== null}
+      />
     </BrandChrome>
   );
 }
@@ -509,7 +578,9 @@ function PeekingOwl({ scale: s }: { scale: number }) {
   );
 }
 
-/** Resume or History: a green stacked card with a glyph and a word beside it. */
+/** Resume or History: a green stacked card with a glyph and a word beside it.
+ *  Curated Deals borrows the shape in maroon (`tone`), wider (`width`) because
+ *  its label is longer than the two-slot row allows. */
 function SmallButton({
   scale: s,
   left,
@@ -518,6 +589,8 @@ function SmallButton({
   onPress,
   disabled = false,
   badge,
+  tone = "green",
+  width = D.small.width,
 }: {
   scale: number;
   left: number;
@@ -526,7 +599,11 @@ function SmallButton({
   onPress: () => void;
   disabled?: boolean;
   badge?: number;
+  tone?: "green" | "maroon";
+  width?: number;
 }) {
+  const behindColor = tone === "maroon" ? BEHIND_MAROON : BEHIND_GREEN;
+  const faceColor = tone === "maroon" ? Brand.maroon : Brand.green;
   // Only past one: "Resume 1" says nothing the word does not, and the picker only
   // appears above one board anyway.
   const showBadge = !disabled && badge != null && badge > 1;
@@ -542,7 +619,7 @@ function SmallButton({
           position: "absolute",
           left: left * s,
           top: 0,
-          width: (D.small.width + D.small.offset.x) * s,
+          width: (width + D.small.offset.x) * s,
           height: (D.small.height + D.small.offset.y) * s,
           opacity: disabled ? 0.45 : 1,
         },
@@ -555,10 +632,10 @@ function SmallButton({
           {
             left: D.small.offset.x * s,
             top: D.small.offset.y * s,
-            width: D.small.width * s,
+            width: width * s,
             height: D.small.height * s,
             borderRadius: D.small.radius * s,
-            backgroundColor: BEHIND_GREEN,
+            backgroundColor: behindColor,
           },
         ]}
       />
@@ -566,10 +643,10 @@ function SmallButton({
         style={[
           styles.face,
           {
-            width: D.small.width * s,
+            width: width * s,
             height: D.small.height * s,
             borderRadius: D.small.radius * s,
-            backgroundColor: Brand.green,
+            backgroundColor: faceColor,
           },
         ]}
       >

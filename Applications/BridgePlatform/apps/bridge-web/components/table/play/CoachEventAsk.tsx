@@ -185,16 +185,33 @@ export function CoachEventAsk({
  * conversation memory yet), but the exchanges stack up so the surface reads
  * as a conversation.
  */
-export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
+export function CoachChat({
+  sessionId,
+  suggestions,
+  chapter,
+}: Readonly<{
+  sessionId: string;
+  /** Tap-to-ask starters (owner pick #3, 2026-08-14): a blank box paralyzes
+   *  a learner who doesn't know what's askable. Shown until the first
+   *  exchange — after that the conversation itself is the prompt. */
+  suggestions?: readonly string[];
+  /** Where the board is right now — "The auction", "Trick 4". The thread
+   *  keeps the WHOLE board (owner pick #6, 2026-08-14: "as I asked
+   *  earlier…" must work), and each exchange is stamped with its chapter so
+   *  a quiet divider marks where one trick's questions end and the next
+   *  begin. */
+  chapter?: string;
+}>) {
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
-  const [exchanges, setExchanges] = useState<{ q: string; a: string | null }[]>([]);
+  const [exchanges, setExchanges] = useState<{ q: string; a: string | null; chapter?: string }[]>([]);
 
-  async function ask() {
-    const q = question.trim();
+  async function ask(text?: string) {
+    const q = (text ?? question).trim();
     if (!q || asking) return;
     setAsking(true);
-    setQuestion("");
+    if (!text) setQuestion("");
+    const stamp = chapter;
     try {
       const res = await fetch("/api/bridge/event-qa", {
         method: "POST",
@@ -202,9 +219,9 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
         body: JSON.stringify({ sessionId, question: q }),
       });
       const body = (await res.json()) as { answer?: string | null };
-      setExchanges((prev) => [...prev, { q, a: body.answer ?? null }]);
+      setExchanges((prev) => [...prev, { q, a: body.answer ?? null, ...(stamp ? { chapter: stamp } : {}) }]);
     } catch {
-      setExchanges((prev) => [...prev, { q, a: null }]);
+      setExchanges((prev) => [...prev, { q, a: null, ...(stamp ? { chapter: stamp } : {}) }]);
     } finally {
       setAsking(false);
     }
@@ -214,6 +231,17 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       {exchanges.map((x, i) => (
         <div key={i}>
+          {i > 0 && x.chapter && x.chapter !== exchanges[i - 1]?.chapter && (
+            <p
+              style={{
+                margin: "2px 0 7px", textAlign: "center",
+                fontSize: 9.5, fontWeight: 700, letterSpacing: ".08em",
+                textTransform: "uppercase", color: FAINT,
+              }}
+            >
+              — {x.chapter} —
+            </p>
+          )}
           <p style={{ margin: "0 0 3px", fontSize: 11.5, fontWeight: 700, color: FAINT }}>
             <RedSuits>{x.q}</RedSuits>
           </p>
@@ -233,6 +261,26 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
         <p style={{ margin: 0, fontSize: 12.5, color: MUTED, fontStyle: "italic" }}>
           Thinking about it…
         </p>
+      )}
+      {exchanges.length === 0 && !asking && !!suggestions?.length && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {suggestions.map((s) => (
+            <button
+              key={s}
+              type="button"
+              onClick={() => void ask(s)}
+              style={{
+                minHeight: 30, padding: "5px 11px",
+                background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: FELT_LINE,
+                borderRadius: 15, color: FELT_DEEP,
+                fontSize: 12, fontWeight: 600, fontFamily: "inherit",
+                cursor: "pointer", textAlign: "left",
+              }}
+            >
+              <RedSuits>{s}</RedSuits>
+            </button>
+          ))}
+        </div>
       )}
       <div style={{ display: "flex", gap: 6 }}>
         <input
@@ -271,24 +319,13 @@ export function CoachChat({ sessionId }: Readonly<{ sessionId: string }>) {
   );
 }
 
-/** Where each kind of answer comes from, for the ⓘ popup. */
-const SOURCE_INFO: Record<PlayHint["source"], { title: string; from: string }> = {
-  system: {
-    title: "Your system plays",
-    from: "Your partnership's system notes cover this position — this is what your side agreed to play.",
-  },
-  convention: {
-    title: "Usually right here",
-    from: "A general bridge guideline — the standard habit for positions like this.",
-  },
-  solution: {
-    title: "By calculation",
-    from: "A solver saw all four hands and tried every line. Each card shown keeps the maximum tricks — they are equals.",
-  },
-};
-
-const WHY_DIFFERENT =
-  "Your realistic choices is a neutral checklist of what you can see — it never peeks at the answer. This is the answer. A sensible-looking card can still cost a trick once every hand is known.";
+/**
+ * The ⓘ popup's one honest line (owner direction 2026-08-14: no anatomy of
+ * solvers or "by calculation" — the answer is OWLEE'S, spoken as Owlee, and
+ * the small print is simply that an agent can be wrong).
+ */
+export const OWLEE_DISCLAIMER =
+  "Owlee works this out for you, but its answer might not be entirely accurate — weigh it against your own reading of the position.";
 
 /**
  * The advice for the decision ON the table — shown while it is the learner's
@@ -344,12 +381,15 @@ export function WhatShouldIPlay({
       {play.kind === "done" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            {/* No mini-face here any more — in the Tell screen this whole
+                answer sits inside Owlee's SPEECH BUBBLE (owner ask
+                2026-08-15), and the avatar beside the bubble is the face. */}
             <span style={{ fontSize: 12, fontWeight: 700, color: MUTED }}>
-              {SOURCE_INFO[play.hint.source].title}
+              Owlee plays
             </span>
             <button
               type="button"
-              aria-label="Where this answer comes from"
+              aria-label="About Owlee's answer"
               aria-expanded={infoOpen}
               onClick={() => setInfoOpen(true)}
               style={{
@@ -385,14 +425,13 @@ export function WhatShouldIPlay({
               <RedSuits>{play.why ?? play.hint.because ?? ""}</RedSuits>
             </p>
           )}
-          {play.hint.source === "solution" && (
-            <p style={{ margin: 0, fontSize: 11.5, color: TEAL }}>Worked out from the full deal.</p>
-          )}
+          {/* No "worked out from the full deal" small print any more — the
+              same owner direction that retired "By calculation": the answer
+              is Owlee's, and the ⓘ carries the honest caveat. */}
         </div>
       )}
 
-      {/* ── the ⓘ popup: where the answer comes from, and why it can differ
-          from the realistic-choices scaffold ── */}
+      {/* ── the ⓘ popup: one line of honest small print ── */}
       {infoOpen && play.kind === "done" && (
         <div
           role="presentation"
@@ -406,7 +445,7 @@ export function WhatShouldIPlay({
           <div
             role="dialog"
             aria-modal="true"
-            aria-label="Where this answer comes from"
+            aria-label="About Owlee's answer"
             onClick={(e) => e.stopPropagation()}
             style={{
               maxWidth: 340, maxHeight: "80%", overflowY: "auto",
@@ -421,7 +460,7 @@ export function WhatShouldIPlay({
                   textTransform: "uppercase", color: FELT_DEEP,
                 }}
               >
-                {SOURCE_INFO[play.hint.source].title}
+                Owlee
               </span>
               <span style={{ flex: 1 }} />
               <button
@@ -437,18 +476,7 @@ export function WhatShouldIPlay({
                 ×
               </button>
             </div>
-            <p style={{ ...SAYS, fontSize: 13.5, color: INK, marginBottom: 9 }}>
-              {SOURCE_INFO[play.hint.source].from}
-            </p>
-            <p
-              style={{
-                margin: "0 0 5px", fontSize: 10, fontWeight: 700,
-                letterSpacing: 0.7, textTransform: "uppercase", color: FAINT,
-              }}
-            >
-              Why it differs from your choices
-            </p>
-            <p style={{ ...SAYS, fontSize: 13.5, color: MUTED }}>{WHY_DIFFERENT}</p>
+            <p style={{ ...SAYS, fontSize: 13.5, color: INK }}>{OWLEE_DISCLAIMER}</p>
           </div>
         </div>
       )}

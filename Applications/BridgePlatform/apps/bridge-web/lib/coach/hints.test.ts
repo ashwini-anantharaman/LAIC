@@ -82,11 +82,42 @@ describe("validateHints — the leak gate", () => {
     expect(validateHints({ hints: leaking }, contested)).toEqual({ reason: "leaked" });
   });
 
-  it("rejects the wrong shape: not five, not strings, not an object", () => {
-    expect(validateHints({ hints: ladder().slice(0, 4) }, pos)).toEqual({ reason: "malformed" });
+  it("accepts a SHORTER ladder — the count is the model's read of the decision", () => {
+    // Dynamic below the cap (owner direction 2026-08-14): a routine decision
+    // earns fewer rungs. Two is the floor — one non-answer rung, then the answer.
+    expect("hints" in validateHints({ hints: ladder().slice(0, 4) }, pos)).toBe(true);
+    expect("hints" in validateHints({ hints: ladder().slice(0, 2) }, pos)).toBe(true);
+  });
+
+  it("rejects the wrong shape: too few, too many, not strings, not an object", () => {
+    expect(validateHints({ hints: ladder().slice(0, 1) }, pos)).toEqual({ reason: "malformed" });
     expect(validateHints({ hints: [...ladder(), "a sixth"] }, pos)).toEqual({ reason: "malformed" });
     expect(validateHints({ hints: [1, 2, 3, 4, 5] }, pos)).toEqual({ reason: "malformed" });
     expect(validateHints("just a string", pos)).toEqual({ reason: "malformed" });
+  });
+
+  it("GUARANTEES the anchored ladder ends on Owlee's own answer", () => {
+    // The target gate (owner direction 2026-08-14): when the advice layer
+    // anchored the ladder, a last rung naming anything else is rejected
+    // whole — prompt-only enforcement could drift, the validator cannot.
+    const onTarget = ladder("Your K♣ makes clubs the suit to bid.");
+    expect("hints" in validateHints({ hints: onTarget }, pos, "K♣")).toBe(true);
+
+    const offTarget = ladder("Bid 1♠ — a new suit at the one level shows your points cheaply.");
+    expect(validateHints({ hints: offTarget }, pos, "K♣")).toEqual({ reason: "off-target" });
+  });
+
+  it("matches the target in any notation a coach actually writes", () => {
+    // "10♣" as the target; the rung writes it glyph-first. Both directions
+    // and the T-form count — the guarantee must not fail on notation.
+    const glyphFirst = ladder("Lead the ♣10 and keep the king behind it.");
+    expect("hints" in validateHints({ hints: glyphFirst }, pos, "10♣")).toBe(true);
+    const tForm = ladder("Lead the T♣ and keep the king behind it.");
+    expect("hints" in validateHints({ hints: tForm }, pos, "10♣")).toBe(true);
+  });
+
+  it("checks nothing when no target was given — the auction still freelances", () => {
+    expect("hints" in validateHints({ hints: ladder() }, pos)).toBe(true);
   });
 
   it("rejects an empty rung, and a runaway one at the boundary", () => {

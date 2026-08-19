@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react";
 import {
   EMPTY_COPY,
   STATUS_LABEL,
+  deleteAssignmentCopy,
   removeLearnerCopy,
   removeReviewerCopy,
   reviewerState,
@@ -272,6 +273,34 @@ export function AssignmentSheet({
                 Open the board ›
               </a>
             </p>
+          )}
+
+          {/* PUTTING THE WHOLE THING AWAY (owner request 2026-08-17). Learners
+              could be taken off one at a time but the assignment itself could
+              not be retired, so a board asked for by mistake stayed on every
+              list for good. Last in the sheet and behind the same confirm the
+              per-person removals use — the most destructive control should be
+              the one you reach last and confirm hardest. */}
+          {view.canEdit && (
+            <div style={{ marginTop: 26, borderTop: `1px solid rgba(31,31,31,.12)`, paddingTop: 14 }}>
+              <a href={`#${confirmId("delete")}`} style={S.chipQuiet}>
+                Delete this assignment
+              </a>
+              <div id={confirmId("delete")} className="asgn-confirm" style={S.confirmBox}>
+                <p style={S.confirmText}>{deleteAssignmentCopy(view.learners)}</p>
+                <div style={S.confirmRow}>
+                  <form action={actions.deleteAssignment} style={{ display: "inline" }}>
+                    <input type="hidden" name="key" value={view.key} />
+                    <button type="submit" style={S.dangerBtn}>
+                      Yes, delete it
+                    </button>
+                  </form>
+                  <a href={openHref} style={S.chipOutline}>
+                    Keep it
+                  </a>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       </section>

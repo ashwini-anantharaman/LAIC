@@ -378,14 +378,34 @@ function CardFaceText({
  * their own persisted memory state, but share one SM-2 scheduler + due-queue.
  * Confidence maps: Not Very→Again, Somewhat→Good, Very→Easy (no Hard).
  */
+/**
+ * Read-only view of a study session, for chrome that wants to draw the queue
+ * without owning it (Tutorial V3's queue badge, progress strip and session
+ * breakdown). Purely observational — nothing here feeds back into scheduling.
+ */
+export interface FlashcardSessionInfo {
+  cardCount: number;
+  /** Indices in the order the session will show them. */
+  queue: number[];
+  /** Index of the card on screen, or null between cards. */
+  currentIdx: number | null;
+  /** Position within the queue, 0-based. */
+  position: number;
+  /** Per-card memory state, keyed by card index. */
+  byCard: Record<number, { stage: Stage; lapses: number; reps: number }>;
+}
+
 export function FlashcardStudy({
   cards,
   direction = 'Front→back',
   storageKey,
+  onSessionChange,
 }: {
   cards: StudyCard[];
   direction?: string;
   storageKey?: string;
+  /** Observer for surrounding chrome; never affects the session itself. */
+  onSessionChange?: (info: FlashcardSessionInfo) => void;
 }) {
   const [mode, setMode] = useState<Mode>('standard');
   const [modeOpen, setModeOpen] = useState(false);
@@ -515,6 +535,27 @@ export function FlashcardStudy({
   const safePos = Math.min(pos, Math.max(0, total - 1));
   const cardIdx = waiting ? undefined : (isAdaptive ? queue[0] : deck[safePos]);
   const card = cardIdx != null ? cards[cardIdx] : undefined;
+
+  // Report the session outward for chrome that draws the queue. Keyed on the
+  // scalars that actually change what a reader would draw, so a parent redraw
+  // never loops back through here.
+  const sessionQueue = isAdaptive ? queue : deck;
+  useEffect(() => {
+    if (!onSessionChange) return;
+    const byCard: Record<number, { stage: Stage; lapses: number; reps: number }> = {};
+    for (let i = 0; i < cards.length; i++) {
+      const sc = schedules[i];
+      byCard[i] = { stage: sc?.stage || 'new', lapses: sc?.lapses || 0, reps: sc?.reps || 0 };
+    }
+    onSessionChange({
+      cardCount: cards.length,
+      queue: sessionQueue,
+      currentIdx: cardIdx == null ? null : cardIdx,
+      position: safePos,
+      byCard,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionQueue.join(','), cardIdx, safePos, cards.length, JSON.stringify(schedules)]);
 
   useEffect(() => { setPos(0); setFlipped(false); setHintOpen(false); }, [mode]);
   useEffect(() => { setHintOpen(false); }, [cardIdx]);

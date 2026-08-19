@@ -3,7 +3,7 @@
 // itself with the table, so it exists only for the moment the deal takes —
 // a felt-green beat instead of a webview booting a web app.
 
-import { router, Stack, useFocusEffect } from "expo-router";
+import { router, Stack, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { useCallback, useRef, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -18,6 +18,15 @@ import { quickPlay } from "../lib/library";
 
 export default function NewBoardScreen() {
   const { token } = useAuth();
+  // curate=1 (coaches, owner design 2026-08-15): the dealt board opens in
+  // curate mode — the platform table shows the annotation rail instead of
+  // the coach dock, and publishing saves the curated deal to the library.
+  const { curate } = useLocalSearchParams<{ curate?: string }>();
+  // The two doors share this screen, and until now they were indistinguishable:
+  // a coach who tapped Curated Deals watched "Dealing your board…" and landed on
+  // an ordinary table, which reads as the wrong card having been pressed. Same
+  // deal, same beat — but it says which journey this is.
+  const curating = curate === "1";
   const clubId = useSelectedClubId();
   const programId = clubId ?? PROGRAM_ID;
   const started = useRef(false);
@@ -30,7 +39,7 @@ export default function NewBoardScreen() {
       // fresh=1: the session was created THIS moment and nobody has played
       // it. If its open bounces (board gone), the table screen discards it on
       // the way out instead of stranding a ghost board in Resume.
-      router.replace(`/table/${sessionId}?fresh=1`);
+      router.replace(`/table/${sessionId}?fresh=1${curating ? "&curate=1" : ""}`);
     } catch (e) {
       const noLineup = e instanceof BridgeApiError && e.message === "no_lineup";
       setError({
@@ -38,12 +47,14 @@ export default function NewBoardScreen() {
           ? "There's nothing to play against yet — no knowledge base compiles. Pick a board from the Library instead."
           : e instanceof BridgeApiError
             ? e.message
-            : "Couldn't deal a board — try again.",
+            : curating
+              ? "Couldn't deal a board to curate — try again."
+              : "Couldn't deal a board — try again.",
         noLineup,
       });
       started.current = false;
     }
-  }, [token, programId]);
+  }, [token, programId, curating]);
 
   useFocusEffect(
     useCallback(() => {
@@ -62,10 +73,16 @@ export default function NewBoardScreen() {
       {/* NO header while dealing (owner request 2026-08-12: not even a
           flash of it) — the felt cover is the whole screen. The header,
           with its back arrow, exists only in the error state. */}
-      {error ? <ScreenHeader title="New board" backTo="/play" /> : null}
+      {error ? (
+        <ScreenHeader title={curating ? "Curated deal" : "New board"} backTo="/play" />
+      ) : null}
       <View style={styles.body}>
         {!error ? (
-          <BoardLoading ready={false} onGone={() => {}} label="Dealing your board…" />
+          <BoardLoading
+            ready={false}
+            onGone={() => {}}
+            label={curating ? "Dealing a board to curate…" : "Dealing your board…"}
+          />
         ) : (
           <>
             <Text style={styles.errorText}>{error.text}</Text>

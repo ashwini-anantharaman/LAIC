@@ -21,7 +21,7 @@ import { Screen } from "../../components/ui";
  *  the platform page which journey this is (no "⟵ table" door on a record
  *  opened from history — owner decision 2026-08-07). */
 export default function TableScreen() {
-  const { sessionId, view, from, fresh } = useLocalSearchParams<{
+  const { sessionId, view, from, fresh, curate } = useLocalSearchParams<{
     sessionId: string;
     view?: string;
     from?: string;
@@ -31,11 +31,16 @@ export default function TableScreen() {
      *  strand a ghost board in Resume. App-side flag only; never sent to the
      *  platform. */
     fresh?: string;
+    /** "1" = the coach is CURATING this board (owner design 2026-08-15) —
+     *  forwarded to the platform table, which swaps the coach dock for the
+     *  annotation rail. */
+    curate?: string;
   }>();
 
   const params = new URLSearchParams();
   if (typeof view === "string" && view) params.set("view", view);
   if (typeof from === "string" && from) params.set("from", from);
+  if (curate === "1") params.set("curate", "1");
   const query = params.toString();
   const next = `/bridge/table2/${encodeURIComponent(sessionId ?? "")}${query ? `?${query}` : ""}`;
   const discardOnGone = fresh === "1";

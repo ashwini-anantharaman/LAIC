@@ -6,20 +6,24 @@
 //                    idempotent when one already exists) → { briefId }
 //   { note: "…" }    replace the instruction ("" clears it) → { briefId }
 //
+// DELETE removes the whole assignment — the brief and every learner's row —
+// leaving their games, submissions and feedback standing (detach, never
+// destroy). → { deleted: true, learners, keptSessions }
+//
 // Same rule as the actions: ONE copy of the instruction, on the brief.
 
 import { NextResponse, type NextRequest } from "next/server";
 
-import { requireEditableAssignment } from "@/lib/assignmentEdit";
+import { deleteAssignmentSet, requireEditableAssignment } from "@/lib/assignmentEdit";
 import { apiError } from "@/lib/api";
 import { adoptLegacyGroup } from "@/lib/assignmentSets";
 import { audit } from "@/lib/audit";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { assignmentStore } from "@/lib/sessions";
 
-const CORS = corsHeaders("PATCH");
+const CORS = corsHeaders("PATCH", "DELETE");
 
-export const OPTIONS = corsOptions("PATCH");
+export const OPTIONS = corsOptions("PATCH", "DELETE");
 
 export async function PATCH(
   request: NextRequest,
@@ -69,5 +73,26 @@ export async function PATCH(
     return NextResponse.json({ briefId: set.brief.briefId }, { headers: CORS });
   } catch (e) {
     return withCors(apiError(e), "PATCH");
+  }
+}
+
+/**
+ * Put the whole assignment away (owner request 2026-08-17). The coach could
+ * take learners off one at a time but never retire the assignment itself, so
+ * a board asked for by mistake stayed on every learner's list for good.
+ *
+ * The rows go; nothing anyone PLAYED does — see deleteAssignmentSet.
+ */
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: Promise<{ briefId: string }> },
+) {
+  try {
+    const { briefId: key } = await params;
+    const { context, set } = await requireEditableAssignment(decodeURIComponent(key));
+    const { learners, keptSessions } = await deleteAssignmentSet(context, set);
+    return NextResponse.json({ deleted: true, learners, keptSessions }, { headers: CORS });
+  } catch (e) {
+    return withCors(apiError(e), "DELETE");
   }
 }

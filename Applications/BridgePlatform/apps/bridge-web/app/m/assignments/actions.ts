@@ -17,8 +17,9 @@ import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { fanOutBriefToReviewer } from "@/lib/assignments";
+import { deleteAssignmentSet } from "@/lib/assignmentEdit";
 import { adoptLegacyGroup, loadAssignment } from "@/lib/assignmentSets";
-import { bridgeLibrary, itemToEntry, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners } from "@/lib/nexus";
 import { findReviewerCandidate } from "@/lib/reviewers";
 import { assignmentStore, submissionStore } from "@/lib/sessions";
@@ -113,15 +114,10 @@ export async function addLearnerAction(formData: FormData): Promise<void> {
 
   const { newId } = await import("@bridge/kb");
   // Copy-on-assign, the same primitive the create flow uses: the learner gets
-  // their OWN copy, and copyTo is idempotent per (source, learner) — which is
-  // what makes re-adding someone safe.
-  const copy = itemToEntry(
-    await bridgeLibrary().copyTo(await libraryPrincipalOf(context), content.entryId, {
-      ownerId: learnerId,
-      scopeLevel: "user",
-      provenance: "assigned",
-    }),
-  );
+  // their OWN copy, idempotent per (source, learner) — which is what makes
+  // re-adding someone safe — with a curated overlay brought forward onto a
+  // copy that predates it.
+  const copy = await copyForAssign(await libraryPrincipalOf(context), content.entryId, learnerId);
   await assignmentStore().putAssignment({
     assignmentId: newId("as"),
     programOrganizationId: set.brief.programOrganizationId,
@@ -144,6 +140,21 @@ export async function addLearnerAction(formData: FormData): Promise<void> {
     addedLearner: learnerId,
   });
   redirect(back(set.view.key, "added=learner"));
+}
+
+/**
+ * Delete the whole assignment (owner request 2026-08-17): the coach could
+ * take learners off one at a time but never put the assignment itself away,
+ * so a board asked for by mistake stayed on every learner's list for good.
+ *
+ * Detach, never destroy — see deleteAssignmentSet. Games and feedback stand.
+ */
+export async function deleteAssignmentAction(formData: FormData): Promise<void> {
+  const key = String(formData.get("key"));
+  const { context, set } = await requireEditable(key);
+  await deleteAssignmentSet(context, set);
+  // Back to the LIST, not the sheet — the sheet's assignment is gone.
+  redirect("/m/assignments?deleted=1");
 }
 
 export async function removeLearnerAction(formData: FormData): Promise<void> {

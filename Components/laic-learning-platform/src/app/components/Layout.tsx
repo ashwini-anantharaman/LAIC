@@ -61,6 +61,7 @@ import { VersionsPublishing } from './screens/VersionsPublishing';
 import { AuthorAnalytics } from './screens/AuthorAnalytics';
 import { ObjectCreator } from './screens/ObjectCreator';
 import { ObjectCreatorTutorialV2 } from './screens/tutorialV2/ObjectCreatorTutorialV2';
+import { ObjectCreatorTutorialV3 } from './screens/tutorialV3/ObjectCreatorTutorialV3';
 import { ObjectCreatorStructuredV2 } from './screens/objectV2/ObjectCreatorStructuredV2';
 import { CourseWizard } from './screens/CourseWizard';
 import { ObjectReviews } from './screens/ObjectReviews';
@@ -98,6 +99,8 @@ function ScreenRouter() {
     case 'cd-creator':
       return creatorObjectType === 'tutorial-v2'
         ? <ObjectCreatorTutorialV2 />
+        : creatorObjectType === 'tutorial-v3'
+        ? <ObjectCreatorTutorialV3 />
         : ['quiz', 'flashcard-set', 'concept-card', 'video-script'].includes(creatorObjectType || '')
           ? <ObjectCreatorStructuredV2 />
           : <ObjectCreator />;
@@ -186,7 +189,15 @@ export function Layout() {
   // no navigation chrome. The host app owns the surrounding navigation.
   if (embedMode) {
     return (
-      <main className="min-h-screen overflow-y-auto">
+      /*
+        A definite height, not just a minimum. The v3 reader is a fixed rail
+        beside a column that scrolls inside it, and it sizes itself against its
+        container — under `min-h-screen` there was nothing to resolve against,
+        so it stopped at its content height and the host app's own background
+        showed through the rest of the WebView. Anything taller than the
+        viewport still scrolls here, as before.
+      */
+      <main className="h-[100dvh] overflow-y-auto">
         <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
           <ScreenRouter />
         </ScreenErrorBoundary>

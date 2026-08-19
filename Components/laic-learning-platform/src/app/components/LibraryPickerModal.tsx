@@ -23,6 +23,7 @@ import { GlassFolderTile, tintForKey } from './GlassFolder';
 const TYPE_LABELS: Record<string, string> = {
   tutorial: 'Tutorials',
   'tutorial-v2': 'Tutorials V2',
+  'tutorial-v3': 'Tutorials V3',
   lesson: 'Lessons',
   quiz: 'Quizzes',
   'flashcard-set': 'Flashcard sets',
@@ -36,12 +37,12 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const TYPE_ORDER = [
-  'tutorial', 'tutorial-v2', 'lesson', 'concept-card', 'flashcard-set', 'quiz',
+  'tutorial', 'tutorial-v2', 'tutorial-v3', 'lesson', 'concept-card', 'flashcard-set', 'quiz',
   'assignment', 'reflection', 'summary', 'scenario', 'drill', 'video-script',
 ];
 
 const TYPE_ICON: Record<string, string> = {
-  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', quiz: '✅', 'flashcard-set': '🃏',
+  lesson: '📖', tutorial: '🎓', 'tutorial-v2': '🎓', 'tutorial-v3': '🎓', quiz: '✅', 'flashcard-set': '🃏',
   'concept-card': '💡', summary: '📋', reflection: '🪞', scenario: '🎭',
   assignment: '📝', drill: '🔁', 'video-script': '🎬',
 };

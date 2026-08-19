@@ -63,6 +63,9 @@ function sharedRowToObject(row: any): LearningObject {
     ...(row.pipeline_draft?.tutorialV2Draft
       ? { tutorialV2Draft: row.pipeline_draft.tutorialV2Draft }
       : {}),
+    ...(row.pipeline_draft?.tutorialV3Draft
+      ? { tutorialV3Draft: row.pipeline_draft.tutorialV3Draft }
+      : {}),
   } as LearningObject;
 }
 import {
@@ -226,8 +229,8 @@ export interface AppState {
    * One-shot from Create: Tutorial V2 path after folder picker
    * (`template` | `write-yourself`). Cleared when the creator consumes it.
    */
-  pendingAuthoringPath: 'template' | 'write-yourself' | null;
-  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  pendingAuthoringPath: 'template' | 'write-yourself' | 'source-first' | null;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | 'source-first' | null) => void;
   /**
    * One-shot: when set, Content Library opens this folder once then clears.
    * Normal nav to Content Library leaves this null → collections root.
@@ -245,7 +248,7 @@ export interface AppState {
   closeReader: () => void;
   setCreatorObjectType: (type: string) => void;
   setPendingTemplateId: (id: string | null) => void;
-  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | null) => void;
+  setPendingAuthoringPath: (path: 'template' | 'write-yourself' | 'source-first' | null) => void;
   addObject: (
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
     opts?: AddObjectOptions,
@@ -298,7 +301,7 @@ function StudioApp() {
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
-  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | null>(null);
+  const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
   const [libraryRootNonce, setLibraryRootNonce] = useState(0);
   const clearPendingLibraryFolderId = useCallback(() => setPendingLibraryFolderId(null), []);
@@ -456,7 +459,13 @@ function StudioApp() {
   useEffect(() => {
     if (!isLoggedIn || !libraryReady) return;
     if (createdObjects.length === 0) return;
-    saveUserObjects(activeUserId, createdObjects);
+    const res = saveUserObjects(activeUserId, createdObjects);
+    // A failed write means this session's work is not on disk and will be gone
+    // on refresh. It used to pass silently, so the first an author knew of it
+    // was a library that had lost their tutorials.
+    if (!res.ok) {
+      console.error('[library] SAVE FAILED — work from this session is not persisted:', res.error);
+    }
   }, [isLoggedIn, activeUserId, createdObjects, libraryReady]);
 
   // Flush on tab close / refresh so mid-session saves aren't lost.
@@ -732,6 +741,9 @@ function StudioApp() {
         tutorialV2Draft: (partial as any).tutorialV2Draft !== undefined
           ? (partial as any).tutorialV2Draft
           : (existing as any)?.tutorialV2Draft,
+        tutorialV3Draft: (partial as any).tutorialV3Draft !== undefined
+          ? (partial as any).tutorialV3Draft
+          : (existing as any)?.tutorialV3Draft,
         structuredV2Draft: (partial as any).structuredV2Draft !== undefined
           ? (partial as any).structuredV2Draft
           : (existing as any)?.structuredV2Draft,

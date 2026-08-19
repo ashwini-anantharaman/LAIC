@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { dataDir, pgClient, storeBackend } from "./backend";
 import { benSeatDecider } from "./benSeat";
 import { challengeBenDecider } from "./challengeBen";
+import { curatedSeatDecider } from "./curatedDecider";
+import { ddsRobotCard } from "./ddsRobotPlay";
 import { kbStore } from "./kb";
 
 /**
@@ -90,7 +92,11 @@ export function sessionService(): SessionService {
     kbStore(),
     // BEN can sit at any table; the decider dials BEN_ENDPOINT lazily, so a
     // missing endpoint only errors if a BEN seat actually has to act.
-    { benDecider: benDeciderFor() },
+    // KB robots bid the system and PLAY double-dummy (owner direction
+    // 2026-08-15) — the guard-railed solver card, KB lead rules untouched.
+    // A CURATED session's robots follow the coach's recorded line first,
+    // falling back to the ordinary deciders on divergence.
+    { benDecider: benDeciderFor(), kbPlayOverride: ddsRobotCard, curatedDecider: curatedSeatDecider },
   );
   return sessionServiceInstance;
 }
@@ -117,4 +123,26 @@ export function assignmentStore(): AssignmentStore {
       ? new PgAssignmentStore(pgClient())
       : new JsonFileAssignmentStore(join(process.cwd(), dataDir(), "assignment-store.json"));
   return assignmentStoreInstance;
+}
+
+/**
+ * Is the session this id names actually gone?
+ *
+ * An assignment remembers the session it started, and nothing ever checked
+ * that the session was still there. A dangling id is a DEAD END: the table
+ * answers boardGone, the app closes the board, and the learner lands back on
+ * the list they tapped from — every time, with no way to start over, because
+ * the row still says "started".
+ *
+ * ONLY a genuinely absent row counts, the same discipline viewOrGone applies
+ * in lib/tableView: a cold Postgres connection timing out must not read as
+ * "gone" and deal someone a second board over the top of a live one.
+ */
+export async function sessionIsGone(sessionId: string): Promise<boolean> {
+  try {
+    await sessionService().requireSession(sessionId);
+    return false;
+  } catch (e) {
+    return e instanceof Error && e.message.startsWith("No session ");
+  }
 }

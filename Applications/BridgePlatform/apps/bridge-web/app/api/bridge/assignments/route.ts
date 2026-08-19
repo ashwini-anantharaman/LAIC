@@ -25,7 +25,7 @@ import { AccessError, apiError, requireContext } from "@/lib/api";
 import { reconcileAssignments } from "@/lib/assignments";
 import { audit } from "@/lib/audit";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
-import { bridgeLibrary, itemToEntry, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { bridgeLibrary, copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners, isBridgeCoach, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { findReviewerCandidate, reviewerCandidates, selfReviewer } from "@/lib/reviewers";
 import { assignmentStore, libraryStore, submissionStore } from "@/lib/sessions";
@@ -238,15 +238,10 @@ export async function POST(request: NextRequest) {
       if (existing.length > 0) continue;
 
       // Copy-on-assign (0022): the learner receives their OWN copy in their
-      // instance, stamped with provenance; copyTo is idempotent per
-      // (source, learner) and policy-checks the coach's access.
-      const copy = itemToEntry(
-        await service.copyTo(principal, entryId, {
-          ownerId: learnerId,
-          scopeLevel: "user",
-          provenance: "assigned",
-        }),
-      );
+      // instance, stamped with provenance; idempotent per (source, learner),
+      // policy-checked, and it brings a curated overlay forward onto a copy
+      // that predates the curation — see copyForAssign.
+      const copy = await copyForAssign(principal, entryId, learnerId);
 
       await store.putAssignment({
         assignmentId: newId("as"),

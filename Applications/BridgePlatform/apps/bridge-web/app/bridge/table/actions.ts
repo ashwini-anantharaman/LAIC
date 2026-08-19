@@ -4,7 +4,7 @@
 // single-writer controller as the AI; legality is enforced in the session
 // service. Flagging a decision creates a suggestion in the KB's queue.
 
-import type { Card, Seat, Suit, Vul } from "@bridge/events";
+import type { Call, Card, Seat, Suit, Vul } from "@bridge/events";
 import { AwaitingHumanError, SessionService, type SeatConfig } from "@bridge/sessions";
 import { handFromSerialized } from "@/lib/dealText";
 import { revalidatePath } from "next/cache";
@@ -17,6 +17,7 @@ import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
 import { libraryKindLabel } from "@/lib/libraryLabels";
 import { libraryStore, sessionService } from "@/lib/sessions";
+import { studioAccess } from "@/lib/studioSession";
 
 const SEATS: Seat[] = ["N", "E", "S", "W"];
 
@@ -292,10 +293,47 @@ export async function playToEndAction(formData: FormData): Promise<void> {
   revalidatePath(`/bridge/table/${sessionId}`);
 }
 
+/** A LOCKED curated board refuses off-line actions (curated v2). Run the
+ *  gate only when the record wears the stamp — ordinary tables pay one
+ *  record read they were about to pay in act() anyway. The refusal is
+ *  SWALLOWED here, not thrown: a server action's throw is an error page,
+ *  and the felt already reverts its optimistic card when the server state
+ *  comes back unchanged — the coach panel says why (it pre-checks the same
+ *  charted move this gate enforces). */
+async function refusedByCoachLine(
+  sessionId: string,
+  action: { call?: string; card?: Card },
+): Promise<boolean> {
+  const record = await sessionService().requireSession(sessionId);
+  if (!record.curated) return false;
+  try {
+    const { assertCoachLine } = await import("@/lib/curatedGate");
+    await assertCoachLine(await sessionService().view(sessionId), {
+      call: action.call as Call | undefined,
+      card: action.card,
+    });
+    return false;
+  } catch (e) {
+    const { OffLineError } = await import("@/lib/curatedGate");
+    if (e instanceof OffLineError) return true;
+    throw e;
+  }
+}
+
 export async function bidAction(formData: FormData): Promise<void> {
-  await requireContext();
+  const context = await requireContext();
   const sessionId = String(formData.get("sessionId"));
-  await sessionService().act(sessionId, { call: String(formData.get("call")) });
+  const call = String(formData.get("call"));
+  // The studio's auction takes the coach's call at ANY chair, including the
+  // robots' — so this door checks whose board it is, which the session service
+  // (seat KIND, never identity) deliberately does not. See the JSON act door.
+  const record = await sessionService().requireSession(sessionId);
+  if (record.authoring && !studioAccess(record, context.nexusUserId).studio) return;
+  if (await refusedByCoachLine(sessionId, { call })) {
+    revalidatePath(`/bridge/table2/${sessionId}`);
+    return;
+  }
+  await sessionService().act(sessionId, { call });
   revalidatePath(`/bridge/table/${sessionId}`);
 }
 
@@ -306,6 +344,10 @@ export async function playCardAction(formData: FormData): Promise<void> {
     suit: String(formData.get("suit")) as Suit,
     rank: Number(formData.get("rank")) as Card["rank"],
   };
+  if (await refusedByCoachLine(sessionId, { card })) {
+    revalidatePath(`/bridge/table2/${sessionId}`);
+    return;
+  }
   await sessionService().act(sessionId, { card });
   revalidatePath(`/bridge/table/${sessionId}`);
 }

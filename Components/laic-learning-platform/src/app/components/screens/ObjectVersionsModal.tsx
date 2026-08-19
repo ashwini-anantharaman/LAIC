@@ -3,6 +3,7 @@ import { CloudOff, Eye, GitBranch, Loader2, Lock, LockOpen, RotateCcw, Trash2, U
 import { motion } from 'motion/react';
 import type { LearningObject, Version } from '../../../lib/types';
 import { useApp } from '../../App';
+import { backToNexus, hasReturnUrl } from '../../../lib/nexus';
 import { StatusPill } from './StatusPill';
 import { useConfirm } from '../ConfirmDialog';
 
@@ -242,7 +243,27 @@ export function ObjectVersionsModal({
               <GitBranch size={13} /> Save version
             </button>
           </div>
-          {error && <p style={{ fontSize: 12, color: '#DC2626', marginTop: 8 }}>{error}</p>}
+          {error && (
+            <div className="flex flex-wrap items-center gap-2" style={{ marginTop: 8 }}>
+              <p style={{ fontSize: 12, color: '#DC2626' }}>{error}</p>
+              {/*
+                A session problem is the one error the author can actually fix
+                from here, so it gets the button rather than an instruction to go
+                and do it themselves. Only offered when we still know where the
+                launch came from.
+              */}
+              {/Nexus (launch|session)/i.test(error) && hasReturnUrl() && (
+                <button
+                  type="button"
+                  onClick={() => backToNexus()}
+                  className="px-3 py-1.5 rounded-full"
+                  style={{ fontSize: 12, fontWeight: 650, color: '#fff', background: '#0B0F1A' }}
+                >
+                  Open Nexus
+                </button>
+              )}
+            </div>
+          )}
           {toast && <p style={{ fontSize: 12, color: '#059669', marginTop: 8 }}>{toast}</p>}
         </div>
 

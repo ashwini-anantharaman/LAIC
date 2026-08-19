@@ -798,9 +798,10 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   await page.mouse.click(header.x + header.width + 400, header.y + header.height / 2);
   await expect(page.getByText("Table settings")).toHaveCount(0);
 
-  // No confirm step any more (owner direction 2026-08-13): the page ignores
-  // any stale ?confirm=1 and a call lands the moment it is tapped — the
-  // staged "Confirm your call" bar must never appear.
+  // No confirm step (owner direction 2026-08-13, upheld over origin/main's
+  // one-OK staging redesign at the 2026-08-14 merge): the page ignores any
+  // stale ?confirm=1 and a call lands the moment it is tapped — neither the old
+  // "Confirm your call" bar nor a staged OK may appear.
   await page.goto(`/bridge/table2/${sid}?confirm=1`);
   const pass = page.getByRole("button", { name: "Pass", exact: true });
   await expect(async () => {
@@ -809,6 +810,7 @@ test("table settings menu: the ☰ opens the overlay and rows apply their settin
   const ok = page.getByRole("button", { name: /^Bid / });
   await pass.click();
   await expect(page.getByText(/Confirm your call/)).toHaveCount(0);
+  await expect(ok, "no staged OK either — the call already landed").toHaveCount(0);
 
   // PHONE tier (Mobile Table design): one vertical stack, and Pass INLINE with
   // the levels (BBO's two-row phone bid box) rather than owning a row of its

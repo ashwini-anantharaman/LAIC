@@ -1,11 +1,13 @@
 import { router, useFocusEffect, type Href } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
+import { captureRef } from "react-native-view-shot";
 
 import { ContentWebView } from "./content-webview";
 import { LeaveBoardDialog } from "./leave-board-dialog";
 import { leaveWithFade } from "./leave-veil";
 import { BoardLoading } from "./table/board-loading";
+import { BoardReloading } from "./table/board-reloading";
 import { QuitPullout } from "./table/quit-pullout";
 import { PrimaryButton, Screen, ScreenHeader } from "./ui";
 import { Brand, Colors, Fonts, Spacing } from "../constants/theme";
@@ -37,6 +39,12 @@ import { refreshSummary } from "../lib/summary-cache";
  * Path-only on purpose — query strings carry ?from=, ?view=, ?discarded= and must
  * not change the answer.
  */
+/** How long the app must have been away before a resume forces the clean
+ *  rebuild. A quick app-switch keeps the live page; past this, the OS has
+ *  usually reclaimed the WebView's renderer anyway, and a board that LOOKS
+ *  alive after a long sleep can be quietly dead. */
+const RESUME_RELOAD_AFTER_MS = 45_000;
+
 function isTableHref(href: string): boolean {
   const path = href.split("?")[0] ?? "";
   return path.includes("/bridge/table2/") || path.includes("/m/table/");
@@ -153,6 +161,25 @@ export function BridgeEmbed({
   const [boardCover, setBoardCover] = useState(fullScreen);
   const [boardReady, setBoardReady] = useState(false);
 
+  // ── Coming back to the SAME board (boss direction 2026-08-14) ─────────────
+  // A phone asleep for a while costs the board: the OS reclaims the WebView's
+  // renderer (or the whole app), and the resume is a full rebuild. The boss's
+  // rule: that rebuild must NOT wear the green dealing screen — the board
+  // stays on screen (its last captured frame) with a reloading pill over it.
+  // So: capture the felt as the app leaves the foreground; on return after a
+  // real absence (or on a renderer-death report), force a clean reload with
+  // the snapshot as the cover. The felt cover remains for fresh opens/parks.
+  const shotRef = useRef<View>(null);
+  const snapFile = useRef<string | null>(null);
+  const [reloadSnap, setReloadSnap] = useState<string | null>(null);
+  const rendererDead = useRef(false);
+  const backgroundedAt = useRef<number | null>(null);
+  // Mirrors for the AppState listener, which outlives any single render.
+  const boardReadyRef = useRef(false);
+  boardReadyRef.current = boardReady;
+  const parkedRef = useRef(parked);
+  parkedRef.current = parked;
+
   const load = useCallback(async () => {
     if (!token) return;
     setError(null);
@@ -211,6 +238,58 @@ export function BridgeEmbed({
     // loading here would boot the destination while the host is parked.
     if (!persistent) load();
   }, [load, persistent]);
+
+  /** The clean rebuild, wearing the snapshot: cover up (still image when we
+   *  have one, felt otherwise), then the normal load path — direct on the
+   *  known origin, and the /welcome watchdog re-handshakes if the session
+   *  died while the phone slept. */
+  const resumeReload = useCallback(() => {
+    if (!fullScreen) return;
+    rendererDead.current = false;
+    setReloadSnap(snapFile.current);
+    setBoardCover(true);
+    setBoardReady(false);
+    tableReported.current = false;
+    load();
+  }, [fullScreen, load]);
+
+  // Capture on the way OUT, decide on the way back IN. `inactive` (iOS) is
+  // the last moment the renderer is reliably alive to be photographed.
+  useEffect(() => {
+    if (!persistent || Platform.OS === "web") return;
+    const sub = AppState.addEventListener("change", (s) => {
+      if (s !== "active") {
+        // First transition away only — iOS fires inactive THEN background.
+        if (backgroundedAt.current != null) return;
+        backgroundedAt.current = Date.now();
+        if (!parkedRef.current && boardReadyRef.current && tableReported.current) {
+          captureRef(shotRef, { format: "jpg", quality: 0.6, result: "tmpfile" })
+            .then((uri) => {
+              snapFile.current = uri;
+            })
+            .catch(() => {
+              // No capture, no snapshot cover — the felt handles that resume.
+            });
+        }
+        return;
+      }
+      const away = backgroundedAt.current != null ? Date.now() - backgroundedAt.current : 0;
+      backgroundedAt.current = null;
+      if (parkedRef.current) return;
+      // A quick app-switch keeps the live page. A real absence (or a dead
+      // renderer) gets the boss's treatment: the board's image stays up and
+      // the page underneath reloads entirely.
+      if (rendererDead.current || away > RESUME_RELOAD_AFTER_MS) resumeReload();
+    });
+    return () => sub.remove();
+  }, [persistent, resumeReload]);
+
+  /** The WebView's renderer died. In the foreground, rebuild right now; in
+   *  the background, the resume handler above does it on the way back. */
+  const onWebDied = useCallback(() => {
+    rendererDead.current = true;
+    if (AppState.currentState === "active" && !parkedRef.current) resumeReload();
+  }, [resumeReload]);
 
   // ── Leaving an unfinished board (confirmUnfinishedExit) ───────────────────
   // The table page reports { sessionId, phase } as they change (its
@@ -435,6 +514,8 @@ export function BridgeEmbed({
       // suspends the cover's failsafe while parked — parks outlast 12s.
       setBoardCover(fullScreen);
       setBoardReady(false);
+      // The park curtain is FELT, never a stale screenshot of the old board.
+      setReloadSnap(null);
       setLeaveAsk(false);
       setError(null);
       escaped.current = false;
@@ -443,6 +524,9 @@ export function BridgeEmbed({
       boardGoneRetried.current = false;
       boardGoneLeaving.current = false;
       tableReported.current = false;
+      // A fresh sitting — last board's snapshot must never cover this one.
+      snapFile.current = null;
+      setReloadSnap(null);
       load();
     }
   }, [persistent, parked, load]);
@@ -576,28 +660,45 @@ export function BridgeEmbed({
       )}
 
       {url && (
-        <View style={styles.embed}>
+        // collapsable={false}: the capture target must be a real native view,
+        // or Android flattens it away and captureRef has nothing to shoot.
+        <View ref={shotRef} collapsable={false} style={styles.embed}>
           <ContentWebView
             url={url}
             onUrlChange={handleUrlChange}
             onHostMessage={handleHostMessage}
+            onDied={onWebDied}
           />
         </View>
       )}
 
-      {/* The felt-green loading cover, over the whole screen until the table
-          reports in (or an error takes the stage). The back chip below rides
-          ABOVE it (zIndex 20 vs 10) — the exit is never covered. */}
+      {/* The loading cover, over the whole screen until the table reports in
+          (or an error takes the stage). Two faces: resuming the SAME board
+          wears its own last frame with a reloading pill (boss direction
+          2026-08-14 — never the dealing screen for a board you were already
+          at); everything else keeps the felt. The back chip below rides
+          ABOVE either (zIndex 20 vs 10) — the exit is never covered. */}
       {fullScreen && boardCover && (
-        <BoardLoading
-          ready={boardReady || !!error}
-          // Parked, the cover is a curtain over the old page, not a loading
-          // screen: hold the failsafe (and the deal animation) until a real
-          // board load is underway, or a long park would fade it out and
-          // reopen the gap it exists to cover.
-          held={persistent && parked}
-          onGone={() => setBoardCover(false)}
-        />
+        reloadSnap && !(persistent && parked) ? (
+          <BoardReloading
+            uri={reloadSnap}
+            ready={boardReady || !!error}
+            onGone={() => {
+              setBoardCover(false);
+              setReloadSnap(null);
+            }}
+          />
+        ) : (
+          <BoardLoading
+            ready={boardReady || !!error}
+            // Parked, the cover is a curtain over the old page, not a loading
+            // screen: hold the failsafe (and the deal animation) until a real
+            // board load is underway, or a long park would fade it out and
+            // reopen the gap it exists to cover.
+            held={persistent && parked}
+            onGone={() => setBoardCover(false)}
+          />
+        )
       )}
 
       {/* Full-screen chrome: the FunBridge-style pull-out on the right edge

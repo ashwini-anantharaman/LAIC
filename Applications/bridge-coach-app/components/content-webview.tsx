@@ -8,6 +8,7 @@ export function ContentWebView({
   onHostMessage,
   onLoadEnd,
   onError,
+  onDied,
   injectedCSS,
 }: {
   url: string;
@@ -22,6 +23,13 @@ export function ContentWebView({
   onLoadEnd?: () => void;
   /** The embed could not be reached at all. */
   onError?: () => void;
+  /**
+   * The WebView's CONTENT PROCESS died — the OS reclaims backgrounded
+   * renderers (WKWebView after minutes asleep, Android under memory
+   * pressure), and what's left is a dead blank page, not an error. The host
+   * decides how to rebuild; without a handler the page just sits dead.
+   */
+  onDied?: () => void;
   /**
    * CSS to apply INSIDE the embedded page, so a web surface can be dressed to
    * match the app instead of reading as a browser dropped into a screen.
@@ -57,6 +65,9 @@ export function ContentWebView({
       onNavigationStateChange={(e) => onUrlChange?.(e.url)}
       onLoadEnd={() => onLoadEnd?.()}
       onError={() => onError?.()}
+      // Both platforms' names for "the renderer is gone" (iOS / Android).
+      onContentProcessDidTerminate={() => onDied?.()}
+      onRenderProcessGone={() => onDied?.()}
       {...(injectedCSS
         ? {
             // BEFORE content loads, so the page's first paint is already ours —

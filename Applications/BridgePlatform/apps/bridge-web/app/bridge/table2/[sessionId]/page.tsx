@@ -25,6 +25,8 @@ import { libraryKindLabel } from "@/lib/libraryLabels";
 import { getBridgeContext, isEmbeddedLaunch } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
 import { loadTableView } from "@/lib/tableView";
+import { currentAt } from "@/lib/curated";
+import { CurateRail } from "@/components/table/play/CurateRail";
 import { lookingAt } from "@/lib/coach/looking";
 import { boardTakeaway } from "@/lib/coach/takeaway";
 import { thinkAid } from "@/lib/coach/think";
@@ -52,13 +54,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; appearance?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; appearance?: string; curate?: string; author?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, appearance: appearanceParam } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, appearance: appearanceParam, curate, author } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -75,7 +77,7 @@ export default async function PlayTablePage({
     // Inside the coach app's WebView the host owns the frame and the table
     // renders its phone tier; on the desktop platform it keeps the wide view.
     isEmbeddedLaunch(),
-    loadTableView(context, sessionIdParam, { hands: handsParam }),
+    loadTableView(context, sessionIdParam, { hands: handsParam, author: author === "1" }),
   ]);
 
   if (!loaded.ok) {
@@ -97,9 +99,9 @@ export default async function PlayTablePage({
     appearance,
     mySeat,
     dummy,
-    takeover,
     declaringSeat,
     myTurn,
+    authoring,
     canSeeAllHands,
     showAll,
     visible,
@@ -147,6 +149,58 @@ export default async function PlayTablePage({
   // alone, centred on white.
   const coachOff = coachParam === "off";
   const showCoach = canCoach && !coachOff;
+
+  // CURATED-DEAL AUTHORING (owner design 2026-08-15): ?curate=1 puts the
+  // coach's annotation rail beside the table. The coach plays the line they
+  // want to teach; the rail collects per-decision notes and publishes
+  // through the save route (which re-validates every position). On the
+  // desktop the rail rides the wide tier's railExtra; EMBEDDED (the app's
+  // Curated Deals door) it takes the coach band's slot instead of the dock.
+  // Assignment remains the coach gate, so a non-coach curating to their own
+  // shelf harms nobody.
+  // THE STUDIO (curated v2, owner design 2026-08-18): `authoring` is the
+  // resolver's verified answer to ?author=1 — an authoring sitting this viewer
+  // is seated in. The coach plays the learner's chair against the robots
+  // (owner direction 2026-08-19), so `at` is live at the coach's own decisions
+  // exactly as it is on any other table, and those are the learner's.
+  const curating = (curate === "1" && !!mySeat && !handsView) || (authoring && !handsView);
+  const curateAt = curating && myTurn && !boardOver ? currentAt(state) : null;
+  // In the studio every call is "yours" — the address names the SEAT instead,
+  // so the coach always knows whose moment they are shaping.
+  const curateSeatName = { N: "North", E: "East", S: "South", W: "West" }[actingSeat];
+  const curateAtLabel = curateAt
+    ? curateAt.kind === "call"
+      ? authoring
+        ? `${curateSeatName} to call — bid #${state.auction.length + 1}`
+        : `Your call — bid #${state.auction.length + 1}`
+      : authoring
+        ? `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1} — ${curateSeatName}`
+        : `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1}`
+    : null;
+  // WHERE THE SITTING STANDS — the rail's one-line compass (UI/UX pass
+  // 2026-08-18): the felt shows the position, but the coach shaping a line
+  // wants the arithmetic said out loud.
+  const SUIT_CHAR = { S: "♠", H: "♥", D: "♦", C: "♣", N: "NT" } as const;
+  const curateLineSummary = boardOver
+    ? "The line is complete"
+    : state.contract
+      ? `${state.contract.level}${SUIT_CHAR[state.contract.strain]} by ${state.contract.declarer} · trick ${Math.max(1, Math.min(state.tricks.length, 13))} of 13`
+      : `${state.auction.length} call${state.auction.length === 1 ? "" : "s"} so far`;
+  const curateRail = curating ? (
+    <CurateRail
+      sessionId={sessionId}
+      at={curateAt}
+      atLabel={curateAtLabel}
+      boardOver={boardOver}
+      boardName={record.board.name}
+      fill={embedded}
+      author={authoring}
+      atSeat={curateAt ? actingSeat : null}
+      declarer={state.contract?.declarer ?? null}
+      dummySeat={dummy}
+      lineSummary={authoring ? curateLineSummary : null}
+    />
+  ) : null;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
   // scaffold (think), computed from THIS learner's seat. Both are null for a
   // watcher — nobody's hand to reason from — and the panel then shows its honest
@@ -238,10 +292,20 @@ export default async function PlayTablePage({
       };
     }),
   }));
+  // THE PARTNER / PARTNERSHIP / THEIRS CARDS are CLAUDE'S now, fetched
+  // client-side from /api/bridge/state-reads (boss direction 2026-08-15:
+  // no knowledge base anywhere in the bid-inference path — the KB-parsing
+  // states layer, lib/coach/states.ts, is unwired). The page passes only
+  // the deterministic facts; the panel fetches the reads per decision.
   const quanCoach: CoachPanelData | undefined = showCoach
     ? {
-        title: "Coach",
-        ...(coachLooking ? { looking: coachLooking.looking, facts: coachLooking.facts } : {}),
+        title: "Owlee",
+        // A curated session grows the third voice — the coach's bubbles,
+        // nudge, and authored ladders (owner design 2026-08-15).
+        ...(record.curated ? { curated: true } : {}),
+        ...(coachLooking
+          ? { looking: coachLooking.looking, facts: coachLooking.facts }
+          : {}),
         ...(coachGroups?.length ? { eventGroups: coachGroups } : {}),
         ...(coachAid ? { aid: coachAid } : {}),
         ...(takeaway ? { takeaway } : {}),
@@ -293,7 +357,7 @@ export default async function PlayTablePage({
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, appearance: appearanceParam };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, appearance: appearanceParam, curate, author };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -578,13 +642,12 @@ export default async function PlayTablePage({
     // the felt to whatever box it is given, so this is composition, not
     // squeezing.
     //
-    // The style override: PlayTable's phone tier paints its own wrapper
-    // layers white, inline. The component belongs to another workbench right
-    // now, so the page blacks out exactly those three wrapper layers from
-    // the outside — !important beats an inline style, and the selectors stop
-    // above mobileStack, whose own felt and cards paint over everything
-    // deeper. Worst case, a structure change under this selector shows a
-    // white patch again; it can never break the table.
+    // The blackout rides surroundBg now (2026-08-14): the old page-side
+    // `#coach-off-stage` !important override matched wrapper divs BY DEPTH,
+    // and the compact-centred layout added a wrapper under it — every layer
+    // below the match line came back white (owner report: "make sure all of
+    // the white screens are also dark"). PlayTable paints its own empty
+    // space from the prop instead, so layout changes can't reopen the hole.
     <div
       style={
         embedded
@@ -593,6 +656,10 @@ export default async function PlayTablePage({
               height: "100%",
               margin: "0 auto",
               background: coachOff ? "#000" : "#fff",
+              // Part of the coach-toggle morph (owner ask 2026-08-14): the
+              // surround fades between white and theatre black in step with
+              // the heights, instead of snapping.
+              transition: "background-color .35s ease",
               ...(coachOff
                 ? { display: "flex", flexDirection: "column", justifyContent: "center" }
                 : {}),
@@ -600,12 +667,15 @@ export default async function PlayTablePage({
           : { height: "100%" }
       }
     >
-      {embedded && coachOff && (
-        <style>{`#coach-off-stage > div, #coach-off-stage > div > div, #coach-off-stage > div > div > div { background: #000 !important; }`}</style>
-      )}
       <div
-        {...(embedded && coachOff ? { id: "coach-off-stage" } : {})}
-        style={embedded && coachOff ? { height: "68%" } : { height: "100%" }}
+        // The height TRANSITION makes flipping the coach on/off a morph, not
+        // a jump (owner ask 2026-08-14) — the settings row soft-navigates, so
+        // this same node survives the re-render and glides between sizes.
+        style={
+          embedded && coachOff
+            ? { height: "68%", transition: "height .35s ease" }
+            : { height: "100%", transition: "height .35s ease" }
+        }
       >
       <LivePlayTable
         sessionId={sessionId}
@@ -647,7 +717,7 @@ export default async function PlayTablePage({
         completedNote={challenge?.done ? challenge.onward.note : undefined}
         controlsExtra={canStepControls ? controlsAt(1) : undefined}
         controlsExtraNarrow={canStepControls ? controlsAt(1.5) : undefined}
-        railExtra={seatsPanel}
+        railExtra={!embedded && curateRail ? <>{seatsPanel}{curateRail}</> : seatsPanel}
         // How a tap plays a card, and how a finished trick clears — the two
         // play preferences origin/main's table reads (persisted per user via
         // the ☰ rows above).
@@ -665,8 +735,17 @@ export default async function PlayTablePage({
         // Off means the BAND goes too — at zero share the table-ui renders no
         // coach region at all, not a white placeholder band.
         {...(coachOff ? { coachShare: 0 } : {})}
+        // The theatre's black is painted by the component itself — every
+        // empty layer, not just the ones a selector could reach.
+        {...(embedded && coachOff ? { surroundBg: "#000" } : {})}
         coach={coachData}
-        {...(quanCoach ? { coachContent: <CoachDock data={quanCoach} /> } : {})}
+        {...(embedded && curateRail
+          ? // Curating in the app: the annotation rail takes the coach band —
+            // authoring and coaching don't fit one phone band at once.
+            { coachContent: curateRail }
+          : quanCoach
+            ? { coachContent: <CoachDock data={quanCoach} /> }
+            : {})}
       />
       </div>
     </div>
@@ -735,9 +814,14 @@ export default async function PlayTablePage({
       <div
         // Embedded: the WebView is the whole screen — full-bleed and EXACTLY
         // the viewport (owner direction 2026-08-08: the play screen never
-        // scrolls as a page; only the coach section scrolls). On the web the
-        // phone tier bleeds to the screen edge instead (-mx-3, no corners) and
-        // takes back its card chrome from md up.
+        // scrolls as a page; only the coach section scrolls). The fixed-table
+        // fit makes this safe: the stage prices itself off WIDTH, the coach
+        // band takes the leftover height and scrolls inside itself, and on a
+        // genuinely short window availPx shrinks the whole stage rather than
+        // pushing anything below the fold.
+        // Non-embedded takes origin/main's edge-to-edge treatment (merge
+        // 2026-08-14, "the felt reaches the edges"): full-bleed and unrounded
+        // on a phone-width platform window, the rounded card back at md+.
         className={
           embedded
             ? "overflow-hidden"

@@ -26,6 +26,9 @@ export interface AssignmentActions {
   removeLearner: (formData: FormData) => void | Promise<void>;
   addReviewer: (formData: FormData) => void | Promise<void>;
   removeReviewer: (formData: FormData) => void | Promise<void>;
+  /** Retire the whole assignment — brief and every learner's row. Detach,
+   *  never destroy: played games and their feedback are left standing. */
+  deleteAssignment: (formData: FormData) => void | Promise<void>;
 }
 
 /** Where the surfaces link to. Paths belong to the host's routing, not here. */

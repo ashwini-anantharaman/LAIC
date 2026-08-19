@@ -241,7 +241,19 @@ export function SeatHand({
                 // Every seam in the row is now exactly 1px; a suit boundary is
                 // only DARKER. Nothing moves, nothing varies in width, and the
                 // boundary is still findable.
-                border: up ? "2px solid #b8860b" : "1px solid #6b6b6b",
+                // LONGHANDS, NOT `border` PLUS A LONGHAND. The two together are
+                // the "conflicting property" React warns about, and the warning
+                // is earned: on a re-render where only the shorthand changes
+                // (the lift toggling) React rewrites `border` and leaves
+                // borderLeftColor alone, so the left edge took whichever colour
+                // the last render happened to set. Same declared result as
+                // before — the left edge still wins — but now it is the same
+                // every time.
+                borderWidth: up ? 2 : 1,
+                borderStyle: "solid",
+                borderTopColor: up ? "#b8860b" : "#6b6b6b",
+                borderRightColor: up ? "#b8860b" : "#6b6b6b",
+                borderBottomColor: up ? "#b8860b" : "#6b6b6b",
                 borderLeftColor:
                   m.suitGaps && i > 0 && card.suit !== hand[i - 1]!.suit ? "#23231f" : "#6b6b6b",
                 borderRadius: i === 0 ? "3px 0 0 3px" : i === hand.length - 1 ? "0 3px 3px 0" : 0,

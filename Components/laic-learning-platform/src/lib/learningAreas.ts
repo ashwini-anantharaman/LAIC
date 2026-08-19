@@ -41,7 +41,7 @@ export interface AccessManifest {
 export const LEARNING_MANIFEST: AccessManifest = {
   platform: 'learning',
   objectTypes: [
-    'lesson', 'tutorial', 'tutorial_v2', 'quiz', 'flashcard_set', 'concept_card', 'summary',
+    'lesson', 'tutorial', 'tutorial_v2', 'tutorial_v3', 'quiz', 'flashcard_set', 'concept_card', 'summary',
     'reflection', 'scenario', 'assignment', 'drill', 'video_script',
   ],
   capabilities: [

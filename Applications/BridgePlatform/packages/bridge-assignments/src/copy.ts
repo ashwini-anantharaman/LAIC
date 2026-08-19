@@ -53,6 +53,26 @@ export function removeLearnerCopy(learner: AssignmentLearnerView): string {
   return `Remove ${who} from this assignment? Their finished game stays in their My Games${kept}. This only takes the board off their assignment list.`;
 }
 
+/**
+ * Deleting the WHOLE assignment. Says the same true thing removeLearnerCopy
+ * says, at the scale of everyone on it: the ask goes, the work stays.
+ *
+ * The counts are the point. "Delete this assignment?" invites a coach to
+ * imagine the worst; naming how many learners lose the ask and how many
+ * played boards are untouched lets them decide on the facts.
+ */
+export function deleteAssignmentCopy(learners: readonly AssignmentLearnerView[]): string {
+  const n = learners.length;
+  const played = learners.filter((l) => l.status !== "assigned").length;
+  const who = n === 1 ? "1 learner" : `${n} learners`;
+  if (n === 0) return "Delete this assignment? Nobody has it yet, so nothing else changes.";
+  if (played === 0) {
+    return `Delete this assignment? It disappears from ${who}'s list. Nobody has started it, so nothing else changes.`;
+  }
+  const boards = played === 1 ? "the board 1 of them played stays" : `the boards ${played} of them played stay`;
+  return `Delete this assignment? It disappears from ${who}'s list, and ${boards} in their My Games with any feedback on them. This only stops it being asked for.`;
+}
+
 export function removeReviewerCopy(r: AssignmentReviewerView): string {
   const who = r.name;
   if (r.sent === 0) {

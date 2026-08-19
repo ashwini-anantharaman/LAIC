@@ -4,7 +4,7 @@
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  AlertTriangle, Check, ChevronLeft, ChevronRight, ClipboardPaste, FileText,
+  AlertTriangle, BookOpen, Check, ChevronLeft, ChevronRight, ClipboardPaste, FileText,
   Link2, Loader2, Search, Sparkles, Upload, X, Youtube, StickyNote,
 } from 'lucide-react';
 import type { DefinedSection, MarkupFlag } from '../../../lib/types';
@@ -12,7 +12,7 @@ import { annotateWebArticleHtml } from '../../../lib/webArticleHtml';
 import { highlightsFromFlag, distinctFlagGroups, flagGroupMeta } from './MarkupFlagReview';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';
 
-export type MarkupSourceKind = 'pdf' | 'text' | 'web' | 'youtube' | 'library';
+export type MarkupSourceKind = 'pdf' | 'text' | 'web' | 'youtube' | 'library' | 'content';
 
 export interface MarkupSource {
   id: string;
@@ -40,6 +40,8 @@ function sourceIcon(kind: MarkupSourceKind) {
   if (kind === 'text') return <ClipboardPaste {...props} />;
   if (kind === 'web') return <Link2 {...props} />;
   if (kind === 'youtube') return <Youtube {...props} />;
+  // Content from the library reads as a lesson, not as a document.
+  if (kind === 'content') return <BookOpen {...props} />;
   return <FileText {...props} />;
 }
 

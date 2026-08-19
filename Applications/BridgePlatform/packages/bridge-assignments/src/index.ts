@@ -25,6 +25,7 @@ export type {
 export {
   EMPTY_COPY,
   STATUS_LABEL,
+  deleteAssignmentCopy,
   peopleLine,
   removeLearnerCopy,
   removeReviewerCopy,

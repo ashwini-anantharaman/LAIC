@@ -6,8 +6,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   Upload, ClipboardPaste, Link2, Youtube, MessageSquare, PenLine, FileText,
-  X, AlertTriangle, ChevronRight, Image as ImageIcon, Loader2,
+  X, AlertTriangle, ChevronRight, Image as ImageIcon, Loader2, BookOpen,
 } from 'lucide-react';
+import { contentSourceLabel } from '../../../../lib/contentAsSource';
 import type { ParsedDoc } from '../../../../lib/pdf';
 import type { YtTranscriptSegment } from '../../../../lib/api';
 import { PullFromLibraryButton } from '../CDSources';
@@ -133,7 +134,7 @@ function ErrorNote({ text }: { text: string }) {
 }
 
 /* Tutorial Step 1 — teaching sources (tabs) + optional media (right column). */
-type SourceTab = MaterialSourceKind | 'prompt' | 'manual' | 'library';
+type SourceTab = MaterialSourceKind | 'prompt' | 'manual' | 'library' | 'content';
 
 function SourcesModal({
   title,
@@ -213,6 +214,9 @@ export function TutorialV2SourcePanel(props: any) {
     objectNoun = 'content',
     librarySource,
     onPickLibrarySource,
+    contentSource,
+    onPickContentSource,
+    onOpenContentPicker,
   } = props;
   const inputRef = useRef<HTMLInputElement>(null);
   const bulkImageRef = useRef<HTMLInputElement>(null);
@@ -232,6 +236,7 @@ export function TutorialV2SourcePanel(props: any) {
 
   const initialTab = ((): SourceTab => {
     if (pathMode === 'prompt' || pathMode === 'manual') return pathMode;
+    if (contentSource) return 'content';
     if (librarySource) return 'library';
     if (enabledTypes?.has?.('pdf')) return 'pdf';
     if (enabledTypes?.has?.('text')) return 'text';
@@ -266,7 +271,7 @@ export function TutorialV2SourcePanel(props: any) {
       return;
     }
     setPathMode('material');
-    if (tab !== 'library' && !enabledTypes.has(tab)) toggleMaterialType(tab);
+    if (tab !== 'library' && tab !== 'content' && !enabledTypes.has(tab)) toggleMaterialType(tab);
   };
 
   const addedSources: { key: string; icon: React.ReactNode; name: string; onRemove: () => void }[] = [];
@@ -300,6 +305,14 @@ export function TutorialV2SourcePanel(props: any) {
       icon: <Youtube size={13} />,
       name: y.doc.fileName || y.videoTitle || 'YouTube transcript',
       onRemove: () => onRemoveYoutube(y.id),
+    });
+  }
+  if (contentSource) {
+    addedSources.push({
+      key: 'content',
+      icon: <BookOpen size={13} />,
+      name: contentSourceLabel(contentSource),
+      onRemove: () => onPickContentSource?.(null),
     });
   }
   if (librarySource) {
@@ -371,6 +384,7 @@ export function TutorialV2SourcePanel(props: any) {
     ...MATERIAL_SOURCE_MODES.map((m) => ({ id: m.id as SourceTab, label: m.label, icon: m.icon })),
     ...PATH_SOURCE_MODES.map((m) => ({ id: m.id as SourceTab, label: m.label, icon: m.icon, hide: m.id === 'manual' && !showManualWrite })),
     { id: 'library', label: 'From Source Library', icon: <FileText size={15} />, hide: !onPickLibrarySource },
+    { id: 'content', label: 'From Content Library', icon: <BookOpen size={15} />, hide: !onPickContentSource },
   ];
 
   const mediaCard = showMedia && pathMode === 'material' && (
@@ -772,6 +786,65 @@ export function TutorialV2SourcePanel(props: any) {
                 <p style={{ fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
                   Next we open a blank {objectNoun} shaped like the Template Library default — nothing is generated. Change the default in Template Library anytime.
                 </p>
+              </div>
+            )}
+
+            {activeTab === 'content' && onPickContentSource && (
+              <div>
+                {contentSource ? (
+                  <div className="rounded-2xl border p-4" style={{ background: 'rgba(255,255,255,0.9)', borderColor: 'rgba(77,124,90,0.3)' }}>
+                    <div className="flex items-start gap-3">
+                      <div className="w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0" style={{ background: '#4d7c5a' }}>
+                        <BookOpen size={18} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p style={{ fontSize: 13.5, fontWeight: 650, color: '#0B1220' }} className="truncate">
+                          {contentSource.title}
+                        </p>
+                        <p style={{ fontSize: 12, color: '#6B7280' }}>
+                          {contentSource.pickedSectionIds.length
+                            ? `${contentSource.pickedSectionIds.length} of ${contentSource.sections.length} sections`
+                            : `All ${contentSource.sections.length} sections`}
+                          {' · already curated, so there is nothing to mark up again'}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => onOpenContentPicker?.()}
+                          className="px-3 py-1.5 rounded-full border text-xs"
+                          style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}
+                        >
+                          Change sections
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onPickContentSource(null)}
+                          className="px-3 py-1.5 rounded-full border text-xs"
+                          style={{ color: '#374151', borderColor: 'rgba(0,0,0,0.1)' }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-start gap-3">
+                    <p style={{ fontSize: 13, color: '#6B7280', lineHeight: 1.5 }}>
+                      Build this {objectNoun} from a tutorial you have already published. You pick
+                      which of its sections to draw on, and its text goes straight into the pool —
+                      it was curated when the tutorial was written.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onOpenContentPicker?.()}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-white"
+                      style={{ fontSize: 13, fontWeight: 650, background: '#4d7c5a' }}
+                    >
+                      <BookOpen size={14} /> Choose a tutorial
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 

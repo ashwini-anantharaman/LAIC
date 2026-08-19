@@ -99,9 +99,10 @@ export interface LookingAt {
    * Compact chips. `label` may be empty for a value that reads alone.
    * `detail` is the flip side — the same fact spelled out, for the Game State
    * card's back. Factual only, like everything in this file: a definition or
-   * a count, never advice.
+   * a count, never advice. `group` files a chip under one of the Game State's
+   * three views (me / partner / partnership); absent means the learner's own.
    */
-  facts: { label: string; value: string; detail?: string }[];
+  facts: { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" | "theirs" | "advanced" }[];
   /** The whole board so far — the auction and every trick, one group each. */
   eventGroups: LookingEventGroup[];
 }
@@ -291,8 +292,12 @@ export function lookingAt(
           value: `Trick ${Math.min(done + 1, 13)}`,
           detail: `Trick ${Math.min(done + 1, 13)} of 13.`,
         },
-        { label: "yours", value: String(ours), detail: "Won by you and partner so far." },
-        { label: "theirs", value: String(done - ours), detail: "Won by the opponents so far." },
+        // Tricks won by SIDE file under that side's view (owner direction
+        // 2026-08-15): ours with the partnership, theirs with the opponents.
+        // Named as what they COUNT — "theirs" alone sealed into an envelope
+        // labelled "THEIRS" inside the Theirs pane, which read as nonsense.
+        { label: "Our tricks", value: String(ours), detail: "Won by you and partner so far.", group: "partnership" as const },
+        { label: "Their tricks", value: String(done - ours), detail: "Won by the opponents so far.", group: "theirs" as const },
         { label: "HCP dealt", value: String(points), detail: HCP_DETAIL },
       ],
       eventGroups: groups,

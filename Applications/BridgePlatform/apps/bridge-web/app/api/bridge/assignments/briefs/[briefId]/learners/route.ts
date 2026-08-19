@@ -13,7 +13,7 @@ import { requireEditableAssignment } from "@/lib/assignmentEdit";
 import { apiError } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
-import { bridgeLibrary, itemToEntry, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners } from "@/lib/nexus";
 import { assignmentStore } from "@/lib/sessions";
 
@@ -53,13 +53,7 @@ export async function POST(
 
     const { newId } = await import("@bridge/kb");
     // Copy-on-assign, the same primitive the create flow uses.
-    const copy = itemToEntry(
-      await bridgeLibrary().copyTo(await libraryPrincipalOf(context), content.entryId, {
-        ownerId: learnerId,
-        scopeLevel: "user",
-        provenance: "assigned",
-      }),
-    );
+    const copy = await copyForAssign(await libraryPrincipalOf(context), content.entryId, learnerId);
     const assignmentId = newId("as");
     await assignmentStore().putAssignment({
       assignmentId,

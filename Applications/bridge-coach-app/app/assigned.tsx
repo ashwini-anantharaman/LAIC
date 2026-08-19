@@ -19,6 +19,8 @@ import {
 } from "../lib/assignments";
 import { useAuth } from "../lib/auth-context";
 import { BridgeApiError } from "../lib/bridge-api";
+import { peekBridgeOrigin } from "../lib/launch-cache";
+import { prewarmBridgePages } from "../lib/prewarm";
 import { useSelectedClubId } from "../lib/club-context";
 import { PROGRAM_ID } from "../lib/config";
 
@@ -43,6 +45,12 @@ export default function AssignedScreen() {
   useFocusEffect(
     useCallback(() => {
       if (!token) return;
+      // The table is one tap away from this list, and its route is the
+      // heaviest in the platform — warm the function while the learner reads
+      // their assignments rather than after they have committed to waiting.
+      // A bogus id 404s cheaply and still pays the module init and DB pool,
+      // which is the expensive part (the Play tab warms it the same way).
+      prewarmBridgePages(["/bridge/table2/prewarm"], peekBridgeOrigin(token));
       setModel(peekAssigned(token, programId));
       refreshAssigned(token, programId)
         .then(() => setLoadError(null))
@@ -58,8 +66,32 @@ export default function AssignedScreen() {
   );
 
   const start = useCallback(
-    async (assignmentId: string) => {
+    async (assignmentId: string, knownSessionId?: string) => {
       if (!token || busy) return;
+
+      // CONTINUE GOES NOW. An assignment already underway carries its session
+      // on the row, so the POST hands back an id the app is already holding —
+      // and the learner spent a whole serverless round-trip watching a busy
+      // button before the first pixel of the board could even be asked for
+      // (owner report 2026-08-17). Nothing about that trip decided where to
+      // go, so it does not belong in front of the navigation.
+      if (knownSessionId) {
+        router.push(`/table/${knownSessionId}?from=assigned`);
+        // Still ask — off the critical path. The resume route SELF-HEALS a
+        // session that has vanished, and if it dealt a different board that
+        // is the one to be on, so follow it. A failure here is silent: the
+        // board we opened is the board the row promised.
+        startAssignment(token, programId, assignmentId)
+          .then(({ sessionId }) => {
+            if (sessionId !== knownSessionId) {
+              router.replace(`/table/${sessionId}?from=assigned`);
+            }
+          })
+          .catch(() => {});
+        return;
+      }
+
+      // A board never started has no id to go to — this one has to wait.
       setBusy(true);
       try {
         const { sessionId } = await startAssignment(token, programId, assignmentId);
@@ -151,7 +183,7 @@ export default function AssignedScreen() {
                         )}
                         {section.button && (
                           <Pressable
-                            onPress={() => start(a.assignmentId)}
+                            onPress={() => start(a.assignmentId, a.sessionId)}
                             disabled={busy}
                             style={({ pressed }) => [
                               styles.startButton,

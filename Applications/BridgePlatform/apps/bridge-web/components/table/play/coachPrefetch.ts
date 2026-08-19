@@ -82,6 +82,106 @@ function once<T>(key: string, fn: () => Promise<T>): Promise<T> {
   return p;
 }
 
+/** One Position card, as the state-reads route serves it — grouped and captioned. */
+export interface StateReadCard {
+  title: string;
+  value: string;
+  detail: string;
+  group?: "me" | "partner" | "partnership" | "theirs" | "advanced";
+}
+
+/**
+ * Claude's read of the auction for the Position states (boss direction
+ * 2026-08-15: no KB in this path). Keyed per DECISION like the hints, but
+ * the server caches per AUCTION — during the play every card shares one
+ * answer, so the extra epochs are free.
+ */
+export function fetchStateReads(
+  sessionId: string,
+  epoch: string,
+): Promise<{ cards: StateReadCard[] | null; reason?: string }> {
+  const key = `reads:${sessionId}:${epoch}`;
+  return once(key, async () => {
+    const res = await fetch(`/api/bridge/state-reads?sessionId=${encodeURIComponent(sessionId)}`);
+    const body = (await res.json()) as { cards?: StateReadCard[] | null; reason?: string };
+    if (!body.cards) {
+      cache.delete(key); // a miss stays retryable
+      return { cards: null, ...(body.reason ? { reason: body.reason } : {}) };
+    }
+    return { cards: body.cards };
+  });
+}
+
+/** The coach's voice for a CURATED session, computed per position server-side. */
+export interface CuratedOverlay {
+  onPath: boolean;
+  diverged: boolean;
+  /** How tightly the coach holds this board (curated v2, 2026-08-18):
+   *  "locked" refuses off-line actions server-side, "guided" nudges (the v1
+   *  behavior every payload without the field means), "free" stays quiet. */
+  constraint?: "locked" | "guided" | "free";
+  /** The coach's framing — sent until the learner's first own action. */
+  intro?: string;
+  /** The coach's closing words — sent once the board is complete. */
+  debrief?: string;
+  /** The coach's pinned read, one per deal. */
+  pin?: string;
+  /**
+   * WHAT THIS BOARD TEACHES (owner direction 2026-08-18) — the K items the
+   * Know panel leads with, resolved server-side from the deal's tags for the
+   * phase the board is in. Absent when the coach named no lesson, and the
+   * panel then shows its ordinary side views alone.
+   */
+  lesson?: {
+    tags: string[];
+    /** The lesson's name for the learner — "Trump management". */
+    name: string;
+    /** Registry ids, in teaching order. */
+    items: string[];
+    phase: "auction" | "play";
+  };
+  /** The coach's display name, resolved from the assignment ("Coach Sarah"). */
+  coachName?: string;
+  /** The board is over — how the sitting went against the coach's line. */
+  finished?: { stayedOnLine: boolean };
+  /** The learner's last action was the first step off the coach's line. */
+  nudge?: { charted: string };
+  /** WHERE the line was left, and what was played there instead — so "off the
+   *  line" carries its evidence rather than being an unarguable verdict. */
+  left?: { where: string; charted: string; played: string };
+  /** The annotation at the decision the learner is at (on-path only). */
+  current?: { note?: string; why?: string; hints?: string[]; charted?: string };
+  /**
+   * The coach's word about what the OTHER seats just did — a partner's bid,
+   * an opponent's lead — carried back to the learner's next decision, in the
+   * order it happened. A note at a robot's own turn can never be read there:
+   * the robots answer within the same second the learner acts.
+   */
+  since?: {
+    seat: string;
+    partner: boolean;
+    /** The move itself, pretty-printed: "2NT", "♦J". */
+    move: string;
+    note?: string;
+    why?: string;
+  }[];
+}
+
+export function fetchCuratedOverlay(
+  sessionId: string,
+  epoch: string,
+): Promise<CuratedOverlay | null> {
+  const key = `curated:${sessionId}:${epoch}`;
+  return once(key, async () => {
+    const res = await fetch(
+      `/api/bridge/curated-overlay?sessionId=${encodeURIComponent(sessionId)}`,
+    );
+    const body = (await res.json()) as { overlay?: CuratedOverlay | null };
+    if (!body.overlay) cache.delete(key); // stays retryable
+    return body.overlay ?? null;
+  });
+}
+
 /** The five hints for the current decision — auction or play. */
 export function fetchHints(sessionId: string, epoch: string): Promise<HintsAnswer> {
   const key = `hints:${sessionId}:${epoch}`;
@@ -175,16 +275,25 @@ export function fetchBenWhatIf(sessionId: string, query: string): Promise<BenAns
 export function useCoachPrefetch(
   ask: { sessionId: string; active: boolean; phase: "auction" | "play" | "other" } | undefined,
   epoch: string,
+  /** The session is a curated deal — prefetch the coach's overlay too. */
+  curated?: boolean,
 ): void {
   const sessionId = ask?.sessionId;
   const active = ask?.active ?? false;
   const phase = ask?.phase;
   useEffect(() => {
-    if (!sessionId || !active || phase === "other") return;
+    if (!sessionId) return;
+    // The coach's overlay is position-addressed; a curated session wants it
+    // fresh at every decision, learner's turn or not (the nudge rides it).
+    if (curated) void fetchCuratedOverlay(sessionId, epoch).catch(() => {});
+    // The Position reads don't wait for the learner's turn — the panel shows
+    // them the moment any bid lands, whoever is thinking.
+    if (phase !== "other") void fetchStateReads(sessionId, epoch).catch(() => {});
+    if (!active || phase === "other") return;
     void fetchHints(sessionId, epoch).catch(() => {});
     void fetchBenTell(sessionId, epoch).catch(() => {});
     // The card advice exists only during the play; the auction's answer lives
     // at the top of the hint ladder instead.
     if (phase === "play") void fetchPlayAdvice(sessionId, epoch).catch(() => {});
-  }, [sessionId, active, phase, epoch]);
+  }, [sessionId, active, phase, epoch, curated]);
 }

@@ -22,6 +22,7 @@ import {
   adoptAssignment,
   peekCoachAssignments,
   refreshCoachAssignments,
+  deleteAssignment,
   removeAssignmentLearner,
   removeAssignmentReviewer,
   subscribeToCoachAssignments,
@@ -49,6 +50,8 @@ export default function AssignmentsScreen() {
     token ? peekCoachAssignments(token, programId) : null,
   );
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Which card's delete is armed — a second tap commits it. Null = none.
+  const [armedDelete, setArmedDelete] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -293,6 +296,51 @@ export default function AssignmentsScreen() {
                   ))}
                 </>
               )}
+
+              {/* RETIRING THE WHOLE THING (owner request 2026-08-17). Learners
+                  could be taken off one at a time but the assignment itself
+                  could not be put away, so a board asked for by mistake stayed
+                  on every learner's list for good.
+
+                  Two taps, not a dialog: the first arms it and states plainly
+                  what survives, the second does it. A destructive action needs
+                  a beat to think in, and the app has no confirm sheet — an RN
+                  Modal is the one thing this codebase has learned not to put
+                  over a table. */}
+              {editable && (
+                <View style={styles.deleteBox}>
+                  {armedDelete === view.key ? (
+                    <>
+                      <Text style={styles.deleteWarn}>
+                        Delete this assignment? It disappears from every learner&apos;s list.
+                        Boards they already played stay in their My Plays, with any feedback.
+                      </Text>
+                      <View style={styles.deleteRow}>
+                        <Pressable
+                          onPress={() => {
+                            setArmedDelete(null);
+                            void run(
+                              () => deleteAssignment(token!, programId, view.key),
+                              "Assignment deleted — played boards stay with your learners.",
+                            );
+                          }}
+                          disabled={busy}
+                          style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
+                        >
+                          <Text style={styles.deleteBtnText}>Yes, delete it</Text>
+                        </Pressable>
+                        <Pressable onPress={() => setArmedDelete(null)} hitSlop={8}>
+                          <Text style={styles.removeText}>Keep it</Text>
+                        </Pressable>
+                      </View>
+                    </>
+                  ) : (
+                    <Pressable onPress={() => setArmedDelete(view.key)} hitSlop={8}>
+                      <Text style={styles.removeText}>Delete this assignment</Text>
+                    </Pressable>
+                  )}
+                </View>
+              )}
             </View>
           )}
         </View>
@@ -413,6 +461,26 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     overflow: "hidden",
   },
+  deleteBox: {
+    marginTop: 18,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,244,215,0.22)",
+  },
+  deleteWarn: {
+    fontFamily: Fonts.body,
+    fontSize: 12.5,
+    lineHeight: 18,
+    color: "rgba(255,244,215,0.85)",
+  },
+  deleteRow: { flexDirection: "row", alignItems: "center", gap: 14, marginTop: 10 },
+  deleteBtn: {
+    backgroundColor: "#b91c1c",
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  deleteBtnText: { fontFamily: Fonts.bodySemibold, fontSize: 12.5, color: "#fff" },
   removeText: {
     fontFamily: Fonts.bodySemibold,
     fontSize: 12,

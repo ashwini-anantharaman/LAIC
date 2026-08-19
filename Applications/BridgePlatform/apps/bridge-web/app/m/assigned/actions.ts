@@ -8,9 +8,10 @@ import { resolveEntryLineup } from "@/app/bridge/library/actions";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import { ensureSeeds } from "@/lib/kb";
+import { withCuratedOverlayFrom } from "@/lib/libraryComponent";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed } from "@/lib/org";
-import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
+import { assignmentStore, libraryStore, sessionIsGone, sessionService } from "@/lib/sessions";
 
 export async function startAssignmentAction(formData: FormData): Promise<void> {
   const context = await requireContext();
@@ -23,15 +24,29 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     throw new Error("Only the assigned learner can start this board");
   }
 
-  // Already underway — go back to the table. STRAIGHT to the real table page:
-  // /m/table/<id> only exists to redirect there, and that extra hop is another
-  // server round trip the learner waits through before the board paints.
-  if (assignment.sessionId && assignment.status === "started") {
+  // Already underway — go back to the table, IF that table is still there.
+  // STRAIGHT to the real table page: /m/table/<id> only exists to redirect
+  // there, and that extra hop is another server round trip the learner waits
+  // through before the board paints.
+  //
+  // A dangling sessionId is a dead end (see the API route's twin): the table
+  // answers boardGone and the learner is bounced back to the list, for good,
+  // because the row still says "started". Falling through deals a fresh board
+  // off the same entry.
+  if (
+    assignment.sessionId &&
+    assignment.status === "started" &&
+    !(await sessionIsGone(assignment.sessionId))
+  ) {
     redirect(`/bridge/table2/${assignment.sessionId}`);
   }
 
-  const entry = await libraryStore().getEntry(assignment.entryId);
-  if (!entry?.hands) throw new Error("This assignment's board no longer exists");
+  const stored = await libraryStore().getEntry(assignment.entryId);
+  if (!stored?.hands) throw new Error("This assignment's board no longer exists");
+  // Last chance to pick the coach's words up — see the API route's twin. An
+  // assignment issued before the board was curated carries a copy with no
+  // overlay, and the `curated` stamp below is decided off exactly this entry.
+  const entry = await withCuratedOverlayFrom(stored, assignment.sourceEntryId);
 
   await ensureSeeds();
   await assertAiAllowed(context);
@@ -50,6 +65,10 @@ export async function startAssignmentAction(formData: FormData): Promise<void> {
     // Without the program stamp the session is invisible to every
     // program-scoped read (My Games, Resume, summary counts).
     nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
+    // A curated entry's session carries the stamp (owner design 2026-08-15):
+    // the robots follow the coach's recorded line and the coach-overlay API
+    // finds the annotations from the sessionId.
+    ...(entry.curatedJson ? { curated: { entryId: entry.entryId } } : {}),
   });
 
   await store.putAssignment({

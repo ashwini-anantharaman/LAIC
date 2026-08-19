@@ -36,6 +36,7 @@ import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 import { SeatHand, type SeatHandMetrics } from "./SeatHand";
+import { positionOf, seatAtPosition } from "./seatView";
 import { SeatPlate } from "./SeatPlate";
 import { SeatDiagram } from "./SeatDiagram";
 import { AuctionBox, auctionRowsBoxH, type AuctionBoxSizing } from "./AuctionBox";
@@ -203,15 +204,15 @@ const AUCTION_BOX_H = AUCTION_HEAD + auctionRowsBoxH(AUCTION_ROWS, AUCTION_CELL)
 const CENTRE_MIN_AUCTION = AUCTION_HEAD + auctionRowsBoxH(2, AUCTION_CELL);
 const CENTRE_MIN_PLAY = Math.round(M_TRICK_BOX.h * 0.7) + 16;
 const CENTRE_MIN_RESULT = 200;
-const CENTRE_MAX = 900;
 /**
  * What the centre band WANTS, per phase — its designed content height: the
  * whole four-row auction grid, the full trick compass with air, the result
- * card with margin. WITH THE COACH PANEL ON this is also its CEILING (owner
- * direction 2026-08-11: "the table should be very compact and the rest of the
- * space is given to the coach"): a taller window makes the coach taller, never
- * the felt emptier — CENTRE_MAX-style absorption is for the standalone table,
- * where there is nobody below to give the leftover to.
+ * card with margin. This is also its CEILING, coach or no coach (owner
+ * directions 2026-08-11 "the table should be very compact and the rest of
+ * the space is given to the coach", and 2026-08-14 extending the same shape
+ * to the coach-off table — the old CENTRE_MAX absorption read as a table
+ * stretched out of its proportions). Leftover height is the coach's when
+ * the panel is on, and neutral margin when it isn't.
  */
 const CENTRE_IDEAL_AUCTION = AUCTION_BOX_H;
 const CENTRE_IDEAL_PLAY = M_TRICK_BOX.h + 16;
@@ -467,6 +468,16 @@ export interface PlayTableProps {
    */
   showToolbars?: boolean;
   showCoach?: boolean;
+  /**
+   * What the phone tier's EMPTY space wears — the root column, the table
+   * region around the centred stage, and the stage's own slack. Default
+   * white (the coach-on look). The coach-off theatre passes black, which
+   * replaced the page-side `#coach-off-stage` !important override: that
+   * hack matched wrapper divs BY DEPTH, and every layout change under it
+   * re-opened a white patch (owner report 2026-08-14, "make sure all of
+   * the white screens are also dark").
+   */
+  surroundBg?: string;
   /** The coach panel's share of the phone screen, 0–55%. Default 30. */
   coachShare?: number;
   /** Header title for the coach panel. Default "Coach". */
@@ -512,6 +523,7 @@ export function PlayTable({
   viewHref,
   hideTopBar = false,
   bootNeutral = false,
+  surroundBg = "#fff",
   appearance,
   showToolbars = true,
   showCoach = true,
@@ -655,8 +667,9 @@ export function PlayTable({
   // The table region is content-sized and CAPPED at (100 − coachShare)% of
   // the box; the coach panel takes every remaining pixel, and coachShare is
   // its MINIMUM — a short window shrinks the stage rather than squeezing the
-  // coach out. (The centre band flexes between its floors and CENTRE_MAX —
-  // owner direction 2026-08-11, superseding the 2026-08-09 fixed height.)
+  // coach out. (The centre band flexes between its floor and its ideal —
+  // owner directions 2026-08-11 and 2026-08-14; the ideal is the ceiling
+  // everywhere now.)
   const coachOn = showCoach !== false;
   const coachSharePct = Math.max(0, Math.min(55, coachShare ?? 30));
   const tableSharePct = 100 - coachSharePct;
@@ -666,6 +679,36 @@ export function PlayTable({
   // controls). Either way the hand is on screen: a defender sees dummy.
   const playing = inPlay || complete;
   const decHuman = declarer ? !!seats[declarer].human : false;
+
+  /**
+   * THE PHONE TIER IS DRAWN FROM THE VIEWER'S CHAIR.
+   *
+   * It has room for ONE hand plus dummy, so the seat it draws at the bottom is
+   * the seat it can be played from. That seat was the literal "S" until
+   * 2026-08-18 — true of every table there has ever been here, because quick
+   * play, challenges and assignments all seat their human South.
+   *
+   * A curated deal broke the assumption twice over: its coach chooses where
+   * the learner sits, and while AUTHORING they hold all four chairs at once,
+   * so the seat on turn is whichever one they are playing. Both hand this a
+   * seat that is not South, and with the literal in place those hands were
+   * unreachable — drawn face down at the bottom, or not drawn at all. (The
+   * auction never had the problem: the bid pad is one shared control, gated
+   * on whose turn it is rather than on a seat.)
+   *
+   * So the phone tier maps SEATS to SCREEN POSITIONS, from the viewer out:
+   * they sit at the bottom, their partner opposite, their left-hand opponent
+   * on the left (./seatView.ts, where the arithmetic is pinned by tests).
+   *
+   * WITH THE VIEWER IN SOUTH — or in no seat at all — BOTH MAPS ARE THE
+   * IDENTITY, so every table that existed before this renders exactly as it
+   * did. The wide and stacked tiers are untouched: they draw all four hands
+   * and SeatDiagram makes any seat's cards tappable on its turn, so they were
+   * never blind to a seat and keep their true compass.
+   */
+  const seatedAt: Seat = mySeat ?? "S";
+  const posOf = (seat: Seat): Seat => positionOf(seat, mySeat ?? null);
+  const seatAt = (pos: Seat): Seat => seatAtPosition(pos, mySeat ?? null);
   /**
    * The SECOND hand on screen beside the viewer's own.
    *
@@ -679,9 +722,9 @@ export function PlayTable({
   const sideSeat: Seat | null =
     !playing
       ? null
-      : dummy === "S" && declarer && declarer !== "S" && decHuman
+      : dummy === seatedAt && declarer && declarer !== seatedAt && decHuman
         ? declarer
-        : dummy && dummy !== "S"
+        : dummy && dummy !== seatedAt
           ? dummy
           : null;
   const dummyIsRow = !!sideSeat && decHuman;
@@ -731,11 +774,16 @@ export function PlayTable({
   const trayFor = (k: number) => TRAY_ROWS * trayRowFor(k) + TRAY_PAD;
   /** What the centre band's content needs before it starts scrolling/scaling. */
   const centreMin = complete ? CENTRE_MIN_RESULT : inAuction ? CENTRE_MIN_AUCTION : CENTRE_MIN_PLAY;
-  /** …and what it WANTS. With the coach panel below, want is also the ceiling:
-      the table stays compact and the coach's flex band takes every remaining
-      pixel; standalone, the felt may still absorb up to CENTRE_MAX. */
+  /** …and what it WANTS — which is also the ceiling, coach or no coach
+      (owner direction 2026-08-14: "make it more compact, similar to the
+      version with the coach panel"). The felt used to absorb leftover
+      height up to CENTRE_MAX when no coach band sat below, which read as a
+      table stretched out of its own proportions the moment the panel was
+      switched off. The table now keeps ONE compact shape everywhere;
+      whatever the screen has left over stays neutral margin below it (and
+      the embedded coach-off theatre centres the whole box anyway). */
   const centreIdeal = complete ? CENTRE_IDEAL_RESULT : inAuction ? CENTRE_IDEAL_AUCTION : CENTRE_IDEAL_PLAY;
-  const centreCap = coachOn && coachSharePct > 0 ? centreIdeal : CENTRE_MAX;
+  const centreCap = centreIdeal;
   const fit = (k: number, usePad: boolean) => {
     const avail = availPx / (k || 1);
     const others =
@@ -1130,15 +1178,19 @@ export function PlayTable({
       262px compass that spreads to the corners; the phone gets a tight
       interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
+  // The phone's trick, drawn from the viewer's chair like the hands around it
+  // (see posOf/seatAt): a card comes from the side of the table its player is
+  // sitting on. TrickArea places by seat and labels nothing, so the mapping is
+  // purely positional — and it is the identity for a viewer in South.
   const trickCluster = (k: number) => (
     <TrickArea
       variant="cluster"
-      plays={currentPlays}
-      turn={state.turn}
+      plays={currentPlays.map((p) => ({ ...p, seat: posOf(p.seat) }))}
+      turn={posOf(state.turn)}
       scale={k}
       card={M_TRICK_CARD}
-      originOf={(seat) => origins.current[seat] ?? null}
-      winner={currentPlays.length === 4 ? trickWinner : null}
+      originOf={(pos) => origins.current[seatAt(pos)] ?? null}
+      winner={currentPlays.length === 4 && trickWinner ? posOf(trickWinner) : null}
       gathering={trickGathering && sweeping}
     />
   );
@@ -1524,7 +1576,35 @@ export function PlayTable({
    * leaving the right to East alone keeps "the rail on my right is my RHO" true
    * every time it appears there.
    */
-  const dummyRailSide: "left" | "right" = dummy === "E" ? "right" : "left";
+  const dummyRailSide: "left" | "right" = dummy && posOf(dummy) === "E" ? "right" : "left";
+
+  /**
+   * WHO GETS A BADGE. A badge stands in for a seat the phone cannot draw a
+   * hand for, so the flanks carry the two seats with no hand on screen — the
+   * viewer's own is at the bottom and dummy's is the row above the felt.
+   *
+   * Each takes its own side where that side is free: the left-hand opponent
+   * on the left, the right-hand one on the right. When DUMMY occupies one of
+   * those positions its badge is not drawn (the seat is already there in
+   * full), and the seat that would otherwise be left off the table entirely —
+   * the viewer's PARTNER, once dummy is an opponent — takes the freed side
+   * instead of vanishing (owner report 2026-08-18: "there should be a North
+   * icon"). With a dummy RAIL the side it stands on is spoken for, and the
+   * layout is one badge short; that is the phone's own limit, unchanged.
+   */
+  const railOn = (side: "left" | "right") =>
+    dummyIsStrip && !!sideSeat && dummyRailSide === side;
+  const homeless = (["N", "E", "S", "W"] as Seat[]).filter(
+    (s) => s !== seatedAt && s !== sideSeat,
+  );
+  const badgeSeat: { left: Seat | null; right: Seat | null } = { left: null, right: null };
+  if (!railOn("left") && homeless.includes(seatAt("W"))) badgeSeat.left = seatAt("W");
+  if (!railOn("right") && homeless.includes(seatAt("E"))) badgeSeat.right = seatAt("E");
+  for (const s of homeless) {
+    if (s === badgeSeat.left || s === badgeSeat.right) continue;
+    if (!badgeSeat.left && !railOn("left")) badgeSeat.left = s;
+    else if (!badgeSeat.right && !railOn("right")) badgeSeat.right = s;
+  }
 
   /** Both flanks of the centre band reserve this, so the felt stays centred. */
   const SIDE_AVATAR_W = 62;
@@ -1697,16 +1777,31 @@ export function PlayTable({
 
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
+  const handPlateW = (seat: Seat) =>
+    visible[seat]
+      ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
+      : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
+
   const dummyRowEl =
     dummyIsRow && sideSeat ? (
       // paddingTop reserves headroom for a playable card's translateY(-6px) lift
       // (well within the HAND_H.row budget), so the raised top is never clipped.
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
-        {visible[sideSeat]
-          ? fanLayout
-            ? fanHand(sideSeat, M_CARD)
-            : cardRow(sideSeat, M_CARD, 1)
-          : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          {visible[sideSeat]
+            ? fanLayout
+              ? fanHand(sideSeat, M_CARD)
+              : cardRow(sideSeat, M_CARD, 1)
+            : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
+          {/* WHOSE HAND THIS IS. The row is dummy's whoever dummy happens to
+              be, and unnamed it reads as the partner sitting opposite — which
+              it only is on the ordinary table where the learner sits South and
+              their partner declares (owner report 2026-08-18). The plate is
+              the one the hand at the bottom already wears, and HAND_H.row has
+              always reserved its height here, so naming the hand costs the
+              stack nothing. */}
+          {plate(sideSeat, handPlateW(sideSeat), { weight: 700 })}
+        </div>
       </div>
     ) : null;
 
@@ -1725,9 +1820,7 @@ export function PlayTable({
    * Computed with the hand's own geometry rather than a literal, so a change to
    * the card, the overlap or the seams keeps the two agreeing.
    */
-  const phoneHandW = visible.S
-    ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
-    : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
+  const phoneHandW = handPlateW(seatedAt);
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
   // The stage is a fixed 720-wide column at the fixed-point scale. The SCALE
@@ -1760,7 +1853,10 @@ export function PlayTable({
       // and every band the budget priced but the phase never drew rendered as
       // dead white between the toolbar and the coach. Content decides the
       // height; the measured bleed hands the slack to the coach panel.
-      style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: "#fff" }}
+      // The transform/margin TRANSITION is the coach toggle's other half
+      // (owner ask 2026-08-14): share change → new scale/bleed → the felt
+      // glides to its new size in step with the bands around it.
+      style={{ flex: "none", width: MOBILE_W, transform: `scale(${scale})`, transformOrigin: "top center", marginBottom: stageBleed, display: "flex", flexDirection: "column", background: surroundBg, transition: "transform .35s ease, margin-bottom .35s ease, background-color .35s ease" }}
     >
       {/* Single-pricing: the host has already priced this bar against the touch
           floor (barFor), so EdgeToolbar takes thickness − 14 and is NOT handed
@@ -1796,7 +1892,7 @@ export function PlayTable({
             {/* The badge stands in for a seat the phone cannot draw a hand for,
                 so it yields to the dummy rail on that side rather than crowding
                 it, and never appears for a seat already on screen. */}
-            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && badgeSeat.left ? sideAvatar(badgeSeat.left) : null}
           </div>
           <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", // A hairline, not a picture frame (owner, 2026-08-13): it marks where the
                 // felt is, and at 3px it competed with the cards inside it.
@@ -1821,7 +1917,7 @@ export function PlayTable({
                     teaches the table you play on. This replaces a row of three
                     names, which said the same thing in a form that had to be
                     ellipsised to fit and could not show whose turn it was. */}
-                {plate("N", 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
+                {plate(seatAt("N"), 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
                 {auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS })}
               </div>
             ) : null}
@@ -1839,7 +1935,7 @@ export function PlayTable({
             {complete ? resultCard : null}
           </div>
           <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-end" }}>
-            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && badgeSeat.right ? sideAvatar(badgeSeat.right) : null}
             {dummyRailSide === "right" ? dummyRailEl : null}
           </div>
         </div>
@@ -1861,15 +1957,15 @@ export function PlayTable({
             690 in the 720 stage) — flex:none cards, centred, never stretched. */}
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            {callsRow("S")}
-            {visible.S
+            {callsRow(seatedAt)}
+            {visible[seatedAt]
               ? fanLayout
-                ? fanHand("S", M_CARD)
-                : cardRow("S", M_CARD)
-              : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+                ? fanHand(seatedAt, M_CARD)
+                : cardRow(seatedAt, M_CARD)
+              : backs(seatedAt, { w: M_CARD.backW, h: M_CARD.h })}
             {/* The plate spans a FULL hand, not the hand as it stands — see
                 phoneHandW. Bold name/tag: it reads through the stage scale. */}
-            {plate("S", phoneHandW, { weight: 700 })}
+            {plate(seatedAt, phoneHandW, { weight: 700 })}
           </div>
         </div>
       </div>
@@ -1981,16 +2077,17 @@ export function PlayTable({
     // on a short window the whole stage shrinks rather than starving the
     // coach band out of existence.
     return (
-      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: "#fff", display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased" }}>
+      <div ref={wrapRef} style={{ position: "relative", width: "100%", height: "100%", overflow: "hidden", background: surroundBg, display: "flex", flexDirection: "column", fontFamily: tok.font, WebkitFontSmoothing: "antialiased", transition: "background-color .35s ease" }}>
         {/* The table region is CONTENT-SIZED, capped at its share. Its share is
             what the budget prices the stack against, so ordinarily it lands on
             exactly tableSharePct — but a stack that comes out shorter (hidden
             toolbars) hands the difference DOWN to the coach panel instead of
             inflating the felt to fill a fixed 70% box. */}
-        <div style={{ flex: "none", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: "#fff" }}>
+        <div style={{ flex: coachSharePct > 0 ? "none" : "1 1 auto", maxHeight: `${tableSharePct}%`, minHeight: 0, display: "flex", flexDirection: "column", background: surroundBg, transition: "max-height .35s ease, background-color .35s ease" }}>
           {/* CSS-driven table region box; the stage scrolls inside it if the
               scaled content ever exceeds the region (align to the top). */}
-          {/* THE TABLE CANNOT BE SLID SIDEWAYS.
+          {/* THE TABLE CANNOT BE SLID SIDEWAYS (origin/main, kept whole at
+              the 2026-08-14 merge).
               `transform: scale()` does not change layout size, so the stage's
               box is a full 720 wide however small it renders. This region is a
               vertical scroller, and a scroller whose content is wider than it is
@@ -2003,20 +2100,47 @@ export function PlayTable({
               to `overflow-y: auto` the spec computes it back to `hidden`, so it
               has to sit on its own element, whose other axis is visible. Hence
               the inner box: the scroller sees nothing wider than itself. */}
-          <div style={{ flex: 1, minHeight: 0, width: "100%", background: "#fff", overflowY: "auto" }}>
-            <div style={{ width: "100%", overflowX: "clip", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+          <div style={{ flex: 1, minHeight: 0, width: "100%", background: surroundBg, overflowY: "auto", transition: "background-color .35s ease" }}>
+            {/* minHeight 100%: the clip box spans the scroller even when the
+                stage is short, so the centring margins below have real free
+                space to split — and still grows past it when the stage is
+                tall, at which point those margins collapse to zero. */}
+            <div style={{ width: "100%", minHeight: "100%", overflowX: "clip", display: "flex", justifyContent: "center", alignItems: "flex-start" }}>
+              {/* With a coach below, the table hugs the top and the panel owns
+                  the rest. WITHOUT one (owner direction 2026-08-14: compact,
+                  "but still in the middle of the screen"), the compact stage
+                  centres — via cross-axis auto margins, which collapse to zero
+                  when the stage is taller than the region, so a small window
+                  still scrolls from the very top instead of clipping it. */}
+              <div style={{ display: "flex", flexDirection: "column", margin: coachSharePct > 0 ? "0" : "auto 0" }}>
               {mobileStack}
+              </div>
             </div>
           </div>
         </div>
-        {coachSharePct > 0 && (
-          <div style={{ flex: "1 1 auto", minHeight: `${coachSharePct}%`, display: "flex", background: "#fff", borderTop: "1px solid #d8ded9" }}>
-            {/* Hidden coach keeps its reserved band as plain white space. */}
-            {coachOn && (
-              <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
-            )}
-          </div>
-        )}
+        {/* The coach band is ALWAYS in the tree so toggling the panel is a
+            TRANSITION, not a jump (owner ask 2026-08-14): at share 0 it is a
+            zero-height, borderless, empty box — visually "no region at all",
+            exactly as before — and switching share animates min/max-height
+            while the table region's cap and the stage's scale animate with
+            it. Content mounts only with a real share, so nothing white ever
+            peeks out of a collapsed band. */}
+        <div
+          style={{
+            flex: "1 1 auto",
+            minHeight: `${coachSharePct}%`,
+            maxHeight: coachSharePct > 0 ? "100%" : "0%",
+            overflow: "hidden",
+            display: "flex", background: "#fff",
+            borderTop: `1px solid ${coachSharePct > 0 ? "#d8ded9" : "transparent"}`,
+            transition: "min-height .35s ease, max-height .35s ease, border-top-color .35s ease",
+          }}
+        >
+          {/* Hidden coach keeps its reserved band as plain white space. */}
+          {coachOn && coachSharePct > 0 && (
+            <CoachPanel title={coachTitle} accent={tok.accent} lines={coachLines} actions={coachActions} content={coachContent} />
+          )}
+        </div>
         {seatsPopup}
         {menuOpen && !onMenu && (
           <SettingsMenu accent={tok.accent} items={menuItems} onClose={() => setMenuOpen(false)} />

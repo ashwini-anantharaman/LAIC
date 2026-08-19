@@ -1,4 +1,4 @@
-// Five hints for the decision on the table — a ladder, not an answer.
+// Up to five hints for the decision on the table — a ladder, not an answer.
 //
 // The coach panel's HINTS screen (owner direction 2026-08-11) shows five
 // face-down hints for the current decision. Each one the learner opens gives
@@ -29,7 +29,12 @@ export const hintsConfigured = (): boolean => Boolean(process.env.ANTHROPIC_API_
 const modelId = (): string => process.env.COACH_MODEL ?? "claude-opus-5";
 const supportsAdaptive = (model: string): boolean => !/haiku/.test(model);
 
+/** The ladder's CAP. Dynamic below it (owner direction 2026-08-14): a
+ *  routine decision earns two or three rungs, only a layered one earns five. */
 export const HINT_COUNT = 5;
+/** The floor: one rung that isn't the answer, then the answer. Anything
+ *  shorter is not a ladder, it's a tell wearing the wrong label. */
+export const HINT_MIN = 2;
 
 // NO minItems/maxItems: structured outputs rejects maxItems outright and
 // minItems above 1 (400 "invalid schema"), so the five-ness is enforced by
@@ -47,26 +52,46 @@ const SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM = `You are a bridge coach beside a learner who is deciding what to do right now — a call in the auction or a card to a trick. Write EXACTLY five hints they can open one at a time. Each hint reveals a little more than the one before:
+const SYSTEM = `You are a bridge coach beside a learner who is deciding what to do right now — a call in the auction or a card to a trick. Write BETWEEN TWO AND FIVE hints they can open one at a time — as many as this decision actually needs, and no more. A routine decision (a forced card, one clearly right call, a textbook response) deserves two or three; only a genuinely layered problem earns all five. Padding a simple decision to five rungs is a fault, not thoroughness.
 
-1. Point at the right QUESTION — what kind of problem this is, what to look at first. Do not evaluate anything yet.
-2. One concrete OBSERVATION from what they can see — a count, a shape, a feature of the auction or the trick.
-3. The key INFERENCE or principle that applies here.
-4. Narrow it down — the suit, the direction of the plan, the family of actions — but do NOT name the final call or card yet.
-5. The answer itself, named plainly, with the one reason that decides it.
+Each hint reveals a little more than the one before. Build the ladder from these rungs, dropping the middle ones a simple decision doesn't need:
+
+- First: point at the right QUESTION — what kind of problem this is, what to look at first. Do not evaluate anything yet.
+- Then, as needed: one concrete OBSERVATION from what they can see (a count, a shape, a feature of the auction or the trick); the key INFERENCE or principle that applies; a NARROWING — the suit, the direction of the plan, the family of actions — without naming the final call or card.
+- Last: the answer itself, named plainly, with the one reason that decides it. Only the last hint ever names it.
 
 You are given only what the learner can see from their seat: their own hand, dummy when it is face up, the auction, and the tricks as played. You do not know the concealed hands. Never name, count, or place a card you were not shown, and never state an inference about hidden cards as a fact.
 
-When a recommended action is provided, it is authoritative: every hint must walk toward it and hint 5 must name it. When none is provided, reason to your own best conclusion and keep all five hints consistent with it.
+When a recommended action is provided, it is authoritative: every hint must walk toward it and the LAST hint must name it. When none is provided, reason to your own best conclusion and keep every hint consistent with it.
 
-EACH HINT IS ONE SHORT SENTENCE. No preamble, no "consider" padding, no restating the position. Use suit symbols (♠ ♥ ♦ ♣) and plain club-learner language. Hints 1–4 must not name the final call or card.`;
+EACH HINT IS ONE SHORT SENTENCE. No preamble, no "consider" padding, no restating the position. Use suit symbols (♠ ♥ ♦ ♣) and plain club-learner language. Every hint before the last must not name the final call or card.`;
 
 export type HintsRejection = {
-  reason: "unconfigured" | "unreachable" | "refused" | "malformed" | "leaked" | "empty";
+  reason: "unconfigured" | "unreachable" | "refused" | "malformed" | "leaked" | "empty" | "off-target";
 };
 
 /**
- * Five hints for the current decision, or why there are none.
+ * Does this rung name the target action? Tolerant of the ways a coach
+ * actually writes a card — "10♦", "♦10", "T♦" — because the guarantee must
+ * not fail on notation. A non-card target (a call, once the auction is
+ * anchored too) matches as plain text.
+ */
+function namesTarget(hint: string, target: string): boolean {
+  const h = hint.toUpperCase();
+  const card = /^(A|K|Q|J|10|[2-9])([♠♥♦♣])$/.exec(target.toUpperCase());
+  const variants = card
+    ? [
+        `${card[1]}${card[2]}`,
+        `${card[2]}${card[1]}`,
+        ...(card[1] === "10" ? [`T${card[2]}`, `${card[2]}T`] : []),
+      ]
+    : [target.toUpperCase()];
+  return variants.some((v) => h.includes(v));
+}
+
+/**
+ * Two to five hints for the current decision — as many as it needs — or why
+ * there are none.
  *
  * `client` is injectable so the validator — the part that actually protects
  * this — is testable without a network or a key.
@@ -134,11 +159,12 @@ export async function generateHints(
   } catch {
     return { reason: "malformed" };
   }
-  return validateHints(parsed, input.pos);
+  return validateHints(parsed, input.pos, input.target);
 }
 
 /**
- * The gate, pure and exported. Exactly five non-empty, short hints, none of
+ * The gate, pure and exported. Two to five non-empty, short hints (the count
+ * is the model's read of the decision's depth; the bounds are ours), none of
  * which names a card the learner could not have seen. One leaked pip means the
  * model reasoned from information it should never act on, and the whole ladder
  * is discarded — showing the clean rungs would be laundering it.
@@ -146,10 +172,15 @@ export async function generateHints(
 export function validateHints(
   raw: unknown,
   pos: VisiblePosition,
+  /** When the advice layer anchored the ladder, the LAST rung must name this
+   *  — the GUARANTEE that Hints and Owlee's Tell can never disagree (owner
+   *  direction 2026-08-14). Prompt-only enforcement drifted; the gate doesn't. */
+  target?: string,
 ): { hints: string[] } | HintsRejection {
   if (typeof raw !== "object" || raw === null) return { reason: "malformed" };
   const hints = (raw as { hints?: unknown }).hints;
-  if (!Array.isArray(hints) || hints.length !== HINT_COUNT) return { reason: "malformed" };
+  if (!Array.isArray(hints) || hints.length < HINT_MIN || hints.length > HINT_COUNT)
+    return { reason: "malformed" };
   const trimmed: string[] = [];
   for (const h of hints) {
     if (typeof h !== "string") return { reason: "malformed" };
@@ -162,5 +193,11 @@ export function validateHints(
     trimmed.push(t);
   }
   if (leakedCards(trimmed.join("\n"), pos).length) return { reason: "leaked" };
+  // The convergence gate: an anchored ladder that walks to a different answer
+  // than the one Tell shows is rejected whole, same as a leak — two coaches
+  // arguing is worse than no ladder.
+  if (target && !namesTarget(trimmed[trimmed.length - 1]!, target)) {
+    return { reason: "off-target" };
+  }
   return { hints: trimmed };
 }

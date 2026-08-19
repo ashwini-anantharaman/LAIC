@@ -30,6 +30,7 @@ import {
   BridgeContext,
   NexusError,
   NexusMembership,
+  NexusUser,
   fetchAppContext,
   fetchBridgeContext,
   fetchMe,
@@ -82,12 +83,21 @@ export type RoleContext = {
   app: AppContext | null;
 };
 
-// Session-scoped cache, keyed by TOKEN: an in-flight fetch from a previous
-// session that resolves after sign-out must never leak its role into the next.
-// The in-flight promise is shared too, so the sign-in prime and the first
-// screen to ask don't race each other into duplicate round-trips.
-let cached: { token: string; value: RoleContext } | null = null;
-let inflight: { token: string; promise: Promise<RoleContext> } | null = null;
+// Session-scoped cache, keyed by TOKEN AND PROGRAM: an in-flight fetch from a
+// previous session that resolves after sign-out must never leak its role into
+// the next. The in-flight promise is shared too, so the sign-in prime and the
+// first screen to ask don't race each other into duplicate round-trips.
+//
+// A MAP, not one slot. The app asks both questions constantly and side by side:
+// the tabs layout's gates (useCan → useRoleContext) ask APP-WIDE, while Play,
+// Coach and the profile sheet ask about the SELECTED CLUB. With a single slot
+// each answer evicted the other on arrival, so every one of those reads missed
+// and paid a fresh round-trip — which is what made Play's coach-only Curated
+// Deals card arrive seconds after the grid, on every visit and not just the
+// first. Same shape as appCache below, and for the same reason.
+const roleCache = new Map<string, RoleContext>();
+const roleInflight = new Map<string, Promise<RoleContext>>();
+const roleKey = (token: string, programId?: string) => `${token}::${programId ?? ""}`;
 
 /** The last resolved context for this token, synchronously — render it NOW.
  *  Null only before the first resolve (the sign-in prime usually beats any
@@ -95,7 +105,7 @@ let inflight: { token: string; promise: Promise<RoleContext> } | null = null;
 export function peekRoleContext(token: string, programId?: string): RoleContext | null {
   // Same key shape as getRoleContext — a bare-token compare would never hit and
   // would quietly throw away the sign-in prime.
-  return cached?.token === `${token}::${programId ?? ""}` ? cached.value : null;
+  return roleCache.get(roleKey(token, programId)) ?? null;
 }
 
 /**
@@ -104,13 +114,40 @@ export function peekRoleContext(token: string, programId?: string): RoleContext 
  * whether the resolve below may be cached: caching a hiccup would pin the
  * safe-default learner view on a real coach for the whole session.
  */
-async function settle<T>(promise: Promise<T>): Promise<{ answered: boolean; value: T | null }> {
+type Settled<T> = { answered: boolean; value: T | null };
+
+async function settle<T>(promise: Promise<T>): Promise<Settled<T>> {
   try {
     return { answered: true, value: await promise };
   } catch (e) {
     const answered = e instanceof NexusError && e.status >= 400 && e.status < 500;
     return { answered, value: null };
   }
+}
+
+/**
+ * /auth/me, shared across every PROGRAM key for one token.
+ *
+ * A resolve is two halves, and only one of them is club-scoped: the bridge grant
+ * is asked per program, but memberships and the profile role belong to the
+ * PERSON and come back identical whichever program was named. Without this the
+ * club-scoped resolve — the one the Play tab's coach-only card waits on — repeats
+ * an /auth/me the app-wide resolve has already paid for, and the card lands a
+ * whole round-trip after the rest of the grid.
+ *
+ * A hiccup is dropped rather than pinned, for the same reason the resolves below
+ * only cache an ANSWERED result.
+ */
+let meCache: { token: string; promise: Promise<Settled<NexusUser>> } | null = null;
+
+function settledMe(token: string): Promise<Settled<NexusUser>> {
+  if (meCache?.token === token) return meCache.promise;
+  const entry = { token, promise: settle(fetchMe(token)) };
+  meCache = entry;
+  void entry.promise.then((me) => {
+    if (!me.answered && meCache === entry) meCache = null;
+  });
+  return entry.promise;
 }
 
 /**
@@ -134,15 +171,17 @@ export async function getRoleContext(
   token: string,
   programId?: string,
 ): Promise<RoleContext> {
-  const key = `${token}::${programId ?? ""}`;
-  if (cached && cached.token === key) return cached.value;
-  if (inflight && inflight.token === key) return inflight.promise;
+  const key = roleKey(token, programId);
+  const hit = roleCache.get(key);
+  if (hit) return hit;
+  const pending = roleInflight.get(key);
+  if (pending) return pending;
 
   const promise = (async () => {
     // Independent and all optional — one failing must not deny the others.
     const [bridge, me] = await Promise.all([
       settle(fetchBridgeContext(token, programId)),
-      settle(fetchMe(token)),
+      settledMe(token),
     ]);
 
     const memberships = me.value?.memberships ?? [];
@@ -156,12 +195,12 @@ export async function getRoleContext(
     };
     // Only an ANSWERED resolve is worth remembering; a hiccup retries on the
     // next call instead of masquerading as "learner" until sign-out.
-    if (bridge.answered || me.answered) cached = { token: key, value };
+    if (bridge.answered || me.answered) roleCache.set(key, value);
     return value;
   })().finally(() => {
-    if (inflight?.token === key) inflight = null;
+    if (roleInflight.get(key) === promise) roleInflight.delete(key);
   });
-  inflight = { token: key, promise };
+  roleInflight.set(key, promise);
   return promise;
 }
 
@@ -368,11 +407,19 @@ export async function refreshRoleContext(
   token: string,
   programId?: string,
 ): Promise<RoleContext> {
-  // The cache key is `token::program`, so match on the PREFIX — a bare-token
-  // compare would leave a club-scoped entry in place and keep serving the stale
-  // permissions this function exists to clear.
-  if (cached?.token.startsWith(`${token}::`)) cached = null;
-  inflight = null;
+  // The cache key is `token::program`, so match on the PREFIX — every program's
+  // answer for this token is stale, not just the one being asked about, and
+  // leaving the others in place would keep serving the permissions this
+  // function exists to clear.
+  for (const key of [...roleCache.keys()]) {
+    if (key.startsWith(`${token}::`)) roleCache.delete(key);
+  }
+  for (const key of [...roleInflight.keys()]) {
+    if (key.startsWith(`${token}::`)) roleInflight.delete(key);
+  }
+  // Memberships and the profile role are half of what a resolve decides on, so
+  // a refresh that kept them would re-resolve against the same stale answer.
+  if (meCache?.token === token) meCache = null;
   // Per-club access is part of what a refresh is for — a role edited in the
   // console changes capabilities, not memberships.
   clearAppContext();
@@ -382,8 +429,9 @@ export async function refreshRoleContext(
 }
 
 export function clearBridgeRoleCache(): void {
-  cached = null;
-  inflight = null;
+  roleCache.clear();
+  roleInflight.clear();
+  meCache = null;
   clearAppContext();
 }
 
@@ -399,6 +447,30 @@ export function isClubMembership(m: NexusMembership): boolean {
   return !!m.program_id && m.program_category === "partner";
 }
 
+/** One club as the app lists it. Mirrors the club context's `Club`. */
+export type ClubMembership = {
+  programId: string;
+  name: string;
+  orgName: string;
+  /** The membership role in THIS club — the coarse tier, not its capabilities. */
+  role: string;
+};
+
+/** Every club this person belongs to, alphabetical so the list is stable. */
+export function clubsOf(memberships: NexusMembership[]): ClubMembership[] {
+  return memberships
+    .filter(isClubMembership)
+    .map((m) => ({
+      programId: m.program_id as string,
+      name: m.program_name ?? m.org_name,
+      orgName: m.org_name,
+      role: m.role,
+    }))
+    // Deduplicate: two memberships in one program would otherwise list it twice.
+    .filter((c, i, all) => all.findIndex((o) => o.programId === c.programId) === i)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /**
  * The program a CLUB-ONLY account should start in: their first club
  * (alphabetical, stable), or null for everyone else. Shared by the club
@@ -407,14 +479,27 @@ export function isClubMembership(m: NexusMembership): boolean {
  * round-trip before the real fetch could even start.
  */
 export function clubDefaultProgramId(memberships: NexusMembership[]): string | null {
-  const clubs = memberships
-    .filter(isClubMembership)
-    .map((m) => ({ id: m.program_id as string, name: m.program_name ?? m.org_name ?? "" }))
-    .filter((c, i, all) => all.findIndex((o) => o.id === c.id) === i)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const clubs = clubsOf(memberships);
   if (clubs.length === 0 || memberships.length === 0) return null;
-  const clubIds = new Set(clubs.map((c) => c.id));
+  const clubIds = new Set(clubs.map((c) => c.programId));
   const clubOnly = memberships.every((m) => m.program_id && clubIds.has(m.program_id));
-  return clubOnly ? clubs[0]!.id : null;
+  return clubOnly ? clubs[0]!.programId : null;
+}
+
+/**
+ * The club the app OPENS IN, exactly as the club context will select it: one
+ * club is not a choice, so it is picked outright; a club-only account with
+ * several gets their default; everyone else starts on My Clubs (null).
+ *
+ * The sign-in prime and the club context must agree here, because everything
+ * primed is cached PER PROGRAM. Priming app-wide for someone the context then
+ * drops into their single club warms the wrong key, and the first screen pays
+ * for a resolve it looked like it already had — which is what left the Play
+ * tab's coach-only card arriving a round-trip after the rest of the grid.
+ */
+export function initialClubProgramId(memberships: NexusMembership[]): string | null {
+  const clubs = clubsOf(memberships);
+  if (clubs.length === 1) return clubs[0]!.programId;
+  return clubDefaultProgramId(memberships);
 }
 

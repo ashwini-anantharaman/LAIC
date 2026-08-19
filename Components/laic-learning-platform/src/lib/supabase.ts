@@ -7,7 +7,7 @@
  * Nexus session?). The file name is kept to minimise churn.
  */
 import type { LearningObject } from './types';
-import { nexusFetch, getToken, getProgramId, getContentScope } from './nexus';
+import { nexusFetch, getToken, getProgramId, clearDeadSession, getContentScope } from './nexus';
 
 /** Remote persistence is available when we have a Nexus session (post-launch). */
 export function supabaseEnabled(): boolean {
@@ -79,11 +79,12 @@ export function objectToPublishRow(
   // Carry the authoring draft so reopening synced content resumes where it
   // left off instead of showing only the rendered blocks. pipeline_draft is
   // the one free-form jsonb column on the row.
-  const authoring = (obj as any).tutorialV2Draft || (obj as any).structuredV2Draft;
+  const authoring = (obj as any).tutorialV2Draft || (obj as any).tutorialV3Draft || (obj as any).structuredV2Draft;
   if (authoring) {
     row.pipeline_draft = {
       ...(obj.pipelineDraft as any || {}),
       ...((obj as any).tutorialV2Draft ? { tutorialV2Draft: (obj as any).tutorialV2Draft } : {}),
+      ...((obj as any).tutorialV3Draft ? { tutorialV3Draft: (obj as any).tutorialV3Draft } : {}),
       ...((obj as any).structuredV2Draft ? { structuredV2Draft: (obj as any).structuredV2Draft } : {}),
     };
   }
@@ -206,7 +207,7 @@ export async function publishObject(
   // Standalone is draft-only by design: without a session there is no way to know
   // which club the content belongs to, and guessing is what the old service-role
   // route did.
-  if (!supabaseEnabled()) throw new Error('Publishing needs a Nexus launch (open the Studio from Nexus)');
+  if (!supabaseEnabled()) throw new Error('Publishing needs a Nexus session — open the Studio from Nexus');
   const res = await nexusFetch('/api/platform/learning/objects/publish', {
     method: 'POST',
     body: JSON.stringify({ object: row, share, program_id: getProgramId() }),
@@ -215,6 +216,15 @@ export async function publishObject(
     // 409 is the one worth naming: the object belongs to another program, which a
     // generic "publish failed" would leave the author guessing about.
     if (res.status === 409) throw new Error('That object belongs to another program');
+    // 401 means we HAD a token and Nexus refused it — expired, or spent by a
+    // newer launch. The message above only fires when there is no token at all,
+    // so without this an expired session surfaced as a bare number and the
+    // Studio went on offering Publish against a dead token. Dropping it puts
+    // the app back into draft-only, where the next attempt explains itself.
+    if (res.status === 401) {
+      clearDeadSession();
+      throw new Error('Your Nexus session expired — relaunch the Studio from Nexus to publish');
+    }
     throw new Error(`Publish failed (${res.status})`);
   }
   return res.json();

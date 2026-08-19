@@ -13,6 +13,7 @@ export type ObjectType =
   | 'lesson'
   | 'tutorial'
   | 'tutorial-v2'
+  | 'tutorial-v3'
   | 'quiz'
   | 'flashcard-set'
   | 'concept-card'
@@ -124,6 +125,17 @@ export type EmbeddableObjectType =
   | 'scenario'
   | 'assignment'
   | 'reflection'
+  /**
+   * Tutorial V3 block types. Embeddable in a template recipe like the object
+   * types above, but they are blocks rather than standalone library objects —
+   * there is no `lesson-overview` sitting in the Object Library.
+   */
+  | 'lesson-overview'
+  | 'lesson-complete'
+  | 'reference-table'
+  | 'quick-decisions'
+  | 'matching'
+  | 'opening-question'
   | 'reused-from-library';
 
 export type EmbeddedObjectSourceMode =
@@ -469,8 +481,15 @@ export interface ConceptCardContent {
   commonMistake?: string;
   /** CONNECTION */
   connection?: string;
-  /** RECALL QUESTION */
+  /** RECALL QUESTION — one prompt for the whole card. */
   recallQuestion?: string;
+  /**
+   * Per-panel recall prompts, keyed by category id (`whyItMatters`,
+   * `coreIdea`, a custom section id, …). Tutorial V3's Test-yourself mode asks
+   * one question per panel, which the single card-level `recallQuestion`
+   * cannot express. Optional — readers that don't ask per panel ignore it.
+   */
+  sectionRecallPrompts?: Record<string, string>;
   /** TEACH-BACK */
   teachBack?: string;
 
@@ -598,6 +617,19 @@ export interface BiddingSequenceContent {
   bids: BidItem[];
   finalContract: string;
   sourceRef?: BridgeSourceRef;
+  /**
+   * Hands to show above the auction, by seat. Optional — an auction with no
+   * hands renders exactly as it always has.
+   */
+  hands?: Partial<Record<'N' | 'E' | 'S' | 'W', BridgeHandRow[]>>;
+  /** The point the auction makes but does not state, shown under the contract. */
+  footnote?: string;
+}
+
+/** One suit's holding in a displayed hand. */
+export interface BridgeHandRow {
+  suit: '♠' | '♥' | '♦' | '♣';
+  cards: string;
 }
 export interface SourceExcerptContent {
   sourceTitle: string;
@@ -861,11 +893,151 @@ export interface LibraryEmbedContent {
   generated?: boolean;
 }
 
+/**
+ * The lesson's front cover.
+ *
+ * `objectives`, `coreIdea` and `coreRule` are the lesson's, not a card's — do
+ * not confuse `coreIdea` here with `ConceptCardContent.coreIdea`, which belongs
+ * to one concept. The reader holds this page until the learner presses start,
+ * so it gates the lesson rather than merely opening it.
+ */
+export interface LessonOverviewContent {
+  intro?: string;
+  objectives: string[];
+  coreIdea?: string;
+  /** The single sentence the whole lesson turns on. */
+  coreRule?: string;
+  /** Defaults to "Start lesson →". */
+  ctaLabel?: string;
+}
+
+/** The lesson's back cover: what was covered, and where to go next. */
+export interface LessonCompleteContent {
+  heading?: string;
+  subheading?: string;
+  /** Learner-voice statements — "I can …". */
+  checklist: string[];
+  whatNext?: string;
+  /** Defaults to "Continue →". */
+  ctaLabel?: string;
+}
+
+/** One row of a bridge hand: the suit glyph, then the cards in it. */
+export interface HandRow {
+  suit: string;
+  cards: string;
+}
+
+/** One call in an auction shown beside a hand. */
+export interface AuctionCall {
+  seat: string;
+  /** "?" marks the call the learner is being asked for. */
+  bid: string;
+}
+
+/**
+ * A hand, the auction so far, and the call the learner has to find.
+ *
+ * Distinct from a quiz question: the stem is a position rather than a sentence,
+ * and the answer carries two payloads — `feedback` says why this call is right
+ * here, `keyIdea` states the rule that transfers to the next hand.
+ */
+export interface OpeningQuestionContent {
+  /** Small eyebrow above the title. */
+  label?: string;
+  title: string;
+  context?: string;
+  hand: HandRow[];
+  auction: AuctionCall[];
+  /** "What is your call?" */
+  prompt: string;
+  options: string[];
+  correct: number;
+  feedback: string;
+  keyIdea: string;
+}
+
+/** A key the learner reads against — opener's rebids, a point-count scale. */
+export interface ReferenceTableContent {
+  label?: string;
+  title?: string;
+  columns: string[];
+  rows: string[][];
+  caption?: string;
+}
+
+/**
+ * One "commit to an answer, then check yourself" item.
+ *
+ * Distinct from a question: there are no options to choose between and nothing
+ * is marked. The learner decides privately, reveals, and compares — which is
+ * what makes it a drill in judgement rather than in recall.
+ */
+export interface QuickDecisionItem {
+  /** "Quick decision A" — the item's own name. */
+  label: string;
+  /** The one-line classification the answer turns on. */
+  tag?: string;
+  /** The situation, monospaced; newlines are preserved as written. */
+  prompt: string;
+  /** What the button becomes once revealed. */
+  answer: string;
+  explanation: string;
+}
+
+export interface QuickDecisionsContent {
+  /** Small eyebrow above the title. */
+  label?: string;
+  title: string;
+  intro?: string;
+  decisions: QuickDecisionItem[];
+  /** Shown once every item has been revealed. */
+  closing?: string;
+}
+
+/** The key a matching exercise is checked against, shown above it. */
+export interface MatchingReference {
+  columns: string[];
+  rows: string[][];
+}
+
+export interface MatchingCard {
+  /** "Hand A" */
+  label: string;
+  /** Monospaced lines making up the card's body. */
+  lines: string[];
+  /** Which option is the right one for this card. */
+  correct: string;
+  explanation?: string;
+}
+
+/**
+ * Match each card to one option. Every option is used at most once, so
+ * assigning one to a second card takes it off the first.
+ */
+export interface MatchingContent {
+  label?: string;
+  title: string;
+  intro?: string;
+  reference?: MatchingReference;
+  /** The instruction above the cards. */
+  prompt?: string;
+  options: string[];
+  cards: MatchingCard[];
+  closing?: string;
+}
+
 export type BlockContent =
   | RichTextContent
   | ConceptCardContent
   | QuestionContent
   | QuizContent
+  | LessonOverviewContent
+  | LessonCompleteContent
+  | OpeningQuestionContent
+  | ReferenceTableContent
+  | QuickDecisionsContent
+  | MatchingContent
   | FlashcardSetContent
   | BridgePlayContent
   | BiddingSequenceContent
@@ -921,6 +1093,18 @@ export interface Block {
     | 'source-excerpt'
     | 'question'
     | 'quiz'
+    /** The lesson's front cover; gates the reader until the learner starts. */
+    | 'lesson-overview'
+    /** The lesson's back cover. */
+    | 'lesson-complete'
+    /** A hand, an auction, and the call to find (Tutorial V3). */
+    | 'opening-question'
+    /** A key the learner reads against (Tutorial V3). */
+    | 'reference-table'
+    /** Reveal-and-compare judgement items (Tutorial V3). */
+    | 'quick-decisions'
+    /** Match each card to one option (Tutorial V3). */
+    | 'matching'
     | 'flashcard-set'
     | 'reflection'
     | 'summary'
@@ -1039,6 +1223,11 @@ export interface LearningObject {
    */
   tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
   /**
+   * Tutorial V3 skeleton + per-section authoring state.
+   * Only used when type === 'tutorial-v3'; ignored by the V1/V2 tutorial paths.
+   */
+  tutorialV3Draft?: import('./tutorialV3/types').TutorialV3Draft;
+  /**
    * Structured V2 authoring state (Plan → Structure → Author → Review) for
    * quiz / flashcard-set / concept-card / video-script objects.
    */
@@ -1129,6 +1318,7 @@ export interface ObjectVersionSnapshot {
   sourceIds: string[];
   pipelineDraft?: CreatorPipelineDraft;
   tutorialV2Draft?: import('./tutorialV2/types').TutorialV2Draft;
+  tutorialV3Draft?: import('./tutorialV3/types').TutorialV3Draft;
 }
 
 export interface Version {

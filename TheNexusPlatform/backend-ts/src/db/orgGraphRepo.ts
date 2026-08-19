@@ -2692,7 +2692,20 @@ export async function upsertAppUserData(opts: {
 function _programScope(programId?: string | null, clubProgramId?: string | null) {
   const ids = [...new Set([programId, clubProgramId].filter(Boolean) as string[])];
   if (!ids.length) return sql``; // no program pinned → org-wide, as before
-  return sql`and program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`;
+  // UNPINNED ROWS COUNT AS EVERY PROGRAM'S. program_id is nullable (0001) and
+  // nothing ever backfilled it, so content authored before pinning existed has
+  // none — and `in (...)` never matches NULL, which quietly orphaned all of it
+  // the moment a caller pinned a program. Every app call pins one, so that
+  // content simply stopped reaching the Learn tab; the reader apps already
+  // assume the opposite rule ("rows from a server that predates program_id
+  // count as curriculum"), and this is the server keeping that promise.
+  //
+  // It cannot widen a club into a sibling's work: writes have been stamped with
+  // the club (or the program) since _learningWriteScope shipped, so anything a
+  // club authored carries an id and stays behind the predicate. These reads are
+  // org-scoped above regardless, and org-wide is exactly what an unpinned row
+  // was visible to before programs could own content at all.
+  return sql`and (program_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)}) or program_id is null)`;
 }
 
 /** Who is asking, for the personal-visibility arm below. */

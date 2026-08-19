@@ -24,6 +24,7 @@ import {
 const FOLDER_FOR_TYPE: Record<string, string> = {
   'tutorial': BB_TUTORIALS_COLLECTION_NAME,
   'tutorial-v2': BB_TUTORIALS_COLLECTION_NAME,
+  'tutorial-v3': BB_TUTORIALS_COLLECTION_NAME,
   'quiz': 'quiz',
   'flashcard-set': 'flashcards',
   'concept-card': 'concept cards',

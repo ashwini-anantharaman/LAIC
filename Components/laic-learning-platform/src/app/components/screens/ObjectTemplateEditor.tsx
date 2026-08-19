@@ -9,7 +9,7 @@ import {
 } from '../../../lib/objectTemplates';
 
 interface Props {
-  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2'>;
+  objectType: Exclude<TemplateObjectType, 'tutorial' | 'tutorial-v2' | 'tutorial-v3'>;
   initial?: ObjectTemplate | null;
   onSave: (template: ObjectTemplate) => void;
   onCancel: () => void;

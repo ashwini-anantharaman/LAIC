@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { redirect } from "next/navigation";
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import {
@@ -15,13 +16,15 @@ import {
 import type { AssignmentBrief, AssignmentReviewer, PlaySubmission } from "@bridge/sessions";
 import { ReviewRow } from "@/components/mobile/ReviewRow";
 import { reconcileAssignments } from "@/lib/assignments";
+import { curatedReportLines } from "@/lib/curatedReport";
 import { getBridgeContext, getMyLearners, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { reviewerCandidates } from "@/lib/reviewers";
-import { assignmentStore, submissionStore } from "@/lib/sessions";
+import { assignmentStore, libraryStore, submissionStore } from "@/lib/sessions";
 import {
   addLearnerAction,
   addReviewerAction,
   adoptAssignmentAction,
+  deleteAssignmentAction,
   removeLearnerAction,
   removeReviewerAction,
   updateAssignmentNoteAction,
@@ -47,6 +50,9 @@ export default async function MobileAssignmentsPage({
 }: Readonly<{
   searchParams: Promise<{
     assigned?: string;
+    /** A whole assignment was just retired — the list is where it lands, since
+     *  the sheet it was deleted from no longer has anything to show. */
+    deleted?: string;
     /** Which assignment's editor sheet a mutation came back to — it carries the
      *  banner AND forces that sheet open, since a client-side redirect does not
      *  re-evaluate `:target`. Opening one otherwise is a pure fragment change. */
@@ -110,6 +116,89 @@ export default async function MobileAssignmentsPage({
       viewerIsAdmin,
     });
   const views = [...groups.entries()].map(([key, issues]) => viewFor(key, issues));
+
+  // THE CURATED REVIEW LOOP (owner picks #5/#6, 2026-08-15): an assignment
+  // whose source entry is a curated deal closes the teaching loop on its own
+  // card — each started learner's journey against the coach's line ("left
+  // your line at trick 2 — played ♠Q, you charted ♦3 · opened 1 of 3 of your
+  // ladders"), and the door to editing the annotations without replaying.
+  const curatedFooters = new Map<string, ReactNode>();
+  for (const [key, issues] of groups) {
+    try {
+      const srcId = issues[0]?.sourceEntryId ?? issues[0]?.entryId;
+      if (!srcId) continue;
+      const src = await libraryStore().getEntry(srcId);
+      if (!src?.curatedJson) continue;
+      const lines = await curatedReportLines(issues);
+      const rows = issues
+        .map((a) => {
+          const line = lines.get(a.assignmentId);
+          return line ? { id: a.assignmentId, name: a.learnerName ?? "Learner", line } : null;
+        })
+        .filter((r): r is { id: string; name: string; line: string } => r !== null);
+      curatedFooters.set(
+        key,
+        <div
+          style={{
+            marginTop: 12,
+            paddingTop: 10,
+            borderTop: "1px solid rgba(255,244,215,0.22)",
+          }}
+        >
+          <p
+            style={{
+              font: `600 9.5px ${G}`,
+              letterSpacing: ".22em",
+              textTransform: "uppercase",
+              color: "rgba(255,244,215,0.6)",
+              margin: 0,
+            }}
+          >
+            Curated deal
+          </p>
+          {rows.length > 0 ? (
+            rows.map((r) => (
+              <p
+                key={r.id}
+                style={{
+                  font: `400 12px/1.5 ${G}`,
+                  color: "rgba(255,244,215,0.85)",
+                  margin: "6px 0 0",
+                }}
+              >
+                <b style={{ fontWeight: 600, color: "#ffffff" }}>{r.name}</b> — {r.line}
+              </p>
+            ))
+          ) : (
+            <p
+              style={{
+                font: `400 12px/1.5 ${G}`,
+                color: "rgba(255,244,215,0.72)",
+                margin: "6px 0 0",
+              }}
+            >
+              No one has opened the board yet — journeys against your line will land here.
+            </p>
+          )}
+          <a
+            href={`/m/curated/${encodeURIComponent(srcId)}`}
+            style={{
+              display: "inline-block",
+              font: `600 12px ${G}`,
+              color: CREAM,
+              textDecoration: "underline",
+              textUnderlineOffset: 3,
+              marginTop: 8,
+            }}
+          >
+            Edit your annotations →
+          </a>
+        </div>,
+      );
+    } catch {
+      // One unreadable curated group costs its footer, never the page.
+    }
+  }
 
   // Assignments someone ELSE owns, where this coach is a named reviewer. Before
   // any learner finishes there is no submission, so /m/reviews shows nothing —
@@ -177,6 +266,7 @@ export default async function MobileAssignmentsPage({
     removeLearner: removeLearnerAction,
     addReviewer: addReviewerAction,
     removeReviewer: removeReviewerAction,
+    deleteAssignment: deleteAssignmentAction,
   };
   const links: AssignmentLinks = {
     list: "/m/assignments",
@@ -216,6 +306,24 @@ export default async function MobileAssignmentsPage({
           : "Boards you've delegated, and how far each learner has got."}
       </p>
 
+      {/* THE STUDIO'S DOOR (curated v2, owner design 2026-08-18): build the
+          board card by card, bid it and play their seat, publish the line. */}
+      <a
+        href="/m/curate/new"
+        style={{
+          display: "inline-block",
+          font: `700 13px ${G}`,
+          color: CREAM,
+          background: "#105431",
+          borderRadius: 999,
+          padding: "10px 16px",
+          textDecoration: "none",
+          margin: "14px 0 0",
+        }}
+      >
+        + Build a curated deal
+      </a>
+
       {params.assigned && (
         <p
           style={{
@@ -228,6 +336,21 @@ export default async function MobileAssignmentsPage({
           }}
         >
           Assigned to {params.assigned} learner{params.assigned === "1" ? "" : "s"}.
+        </p>
+      )}
+
+      {params.deleted && (
+        <p
+          style={{
+            font: `500 13px ${G}`,
+            background: GREEN,
+            color: CREAM,
+            borderRadius: 12,
+            padding: "10px 14px",
+            margin: "14px 0 0",
+          }}
+        >
+          Assignment deleted. Any boards your learners already played stay in their My Games.
         </p>
       )}
 
@@ -254,6 +377,7 @@ export default async function MobileAssignmentsPage({
             view={view}
             index={i}
             threadHref={links.thread}
+            {...(curatedFooters.has(view.key) ? { footer: curatedFooters.get(view.key) } : {})}
           />
         ))}
       </div>

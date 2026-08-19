@@ -14,7 +14,7 @@
 import { redirect } from "next/navigation";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { bridgeLibrary, itemToEntry, libraryPrincipalOf } from "@/lib/libraryComponent";
+import { bridgeLibrary, copyForAssign, libraryPrincipalOf } from "@/lib/libraryComponent";
 import { getMyLearners, isBridgeCoach, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { findReviewerCandidate, selfReviewer } from "@/lib/reviewers";
 import { assignmentStore, libraryStore } from "@/lib/sessions";
@@ -99,15 +99,10 @@ export async function assignEntryAction(formData: FormData): Promise<void> {
     if (existing.length > 0) continue;
 
     // Copy-on-assign (0022) via the library component: the learner receives
-    // their OWN copy in their instance, stamped with provenance. copyTo is
-    // idempotent per (source, learner) and policy-checks the coach's access.
-    const copy = itemToEntry(
-      await service.copyTo(principal, entryId, {
-        ownerId: learnerId,
-        scopeLevel: "user",
-        provenance: "assigned",
-      }),
-    );
+    // their OWN copy in their instance, stamped with provenance. Idempotent
+    // per (source, learner), and it refreshes a curated overlay onto a copy
+    // that predates the curation — see copyForAssign.
+    const copy = await copyForAssign(principal, entryId, learnerId);
 
     await store.putAssignment({
       assignmentId: newId("as"),

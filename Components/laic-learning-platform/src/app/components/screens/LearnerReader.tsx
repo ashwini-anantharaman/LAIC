@@ -32,6 +32,7 @@ import { mockDrillContent } from '../../../lib/mockDrillBlueprint';
 import { richTextToSafeHtml } from '../../../lib/richTextMarkdown';
 
 import { McqClusterExperience, type McqClusterQuestion, type QuizResolveStatus } from './McqClusterExperience';
+import { TutorialV3Reader } from './tutorialV3/learner/TutorialV3Reader';
 
 export type { QuizResolveStatus };
 
@@ -65,6 +66,12 @@ function questionsFromMcqBlocks(cluster: Block[], sourceUnits?: { text?: string;
 function buildPreviewSegments(
   blocks: Block[],
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[],
+  /**
+   * Tutorial V3 draws its own quiz and must see one segment per block. Every
+   * other reader keeps the cluster, which is what turns a run of MCQ blocks
+   * into a single "Enter MCQ" experience.
+   */
+  cluster = true,
 ): Array<
   | { kind: 'block'; block: Block }
   | { kind: 'cluster'; key: string; title: string; fromLabel?: string; questions: McqClusterQuestion[]; blocks: Block[] }
@@ -82,7 +89,7 @@ function buildPreviewSegments(
 
     const quiz = b.type === 'quiz' ? (b.content as QuizContent) : null;
     const adaptive = !!quiz?.adaptive;
-    if (!isMcqPreviewBlock(b) || adaptive) {
+    if (!cluster || !isMcqPreviewBlock(b) || adaptive) {
       segments.push({ kind: 'block', block: b });
       i += 1;
       continue;
@@ -1151,10 +1158,27 @@ function BiddingSequence({ content }: { content: BiddingSequenceContent }) {
   );
 }
 
+/**
+ * Per-type renderer replacements. Tutorial V3 supplies its own quiz, concept
+ * card, flashcard set and bidding sequence this way; every other object type
+ * passes nothing and gets exactly the renderers it has always had.
+ */
+export type BlockOverrides = Partial<Record<string, (ctx: {
+  block: Block;
+  objectId: string;
+  quizProps?: {
+    deferPassScore?: boolean;
+    maxHints?: number;
+    hintsEnabled?: boolean;
+    onResolvedChange?: Parameters<typeof QuizBlock>[0]['onResolvedChange'];
+  };
+}) => React.ReactNode>>;
+
 function BlockRenderer({
   block,
   objectId,
   quizProps,
+  overrides,
 }: {
   block: Block;
   objectId: string;
@@ -1164,7 +1188,10 @@ function BlockRenderer({
     hintsEnabled?: boolean;
     onResolvedChange?: Parameters<typeof QuizBlock>[0]['onResolvedChange'];
   };
+  overrides?: BlockOverrides;
 }) {
+  const override = overrides?.[block.type];
+  if (override) return <>{override({ block, objectId, quizProps })}</>;
   switch (block.type) {
     case 'rich-text': {
       const c = block.content as { text?: string; heading?: string; subheads?: string[] };
@@ -1335,6 +1362,13 @@ function AssessedBlocks({
   animate = false,
   sourceUnits,
   paginate = false,
+  blockOverrides,
+  pageIndex,
+  onPageChange,
+  onPageCountChange,
+  hidePager = false,
+  clusterMcqs = true,
+  renderBlockFrame,
 }: {
   blocks: Block[];
   objectId: string;
@@ -1347,6 +1381,26 @@ function AssessedBlocks({
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
   /** When true, long tutorials split into pages (~520 words) after generation. */
   paginate?: boolean;
+  /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
+  blockOverrides?: BlockOverrides;
+  /** Wrap each rendered block — see LearningBlocksPreview. */
+  renderBlockFrame?: (blockId: string, node: React.ReactNode, index: number) => React.ReactNode;
+  /**
+   * Controlled paging. Tutorial V3 drives the page from its section sidebar, so
+   * it owns the index; left undefined, paging stays internal exactly as before.
+   */
+  pageIndex?: number;
+  onPageChange?: (index: number) => void;
+  onPageCountChange?: (count: number) => void;
+  /** Hide the built-in pager when the surrounding chrome provides its own. */
+  hidePager?: boolean;
+  /**
+   * When false, consecutive MCQ blocks are NOT merged into one cluster
+   * experience — each quiz block renders through `BlockRenderer`, so a
+   * per-type override can replace it. Tutorial V3 is the only caller that
+   * turns this off.
+   */
+  clusterMcqs?: boolean;
 }) {
   const total = countQuizQuestionsInBlocks(blocks);
   const [byBlock, setByBlock] = useState<Record<string, Record<number, QuizResolveStatus>>>({});
@@ -1357,13 +1411,24 @@ function AssessedBlocks({
     ? paginateTutorialBlocks(blocks, { wordsPerPage: TUTORIAL_WORDS_PER_PAGE })
     : [blocks];
   const pageCount = pages.length;
-  const safePage = Math.min(pageIdx, Math.max(0, pageCount - 1));
+  const controlled = pageIndex != null;
+  const safePage = Math.min(controlled ? pageIndex : pageIdx, Math.max(0, pageCount - 1));
+  const goToPage = (next: number) => {
+    const clamped = Math.max(0, Math.min(pageCount - 1, next));
+    if (controlled) onPageChange?.(clamped);
+    else setPageIdx(clamped);
+  };
 
   useEffect(() => {
-    setPageIdx(0);
+    if (!controlled) setPageIdx(0);
     // Reset when the block set identity changes (ids), not on every parent render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blocks.map((b) => b.id).join('|')]);
+
+  useEffect(() => {
+    onPageCountChange?.(pageCount);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageCount]);
 
   const onResolvedChange = (info: {
     keyPrefix: string;
@@ -1413,10 +1478,12 @@ function AssessedBlocks({
       style={{ display: visible ? 'flex' : 'none' }}
       aria-hidden={!visible}
     >
-      {buildPreviewSegments(pageBlocks, sourceUnits).map((seg, i) => {
+      {buildPreviewSegments(pageBlocks, sourceUnits, clusterMcqs).map((seg, i) => {
         const wrap = (key: string, node: React.ReactNode) => {
-          if (!animate || !visible) {
-            return <div key={key} data-block-id={key} className="w-full">{node}</div>;
+          const framed = renderBlockFrame ? renderBlockFrame(key, node, i) : node;
+          // A frame owns its own motion; animating around it fights the drag.
+          if (!animate || !visible || renderBlockFrame) {
+            return <div key={key} data-block-id={key} className="w-full">{framed}</div>;
           }
           return (
             <motion.div
@@ -1449,7 +1516,7 @@ function AssessedBlocks({
 
         return wrap(
           seg.block.id,
-          <BlockRenderer block={seg.block} objectId={objectId} quizProps={quizProps} />,
+          <BlockRenderer block={seg.block} objectId={objectId} quizProps={quizProps} overrides={blockOverrides} />,
         );
       })}
     </div>
@@ -1459,7 +1526,7 @@ function AssessedBlocks({
     <div className="flex flex-col gap-6">
       {pages.map((pageBlocks, pi) => renderPage(pageBlocks, pi, pi === safePage))}
 
-      {pageCount > 1 && (
+      {pageCount > 1 && !hidePager && (
         <nav
           aria-label="Tutorial pages"
           className="sticky bottom-3 z-[5] mt-2"
@@ -1478,7 +1545,7 @@ function AssessedBlocks({
                 type="button"
                 disabled={safePage <= 0}
                 onClick={() => {
-                  setPageIdx((p) => Math.max(0, p - 1));
+                  goToPage(safePage - 1);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold border disabled:opacity-35"
@@ -1502,7 +1569,7 @@ function AssessedBlocks({
                       aria-label={`Go to page ${i + 1}`}
                       aria-current={i === safePage ? 'page' : undefined}
                       onClick={() => {
-                        setPageIdx(i);
+                        goToPage(i);
                         window.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
                       className="rounded-full transition-all"
@@ -1520,7 +1587,7 @@ function AssessedBlocks({
                 type="button"
                 disabled={safePage >= pageCount - 1}
                 onClick={() => {
-                  setPageIdx((p) => Math.min(pageCount - 1, p + 1));
+                  goToPage(safePage + 1);
                   window.scrollTo({ top: 0, behavior: 'smooth' });
                 }}
                 className="shrink-0 px-3 py-2 rounded-full text-xs font-semibold text-white disabled:opacity-35"
@@ -1560,6 +1627,13 @@ export function LearningBlocksPreview({
   glossary,
   sourceUnits,
   paginate = true,
+  blockOverrides,
+  pageIndex,
+  onPageChange,
+  onPageCountChange,
+  hidePager = false,
+  clusterMcqs = true,
+  renderBlockFrame,
 }: {
   blocks: Block[];
   objectId?: string;
@@ -1573,8 +1647,23 @@ export function LearningBlocksPreview({
   glossary?: GlossaryEntry[];
   /** Knowledge-base units used to fill FROM YOUR SOURCES when questions lack quotes. */
   sourceUnits?: { text?: string; from?: string; sourceLabel?: string; kind?: string }[];
+  /**
+   * Wrap each rendered block. Used by the author's preview to put a drag frame
+   * around what the learner sees, so blocks can be rearranged in place instead
+   * of only in a separate list that reads nothing like the finished lesson.
+   */
+  renderBlockFrame?: (blockId: string, node: React.ReactNode, index: number) => React.ReactNode;
   /** Split long tutorials into pages after generation (default on). */
   paginate?: boolean;
+  /** Per-type renderer replacements (Tutorial V3). Absent for every other type. */
+  blockOverrides?: BlockOverrides;
+  /** Controlled paging, for chrome that navigates pages itself (Tutorial V3). */
+  pageIndex?: number;
+  onPageChange?: (index: number) => void;
+  onPageCountChange?: (count: number) => void;
+  hidePager?: boolean;
+  /** Off for Tutorial V3, which draws its own quiz per block. */
+  clusterMcqs?: boolean;
 }) {
   const [glossaryOpen, setGlossaryOpen] = useState(false);
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
@@ -1605,6 +1694,13 @@ export function LearningBlocksPreview({
           hintsEnabled={hintsEnabled}
           sourceUnits={sourceUnits}
           paginate={paginate}
+          blockOverrides={blockOverrides}
+          pageIndex={pageIndex}
+          onPageChange={onPageChange}
+          onPageCountChange={onPageCountChange}
+          hidePager={hidePager}
+          clusterMcqs={clusterMcqs}
+          renderBlockFrame={renderBlockFrame}
         />
       </div>
       <GlossarySidebar
@@ -1645,6 +1741,43 @@ export function LearnerReader({
   const [activeGlossaryId, setActiveGlossaryId] = useState<string | null>(null);
 
   if (!obj) return null;
+
+  /*
+    A Tutorial V3 brings its own reader — section rail, covers, per-type blocks.
+    Until now only the in-editor Student preview mounted it, so a V3 tutorial
+    opened from the library, from /o/<id>, or from the embedded viewer fell
+    through to this shared reader and showed the pre-V3 UI. Same object, two
+    different learner views depending on how you arrived, which is the sort of
+    thing an author only finds out about after publishing.
+  */
+  if (obj.type === 'tutorial-v3') {
+    /*
+      The draft is authoring state and lives only in this browser — a saved
+      object round-tripped through the server (a shared /o/<id> link, another
+      machine, a fresh tab that never authored it) comes back without one.
+      The reader reads the blocks and takes only the title from the draft, so a
+      missing draft is no reason to drop a v3 tutorial back to the generic
+      reader: that showed the same object in two different UIs depending on how
+      the learner arrived. Stand in for it and keep one learner view.
+    */
+    const v3 = obj.tutorialV3Draft || ({ title: obj.title } as NonNullable<typeof obj.tutorialV3Draft>);
+    const v3Pass = parseInt(String(v3.structure?.pass || '70').replace('%', ''), 10) || 70;
+    return (
+      <TutorialV3Reader
+        draft={v3}
+        blocks={obj.blocks || []}
+        objectId={obj.id}
+        cumulativePassMark={v3Pass}
+        passRequired
+        hintsEnabled={v3.structure?.hintsOn !== false}
+        maxHints={typeof v3.structure?.hintN === 'number' ? v3.structure.hintN : 4}
+        glossary={buildGlossary({ blocks: expandTutorialBlocks(obj.blocks || []) as Block[], highlights: [] })}
+        onBack={embedMode ? undefined : closeReader}
+        learnerName={app.nexusUserName || undefined}
+        object={obj}
+      />
+    );
+  }
 
   const draft = (obj as any).pipelineDraft;
   const fv = draft?.fv || {};

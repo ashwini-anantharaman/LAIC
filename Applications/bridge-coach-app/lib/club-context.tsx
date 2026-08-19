@@ -15,16 +15,12 @@
 import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "./auth-context";
-import { clubDefaultProgramId, getRoleContext, isClubMembership } from "./bridge-role";
-import type { NexusMembership } from "./nexus";
+import { clubsOf, getRoleContext, initialClubProgramId, type ClubMembership } from "./bridge-role";
 
-export type Club = {
-  programId: string;
-  name: string;
-  orgName: string;
-  /** The membership role in THIS club — the coarse tier, not its capabilities. */
-  role: string;
-};
+// Derived in bridge-role, not here: the SIGN-IN PRIME has to predict this
+// selection to warm the right per-program caches, so both sides read from one
+// implementation rather than two that agree until one is edited.
+export type Club = ClubMembership;
 
 type ClubState = {
   /** Every club this person belongs to, alphabetical so the list is stable. */
@@ -61,27 +57,12 @@ export function ClubProvider({ children }: { children: ReactNode }) {
     getRoleContext(token)
       .then((ctx) => {
         if (cancelled) return;
-        const found = ctx.memberships
-          .filter(isClubMembership)
-          .map((m) => ({
-            programId: m.program_id as string,
-            name: m.program_name ?? m.org_name,
-            orgName: m.org_name,
-            role: m.role,
-          }))
-          // Deduplicate: two memberships in one program would otherwise list it twice.
-          .filter((c, i, all) => all.findIndex((o) => o.programId === c.programId) === i)
-          .sort((a, b) => a.name.localeCompare(b.name));
-        setClubs(found);
+        setClubs(clubsOf(ctx.memberships));
         // One club is not a choice — skip My Clubs entirely. CLUB-ONLY
         // accounts always get a default, even with several: for them the
-        // app-wide program is a locked door, not a fallback (the shared
-        // helper is also what the sign-in prime uses, so the two agree).
-        setSelectedId(
-          found.length === 1
-            ? found[0].programId
-            : clubDefaultProgramId(ctx.memberships),
-        );
+        // app-wide program is a locked door, not a fallback. The sign-in
+        // prime calls the same helper, so what it warms is what we select.
+        setSelectedId(initialClubProgramId(ctx.memberships));
       })
       .catch(() => !cancelled && setClubs([]))
       .finally(() => !cancelled && setLoading(false));
