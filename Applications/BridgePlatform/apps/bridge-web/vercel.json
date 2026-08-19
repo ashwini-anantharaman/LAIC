@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "yashs-branch": false
+    }
+  },
   "framework": "nextjs",
   "regions": [
     "pdx1"
