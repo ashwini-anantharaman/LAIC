@@ -4,7 +4,7 @@
  */
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { BookOpen, Check, Copy, ExternalLink, Handshake, Lock, Plus, Rocket, ShieldCheck, SlidersHorizontal, Trash2, Waypoints, X } from "lucide-react";
+import { BookOpen, Check, Copy, ExternalLink, FolderTree, Handshake, Lock, Plus, Rocket, ShieldCheck, SlidersHorizontal, Trash2, Waypoints, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -203,7 +203,16 @@ export function ProgramOverview() {
   // A real member whose entire access is a single platform is launched straight
   // into it — there's nothing else for them here. Previews (Test as) are not
   // redirected, so the admin doesn't get trapped in a full-screen surface.
-  const otherAreas = NON_PLATFORM_AREAS.some((a) => access.perms[a]);
+  //
+  // THE CONTENT LIBRARY IS A DESTINATION, and forgetting that broke exactly the
+  // role this tab was built for. A Content Manager holds one platform AREA
+  // (Content Studio, Partial) and nothing else area-shaped, so this concluded
+  // "nothing else for them here" and flung them full-screen into the Studio —
+  // past the tab, which is keyed on a CAPABILITY rather than an area precisely so
+  // it can be narrower than the whole Studio. Areas alone can no longer answer
+  // "is there anywhere else to go".
+  const hasLibrary = access.capabilities.includes("learning.library.console");
+  const otherAreas = NON_PLATFORM_AREAS.some((a) => access.perms[a]) || hasLibrary;
   const soleActiveKey = active.length === 1 ? active[0] : null;
   useEffect(() => {
     if (access.loading || access.isAdmin || access.impersonating) return;
@@ -211,8 +220,16 @@ export function ProgramOverview() {
     if (platformsLocked) return; // don't fling a member into a locked platform
     if (soleActiveKey && !otherAreas) {
       navigate(`/o/${orgId}/p/${programId}/${soleActiveKey.path}`, { replace: true });
+      return;
     }
-  }, [access.loading, access.isAdmin, access.impersonating, caps, program, platformsLocked, soleActiveKey, otherAreas, orgId, programId, navigate]);
+    // The library as someone's WHOLE remit: no platform card to show them, so an
+    // overview would be an empty page with a sidebar link. Same courtesy the
+    // single-platform case gets, and the reason the redirect is one branch rather
+    // than a special case bolted beside it.
+    if (!active.length && hasLibrary) {
+      navigate(`/o/${orgId}/p/${programId}/learning/library`, { replace: true });
+    }
+  }, [access.loading, access.isAdmin, access.impersonating, caps, program, platformsLocked, soleActiveKey, otherAreas, active.length, hasLibrary, orgId, programId, navigate]);
 
   if (confinedDeciding) return <Spinner />;
 
@@ -240,6 +257,21 @@ export function ProgramOverview() {
             onRemove={() => setFeature(p.key, false)}
           />
         ))}
+        {/* Not a platform, so not in PROGRAM_PLATFORMS — but it is a place a
+            Content Manager goes, and a sidebar link is the one affordance someone
+            arriving on this page does not look at. Never removable: it is a
+            capability's door, not a feature the admin toggles here. */}
+        {(hasLibrary || access.isAdmin) && enabled("learning") && allowed("learning") && (
+          <PlatformCard
+            icon={<FolderTree className="size-5" />}
+            title="Content Library"
+            hint="Share content with clubs and people, and publish it to an app."
+            busy={false}
+            canRemove={false}
+            href={`${window.location.origin}/o/${orgId}/p/${programId}/learning/library`}
+            onRemove={() => {}}
+          />
+        )}
         {addable.map((p) => (
           <AddPlatformCard key={p.key} title={p.title} busy={busy === p.key} onAdd={() => setFeature(p.key, true)} />
         ))}
