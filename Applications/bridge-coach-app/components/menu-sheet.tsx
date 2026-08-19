@@ -5,7 +5,8 @@
 // separate sheets, one tap apart, are now three rows of one.
 //
 // OtherSheetBody is the coach's own surfaces, under two headings: "Coaching"
-// (Learners, Assignments, Reviews, Library) and "Club management", which holds
+// (Learners, Assignments, Create assignment, Reviews, Library) and "Club
+// management", which holds
 // the club's header image and clearing its chat. COACH-ONLY, and the row that opens it is hidden
 // from a learner entirely rather than opening an empty section. Holding them here
 // is what lets the tree and the tab bar stay IDENTICAL for both roles.
@@ -130,6 +131,18 @@ const ITEMS: { label: string; hint: string; href: Href; capability: string }[] =
     hint: "Boards you've delegated, and who has finished",
     href: "/assignments",
     capability: "app.coaching.assignments.view",
+  },
+  // Was the + disc on the Coach tab's Assignments tile. That tab shows the same
+  // learner view to everyone now, so the action moved here rather than being
+  // lost — same route the disc pushed, which is a Redirect into the deal
+  // editor's assign flow, so the flow itself is untouched.
+  // app.coaching.assignments.create was already in the catalogue (the Mentor and
+  // Club Manager presets both grant it) and had no reader until now.
+  {
+    label: "Create assignment",
+    hint: "Author a board and delegate it to learners",
+    href: "/create-assignment",
+    capability: "app.coaching.assignments.create",
   },
   {
     label: "Reviews",
