@@ -36,6 +36,7 @@ import { BidColumns } from "./BidColumns";
 import { EdgeToolbar, type ToolbarItem } from "./EdgeToolbar";
 import { SettingsMenu, type SettingsItem } from "./SettingsMenu";
 import { SeatHand, type SeatHandMetrics } from "./SeatHand";
+import { positionOf, seatAtPosition } from "./seatView";
 import { SeatPlate } from "./SeatPlate";
 import { SeatDiagram } from "./SeatDiagram";
 import { AuctionBox, auctionRowsBoxH, type AuctionBoxSizing } from "./AuctionBox";
@@ -678,6 +679,36 @@ export function PlayTable({
   // controls). Either way the hand is on screen: a defender sees dummy.
   const playing = inPlay || complete;
   const decHuman = declarer ? !!seats[declarer].human : false;
+
+  /**
+   * THE PHONE TIER IS DRAWN FROM THE VIEWER'S CHAIR.
+   *
+   * It has room for ONE hand plus dummy, so the seat it draws at the bottom is
+   * the seat it can be played from. That seat was the literal "S" until
+   * 2026-08-18 — true of every table there has ever been here, because quick
+   * play, challenges and assignments all seat their human South.
+   *
+   * A curated deal broke the assumption twice over: its coach chooses where
+   * the learner sits, and while AUTHORING they hold all four chairs at once,
+   * so the seat on turn is whichever one they are playing. Both hand this a
+   * seat that is not South, and with the literal in place those hands were
+   * unreachable — drawn face down at the bottom, or not drawn at all. (The
+   * auction never had the problem: the bid pad is one shared control, gated
+   * on whose turn it is rather than on a seat.)
+   *
+   * So the phone tier maps SEATS to SCREEN POSITIONS, from the viewer out:
+   * they sit at the bottom, their partner opposite, their left-hand opponent
+   * on the left (./seatView.ts, where the arithmetic is pinned by tests).
+   *
+   * WITH THE VIEWER IN SOUTH — or in no seat at all — BOTH MAPS ARE THE
+   * IDENTITY, so every table that existed before this renders exactly as it
+   * did. The wide and stacked tiers are untouched: they draw all four hands
+   * and SeatDiagram makes any seat's cards tappable on its turn, so they were
+   * never blind to a seat and keep their true compass.
+   */
+  const seatedAt: Seat = mySeat ?? "S";
+  const posOf = (seat: Seat): Seat => positionOf(seat, mySeat ?? null);
+  const seatAt = (pos: Seat): Seat => seatAtPosition(pos, mySeat ?? null);
   /**
    * The SECOND hand on screen beside the viewer's own.
    *
@@ -691,9 +722,9 @@ export function PlayTable({
   const sideSeat: Seat | null =
     !playing
       ? null
-      : dummy === "S" && declarer && declarer !== "S" && decHuman
+      : dummy === seatedAt && declarer && declarer !== seatedAt && decHuman
         ? declarer
-        : dummy && dummy !== "S"
+        : dummy && dummy !== seatedAt
           ? dummy
           : null;
   const dummyIsRow = !!sideSeat && decHuman;
@@ -1147,15 +1178,19 @@ export function PlayTable({
       262px compass that spreads to the corners; the phone gets a tight
       interlocking one the size of the trick itself. */
   const trickCross = (k = 1) => <TrickArea plays={currentPlays} turn={state.turn} scale={k} />;
+  // The phone's trick, drawn from the viewer's chair like the hands around it
+  // (see posOf/seatAt): a card comes from the side of the table its player is
+  // sitting on. TrickArea places by seat and labels nothing, so the mapping is
+  // purely positional — and it is the identity for a viewer in South.
   const trickCluster = (k: number) => (
     <TrickArea
       variant="cluster"
-      plays={currentPlays}
-      turn={state.turn}
+      plays={currentPlays.map((p) => ({ ...p, seat: posOf(p.seat) }))}
+      turn={posOf(state.turn)}
       scale={k}
       card={M_TRICK_CARD}
-      originOf={(seat) => origins.current[seat] ?? null}
-      winner={currentPlays.length === 4 ? trickWinner : null}
+      originOf={(pos) => origins.current[seatAt(pos)] ?? null}
+      winner={currentPlays.length === 4 && trickWinner ? posOf(trickWinner) : null}
       gathering={trickGathering && sweeping}
     />
   );
@@ -1541,7 +1576,35 @@ export function PlayTable({
    * leaving the right to East alone keeps "the rail on my right is my RHO" true
    * every time it appears there.
    */
-  const dummyRailSide: "left" | "right" = dummy === "E" ? "right" : "left";
+  const dummyRailSide: "left" | "right" = dummy && posOf(dummy) === "E" ? "right" : "left";
+
+  /**
+   * WHO GETS A BADGE. A badge stands in for a seat the phone cannot draw a
+   * hand for, so the flanks carry the two seats with no hand on screen — the
+   * viewer's own is at the bottom and dummy's is the row above the felt.
+   *
+   * Each takes its own side where that side is free: the left-hand opponent
+   * on the left, the right-hand one on the right. When DUMMY occupies one of
+   * those positions its badge is not drawn (the seat is already there in
+   * full), and the seat that would otherwise be left off the table entirely —
+   * the viewer's PARTNER, once dummy is an opponent — takes the freed side
+   * instead of vanishing (owner report 2026-08-18: "there should be a North
+   * icon"). With a dummy RAIL the side it stands on is spoken for, and the
+   * layout is one badge short; that is the phone's own limit, unchanged.
+   */
+  const railOn = (side: "left" | "right") =>
+    dummyIsStrip && !!sideSeat && dummyRailSide === side;
+  const homeless = (["N", "E", "S", "W"] as Seat[]).filter(
+    (s) => s !== seatedAt && s !== sideSeat,
+  );
+  const badgeSeat: { left: Seat | null; right: Seat | null } = { left: null, right: null };
+  if (!railOn("left") && homeless.includes(seatAt("W"))) badgeSeat.left = seatAt("W");
+  if (!railOn("right") && homeless.includes(seatAt("E"))) badgeSeat.right = seatAt("E");
+  for (const s of homeless) {
+    if (s === badgeSeat.left || s === badgeSeat.right) continue;
+    if (!badgeSeat.left && !railOn("left")) badgeSeat.left = s;
+    else if (!badgeSeat.right && !railOn("right")) badgeSeat.right = s;
+  }
 
   /** Both flanks of the centre band reserve this, so the felt stays centred. */
   const SIDE_AVATAR_W = 62;
@@ -1714,16 +1777,31 @@ export function PlayTable({
 
   /** Dummy as a FULL card row (or fan) — kept only when the human is declarer
       and must play from dummy, so compactness never costs them the controls. */
+  const handPlateW = (seat: Seat) =>
+    visible[seat]
+      ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
+      : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
+
   const dummyRowEl =
     dummyIsRow && sideSeat ? (
       // paddingTop reserves headroom for a playable card's translateY(-6px) lift
       // (well within the HAND_H.row budget), so the raised top is never clipped.
       <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
-        {visible[sideSeat]
-          ? fanLayout
-            ? fanHand(sideSeat, M_CARD)
-            : cardRow(sideSeat, M_CARD, 1)
-          : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+          {visible[sideSeat]
+            ? fanLayout
+              ? fanHand(sideSeat, M_CARD)
+              : cardRow(sideSeat, M_CARD, 1)
+            : backs(sideSeat, { w: M_CARD.backW, h: M_CARD.h })}
+          {/* WHOSE HAND THIS IS. The row is dummy's whoever dummy happens to
+              be, and unnamed it reads as the partner sitting opposite — which
+              it only is on the ordinary table where the learner sits South and
+              their partner declares (owner report 2026-08-18). The plate is
+              the one the hand at the bottom already wears, and HAND_H.row has
+              always reserved its height here, so naming the hand costs the
+              stack nothing. */}
+          {plate(sideSeat, handPlateW(sideSeat), { weight: 700 })}
+        </div>
       </div>
     ) : null;
 
@@ -1742,9 +1820,7 @@ export function PlayTable({
    * Computed with the hand's own geometry rather than a literal, so a change to
    * the card, the overlap or the seams keeps the two agreeing.
    */
-  const phoneHandW = visible.S
-    ? M_CARD.w + (M_HAND_FULL - 1) * M_PITCH + (tok.suitGroups ? 3 * (M_CARD.overlap ?? 0) : 0)
-    : Math.round(M_CARD.backW * M_HAND_FULL + 1.5 * (M_HAND_FULL - 1)) + 4;
+  const phoneHandW = handPlateW(seatedAt);
 
   // ---- mobile stack (Mobile Table.dc.html) ----------------------------------
   // The stage is a fixed 720-wide column at the fixed-point scale. The SCALE
@@ -1816,7 +1892,7 @@ export function PlayTable({
             {/* The badge stands in for a seat the phone cannot draw a hand for,
                 so it yields to the dummy rail on that side rather than crowding
                 it, and never appears for a seat already on screen. */}
-            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && sideSeat !== "W" ? sideAvatar("W") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "left" && dummyRailEl) && badgeSeat.left ? sideAvatar(badgeSeat.left) : null}
           </div>
           <div style={{ flex: 1, minWidth: 0, height: "100%", display: "flex", alignItems: inAuction ? "flex-start" : "center", justifyContent: "center", // A hairline, not a picture frame (owner, 2026-08-13): it marks where the
                 // felt is, and at 3px it competed with the cards inside it.
@@ -1841,7 +1917,7 @@ export function PlayTable({
                     teaches the table you play on. This replaces a row of three
                     names, which said the same thing in a form that had to be
                     ellipsised to fit and could not show whose turn it was. */}
-                {plate("N", 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
+                {plate(seatAt("N"), 300, { height: 26, badge: 20, font: 16, tagFont: 11, weight: 700 })}
                 {auctionBox({ width: 430, height: "auto", maxH: feltH, headFont: 26, cellFont: 24, radius: 0, cellMinH: AUCTION_CELL, rowsVisible: AUCTION_ROWS })}
               </div>
             ) : null}
@@ -1859,7 +1935,7 @@ export function PlayTable({
             {complete ? resultCard : null}
           </div>
           <div style={{ flex: "none", width: bandSideW, height: "100%", display: "flex", justifyContent: "flex-end" }}>
-            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && sideSeat !== "E" ? sideAvatar("E") : null}
+            {(inPlay || inAuction) && !(dummyRailSide === "right" && dummyRailEl) && badgeSeat.right ? sideAvatar(badgeSeat.right) : null}
             {dummyRailSide === "right" ? dummyRailEl : null}
           </div>
         </div>
@@ -1881,15 +1957,15 @@ export function PlayTable({
             690 in the 720 stage) — flex:none cards, centred, never stretched. */}
         <div style={{ flex: "none", display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-            {callsRow("S")}
-            {visible.S
+            {callsRow(seatedAt)}
+            {visible[seatedAt]
               ? fanLayout
-                ? fanHand("S", M_CARD)
-                : cardRow("S", M_CARD)
-              : backs("S", { w: M_CARD.backW, h: M_CARD.h })}
+                ? fanHand(seatedAt, M_CARD)
+                : cardRow(seatedAt, M_CARD)
+              : backs(seatedAt, { w: M_CARD.backW, h: M_CARD.h })}
             {/* The plate spans a FULL hand, not the hand as it stands — see
                 phoneHandW. Bold name/tag: it reads through the stage scale. */}
-            {plate("S", phoneHandW, { weight: 700 })}
+            {plate(seatedAt, phoneHandW, { weight: 700 })}
           </div>
         </div>
       </div>

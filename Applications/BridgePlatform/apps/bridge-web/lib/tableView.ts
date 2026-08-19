@@ -14,7 +14,7 @@
 // door they came through.
 
 import type { Seat } from "@bridge/events";
-import { controllingSeat, type SessionView } from "@bridge/sessions";
+import { coachBidsThisSeat, controllingSeat, type SessionView } from "@bridge/sessions";
 import type { TableAppearance } from "@bridge/table-config";
 import { after } from "next/server";
 import type { NexusBridgeContext } from "@laic/learner-contracts";
@@ -32,11 +32,24 @@ import {
 import { getAppearance } from "@/lib/appearance";
 import { HOUSE_PREFIX } from "@/lib/arena";
 import { sessionService } from "@/lib/sessions";
+import { studioAccess } from "@/lib/studioSession";
 
 export interface TableViewOptions {
   /** The ?hands= toggle: "all" opens every hand (gate permitting), "mine"
    *  forces own-seat view even for a spectator. Absent = the default rule. */
   hands?: string | undefined;
+  /** THE STUDIO (curated v2, owner design 2026-08-18): an authoring table.
+   *  Honored only for a sitting the viewer is actually authoring — see
+   *  lib/studioSession.ts — and then every hand is face-up, because the coach
+   *  is building all four of them.
+   *
+   *  SPLIT BY PHASE (owner direction 2026-08-19). In the AUCTION every call is
+   *  the coach's, so "you" FOLLOWS THE TURN around the table — the hand being
+   *  bid is the hand on screen. In the PLAY the studio is an ordinary board:
+   *  the coach sits in the learner's chair, robots play the other three, and
+   *  the felt stays put (a "you" that re-anchored between tricks is what broke
+   *  the trick cluster the first time). */
+  author?: boolean;
 }
 
 export interface LoadedTableView {
@@ -64,6 +77,12 @@ export interface LoadedTableView {
   /** The seat the learner plays FROM — their own, unless they took over. */
   declaringSeat: Seat | null;
   myTurn: boolean;
+  /** THE STUDIO: an authoring sitting the viewer is seated in, ?author
+   *  honored — every hand face-up, the annotation rail beside the felt. */
+  authoring: boolean;
+  /** THE STUDIO'S AUCTION, where every call is the coach's: "you" follows the
+   *  turn and the bid pad is live at all four chairs. */
+  coachBidding: boolean;
   canSeeAllHands: boolean;
   showAll: boolean;
   /** Which hands this viewer sees face-up, RIGHT NOW. */
@@ -184,10 +203,28 @@ export async function loadTableView(
     challenge?.board.controlOverrides,
   );
 
+  // THE STUDIO: an authoring sitting with the viewer seated in it — the
+  // ?author flag is honored only then, so a stray query string on someone
+  // else's board (or a learner's) changes nothing.
+  const studio = studioAccess(record, context.nexusUserId);
+  const authoring = !!options.author && studio.studio;
+
+  // THE COACH IS BIDDING EVERY HAND, so "you" follows the turn: the auction's
+  // acting chair IS the coach's chair for as long as the auction lasts, and the
+  // felt must show the hand whose call they are about to make. The same is true
+  // all board long on a LEGACY four-chair studio, which is the shape that
+  // needed this first.
+  //
+  // In the studio's card play it must NOT happen: the coach holds one chair
+  // like any other player, and a "you" that moved between tricks is what left
+  // the trick cluster drawing cards in two places at once.
+  const coachBidding = authoring && coachBidsThisSeat(record, state);
   const mySeat =
-    (Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
-      ([, c]) => c.kind === "human" && c.nexusUserId === context.nexusUserId,
-    )?.[0] ?? null;
+    coachBidding || (authoring && studio.allMine)
+      ? controllingSeat(record.seats, state, actingSeat)
+      : ((Object.entries(record.seats) as [Seat, (typeof record.seats)[Seat]][]).find(
+        ([, c]) => c.kind === "human" && c.nexusUserId === context.nexusUserId,
+      )?.[0] ?? null);
 
   const dummy =
     state.phase !== "auction" && state.contract
@@ -209,15 +246,22 @@ export async function loadTableView(
   const controller = controllingSeat(record.seats, state, actingSeat);
   const myTurn =
     !boardOver &&
-    actingIsHuman &&
-    record.seats[controller].kind === "human" &&
-    (record.seats[controller] as { nexusUserId: string }).nexusUserId === context.nexusUserId;
+    // The studio's auction is the coach's at every chair — `authoring` has
+    // already verified this viewer is the one authoring the board.
+    (coachBidding ||
+      (actingIsHuman &&
+        record.seats[controller].kind === "human" &&
+        (record.seats[controller] as { nexusUserId: string }).nexusUserId ===
+          context.nexusUserId));
 
   // At a challenge board the Hands control governs the CAPABILITY: hidden
   // means unreachable, so ?hands=all is refused too.
   const canSeeAllHands = !challenge || control["table.hands_view"];
   const showAll =
-    (options.hands === "all" || (options.hands !== "mine" && !mySeat)) && canSeeAllHands;
+    // The studio plays with open cards — the coach is building all four hands'
+    // story, and there is nobody at the table to hide them from.
+    authoring ||
+    ((options.hands === "all" || (options.hands !== "mine" && !mySeat)) && canSeeAllHands);
   // Dummy spreads only after the opening lead — real-bridge timing. A
   // finished board is face-up, and a bidding-only board is finished the
   // moment the auction is.
@@ -283,6 +327,8 @@ export async function loadTableView(
       takeover,
       declaringSeat,
       myTurn,
+      authoring,
+      coachBidding,
       canSeeAllHands,
       showAll,
       visible,

@@ -14,8 +14,15 @@ import { redirect } from "next/navigation";
 
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
-import { parseCurated, serializeCurated, type CuratedAnnotation } from "@/lib/curated";
+import {
+  parseCurated,
+  serializeCurated,
+  type CuratedAnnotation,
+  type CuratedConstraint,
+} from "@/lib/curated";
 import { libraryStore } from "@/lib/sessions";
+
+const CONSTRAINTS: readonly CuratedConstraint[] = ["locked", "guided", "free"];
 
 export async function saveCuratedEditsAction(formData: FormData): Promise<void> {
   const entryId = String(formData.get("entryId") ?? "");
@@ -51,9 +58,38 @@ export async function saveCuratedEditsAction(formData: FormData): Promise<void> 
       ...(hints.length >= 2 ? { hints } : {}),
     });
   });
+  // THE BOARD SETTINGS (curated v2, owner design 2026-08-18) are the coach's
+  // to edit here too — constraint, intro/debrief, pin. The learner seat is
+  // NOT on the form: the annotations above are anchored to it. A v1 entry
+  // whose form posts settings becomes v2 — same meaning, now said out loud.
+  const parsed = parseCurated(entry.curatedJson);
+  const constraintRaw = String(formData.get("constraint") ?? "");
+  const constraint = CONSTRAINTS.includes(constraintRaw as CuratedConstraint)
+    ? (constraintRaw as CuratedConstraint)
+    : parsed.constraint;
+  const intro = String(formData.get("intro") ?? "").trim();
+  const debrief = String(formData.get("debrief") ?? "").trim();
+  const pin = String(formData.get("pin") ?? "").trim();
+
   // Every payload enters storage through the same tolerant door — the parser
   // enforces the caps and drops annotations that say nothing.
-  const payload = parseCurated(serializeCurated({ annotations: kept }));
+  const payload = parseCurated(
+    serializeCurated({
+      v: 2,
+      annotations: kept,
+      ...(parsed.learnerSeat ? { learnerSeat: parsed.learnerSeat } : {}),
+      ...(constraint ? { constraint } : {}),
+      ...(intro ? { intro } : {}),
+      ...(debrief ? { debrief } : {}),
+      ...(pin ? { pin } : {}),
+      // THE LESSON SURVIVES A WORDS-ONLY EDIT. This form rewrites the coach's
+      // prose, not what the board teaches — rebuilding the payload without
+      // carrying the topic and the chosen cards over would silently empty the
+      // learner's Know panel the next time anyone fixed a typo.
+      ...(parsed.kTags?.length ? { kTags: parsed.kTags } : {}),
+      ...(parsed.kItems?.length ? { kItems: parsed.kItems } : {}),
+    }),
+  );
 
   const name = String(formData.get("name") ?? "").trim();
   await libraryStore().putEntry({

@@ -99,6 +99,16 @@ export default async function LibraryPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {/* The studio (curated v2): its own gate — the page there re-checks
+              the coach roster, so this is a door, not a permission. */}
+          {canCreate && (
+            <Link
+              href="/bridge/curate/new"
+              className="rounded border border-emerald-800 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-50"
+            >
+              Curated deal
+            </Link>
+          )}
           {canCurate && (
             <Link
               href="/bridge/library/collections"

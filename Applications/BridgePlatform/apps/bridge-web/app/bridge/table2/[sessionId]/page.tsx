@@ -52,13 +52,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; curate?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; curate?: string; author?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, curate } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, curate, author } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -75,7 +75,7 @@ export default async function PlayTablePage({
     // Inside the coach app's WebView the host owns the frame and the table
     // renders its phone tier; on the desktop platform it keeps the wide view.
     isEmbeddedLaunch(),
-    loadTableView(context, sessionIdParam, { hands: handsParam }),
+    loadTableView(context, sessionIdParam, { hands: handsParam, author: author === "1" }),
   ]);
 
   if (!loaded.ok) {
@@ -97,9 +97,9 @@ export default async function PlayTablePage({
     appearance,
     mySeat,
     dummy,
-    takeover,
     declaringSeat,
     myTurn,
+    authoring,
     canSeeAllHands,
     showAll,
     visible,
@@ -157,13 +157,34 @@ export default async function PlayTablePage({
   // Curated Deals door) it takes the coach band's slot instead of the dock.
   // Assignment remains the coach gate, so a non-coach curating to their own
   // shelf harms nobody.
-  const curating = curate === "1" && !!mySeat && !handsView;
+  // THE STUDIO (curated v2, owner design 2026-08-18): `authoring` is the
+  // resolver's verified answer to ?author=1 — an authoring sitting this viewer
+  // is seated in. The coach plays the learner's chair against the robots
+  // (owner direction 2026-08-19), so `at` is live at the coach's own decisions
+  // exactly as it is on any other table, and those are the learner's.
+  const curating = (curate === "1" && !!mySeat && !handsView) || (authoring && !handsView);
   const curateAt = curating && myTurn && !boardOver ? currentAt(state) : null;
+  // In the studio every call is "yours" — the address names the SEAT instead,
+  // so the coach always knows whose moment they are shaping.
+  const curateSeatName = { N: "North", E: "East", S: "South", W: "West" }[actingSeat];
   const curateAtLabel = curateAt
     ? curateAt.kind === "call"
-      ? `Your call — bid #${state.auction.length + 1}`
-      : `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1}`
+      ? authoring
+        ? `${curateSeatName} to call — bid #${state.auction.length + 1}`
+        : `Your call — bid #${state.auction.length + 1}`
+      : authoring
+        ? `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1} — ${curateSeatName}`
+        : `Trick ${curateAt.trickIndex + 1}, card ${curateAt.playIndex + 1}`
     : null;
+  // WHERE THE SITTING STANDS — the rail's one-line compass (UI/UX pass
+  // 2026-08-18): the felt shows the position, but the coach shaping a line
+  // wants the arithmetic said out loud.
+  const SUIT_CHAR = { S: "♠", H: "♥", D: "♦", C: "♣", N: "NT" } as const;
+  const curateLineSummary = boardOver
+    ? "The line is complete"
+    : state.contract
+      ? `${state.contract.level}${SUIT_CHAR[state.contract.strain]} by ${state.contract.declarer} · trick ${Math.max(1, Math.min(state.tricks.length, 13))} of 13`
+      : `${state.auction.length} call${state.auction.length === 1 ? "" : "s"} so far`;
   const curateRail = curating ? (
     <CurateRail
       sessionId={sessionId}
@@ -172,6 +193,11 @@ export default async function PlayTablePage({
       boardOver={boardOver}
       boardName={record.board.name}
       fill={embedded}
+      author={authoring}
+      atSeat={curateAt ? actingSeat : null}
+      declarer={state.contract?.declarer ?? null}
+      dummySeat={dummy}
+      lineSummary={authoring ? curateLineSummary : null}
     />
   ) : null;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
@@ -330,7 +356,7 @@ export default async function PlayTablePage({
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, curate };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, curate, author };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;

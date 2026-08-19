@@ -621,3 +621,81 @@ describe("the dummy takeover, end to end", () => {
     expect(controllingSeat(record.seats, view.state, "N")).toBe("N");
   });
 })
+
+// ---------------------------------------------------------------------------
+// The coach's studio: the auction is the coach's, the play is the table's
+// ---------------------------------------------------------------------------
+
+describe("an authoring sitting (the coach's studio)", () => {
+  // The studio seats the coach where the LEARNER will sit and fills the other
+  // three chairs with robots, exactly as an ordinary board does. What is not
+  // ordinary is the auction: a board built to teach a contract has to reach
+  // that contract, so every call is the coach's whichever chair it comes from
+  // (owner direction 2026-08-19). The card play then runs like any other
+  // table — the robots play their own cards.
+  const COACH = "u_coach";
+
+  const studio = async (authoring = true) => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    return service.createSession({
+      kbId,
+      compiled,
+      seats: { ...allAi, S: { kind: "human", nexusUserId: COACH } },
+      seed: 11,
+      dealer: "N",
+      hands: seededDeal(11),
+      ...(authoring ? { authoring: { learnerSeat: "S" as Seat } } : {}),
+      createdBy: COACH,
+    });
+  };
+
+  it("has nothing to step in its auction — every call is a person's", async () => {
+    const record = await studio();
+    const view = await service.view(record.sessionId);
+    // North deals, North is a robot chair — and it must not open the bidding.
+    expect(view.actingSeat).toBe("N");
+    expect(view.actingIsHuman).toBe(true);
+    await expect(service.step(record.sessionId)).rejects.toThrow(AwaitingHumanError);
+  });
+
+  it("accepts the coach's call at a ROBOT'S chair", async () => {
+    const record = await studio();
+    const opened = await service.act(record.sessionId, { call: "P" });
+    // Recorded as NORTH'S call, because it is — the coach made it for them.
+    expect(opened.state.auction).toEqual([{ seat: "N", call: "P" }]);
+    // …and on round the table, still theirs.
+    const second = await service.act(record.sessionId, { call: "P" });
+    expect(second.actingSeat).toBe("S");
+    expect(second.actingIsHuman).toBe(true);
+  });
+
+  it("hands the play back to the robots the moment the auction ends", async () => {
+    const record = await studio();
+    // P P 1N P P P — the coach bids all six calls, and their own chair
+    // declares 1NT, so the opening lead falls to a robot defender.
+    for (const call of ["P", "P", "1N", "P", "P", "P"]) {
+      await service.act(record.sessionId, { call });
+    }
+    const view = await service.view(record.sessionId);
+    expect(view.state.phase).toBe("play");
+    expect(view.state.contract).toMatchObject({ level: 1, strain: "N", declarer: "S" });
+    // West leads: a robot's own card, in a phase the studio does not touch.
+    expect(view.actingSeat).toBe("W");
+    expect(view.actingIsHuman).toBe(false);
+    const led = await service.step(record.sessionId);
+    expect(led.state.tricks[0]!.plays.length).toBe(1);
+    expect(led.state.tricks[0]!.plays[0]!.seat).toBe("W");
+  });
+
+  it("changes nothing about an ordinary table — the robots bid it themselves", async () => {
+    const record = await studio(false);
+    const view = await service.view(record.sessionId);
+    expect(view.actingIsHuman).toBe(false);
+    const bid = await service.step(record.sessionId);
+    expect(bid.state.auction).toHaveLength(1);
+    // And a person's call at a robot's chair is refused, as it always was.
+    await expect(service.act(record.sessionId, { call: "P" })).rejects.toThrow(
+      /not a human seat/,
+    );
+  });
+})

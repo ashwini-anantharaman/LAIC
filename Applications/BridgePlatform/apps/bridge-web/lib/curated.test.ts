@@ -3,11 +3,16 @@
 import type { Call, Card, Seat, Suit } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 
+import { MAX_DEAL_ITEMS } from "./coach/kSelection";
+
 import {
+  actionsSince,
   atKey,
   chartedActionAt,
+  constraintOf,
   currentAt,
   firstDivergence,
+  learnerSeatOf,
   lineOf,
   parseCurated,
   parseCuratedProgress,
@@ -52,6 +57,55 @@ describe("parseCurated — the tolerant gate", () => {
       annotations: [{ at: { kind: "call" as const, auctionIndex: 1 }, note: "hi", why: "because" }],
     };
     expect(parseCurated(serializeCurated(payload)).annotations).toEqual(payload.annotations);
+  });
+});
+
+describe("parseCurated — the v2 board settings", () => {
+  it("round-trips learnerSeat, constraint, intro, debrief and pin", () => {
+    const payload = {
+      v: 2 as const,
+      annotations: [],
+      learnerSeat: "W" as const,
+      constraint: "locked" as const,
+      intro: "Nine tricks are there.",
+      debrief: "The finesse was the whole board.",
+      pin: "West is the danger hand.",
+    };
+    const back = parseCurated(serializeCurated(payload));
+    expect(back).toEqual(payload);
+  });
+
+  it("keeps each setting readable ALONE when another is junk", () => {
+    const back = parseCurated(
+      JSON.stringify({
+        annotations: [],
+        learnerSeat: "Q",           // not a seat — dropped
+        constraint: "guided",       // fine — kept
+        intro: 42,                  // not text — dropped
+        pin: "  Keep East off lead.  ",
+      }),
+    );
+    expect(back.learnerSeat).toBeUndefined();
+    expect(back.constraint).toBe("guided");
+    expect(back.intro).toBeUndefined();
+    expect(back.pin).toBe("Keep East off lead.");
+  });
+
+  it("a v1 payload parses exactly as before — no v stamp, no settings", () => {
+    const back = parseCurated(
+      JSON.stringify({ annotations: [{ at: { kind: "call", auctionIndex: 0 }, note: "hi" }] }),
+    );
+    expect(back.v).toBeUndefined();
+    expect(back.learnerSeat).toBeUndefined();
+    expect(back.constraint).toBeUndefined();
+    expect(back.annotations).toHaveLength(1);
+  });
+
+  it("the defaults centralize v1 meaning: South, guided", () => {
+    expect(learnerSeatOf({})).toBe("S");
+    expect(constraintOf({})).toBe("guided");
+    expect(learnerSeatOf({ learnerSeat: "E" })).toBe("E");
+    expect(constraintOf({ constraint: "free" })).toBe("free");
   });
 });
 
@@ -237,6 +291,55 @@ describe("firstDivergence — the review loop's anchor", () => {
   });
 });
 
+describe("actionsSince — what the table did while the learner watched", () => {
+  it("lists the other seats' actions since the learner last acted, oldest first", () => {
+    const s = {
+      auction: [call("N", "1S"), call("E", "P"), call("S", "2S"), call("W", "P"), call("N", "4S")],
+      tricks: [],
+    };
+    expect(actionsSince(s, "S")).toEqual([
+      { kind: "call", auctionIndex: 3 },
+      { kind: "call", auctionIndex: 4 },
+    ]);
+  });
+
+  it("is empty when the learner has just acted", () => {
+    const s = { auction: [call("N", "1S"), call("E", "P"), call("S", "2S")], tricks: [] };
+    expect(actionsSince(s, "S")).toEqual([]);
+  });
+
+  it("counts everything when the learner has not acted at all", () => {
+    const s = { auction: [call("N", "1S"), call("E", "P")], tricks: [] };
+    expect(actionsSince(s, "S")).toEqual([
+      { kind: "call", auctionIndex: 0 },
+      { kind: "call", auctionIndex: 1 },
+    ]);
+  });
+
+  it("spans the auction into the play in table order", () => {
+    const s = {
+      auction: [call("N", "1S"), call("E", "P"), call("S", "2S"), call("W", "P"), call("N", "P")],
+      tricks: [{ plays: [card("E", "H", 14)] }],
+    };
+    expect(actionsSince(s as never, "S")).toEqual([
+      { kind: "call", auctionIndex: 3 },
+      { kind: "call", auctionIndex: 4 },
+      { kind: "play", trickIndex: 0, playIndex: 0 },
+    ]);
+  });
+
+  it("treats DUMMY's card as the declarer's own, so their own play ends the run", () => {
+    const s = {
+      auction: [],
+      contract: { declarer: "S" as const, strain: "S" as const, level: 2, doubled: 0 as const },
+      // W leads, dummy (N) plays — that card is the learner's own, so only
+      // East's card after it is "what happened while they watched".
+      tricks: [{ plays: [card("W", "H", 3), card("N", "H", 9), card("E", "H", 14)] }],
+    };
+    expect(actionsSince(s as never, "S")).toEqual([{ kind: "play", trickIndex: 0, playIndex: 2 }]);
+  });
+});
+
 describe("parseCuratedProgress — the ladder-open stamps", () => {
   it("keeps string keys, dedupes, survives junk", () => {
     expect(parseCuratedProgress(undefined).opened).toEqual([]);
@@ -250,5 +353,96 @@ describe("parseCuratedProgress — the ladder-open stamps", () => {
   it("round-trips through serialize", () => {
     const p = { opened: ["call:3", "play:2:1"] };
     expect(parseCuratedProgress(serializeCuratedProgress(p))).toEqual(p);
+  });
+});
+
+describe("the lesson a curated deal names", () => {
+  it("round-trips the tags the coach picked", () => {
+    const p = parseCurated(
+      JSON.stringify({ annotations: [], kTags: ["trump-management", "finesses"] }),
+    );
+    expect(p.kTags).toEqual(["trump-management", "finesses"]);
+    // A lesson is a v2 setting, so its presence alone stamps the payload.
+    expect(p.v).toBe(2);
+  });
+
+  it("survives the re-serialize every publish does", () => {
+    // save/route.ts republishes as serializeCurated({ ...parsed, annotations }).
+    // Before the payload carried kTags this dropped the lesson silently.
+    const first = parseCurated(JSON.stringify({ annotations: [], kTags: ["finesses"] }));
+    const again = parseCurated(serializeCurated({ ...first, annotations: [] }));
+    expect(again.kTags).toEqual(["finesses"]);
+  });
+
+  it("drops a tag it has never heard of, keeping the rest", () => {
+    const p = parseCurated(JSON.stringify({ annotations: [], kTags: ["squeezes", "endplays"] }));
+    expect(p.kTags).toEqual(["endplays"]);
+  });
+
+  it("says nothing rather than throwing when the field is junk", () => {
+    for (const junk of ["finesses", 7, null, [1, 2], {}]) {
+      expect(parseCurated(JSON.stringify({ annotations: [], kTags: junk })).kTags).toBeUndefined();
+    }
+  });
+
+  it("caps how many lessons one board may claim", () => {
+    const many = [
+      "finesses", "entries", "endplays", "signaling", "discarding", "preempts", "overcalls",
+    ];
+    expect(parseCurated(JSON.stringify({ annotations: [], kTags: many })).kTags).toHaveLength(6);
+  });
+
+  it("leaves an untagged deal untagged", () => {
+    expect(parseCurated(JSON.stringify({ annotations: [] })).kTags).toBeUndefined();
+  });
+});
+
+describe("the cards a curated deal leads with", () => {
+  it("round-trips the coach's own picks", () => {
+    const p = parseCurated(JSON.stringify({ annotations: [], kItems: ["hcp", "still-out"] }));
+    expect(p.kItems).toEqual(["hcp", "still-out"]);
+    expect(p.v).toBe(2);
+  });
+
+  it("survives the re-serialize every publish does", () => {
+    const first = parseCurated(JSON.stringify({ annotations: [], kItems: ["hcp"] }));
+    const again = parseCurated(serializeCurated({ ...first, annotations: [] }));
+    expect(again.kItems).toEqual(["hcp"]);
+  });
+
+  it("drops a card it has never heard of, keeping the rest", () => {
+    const p = parseCurated(JSON.stringify({ annotations: [], kItems: ["no-such-card", "hcp"] }));
+    expect(p.kItems).toEqual(["hcp"]);
+  });
+
+  it("says nothing rather than throwing when the field is junk", () => {
+    for (const junk of ["hcp", 7, null, [1, 2], {}]) {
+      expect(parseCurated(JSON.stringify({ annotations: [], kItems: junk })).kItems)
+        .toBeUndefined();
+    }
+  });
+
+  it("caps how many cards one board may lead with, at the picker's own cap", () => {
+    const many = [
+      "hcp", "distribution", "shape", "longest-suit", "vulnerability", "total-points",
+      "quick-tricks", "our-tricks", "their-tricks", "points-hidden",
+    ];
+    const p = parseCurated(JSON.stringify({ annotations: [], kItems: many }));
+    // The validator keeps its own copy of the cap (it imports no coach logic
+    // beyond the registry); this pins the two to the same number.
+    expect(p.kItems).toHaveLength(MAX_DEAL_ITEMS);
+  });
+
+  it("keeps the topic and the cards independently readable", () => {
+    // Junk in one half must not cost the other — the payload's whole rule.
+    const p = parseCurated(
+      JSON.stringify({ annotations: [], kTags: ["finesses"], kItems: "hcp" }),
+    );
+    expect(p.kTags).toEqual(["finesses"]);
+    expect(p.kItems).toBeUndefined();
+  });
+
+  it("leaves a deal that picked nothing unpicked", () => {
+    expect(parseCurated(JSON.stringify({ annotations: [] })).kItems).toBeUndefined();
   });
 });

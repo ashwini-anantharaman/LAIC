@@ -306,6 +306,24 @@ export default async function MobileAssignmentsPage({
           : "Boards you've delegated, and how far each learner has got."}
       </p>
 
+      {/* THE STUDIO'S DOOR (curated v2, owner design 2026-08-18): build the
+          board card by card, bid it and play their seat, publish the line. */}
+      <a
+        href="/m/curate/new"
+        style={{
+          display: "inline-block",
+          font: `700 13px ${G}`,
+          color: CREAM,
+          background: "#105431",
+          borderRadius: 999,
+          padding: "10px 16px",
+          textDecoration: "none",
+          margin: "14px 0 0",
+        }}
+      >
+        + Build a curated deal
+      </a>
+
       {params.assigned && (
         <p
           style={{

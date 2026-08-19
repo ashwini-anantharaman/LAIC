@@ -11,6 +11,7 @@ import { canUse } from "@/lib/access";
 import { AccessError, apiError, requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
 import * as curatedLib from "@/lib/curated";
+import type { CuratedAt } from "@/lib/curated";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
 import { libraryKindLabel } from "@/lib/libraryLabels";
 import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
@@ -66,6 +67,10 @@ export async function POST(
        *  meaningful with kind "play", whose auction/play layers ARE the
        *  coach's recorded line the annotations anchor to. */
       curatedJson?: string;
+      /** REVISE IN PLACE (curated v2, owner design 2026-08-18): land this
+       *  publish on an existing entry — same entryId, new line and words —
+       *  so future assignments get the revision. Owner-gated below. */
+      updateEntryId?: string;
     };
     const kind = body.kind as "deal" | "board" | "play" | "table";
     if (!["deal", "board", "play", "table"].includes(kind)) {
@@ -87,20 +92,46 @@ export async function POST(
     const notes = String(body.notes ?? "").trim();
     const now = new Date().toISOString();
 
+    // REVISE IN PLACE (curated v2): a curated publish may land on the entry
+    // it revises — same entryId and shelf identity, new line and words. Only
+    // that entry's own coach (or an admin) holds the pen, only a curated
+    // "play" target qualifies, and a refused target publishes NOTHING rather
+    // than quietly shelving a duplicate the coach didn't ask for.
+    const revising =
+      kind === "play" && typeof body.updateEntryId === "string" && body.updateEntryId
+        ? await libraryStore().getEntry(body.updateEntryId)
+        : null;
+    if (body.updateEntryId) {
+      const { canAccessAdminArea } = await import("@bridge/nexus-client");
+      if (
+        !revising?.curatedJson ||
+        (revising.createdBy !== context.nexusUserId && !canAccessAdminArea(context))
+      ) {
+        return NextResponse.json(
+          { error: "That curated deal can't be revised from here." },
+          { status: 409, headers: CORS },
+        );
+      }
+    }
+
     const base = {
-      entryId: newId("le"),
+      entryId: revising ? revising.entryId : newId("le"),
       name,
       ...(notes && { notes }),
-      tags: [] as string[],
+      tags: revising ? revising.tags : ([] as string[]),
       origin: "recorded" as const,
       sourceSessionId: id,
-      createdBy: context.nexusUserId,
-      programOrganizationId: orgScopeOf(context),
-      nexusProgramId: (await nexusProgramIdOf()) ?? undefined,
-      // Recordings land in the recorder's ONE library: admins curate the
-      // program instance, everyone else records into their own.
-      scopeLevel: authoredScope(context),
-      createdAt: now,
+      // A revision keeps the entry's identity — its coach, its shelf, its
+      // birthday — and only the recording changes hands.
+      createdBy: revising ? revising.createdBy : context.nexusUserId,
+      programOrganizationId: revising
+        ? revising.programOrganizationId
+        : orgScopeOf(context),
+      nexusProgramId: revising
+        ? revising.nexusProgramId
+        : ((await nexusProgramIdOf()) ?? undefined),
+      scopeLevel: revising ? revising.scopeLevel : authoredScope(context),
+      createdAt: revising ? revising.createdAt : now,
     };
 
     const score = scoreBoard(state);
@@ -144,35 +175,34 @@ export async function POST(
               ...(body.curatedJson
                 ? (() => {
                     const { parseCurated, serializeCurated } = curatedLib;
-                    const humanSeat = (
-                      Object.entries(record.seats) as [
-                        Seat,
-                        (typeof record.seats)["N"],
-                      ][]
-                    ).find(
-                      (e) => e[1].kind === "human" && e[1].nexusUserId === context.nexusUserId,
-                    )?.[0];
-                    const dummySeat = state.contract
-                      ? (({ N: "S", S: "N", E: "W", W: "E" }) as const)[state.contract.declarer]
-                      : null;
-                    const flatPlays = state.tricks.flatMap((t) => t.plays);
-                    const ownDecision = (a: { at: import("@/lib/curated").CuratedAt }) => {
-                      if (!humanSeat) return false;
-                      if (a.at.kind === "call") {
-                        const call = state.auction[a.at.auctionIndex];
-                        return !!call && call.seat === humanSeat;
-                      }
-                      const p = flatPlays[a.at.trickIndex * 4 + a.at.playIndex];
-                      if (!p) return false;
-                      return (
-                        (p.seat === humanSeat && humanSeat !== dummySeat) ||
-                        (state.contract?.declarer === humanSeat && p.seat === dummySeat)
-                      );
-                    };
                     const parsed = parseCurated(body.curatedJson);
-                    const kept = parsed.annotations.filter(ownDecision);
-                    return kept.length
-                      ? { curatedJson: serializeCurated({ annotations: kept }) }
+                    /**
+                     * ONLY POSITIONS THE LINE ACTUALLY VISITS survive.
+                     *
+                     * The guard exists because authoring is undoable: undo an
+                     * action and any annotation written at it is orphaned, and
+                     * publishing must not ship a ghost that no learner can
+                     * ever reach.
+                     *
+                     * It used to also require the annotation to sit at the
+                     * author's (later the learner's) OWN decision. That was
+                     * too narrow — the line records what the other three seats
+                     * did too, and a partner's 2NT or an opponent's overcall
+                     * is teaching material the coach should be able to speak
+                     * to (owner, 2026-08-18). Those are shown to the learner
+                     * when the board comes back to them; see actionsSince.
+                     */
+                    const flatPlays = state.tricks.flatMap((t) => t.plays);
+                    const onTheLine = (a: { at: CuratedAt }) =>
+                      a.at.kind === "call"
+                        ? !!state.auction[a.at.auctionIndex]
+                        : !!flatPlays[a.at.trickIndex * 4 + a.at.playIndex];
+                    const kept = parsed.annotations.filter(onTheLine);
+                    // A v2 payload ships even with zero surviving annotations
+                    // — the constraint, intro/debrief and pin are the coach's
+                    // voice too, and the curated stamp keys on this field.
+                    return kept.length || parsed.v === 2
+                      ? { curatedJson: serializeCurated({ ...parsed, annotations: kept }) }
                       : {};
                   })()
                 : {}),

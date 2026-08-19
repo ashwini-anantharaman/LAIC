@@ -116,6 +116,30 @@ export function fetchStateReads(
 export interface CuratedOverlay {
   onPath: boolean;
   diverged: boolean;
+  /** How tightly the coach holds this board (curated v2, 2026-08-18):
+   *  "locked" refuses off-line actions server-side, "guided" nudges (the v1
+   *  behavior every payload without the field means), "free" stays quiet. */
+  constraint?: "locked" | "guided" | "free";
+  /** The coach's framing — sent until the learner's first own action. */
+  intro?: string;
+  /** The coach's closing words — sent once the board is complete. */
+  debrief?: string;
+  /** The coach's pinned read, one per deal. */
+  pin?: string;
+  /**
+   * WHAT THIS BOARD TEACHES (owner direction 2026-08-18) — the K items the
+   * Know panel leads with, resolved server-side from the deal's tags for the
+   * phase the board is in. Absent when the coach named no lesson, and the
+   * panel then shows its ordinary side views alone.
+   */
+  lesson?: {
+    tags: string[];
+    /** The lesson's name for the learner — "Trump management". */
+    name: string;
+    /** Registry ids, in teaching order. */
+    items: string[];
+    phase: "auction" | "play";
+  };
   /** The coach's display name, resolved from the assignment ("Coach Sarah"). */
   coachName?: string;
   /** The board is over — how the sitting went against the coach's line. */
@@ -127,6 +151,20 @@ export interface CuratedOverlay {
   left?: { where: string; charted: string; played: string };
   /** The annotation at the decision the learner is at (on-path only). */
   current?: { note?: string; why?: string; hints?: string[]; charted?: string };
+  /**
+   * The coach's word about what the OTHER seats just did — a partner's bid,
+   * an opponent's lead — carried back to the learner's next decision, in the
+   * order it happened. A note at a robot's own turn can never be read there:
+   * the robots answer within the same second the learner acts.
+   */
+  since?: {
+    seat: string;
+    partner: boolean;
+    /** The move itself, pretty-printed: "2NT", "♦J". */
+    move: string;
+    note?: string;
+    why?: string;
+  }[];
 }
 
 export function fetchCuratedOverlay(

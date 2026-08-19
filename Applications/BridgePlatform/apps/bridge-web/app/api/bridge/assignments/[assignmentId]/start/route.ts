@@ -70,7 +70,11 @@ export async function POST(
 
     await ensureSeeds();
     await assertAiAllowed(context);
-    const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context);
+    // A curated deal seats the learner where the COACH said (v2 payload's
+    // learnerSeat; v1 payloads default to South, which is what they meant).
+    const { parseCurated, learnerSeatOf } = await import("@/lib/curated");
+    const humanSeat = entry.curatedJson ? learnerSeatOf(parseCurated(entry.curatedJson)) : "S";
+    const { kbId, compiled, seats } = await resolveEntryLineup(entry, "", context, humanSeat);
     const record = await sessionService().createSession({
       kbId,
       compiled,

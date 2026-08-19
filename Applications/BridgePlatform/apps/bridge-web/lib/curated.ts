@@ -17,6 +17,9 @@ import { partnerOf } from "@bridge/events";
 import type { Call, Card, Seat } from "@bridge/events";
 import type { LibraryEntry } from "@bridge/sessions";
 
+import { parseKItemIds, parseKTags } from "./coach/kItems";
+import type { KItemId, KTag } from "./coach/kItems";
+
 /** Where an annotation lives — the panel's own addressing (auctionIndex /
  *  trickIndex+playIndex), the same keys the what-if and verdicts use. */
 export type CuratedAt =
@@ -34,12 +37,62 @@ export interface CuratedAnnotation {
   hints?: string[];
 }
 
+/** How tightly the learner is held to the line (v2, owner design 2026-08-18).
+ *  `guided` is the v1 behavior and the default a payload without the field
+ *  gets, so every published deal keeps meaning what it meant. */
+export type CuratedConstraint = "locked" | "guided" | "free";
+
+const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
+const CONSTRAINTS: readonly CuratedConstraint[] = ["locked", "guided", "free"];
+
 export interface CuratedPayload {
+  /** Absent = v1 (an annotate-your-sitting deal). Stamped 2 on publish. */
+  v?: 2;
   annotations: CuratedAnnotation[];
+  /** The seat the coach built this board FOR. Absent = "S" (v1 always sat
+   *  the learner South). */
+  learnerSeat?: Seat;
+  /** Absent = "guided" — the v1 nudge-and-take-back experience. */
+  constraint?: CuratedConstraint;
+  /** The coach's framing, shown before the first decision. */
+  intro?: string;
+  /** The coach's closing words, shown when the board completes. */
+  debrief?: string;
+  /** The coach's pinned read — one per deal, rides the Know pane. */
+  pin?: string;
+  /**
+   * WHAT THIS DEAL TEACHES, part one (owner direction 2026-08-18) — the K item
+   * TAGS: the deal's topic, and what the coach filtered the catalogue by while
+   * choosing its cards. They also name the lesson on screen. Absent = no topic
+   * named.
+   */
+  kTags?: KTag[];
+  /**
+   * WHAT THIS DEAL TEACHES, part two (owner direction 2026-08-19) — the K
+   * ITEMS themselves, hand-picked. These ARE the collection the learner's Know
+   * panel leads with, so the flip cards are the coach's curriculum choice card
+   * by card rather than whatever a topic happens to sweep up. Absent = the
+   * coach picked no cards, and the panel falls back to the tags' collections
+   * (or, with no tags either, to its own defaults).
+   */
+  kItems?: KItemId[];
 }
 
 const MAX_NOTE = 500;
 const MAX_HINT = 220;
+/** No deal teaches more than this; a board claiming twelve topics teaches none. */
+const MAX_TAGS = 6;
+/** And no board leads with more cards than this — the Know panel's fronts are
+ *  glanceable a few at a time (kSelection.MAX_DEAL_ITEMS, kept local so the
+ *  validator stays dependency-free). */
+const MAX_ITEMS = 8;
+
+/** The centralized v1 defaults — every consumer reads these, never the raw
+ *  optionals, so "absent" can only ever mean one thing. */
+export const learnerSeatOf = (p: Pick<CuratedPayload, "learnerSeat">): Seat =>
+  p.learnerSeat ?? "S";
+export const constraintOf = (p: Pick<CuratedPayload, "constraint">): CuratedConstraint =>
+  p.constraint ?? "guided";
 
 /**
  * The tolerant read. Anything unreadable is dropped ALONE; a payload from a
@@ -54,8 +107,50 @@ export function parseCurated(json: string | undefined): CuratedPayload {
   } catch {
     return { annotations: [] };
   }
-  const list = (raw as { annotations?: unknown })?.annotations;
-  if (!Array.isArray(list)) return { annotations: [] };
+  // The v2 board settings, each readable alone — a payload whose constraint
+  // is junk still keeps its learnerSeat, and vice versa.
+  const head = (raw ?? {}) as {
+    annotations?: unknown;
+    learnerSeat?: unknown;
+    constraint?: unknown;
+    intro?: unknown;
+    debrief?: unknown;
+    pin?: unknown;
+    kTags?: unknown;
+    kItems?: unknown;
+  };
+  const text = (v: unknown, max: number): string | undefined => {
+    const t = typeof v === "string" ? v.trim().slice(0, max) : "";
+    return t || undefined;
+  };
+  const settings: Omit<CuratedPayload, "annotations"> = {
+    ...(SEATS.includes(head.learnerSeat as Seat) ? { learnerSeat: head.learnerSeat as Seat } : {}),
+    ...(CONSTRAINTS.includes(head.constraint as CuratedConstraint)
+      ? { constraint: head.constraint as CuratedConstraint }
+      : {}),
+    ...(text(head.intro, MAX_NOTE) ? { intro: text(head.intro, MAX_NOTE) } : {}),
+    ...(text(head.debrief, MAX_NOTE) ? { debrief: text(head.debrief, MAX_NOTE) } : {}),
+    ...(text(head.pin, MAX_HINT) ? { pin: text(head.pin, MAX_HINT) } : {}),
+    // The lesson, under the same rule as everything else here: unknown tags
+    // drop ALONE, so a deal authored against a newer vocabulary keeps the
+    // tags this build still recognizes instead of losing its lesson whole.
+    ...((): { kTags?: KTag[] } => {
+      const tags = parseKTags(head.kTags).slice(0, MAX_TAGS);
+      return tags.length ? { kTags: tags } : {};
+    })(),
+    // The cards, under that same rule: an id from a newer catalogue drops
+    // alone, so a lesson keeps the cards this build still has instead of
+    // losing the whole collection to one unknown.
+    ...((): { kItems?: KItemId[] } => {
+      const items = parseKItemIds(head.kItems).slice(0, MAX_ITEMS);
+      return items.length ? { kItems: items } : {};
+    })(),
+  };
+  const withSettings = (annotations: CuratedAnnotation[]): CuratedPayload =>
+    Object.keys(settings).length ? { v: 2, annotations, ...settings } : { annotations };
+
+  const list = head.annotations;
+  if (!Array.isArray(list)) return withSettings([]);
 
   const out: CuratedAnnotation[] = [];
   for (const a of list) {
@@ -96,7 +191,7 @@ export function parseCurated(json: string | undefined): CuratedPayload {
       ...(hints.length >= 2 ? { hints } : {}),
     });
   }
-  return { annotations: out };
+  return withSettings(out);
 }
 
 export function serializeCurated(payload: CuratedPayload): string {
@@ -302,6 +397,56 @@ export function parseCuratedProgress(json: string | undefined): CuratedProgress 
 
 export function serializeCuratedProgress(progress: CuratedProgress): string {
   return JSON.stringify(progress);
+}
+
+/**
+ * Seats a learner ACTS FOR — their own, and dummy's while they declare.
+ * Shared by every reader that has to ask "was that theirs?".
+ */
+function actsFor(
+  state: Partial<Pick<GameState, "contract">>,
+  seat: Seat,
+): (actor: Seat) => boolean {
+  return (actor) =>
+    actor === seat ||
+    (state.contract != null &&
+      state.contract.declarer === seat &&
+      actor === partnerOf(state.contract.declarer));
+}
+
+/**
+ * THE TABLE'S ANSWER SINCE THE LEARNER LAST ACTED — every action the other
+ * three seats have taken while the learner watched, oldest first.
+ *
+ * A coach's word about a PARTNER's bid or an opponent's lead is teaching
+ * material ("partner's 2NT is 18-19 balanced — now count your side's tricks"),
+ * and the line records those actions as surely as it records the learner's.
+ * But an annotation cannot be SHOWN at the moment it is anchored to: the
+ * robots answer within the same second the learner acts, so a note served at
+ * a robot's own turn would flash past unread, if it rendered at all.
+ *
+ * So it is anchored where it belongs and shown where it can be read — when
+ * the board comes back to the learner, ahead of the note for the decision
+ * they are now at. That is also the order a coach speaks in at a real table.
+ */
+export function actionsSince(
+  state: Pick<GameState, "auction" | "tricks"> & Partial<Pick<GameState, "contract">>,
+  seat: Seat,
+): CuratedAt[] {
+  const isOwn = actsFor(state, seat);
+  const timeline: { at: CuratedAt; actor: Seat }[] = [
+    ...state.auction.map((c, i) => ({
+      at: { kind: "call", auctionIndex: i } as CuratedAt,
+      actor: c.seat,
+    })),
+    ...state.tricks.flatMap((t) => t.plays).map((p, i) => ({
+      at: { kind: "play", trickIndex: Math.floor(i / 4), playIndex: i % 4 } as CuratedAt,
+      actor: p.seat,
+    })),
+  ];
+  let lastOwn = -1;
+  for (let i = 0; i < timeline.length; i++) if (isOwn(timeline[i]!.actor)) lastOwn = i;
+  return timeline.slice(lastOwn + 1).map((e) => e.at);
 }
 
 /** The line's charted action at an address, if any — powers the nudge text

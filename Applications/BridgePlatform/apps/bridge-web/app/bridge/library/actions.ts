@@ -213,9 +213,31 @@ export async function resolveEntryLineup(
   entry: LibraryEntry,
   requestedKbId: string,
   context: NexusBridgeContext,
+  /** Which chair the human takes — a curated deal seats the learner where the
+   *  COACH said (payload.learnerSeat, owner design 2026-08-18); everything
+   *  else keeps the South of every table before it. */
+  humanSeat: Seat = "S",
+): Promise<{ kbId: string; compiled: CompiledKb; seats: Record<Seat, SeatConfig> }> {
+  return houseLineup(requestedKbId || entry.kbId || "", context, humanSeat);
+}
+
+/**
+ * THE HOUSE LINEUP, entry or no entry: one human chair, three house players of
+ * the knowledge base's most capable set.
+ *
+ * Split out of `resolveEntryLineup` for the coach's STUDIO (owner direction
+ * 2026-08-19), which seats exactly this way but belongs to no library entry
+ * yet — it is building the board that will become one. Every seated table in
+ * the app comes through here, which is the point: the studio is not a new kind
+ * of table.
+ */
+export async function houseLineup(
+  requestedKbId: string,
+  context: NexusBridgeContext,
+  humanSeat: Seat = "S",
 ): Promise<{ kbId: string; compiled: CompiledKb; seats: Record<Seat, SeatConfig> }> {
   const store = kbStore();
-  let kbId = requestedKbId || entry.kbId || "";
+  let kbId = requestedKbId;
   if (!kbId) {
     for (const kb of (await store.listKbs()).filter((k) => !k.archived)) {
       if (await kbService().liveCompile(kb.kbId)) {
@@ -239,7 +261,7 @@ export async function resolveEntryLineup(
   const house = await ensureHousePlayer(store, compiled, top, context.nexusUserId);
   const ai = SessionService.seatFromPlayer(house, compiled);
   const seats = { N: ai, E: ai, S: ai, W: ai } as Record<Seat, SeatConfig>;
-  seats.S = { kind: "human", nexusUserId: context.nexusUserId };
+  seats[humanSeat] = { kind: "human", nexusUserId: context.nexusUserId };
   return { kbId, compiled, seats };
 }
 

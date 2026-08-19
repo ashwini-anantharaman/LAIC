@@ -123,6 +123,26 @@ export interface SessionRecord {
     practice?: boolean;
   };
   /**
+   * THE COACH'S STUDIO stamp (curated v2; owner direction 2026-08-19) — this
+   * session is an AUTHORING sitting, and `learnerSeat` is the chair the board
+   * is being built for, which is the chair the coach is sitting in.
+   *
+   * Same additive-jsonb pattern as `challenge` and `curated`, and the same
+   * reason: the host needs one fact about the session without asking the
+   * client for it. Here the fact is that this sitting is being AUTHORED at all
+   * — the studio seats and plays exactly like any other table (coach in one
+   * chair, robots in the other three), so nothing in the seat layout gives it
+   * away any more. The package itself neither plays nor decides; it carries
+   * the stamp.
+   *
+   * Absent on every ordinary table, and on the one-day-old studio sittings
+   * that held all four chairs; the host recognizes those by their seats
+   * instead (its studioSession helper), so they keep working.
+   */
+  authoring?: {
+    learnerSeat: Seat;
+  };
+  /**
    * CURATED DEAL stamp (owner design 2026-08-15) — this session replays a
    * coach's annotated board. Same pattern as `challenge` above: the stamp is
    * how the host picks per-session behavior with no store round-trip — the
@@ -428,6 +448,32 @@ export function controllingSeat(
 
 const TAKEOVER_PARTNER: Record<Seat, Seat> = { N: "S", S: "N", E: "W", W: "E" };
 
+/**
+ * THE COACH BIDS ALL FOUR HANDS (owner direction 2026-08-19).
+ *
+ * An authoring sitting (`record.authoring` — the coach's studio) seats the coach
+ * in the learner's chair with robots in the other three, and the CARD PLAY runs
+ * exactly like any other table: the robots play their own cards. The AUCTION
+ * does not. A board built to teach a 3NT hold-up has to arrive at 3NT, so every
+ * call in the studio is the coach's, whichever chair it comes from — the
+ * contract is the frame of the lesson, not something to be negotiated with a
+ * robot that cannot be told what the board is for.
+ *
+ * So this is a PHASE-DEPENDENT control rule, and it lives here beside
+ * `controllingSeat` because the same four places that ask who controls a chair
+ * have to ask this too: the deciders (a robot chair must refuse to bid), `step`
+ * (nothing to advance during a studio auction), `act` (the coach's call is
+ * legal on a robot's chair), and `actingIsHuman` (so the client waits for a
+ * person instead of auto-playing).
+ *
+ * Deliberately NOT identity-aware: which human may act is the caller's gate,
+ * exactly as it is for `controllingSeat` and the seat-kind check beside it.
+ */
+export const coachBidsThisSeat = (
+  record: Pick<SessionRecord, "authoring">,
+  state: GameState,
+): boolean => !!record.authoring && state.phase === "auction";
+
 export class SessionService {
   private readonly now: () => string;
 
@@ -475,6 +521,8 @@ export class SessionService {
     status?: SessionStatus;
     /** Challenge stamp — see SessionRecord.challenge. */
     challenge?: SessionRecord["challenge"];
+    /** Studio stamp — see SessionRecord.authoring. */
+    authoring?: SessionRecord["authoring"];
     /** Curated-deal stamp — see SessionRecord.curated. */
     curated?: SessionRecord["curated"];
   }): Promise<SessionRecord> {
@@ -499,6 +547,7 @@ export class SessionService {
       programOrganizationId: input.programOrganizationId,
       nexusProgramId: input.nexusProgramId,
       ...(input.challenge ? { challenge: input.challenge } : {}),
+      ...(input.authoring ? { authoring: input.authoring } : {}),
       ...(input.curated ? { curated: input.curated } : {}),
     };
     await this.store.putSession(record);
@@ -676,6 +725,10 @@ export class SessionService {
       // THIS chair.
       deciders[chair] = {
         decideBid: async (state: GameState, s: Seat) => {
+          // THE STUDIO'S AUCTION IS THE COACH'S, every chair of it. The robot
+          // sitting here plays its own cards later; it does not get to choose
+          // the contract the lesson is built on.
+          if (coachBidsThisSeat(record, state)) throw new AwaitingHumanError(chair);
           const owner = controllingSeat(record.seats, state, chair);
           if (owner !== chair) throw new AwaitingHumanError(owner);
           return inner.decideBid(state, s);
@@ -712,7 +765,9 @@ export class SessionService {
       record,
       state,
       actingSeat,
-      actingIsHuman: record.seats[controllingSeat(record.seats, state, actingSeat)].kind === "human",
+      actingIsHuman:
+        coachBidsThisSeat(record, state) ||
+        record.seats[controllingSeat(record.seats, state, actingSeat)].kind === "human",
     };
   }
 
@@ -724,6 +779,11 @@ export class SessionService {
     if (game.getState().phase === "complete") return this.view(sessionId);
 
     const actingSeat = game.actingSeat();
+    // A studio auction has nothing to step: every call is the coach's, so the
+    // answer to "advance one AI decision" is that there isn't one. Said here
+    // rather than left to the decider so the tempo controls read it as a human
+    // turn instead of a robot that keeps failing.
+    if (coachBidsThisSeat(record, game.getState())) throw new AwaitingHumanError(actingSeat);
     // The controller, not the chair: under a takeover the acting chair is a
     // robot's but a person is holding it (see `controllingSeat`).
     const controller = controllingSeat(record.seats, game.getState(), actingSeat);
@@ -784,7 +844,9 @@ export class SessionService {
     // Not `actingSeat` directly: a learner who would be dummy declares their
     // robot partner's contract themselves (see `controllingSeat`).
     const controller = controllingSeat(record.seats, state, actingSeat);
-    if (record.seats[controller].kind !== "human")
+    // A studio auction accepts the coach's call at ANY chair (see
+    // `coachBidsThisSeat`); every other position needs a person in the seat.
+    if (!coachBidsThisSeat(record, state) && record.seats[controller].kind !== "human")
       throw new Error(`Seat ${actingSeat} is not a human seat`);
     await replay.step();
     return this.persistNewEvents(record, log.getAll(), replay);
@@ -876,6 +938,7 @@ export class SessionService {
       state: nextState,
       actingSeat,
       actingIsHuman:
+        coachBidsThisSeat(record, nextState) ||
         record.seats[controllingSeat(record.seats, nextState, actingSeat)].kind === "human",
     };
   }

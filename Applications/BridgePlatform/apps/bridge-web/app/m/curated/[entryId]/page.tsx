@@ -1,11 +1,21 @@
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 
+import { ReviseLineButton } from "@/components/curate/ReviseLineButton";
 import { callLabel, cardLabel } from "@/lib/coach/position";
-import { chartedActionAt, lineOf, parseCurated, type CuratedAt } from "@/lib/curated";
+import {
+  chartedActionAt,
+  constraintOf,
+  learnerSeatOf,
+  lineOf,
+  parseCurated,
+  type CuratedAt,
+} from "@/lib/curated";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore } from "@/lib/sessions";
 import { saveCuratedEditsAction } from "./actions";
+
+const SEAT_NAME = { N: "North", E: "East", S: "South", W: "West" } as const;
 
 // BirdBridge typefaces (loaded in the /m layout).
 const N = "var(--font-neco), var(--font-fraunces), serif";
@@ -71,7 +81,10 @@ export default async function CuratedEditPage({
   }
 
   const line = lineOf(entry);
-  const { annotations } = parseCurated(entry.curatedJson);
+  const payload = parseCurated(entry.curatedJson);
+  const { annotations } = payload;
+  const learnerSeat = learnerSeatOf(payload);
+  const constraint = constraintOf(payload);
 
   return (
     <main
@@ -134,6 +147,86 @@ export default async function CuratedEditPage({
               style={{ ...FIELD, marginTop: 5, letterSpacing: 0, textTransform: "none" }}
             />
           </label>
+
+          {/* The v2 board settings (owner design 2026-08-18) — the coach's to
+              change after publish; the learner seat stays (the annotations
+              below are anchored to it). */}
+          <p style={{ ...SMALLCAPS, margin: "12px 0 0" }}>
+            Learner sits {SEAT_NAME[learnerSeat]}
+          </p>
+          <label style={{ ...SMALLCAPS, display: "block", marginTop: 8 }}>
+            How tightly they&rsquo;re held
+            <select
+              name="constraint"
+              defaultValue={constraint}
+              style={{ ...FIELD, marginTop: 5, letterSpacing: 0, textTransform: "none" }}
+            >
+              <option value="locked">Locked — only your line plays</option>
+              <option value="guided">Guided — nudge and take-back</option>
+              <option value="free">Free — notes and hints only</option>
+            </select>
+          </label>
+          <label style={{ ...SMALLCAPS, display: "block", marginTop: 9 }}>
+            Before they play (intro)
+            <textarea
+              name="intro"
+              defaultValue={payload.intro ?? ""}
+              rows={2}
+              maxLength={500}
+              style={{ ...FIELD, resize: "vertical", marginTop: 5, letterSpacing: 0, textTransform: "none" }}
+            />
+          </label>
+          <label style={{ ...SMALLCAPS, display: "block", marginTop: 9 }}>
+            When the board ends (debrief)
+            <textarea
+              name="debrief"
+              defaultValue={payload.debrief ?? ""}
+              rows={2}
+              maxLength={500}
+              style={{ ...FIELD, resize: "vertical", marginTop: 5, letterSpacing: 0, textTransform: "none" }}
+            />
+          </label>
+          <label style={{ ...SMALLCAPS, display: "block", marginTop: 9 }}>
+            Pinned read (rides the Know pane)
+            <input
+              type="text"
+              name="pin"
+              defaultValue={payload.pin ?? ""}
+              maxLength={220}
+              style={{ ...FIELD, marginTop: 5, letterSpacing: 0, textTransform: "none" }}
+            />
+          </label>
+        </div>
+
+        {/* REVISE THE LINE — outside the words-form's concern: a new sitting
+            in the studio, primed with this recording. */}
+        <div
+          style={{
+            background: PAPER,
+            border: `1px solid #e8ddc3`,
+            borderRadius: 12,
+            padding: "12px 13px",
+            marginTop: 12,
+          }}
+        >
+          <ReviseLineButton
+            entryId={entryId}
+            settings={{
+              learnerSeat,
+              constraint,
+              intro: payload.intro ?? "",
+              debrief: payload.debrief ?? "",
+              pin: payload.pin ?? "",
+              notes: entry.notes ?? "",
+              // The lesson rides into the revision — topic AND cards — so
+              // republishing keeps what the board teaches instead of quietly
+              // dropping it.
+              kTags: payload.kTags ?? [],
+              kItems: payload.kItems ?? [],
+            }}
+            annotations={annotations}
+            tableBase="/m/table/"
+          />
         </div>
 
         {annotations.length === 0 && (

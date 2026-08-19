@@ -17,10 +17,15 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse } from "next/server";
 
+import { lessonPlan } from "@/lib/coach/kLesson";
 import { callLabel, cardLabel } from "@/lib/coach/position";
 import { corsOptions, withCors } from "@/lib/cors";
+import { partnerOf } from "@bridge/events";
+
 import {
+  actionsSince,
   chartedActionAt,
+  constraintOf,
   currentAt,
   lineOf,
   parseCurated,
@@ -61,7 +66,24 @@ async function handle(request: Request): Promise<NextResponse> {
   const entry = await libraryStore().getEntry(record.curated.entryId);
   if (!entry) return NextResponse.json({ overlay: null });
   const line = lineOf(entry);
-  const { annotations } = parseCurated(entry.curatedJson);
+  const payload = parseCurated(entry.curatedJson);
+  const { annotations } = payload;
+  // The v2 board settings (owner design 2026-08-18) ride the overlay whole:
+  // the constraint tells the client which experience this board IS, and the
+  // intro/debrief/pin are the coach's framing around the decisions.
+  const constraint = constraintOf(payload);
+
+  // WHAT THIS BOARD TEACHES (owner direction 2026-08-18; card-level picks
+  // 2026-08-19). The deal's own K item picks — or, for a deal that named only
+  // a topic, its tags' collections — resolve to what the Know panel should put
+  // in front of the learner, for the phase the board is actually in: an
+  // auction lesson and a play lesson select differently from the same choice.
+  // Null when the coach named no lesson, and the panel then behaves exactly as
+  // it always has, which is what every deal authored before this needs.
+  const lesson =
+    state.phase === "auction" || state.phase === "play"
+      ? lessonPlan(payload, state.phase)
+      : null;
 
   // WHO the coach is — the assignment that issued this entry knows (owner
   // pick #3, 2026-08-15: "Coach Sarah", not "Your coach"). Best-effort: a
@@ -101,6 +123,23 @@ async function handle(request: Request): Promise<NextResponse> {
     const charted = pretty(status.divergedAt);
     if (charted) nudge = { charted };
   }
+  // A FREE board never interrupts (curated v2): the notes, road and ladders
+  // stay offered, but nothing stops the table or asks for a take-back.
+  if (constraint === "free") nudge = null;
+
+  // The intro stands until the learner's first own action — their framing,
+  // not a recurring banner. Dummy's cards count as the declarer's own.
+  const dummySeat = state.contract
+    ? (({ N: "S", S: "N", E: "W", W: "E" }) as const)[state.contract.declarer]
+    : null;
+  const learnerActed =
+    state.auction.some((c) => c.seat === seat) ||
+    state.tricks.some((t) =>
+      t.plays.some(
+        (p) =>
+          p.seat === seat || (state.contract?.declarer === seat && p.seat === dummySeat),
+      ),
+    );
 
   // WHERE the line was left, and what was played there instead of the charted
   // move. "You're off the line" on its own is an accusation with no evidence —
@@ -128,6 +167,42 @@ async function handle(request: Request): Promise<NextResponse> {
     if (chartedMove && actual) left = { where, charted: chartedMove, played: actual };
   }
 
+  /**
+   * WHAT THE TABLE DID WHILE THEY WATCHED (owner, 2026-08-18: "shouldn't
+   * there be annotation for both when you or your partner play?").
+   *
+   * The coach can write at any seat's action on the line, but a note at a
+   * robot's own turn could never be read — the robots answer within the same
+   * second the learner acts. So the notes ride back to the learner's next
+   * decision, in the order they happened, each naming the seat and the move
+   * it speaks about: "Partner · 2NT — 18-19 balanced, so count nine tricks."
+   *
+   * On-path only, like every other annotation: off the line these addresses
+   * stop corresponding to what actually happened.
+   */
+  const since =
+    status.onPath && actingIsHuman
+      ? actionsSince(state, seat)
+          .map((at) => {
+            const note = annotations.find((a) => sameAt(a.at, at));
+            if (!note?.note && !note?.why) return null;
+            const actor =
+              at.kind === "call"
+                ? state.auction[at.auctionIndex]?.seat
+                : state.tricks.flatMap((t) => t.plays)[at.trickIndex * 4 + at.playIndex]?.seat;
+            const move = pretty(at);
+            if (!actor || !move) return null;
+            return {
+              seat: actor,
+              partner: actor === partnerOf(seat),
+              move,
+              ...(note.note ? { note: note.note } : {}),
+              ...(note.why ? { why: note.why } : {}),
+            };
+          })
+          .filter((x): x is NonNullable<typeof x> => x !== null)
+      : [];
+
   // The current annotation — only while the line still holds.
   const here = currentAt(state);
   const annotation =
@@ -149,9 +224,17 @@ async function handle(request: Request): Promise<NextResponse> {
     overlay: {
       onPath: status.onPath,
       diverged: !status.onPath,
+      constraint,
+      ...(payload.intro && !learnerActed && state.phase !== "complete"
+        ? { intro: payload.intro }
+        : {}),
+      ...(payload.debrief && state.phase === "complete" ? { debrief: payload.debrief } : {}),
+      ...(payload.pin ? { pin: payload.pin } : {}),
+      ...(lesson ? { lesson } : {}),
       ...(coachName ? { coachName } : {}),
       ...(finished ? { finished } : {}),
       ...(left ? { left } : {}),
+      ...(since.length && !finished ? { since } : {}),
       ...(nudge && !finished ? { nudge } : {}),
       // Sent when the coach WROTE something here, or when there is simply a
       // road to show at this decision — either alone is worth a bubble.

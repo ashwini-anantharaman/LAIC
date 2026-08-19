@@ -2,8 +2,9 @@
 // (Figma 894:337).
 //
 // WHAT WENT, and where it went:
-//   Curated Deals   coaches only (owner design 2026-08-15): a maroon row under
-//                   Resume/History opening /new-board?curate=1. Everyone else
+//   Curated Deals   coaches only (curated v2, 2026-08-18): a maroon row under
+//                   Resume/History opening /curate-new (the studio's deal
+//                   picker, embedded). Everyone else
 //                   never sees it — hidden, not dimmed, even while the role is
 //                   still resolving.
 //   From Coach      already on the Learn tab, so a second door to it was noise.
@@ -386,9 +387,11 @@ export default function PlayScreen() {
           />
         </View>
 
-        {/* ── Curated Deals — COACHES ONLY (owner design 2026-08-15) ─────────
-            Deal a board in curate mode: play the line, annotate your own
-            decisions, publish to the library, assign from Assignments.
+        {/* ── Curated Deals — COACHES ONLY (curated v2, owner design
+            2026-08-18): the STUDIO. Build the board card by card, play all
+            four seats, publish the line, assign from Assignments. (v1 —
+            deal a random board and annotate your own sitting — was this
+            card's old door, /new-board?curate=1.)
             Hidden (not dimmed) for everyone else; while the role is UNKNOWN it
             stays hidden rather than flashing in — TabLoading holds the veil
             until the role resolves, so nobody watches the row appear. */}
@@ -406,7 +409,7 @@ export default function PlayScreen() {
               tone="maroon"
               label="Curated Deals"
               glyph={{ xml: ICON_CARD_PLUS, ...D.curated.glyph }}
-              onPress={() => router.push("/new-board?curate=1")}
+              onPress={() => router.push("/curate-new")}
             />
           </View>
         ) : null}

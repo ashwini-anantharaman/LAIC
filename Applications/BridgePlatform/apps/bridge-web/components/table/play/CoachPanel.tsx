@@ -40,6 +40,7 @@
 
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 
+import { lessonCardKeys, lessonSlots, type LessonPlan } from "@/lib/coach/kLesson";
 import type { BoardTakeaway } from "@/lib/coach/takeaway";
 import type { KnownCard, ThinkAid } from "@/lib/coach/think";
 
@@ -1493,6 +1494,102 @@ function CuratedCoachVoice({
         </SpeechBubble>
       )}
 
+      {/* THE INTRO (curated v2): the coach's framing, standing until the
+          learner's first own action — the server stops sending it after.
+          A FEATURED card, not another bubble (UI/UX pass 2026-08-18): this is
+          the board's opening moment, and it should read like a curtain going
+          up — the maroon chip names the moment, the coach's words carry it. */}
+      {!nudgeOnly && overlay.intro && (
+        <div
+          style={{
+            border: "1px solid #54101555",
+            background: "#fffdf6",
+            borderRadius: 14,
+            padding: "12px 14px 13px",
+            boxShadow: "0 2px 10px rgba(84,16,21,.07)",
+          }}
+        >
+          <span
+            style={{
+              display: "inline-block",
+              fontSize: 9.5,
+              fontWeight: 700,
+              letterSpacing: 1.2,
+              textTransform: "uppercase",
+              color: "#fff4d7",
+              background: "#541015",
+              borderRadius: 999,
+              padding: "3px 10px",
+            }}
+          >
+            Before you play
+          </span>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 10 }}>
+            <CoachBadge />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {coachLabel}
+              <p style={{ margin: "4px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 14, lineHeight: 1.6, color: INK }}>
+                <RedSuits>{overlay.intro}</RedSuits>
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* THE HOUSE RULE (curated v2, locked): said once, plainly, while the
+          line holds — so a card that will not play is a lesson, not a bug. */}
+      {!nudgeOnly && overlay.constraint === "locked" && overlay.onPath && !overlay.finished && (
+        <p style={{ margin: 0, fontSize: 11.5, lineHeight: 1.5, color: FAINT, fontStyle: "italic" }}>
+          This board walks {coachName}&rsquo;s line — a move that isn&rsquo;t theirs won&rsquo;t
+          play. The road below says why.
+        </p>
+      )}
+
+      {/* THE PIN (curated v2): the coach's one read for the whole board. */}
+      {!nudgeOnly && overlay.pin && !overlay.finished && (
+        <div
+          style={{
+            display: "flex", gap: 8, alignItems: "baseline",
+            padding: "8px 11px", borderRadius: 10,
+            borderWidth: 1, borderStyle: "solid", borderColor: FELT_DEEP,
+            background: "#fdf6e3",
+          }}
+        >
+          <span aria-hidden style={{ fontSize: 11 }}>📌</span>
+          <p style={{ margin: 0, fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 12.5, lineHeight: 1.5, color: INK }}>
+            <RedSuits>{overlay.pin}</RedSuits>
+          </p>
+        </div>
+      )}
+
+      {/* WHAT JUST HAPPENED AT THE TABLE (owner, 2026-08-18): the coach's word
+          about the moves the other three seats made while the learner watched.
+          It comes BEFORE the note for the decision they are at, which is the
+          order a coach speaks in — what partner showed, then what to do about
+          it. Anchored to those actions; delivered here, because a note at a
+          robot's own turn is gone before it can be read. */}
+      {!nudgeOnly &&
+        overlay.since?.map((s, i) => (
+          <SpeechBubble key={`${s.seat}-${i}`} avatar={<CoachBadge />}>
+            <span style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap" }}>
+              {coachLabel}
+              <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: MUTED }}>
+                {s.partner ? "your partner" : `${s.seat}`} played <RedSuits>{s.move}</RedSuits>
+              </span>
+            </span>
+            {s.note && (
+              <p style={{ margin: "5px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13.5, lineHeight: 1.55, color: INK }}>
+                <RedSuits>{s.note}</RedSuits>
+              </p>
+            )}
+            {s.why && (
+              <p style={{ margin: s.note ? "4px 0 0" : "5px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13, lineHeight: 1.5, color: MUTED }}>
+                <RedSuits>{s.why}</RedSuits>
+              </p>
+            )}
+          </SpeechBubble>
+        ))}
+
       {/* A ROAD ALONE IS ENOUGH (owner pick B, 2026-08-17). The coach used to
           appear only where they had written something, so at an un-annotated
           decision they were silent even though the line knew perfectly well
@@ -1570,6 +1667,13 @@ function CuratedCoachVoice({
               </>
             )}
           </p>
+          {/* THE DEBRIEF (curated v2): the coach's own closing words, after
+              the honest line verdict above. */}
+          {overlay.debrief && (
+            <p style={{ margin: "7px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 13.5, lineHeight: 1.55, color: INK }}>
+              <RedSuits>{overlay.debrief}</RedSuits>
+            </p>
+          )}
         </SpeechBubble>
       )}
 
@@ -1633,6 +1737,13 @@ export function CoachNow({ data }: Readonly<{ data: CoachPanelData }>) {
                   phase: data.ask.phase,
                 },
               }
+            : {})}
+          {...(// A curated deal's lesson decides what the Know section leads
+          // with (owner direction 2026-08-18). Same session and decision the
+          // coach's other curated surfaces use, so it shares their
+          // already-prefetched overlay.
+          data.curated && data.ask
+            ? { lessonAt: { sessionId: data.ask.sessionId, epoch: decisionEpoch(data) } }
             : {})}
         />
       )}
@@ -1764,12 +1875,16 @@ type StateCard = {
 };
 
 /** The top-level sides (owner direction 2026-08-15): our side, their side,
- *  and the counting layer that spans both. */
+ *  and the counting layer that spans both. A curated deal that names a lesson
+ *  puts LESSON in front of these — see `SidePane`. */
 const SIDE_VIEWS = [
   ["ours", "Ours"],
   ["theirs", "Theirs"],
   ["advanced", "Advanced"],
 ] as const;
+
+/** Which top-level pane the Know section is showing. */
+type SidePane = "lesson" | "ours" | "theirs" | "advanced";
 
 /** OURS breaks into the original three views, in reading order. */
 const STATE_VIEWS = [
@@ -1821,6 +1936,20 @@ function unlockCard(key: string) {
   if (unlockedCards.has(key)) return;
   unlockedCards.add(key);
   unlockListeners.forEach((l) => l());
+}
+
+/**
+ * How many of these cards the learner has already opened — the lesson's
+ * progress readout. A NUMBER, deliberately: getSnapshot has to return
+ * something that compares equal between renders or useSyncExternalStore loops
+ * forever, and a freshly-built array never would.
+ */
+function useUnlockedCount(keys: readonly string[]): number {
+  return useSyncExternalStore(
+    subscribeUnlocks,
+    () => keys.reduce((n, k) => (unlockedCards.has(k) ? n + 1 : n), 0),
+    () => 0,
+  );
 }
 
 function FlipCard({
@@ -2159,8 +2288,123 @@ function FlipCard({
   );
 }
 
+/* ── the LESSON pane ─────────────────────────────────────────────────────────
+   A curated deal is built to teach something, and from 2026-08-18 it says so:
+   the coach picks the lesson's tags when authoring, the overlay resolves them
+   into K items, and this pane puts exactly those cards in front of the learner
+   under the lesson's own name.
+
+   IT ADDS A TAB, IT HIDES NOTHING. Ours / Theirs / Advanced keep every card
+   they ever had; the lesson is a fourth way in, offered first because on a
+   curated board it is the point. A learner who wants the whole position is one
+   tap from it, and the cards they open here are open there too — one unlock
+   registry, one epoch.
+
+   THE WAITING LIST is the part that teaches beyond the cards. A lesson names
+   items the position cannot always support yet — no trick has been played, so
+   nobody has shown out — and naming them anyway tells the learner what this
+   skill is MADE of. They are drawn as quiet ghosts, never locked, never
+   tappable: a syllabus, not a promise. */
+function LessonPane({
+  lesson, cards, epoch, onOpen, onMore,
+}: Readonly<{
+  lesson: LessonPlan;
+  cards: readonly StateCard[];
+  epoch: string;
+  onOpen: () => void;
+  onMore: (card: StateCard) => void;
+}>) {
+  const slots = lessonSlots(lesson, cards);
+  const here = slots.filter((s) => s.card);
+  const waiting = slots.filter((s) => !s.card);
+  const keys = here.map((s) => `${epoch}|${s.card!.title}|${s.card!.value}`);
+  const opened = useUnlockedCount(keys);
+  const done = here.length > 0 && opened === here.length;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* the lesson's own head — what this board is FOR, and how far in they are */}
+      <div
+        style={{
+          display: "flex", alignItems: "flex-start", gap: 10,
+          background: TINT, borderRadius: 9, padding: "9px 11px",
+          borderLeftWidth: 3, borderLeftStyle: "solid", borderLeftColor: TINT_EDGE,
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: TINT_EDGE }}>
+            This board teaches
+          </p>
+          <p style={{ margin: "2px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 15.5, fontWeight: 700, lineHeight: 1.25, color: FELT_DEEP, overflowWrap: "break-word" }}>
+            {lesson.name}
+          </p>
+        </div>
+        {here.length > 0 && (
+          <div style={{ flex: "none", textAlign: "right" }}>
+            <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: done ? FELT_MID : "#8a7333", fontVariantNumeric: "tabular-nums" }}>
+              {done ? "all open" : `${opened} of ${here.length}`}
+            </p>
+            {/* the progress rail — the lock mechanic finally has a denominator */}
+            <div aria-hidden style={{ marginTop: 4, width: 54, height: 3, borderRadius: 2, background: "rgba(84,16,21,.14)", overflow: "hidden" }}>
+              <div
+                style={{
+                  width: `${here.length ? Math.round((opened / here.length) * 100) : 0}%`,
+                  height: "100%", borderRadius: 2,
+                  background: done ? FELT_MID : TINT_EDGE,
+                  transition: "width .3s",
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
+      {here.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(104px, 1fr))", gap: 7 }}>
+          {here.map((s) => (
+            <div key={`${epoch}|lesson|${s.id}`} style={{ display: "flex", minWidth: 0 }}>
+              <FlipCard
+                card={s.card!}
+                unlockKey={`${epoch}|${s.card!.title}|${s.card!.value}`}
+                onOpen={onOpen}
+                onMore={() => onMore(s.card!)}
+              />
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
+          Nothing for this lesson yet &mdash; the cards arrive as the board moves.
+        </p>
+      )}
+
+      {waiting.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: "#a49d8e" }}>
+            Also part of this skill
+          </p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+            {waiting.map((s) => (
+              <span
+                key={s.id}
+                title={s.why}
+                style={{
+                  fontSize: 10.5, color: "#a49d8e", padding: "4px 8px", borderRadius: 7,
+                  borderWidth: 1, borderStyle: "dashed", borderColor: "#ded4bd",
+                  background: "transparent",
+                }}
+              >
+                {s.title}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function GameState({
-  facts, known, epoch, reads,
+  facts, known, epoch, reads, lessonAt,
 }: Readonly<{
   facts: readonly { label: string; value: string; detail?: string; group?: "me" | "partner" | "partnership" | "theirs" | "advanced" }[];
   known: readonly KnownCard[];
@@ -2169,6 +2413,12 @@ function GameState({
    *  the partner/partnership/theirs cards come from the model, not the KB).
    *  Absent for watchers and finished boards. */
   reads?: { sessionId: string; epoch: string; phase: "auction" | "play" | "other" };
+  /**
+   * A CURATED deal's lesson (owner direction 2026-08-18) — where to read the
+   * coach's chosen K items from. Absent for an ordinary board, and the Know
+   * section is then exactly what it always was.
+   */
+  lessonAt?: { sessionId: string; epoch: string };
 }>) {
   // CLAUDE'S READ of the auction — fetched through the shared prefetch cache
   // (usually already resolved by the time this renders), composed into the
@@ -2208,6 +2458,31 @@ function GameState({
     };
   }, [readsSession, readsEpoch, readsPhase]);
 
+  // THE LESSON. Read from the curated overlay, which the dock has usually
+  // already prefetched for this decision — so this is a cache hit, not a
+  // second request. Null until it arrives and null forever on an ordinary
+  // board: every branch below treats "no lesson" as the normal case.
+  const [lesson, setLesson] = useState<LessonPlan | null>(null);
+  const lessonSession = lessonAt?.sessionId;
+  const lessonEpoch = lessonAt?.epoch;
+  useEffect(() => {
+    if (!lessonSession || !lessonEpoch) {
+      setLesson(null);
+      return;
+    }
+    let alive = true;
+    fetchCuratedOverlay(lessonSession, lessonEpoch)
+      .then((o) => {
+        if (alive) setLesson((o?.lesson as LessonPlan | undefined) ?? null);
+      })
+      .catch(() => {
+        // A lesson that doesn't arrive leaves the ordinary panel standing.
+      });
+    return () => {
+      alive = false;
+    };
+  }, [lessonSession, lessonEpoch]);
+
   const cards: StateCard[] = [
     ...facts.map((f) => ({ title: f.label, value: f.value, ...(f.detail ? { detail: f.detail } : {}), ...(f.group ? { group: f.group } : {}) })),
     ...known.map((k) => ({ title: k.title, value: k.value, detail: k.detail, ...(k.group ? { group: k.group } : {}) })),
@@ -2217,13 +2492,37 @@ function GameState({
   // and Ours breaks into my state / my partner / partnership below — the
   // original three views, one level down. Theirs is the opponents' mirrored
   // picture; Advanced is the counting that spans both sides.
-  const [side, setSide] = useState<"ours" | "theirs" | "advanced">("ours");
+  const [side, setSide] = useState<SidePane>("ours");
   const [view, setView] = useState<"me" | "partner" | "partnership">("me");
+  // THE LESSON LEADS, BUT ONLY UNTIL THE LEARNER SAYS OTHERWISE. It arrives a
+  // beat after the first render (one fetch away), so the pane can't simply be
+  // initialised to it; and a learner who has already reached for "Theirs"
+  // must not be yanked back when it lands.
+  const [pickedSide, setPickedSide] = useState(false);
+  useEffect(() => {
+    if (lesson && !pickedSide) setSide("lesson");
+  }, [lesson, pickedSide]);
+  const chooseSide = (v: SidePane) => {
+    setPickedSide(true);
+    setSide(v);
+  };
+  // A lesson that goes away (the board left its phase) must not strand the
+  // panel on a tab that no longer exists.
+  useEffect(() => {
+    if (!lesson) setSide((s) => (s === "lesson" ? "ours" : s));
+  }, [lesson]);
+  const onLesson = side === "lesson" && !!lesson;
   const pane = side === "ours" ? view : side;
-  const shown = cards.filter((c) => {
-    const g = c.group ?? "me";
-    return side === "ours" ? g === view : g === side;
-  });
+  const shown = onLesson
+    ? []
+    : cards.filter((c) => {
+        const g = c.group ?? "me";
+        return side === "ours" ? g === view : g === side;
+      });
+  // Which of the cards on screen are the point of this board — so a learner
+  // browsing the ordinary views can still see what the lesson is about. Keyed
+  // the same way the grid keys its cards.
+  const lessonKeys = lessonCardKeys(lesson, cards, (c) => `${c.title}|${c.value}`);
   // THE LOCK COACHMARK (owner pick #4, 2026-08-14; envelopes became locked
   // cards 2026-08-17): identical locked cards don't explain themselves —
   // one first-run strip says why they are locked, then never again. Retired
@@ -2279,7 +2578,7 @@ function GameState({
           padding: 3, background: "#f3ead4", borderRadius: 16,
         }}
       >
-        {SIDE_VIEWS.map(([v, label]) => {
+        {([...(lesson ? ([["lesson", "Lesson"]] as const) : []), ...SIDE_VIEWS] as readonly (readonly [SidePane, string])[]).map(([v, label]) => {
           const on = side === v;
           return (
             <button
@@ -2287,7 +2586,7 @@ function GameState({
               type="button"
               role="tab"
               aria-selected={on}
-              onClick={() => setSide(v)}
+              onClick={() => chooseSide(v)}
               style={{
                 flex: "none", minHeight: 25, padding: "3px 12px", borderRadius: 13,
                 background: on ? FELT_MID : "transparent",
@@ -2301,7 +2600,7 @@ function GameState({
           );
         })}
       </div>
-      {side === "ours" && (
+      {side === "ours" && !onLesson && (
         // Nudged by eye against the rendered capsule (owner, 2026-08-15):
         // the arithmetic said 15 (3px track + 12px pill inset) but the
         // pill's rounded cap makes the word read further left than its box —
@@ -2330,7 +2629,7 @@ function GameState({
           })}
         </div>
       )}
-      {envelopeHint && shown.some((c) => c.title) && (
+      {envelopeHint && !onLesson && shown.some((c) => c.title) && (
         <div
           style={{
             display: "flex", alignItems: "flex-start", gap: 8,
@@ -2356,7 +2655,15 @@ function GameState({
           </button>
         </div>
       )}
-      {shown.length > 0 ? (
+      {onLesson && lesson ? (
+        <LessonPane
+          lesson={lesson}
+          cards={cards}
+          epoch={epoch}
+          onOpen={dismissEnvelopeHint}
+          onMore={setMoreCard}
+        />
+      ) : shown.length > 0 ? (
         <div
           style={{
             // 104px floor (owner ask 2026-08-17: "make the flip cards
@@ -2373,7 +2680,24 @@ function GameState({
             // grid items to their labels (owner report 2026-08-17), and that
             // is a UA behaviour no inline style on the button itself can be
             // trusted to override.
-            <div key={`${epoch}|${pane}|${c.title}|${c.value}`} style={{ display: "flex", minWidth: 0 }}>
+            <div
+              key={`${epoch}|${pane}|${c.title}|${c.value}`}
+              style={{ position: "relative", display: "flex", minWidth: 0 }}
+            >
+              {/* ON TOPIC. A card the lesson claims wears a small gold pip
+                  here, so the connection to what this board teaches survives
+                  browsing away from the Lesson tab. Decorative only — the
+                  Lesson tab is where it is said in words. */}
+              {lessonKeys.has(`${c.title}|${c.value}`) && (
+                <span
+                  aria-hidden
+                  style={{
+                    position: "absolute", top: -1, right: -1, zIndex: 1,
+                    width: 7, height: 7, borderRadius: "50%", background: GOLD,
+                    boxShadow: `0 0 0 1.5px ${PAPER}`,
+                  }}
+                />
+              )}
               <FlipCard
                 card={c}
                 // No pane in the key, unlike the grid's: the same fact
@@ -2393,7 +2717,7 @@ function GameState({
         </p>
       ) : (
         <p style={{ margin: 0, fontSize: 12.5, lineHeight: 1.5, color: MUTED }}>
-          {STATE_EMPTY[pane]}
+          {STATE_EMPTY[pane === "lesson" ? "me" : pane]}
         </p>
       )}
       {moreCard && (
