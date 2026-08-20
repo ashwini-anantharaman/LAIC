@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.3",
+  "catalogueVersion": "1.4",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -229,8 +229,8 @@
     },
     {
       "id": "learning.publish.app_target",
-      "label": "Choose which app content publishes to",
-      "description": "Pick the destination app when publishing. Separate from publish.release so a role can be allowed to press Publish without choosing where it lands, or the reverse.",
+      "label": "Put content on an app",
+      "description": "Publish content so it actually appears in the app. Stronger than handing it to an app's administrators \u2014 this is the decision, not the offer.",
       "group": "publishing",
       "resourceTypes": [
         "learning_object",
@@ -253,8 +253,8 @@
     },
     {
       "id": "learning.library.share_app",
-      "label": "Share content with an app",
-      "description": "Grant content to an app, meaning its administrators may see it and decide whether to carry it. Granting to an app is granting to its administrators \u2014 nobody is an app.",
+      "label": "Hand content to an app's administrators",
+      "description": "Grant content to an app so the people who administer it can see it and decide whether to carry it. It does not put anything on the app.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
