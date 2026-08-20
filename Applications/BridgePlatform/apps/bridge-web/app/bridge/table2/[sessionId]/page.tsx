@@ -17,6 +17,7 @@ import { LivePlayTable } from "@/components/table/play/LivePlayTable";
 import { SeatsPanel } from "@/components/table/play/SeatsPanel";
 import { AutoAdvance } from "@/components/table/AutoAdvance";
 import { nextSkin, resolveSkin, skinLabel } from "@bridge/table-config";
+import { SkinsClient } from "@/app/bridge/skins/SkinsClient";
 import { requireFeature } from "@/lib/access";
 import { benAvailable, originalHand } from "@/lib/benSeat";
 import { kbStore } from "@/lib/kb";
@@ -32,8 +33,9 @@ import { thinkAid } from "@/lib/coach/think";
 import { bidMeaningReader } from "@/lib/bidMeanings";
 import type { CoachData } from "@/components/table/play/coachContent";
 import { CoachDock, type CoachPanelData } from "@/components/table/play/CoachPanel";
-import { patchAppearanceAction } from "./actions";
+import { patchAppearanceAction, saveTableAppearanceAction } from "./actions";
 import { ChallengeTableChrome } from "./ChallengeTableChrome";
+import { gradeBiddingPuzzle, gradePlayPuzzle, puzzleKind } from "@bridge/challenges";
 
 // COACH (phase-2 transplant, owner decision 2 — "his engine, our shell"). His
 // old-path table carried the coach as a felt fab + rising sheet; that UI is
@@ -52,13 +54,13 @@ export default async function PlayTablePage({
   searchParams,
 }: Readonly<{
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; curate?: string; author?: string }>;
+  searchParams: Promise<{ hands?: string; bboAuction?: string; bars?: string; speed?: string; view?: string; paused?: string; saved?: string; error?: string; from?: string; coach?: string; appearance?: string; curate?: string; author?: string }>;
 }>) {
   const context = await getBridgeContext();
   if (!context) redirect("/welcome");
   const { sessionId: sessionIdParam } = await params;
   const sessionId = sessionIdParam;
-  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, curate, author } = await searchParams;
+  const { hands: handsParam, bboAuction, bars, speed, view: viewParam, paused, saved, error, from, coach: coachParam, appearance: appearanceParam, curate, author } = await searchParams;
   // ?bars=off strips the edge toolbars so the felt can be judged (or embedded)
   // without them. A LOOK, not a permission: every control they carry is still
   // reachable from the ☰ menu, so this hides chrome, it never removes ability.
@@ -130,7 +132,6 @@ export default async function PlayTablePage({
   const canSettingsMenu = control["table.settings_menu"];
   const canHandsView = control["table.hands_view"];
   const canSkinSettings = control["table.skin_settings"];
-  const canSkinsPage = control["page.skins"];
   const canCoach = control["table.coach"];
 
   // Denied the hands-record view: the ?view=hands param is treated as absent —
@@ -390,7 +391,7 @@ export default async function PlayTablePage({
   const beatMs = speed === "fast" ? 350 : speed === "slow" ? 1500 : 750;
   const settingsHref = (patch: Record<string, string | undefined>) => {
     const q = new URLSearchParams();
-    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, curate, author };
+    const current = { hands: handsParam, bboAuction, speed, view: viewParam, paused, coach: coachParam, appearance: appearanceParam, curate, author };
     for (const [k, v] of Object.entries({ ...current, ...patch })) if (v) q.set(k, v);
     const s = q.toString();
     return s ? `/bridge/table2/${sessionId}?${s}` : `/bridge/table2/${sessionId}`;
@@ -520,8 +521,14 @@ export default async function PlayTablePage({
           },
         ]
       : []),
-    ...(canSkinsPage
-      ? [{ label: "Appearance", value: "→", href: "/bridge/skins" }]
+    // THE WHOLE CONFIGURATOR, at the table (owner, 2026-08-18). This row used
+    // to leave for /bridge/skins; it now opens the same configurator as an
+    // overlay on the felt — presets, the gallery, colours, the live preview —
+    // so dressing the table never means leaving it. Gated like the quick rows
+    // above it (the overlay's save is table-side too); the standalone page
+    // remains for whoever holds page.skins and prefers it.
+    ...(canSkinSettings
+      ? [{ label: "Appearance", value: "Open", href: settingsHref({ appearance: "1" }) }]
       : []),
     // The verification workbench (decisions rail, fix-at-the-table, deal
     // editor) lives behind the ☰ so nothing sits outside the canvas.
@@ -865,7 +872,11 @@ export default async function PlayTablePage({
         // Non-embedded takes origin/main's edge-to-edge treatment (merge
         // 2026-08-14, "the felt reaches the edges"): full-bleed and unrounded
         // on a phone-width platform window, the rounded card back at md+.
-        className={embedded ? "overflow-hidden" : "-mx-3 overflow-hidden rounded-none md:mx-0 md:rounded-lg"}
+        className={
+          embedded
+            ? "overflow-hidden"
+            : "-mx-3 overflow-hidden rounded-none md:mx-0 md:rounded-lg"
+        }
         style={{
           height: embedded ? "100dvh" : "calc(100vh - 5.5rem)",
         }}
@@ -900,10 +911,38 @@ export default async function PlayTablePage({
             subtitle={challenge.subtitle}
             done={challenge.done}
             onward={challenge.onward}
-            resultLine={score ? resultLabel(score) : ""}
-            resultScore={
-              score ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}` : ""
+            // A puzzle's done line is its VERDICT, not the raw score — the
+            // score line stays for ordinary boards. Graded with the same
+            // client-safe helpers the freeze used, from the same state.
+            resultLine={
+              challenge.board.puzzle
+                ? puzzleKind(challenge.board.puzzle) === "bidding"
+                  ? gradeBiddingPuzzle(challenge.board.puzzle, state.auction)
+                    ? "Solved — the authored call"
+                    : "Not this time — see the answer below"
+                  : state.contract &&
+                      gradePlayPuzzle(
+                        challenge.board.puzzle,
+                        state.contract.level,
+                        state.contract.declarer === "N" || state.contract.declarer === "S"
+                          ? state.trickCount.NS
+                          : state.trickCount.EW,
+                      )
+                    ? "Solved — goal met"
+                    : "Not this time — see the answer below"
+                : score
+                  ? resultLabel(score)
+                  : ""
             }
+            resultScore={
+              challenge.board.puzzle
+                ? ""
+                : score
+                  ? `${score.declarerScore >= 0 ? "+" : ""}${score.declarerScore}`
+                  : ""
+            }
+            puzzleBrief={challenge.board.puzzle?.brief}
+            puzzleExplanation={challenge.board.puzzle?.explanation}
           >
             {table}
           </ChallengeTableChrome>
@@ -911,6 +950,40 @@ export default async function PlayTablePage({
           table
         )}
       </div>
+
+      {/* ── the appearance configurator, AT the table (owner, 2026-08-18) ──
+          The whole skins page — presets, gallery, layout, colours, live
+          preview — as an overlay on the felt, so dressing the table never
+          means leaving it. Same component the page mounts, same normalize-on-
+          save; Close is a plain href back to this board, and Save lands there
+          too with the new look already on. Gated like the ☰ rows it sits
+          among (table.skin_settings), and works identically inside the app's
+          WebView, which is the same page. */}
+      {canSkinSettings && appearanceParam === "1" && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#faf7f2]">
+          <div className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+            <header className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <h1 className="text-2xl font-semibold tracking-tight">Appearance &amp; skins</h1>
+                <p className="text-sm text-neutral-600">
+                  Changes preview live and save to your account — this board wears them the
+                  moment you save.
+                </p>
+              </div>
+              <Link
+                href={settingsHref({ appearance: undefined })}
+                className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:border-neutral-400"
+              >
+                ✕ Close
+              </Link>
+            </header>
+            <SkinsClient
+              initial={appearance}
+              save={saveTableAppearanceAction.bind(null, sessionId)}
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

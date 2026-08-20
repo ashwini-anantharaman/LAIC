@@ -1,4 +1,4 @@
-import { isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
+import { challengeFormat, isBiddingOnly, type Challenge, type ChallengeInvite } from "@bridge/challenges";
 import { saveChallengeToLibraryAction } from "./actions";
 import Link from "next/link";
 import { redirect } from "next/navigation";
@@ -21,10 +21,14 @@ const scoringLabel = (key: string) =>
  * scored against a field, so naming its (unused) scoring mode would be a lie —
  * it names the format instead.
  */
-const unitLabel = (challenge: Challenge) =>
-  isBiddingOnly(challenge)
-    ? (FORMAT_OPTIONS.find((f) => f.key === "bidding-only")?.label ?? "Bidding only")
-    : scoringLabel(challenge.scoring);
+const unitLabel = (challenge: Challenge) => {
+  const format = challengeFormat(challenge);
+  // Neither a puzzle nor a bidding-only board is scored against a field, so
+  // naming the (unused) scoring mode would be a lie — name the format.
+  if (format !== "full")
+    return FORMAT_OPTIONS.find((f) => f.key === format)?.label ?? format;
+  return scoringLabel(challenge.scoring);
+};
 const standingsLabel = (key: string) =>
   STANDINGS_OPTIONS.find((s) => s.key === key)?.label ?? key;
 
@@ -335,44 +339,51 @@ function PlayCard({ row, mine }: Readonly<{ row: Row; mine: boolean }>) {
   return (
     <div className="rounded-xl border border-neutral-200 bg-white transition-colors hover:border-emerald-400">
       {/* The whole card is the link, as before. The controls below sit OUTSIDE it: a
-          form nested in an anchor is invalid, and their clicks would fight the link's. */}
+          form nested in an anchor is invalid, and its clicks would fight the link's. */}
       <Link href={href} className="block p-4">
         <CardFacts row={row} />
         <Progress access={access} />
         <p className="mt-2 text-sm font-semibold text-emerald-800">{cta} →</p>
       </Link>
 
-      {/* origin/main's keep-it control, on Quan's card structure (merge
-          2026-08-14): the creator can save their challenge to the library —
-          same outside-the-anchor rule as the moderator row below. */}
-      {mine && (
-        <div className="border-t border-neutral-100 px-4 py-2">
-          <SaveToLibrary challengeId={challenge.challengeId} />
+
+      {/* Two owner-ish controls, each shown to the people it belongs to. Save
+          is the CREATOR's (keeping something you built); archive/reopen is the
+          MODERATORS' (the people who decide who plays decide when it retires —
+          and reopening exists because archiving by mistake must not be a dead
+          end). Both live outside the Link for the same nested-form reason. */}
+      {(mine || access.viewerIsModerator) && (
+        <div className="flex items-center justify-end gap-2 border-t border-neutral-100 px-4 py-2">
+          {mine && (
+            <form action={saveChallengeToLibraryAction}>
+              <input type="hidden" name="challengeId" value={challenge.challengeId} />
+              <button
+                type="submit"
+                className="rounded-lg border border-neutral-200 px-2.5 py-1 text-xs font-semibold text-neutral-600 transition-colors hover:border-emerald-400 hover:text-emerald-800"
+              >
+                Save to library
+              </button>
+            </form>
+          )}
+          {access.viewerIsModerator && (
+            <form action={setChallengeArchivedAction}>
+              <input type="hidden" name="challengeId" value={challenge.challengeId} />
+              <input type="hidden" name="archived" value={archived ? "0" : "1"} />
+              <button
+                type="submit"
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-400"
+                title={
+                  archived
+                    ? "Make this challenge playable again"
+                    : "Retire this challenge — its results stay readable"
+                }
+              >
+                {archived ? "Reopen" : "Archive"}
+              </button>
+            </form>
+          )}
         </div>
       )}
-
-      {/* Moderators only — the same people who decide who plays it decide when it
-          retires. Reopening is offered for the same reason it exists: archiving by
-          mistake should not be a dead end. */}
-      {access.viewerIsModerator ? (
-        <div className="flex justify-end border-t border-neutral-100 px-4 py-2">
-          <form action={setChallengeArchivedAction}>
-            <input type="hidden" name="challengeId" value={challenge.challengeId} />
-            <input type="hidden" name="archived" value={archived ? "0" : "1"} />
-            <button
-              type="submit"
-              className="rounded-lg border border-neutral-300 bg-white px-3 py-1 text-xs font-medium text-neutral-600 hover:border-neutral-400"
-              title={
-                archived
-                  ? "Make this challenge playable again"
-                  : "Retire this challenge — its results stay readable"
-              }
-            >
-              {archived ? "Reopen" : "Archive"}
-            </button>
-          </form>
-        </div>
-      ) : null}
     </div>
   );
 }

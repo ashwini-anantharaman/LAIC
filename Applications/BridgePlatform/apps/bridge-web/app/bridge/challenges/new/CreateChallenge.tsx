@@ -37,10 +37,13 @@ import {
   STANDINGS_OPTIONS,
   validateDraft,
   type ChallengeDraft,
+  ENGINE_OPTIONS,
   type ControlState,
 } from "../draft";
+import type { ChallengeEngine } from "@bridge/challenges";
 import type { ChallengePerson } from "../people";
 import { BoardCard, type BoardDraftState } from "./BoardCard";
+import { emptyPuzzle, PuzzleEditor } from "./PuzzleEditor";
 import { SUIT_ORDER, suitTextsFromCards } from "@/lib/dealText";
 
 const STEPS = [
@@ -53,7 +56,7 @@ const STEPS = [
 type StepKey = (typeof STEPS)[number]["key"];
 
 const SEAT_NAME: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
-const DEFAULT_BOARDS = 6;
+const DEFAULT_BOARDS = 4;
 const BOARD_PRESETS = [4, 8, 12, 16];
 
 const seedFor = (base: number, boardNo: number) => (base + boardNo * 7919) >>> 0;
@@ -88,6 +91,9 @@ export function CreateChallenge({
   seedBase,
   initialDraft,
   draftEntryId,
+  canAdvanced,
+  advancedSections,
+  benOffered,
 }: Readonly<{
   people: ChallengePerson[];
   /** The creator's own row: auto-invited, accepted, moderator, undeletable. */
@@ -98,6 +104,16 @@ export function CreateChallenge({
   /** A parked draft being picked up again (library entry `draftEntryId`). */
   initialDraft?: ChallengeDraft;
   draftEntryId?: string;
+  /** May this creator open the multi-step form behind Quick create? */
+  canAdvanced: boolean;
+  /**
+   * Which advanced SECTIONS this creator gets (challenge.advanced.* keys). A
+   * denied section does not render and its step drops out of the path — the
+   * challenge simply takes that section's defaults.
+   */
+  advancedSections: { engine: boolean; boards: boolean; controls: boolean };
+  /** Is BEN reachable from this server? Without it there is no engine choice. */
+  benOffered: boolean;
 }>) {
   // A RESUMED DRAFT SEEDS EVERY FIELD. `initialDraft` has already been through
   // the app's validator on the server, so anything missing from an older save
@@ -122,6 +138,7 @@ export function CreateChallenge({
             dealer: b.dealer,
             humanSeat: b.humanSeat,
             ...(b.vul ? { vul: b.vul } : {}),
+            ...(b.puzzle ? { puzzle: b.puzzle } : {}),
             // A hand-edited pack travels card-by-card; anything else is the
             // seed's own deal, which re-derives identically.
             ...(edited && "hands" in edited
@@ -140,6 +157,11 @@ export function CreateChallenge({
   const [invited, setInvited] = useState<{ userId: string; moderator: boolean }[]>(
     d?.invites.map((i) => ({ userId: i.userId, moderator: i.moderator })) ?? [],
   );
+  const [engine, setEngine] = useState<ChallengeEngine>(d?.engine ?? "dd");
+  // Quick create is the whole page until this is opened. A RESUMED DRAFT opens
+  // straight into it: parking a draft is something you do part-way through the
+  // long form, so dropping someone back on the short one would hide their work.
+  const [advancedOpen, setAdvancedOpen] = useState(Boolean(d) && canAdvanced);
   const [editorBadge, setEditorBadge] = useState(d?.editorBadge ?? false);
   const [importText, setImportText] = useState("");
   const [importError, setImportError] = useState<string | null>(null);
@@ -148,10 +170,30 @@ export function CreateChallenge({
   const [pending, startTransition] = useTransition();
 
   const sections = useRef<Partial<Record<StepKey, HTMLElement | null>>>({});
+  /**
+   * Move to a step of the advanced form, opening it if it is still closed.
+   * Only one step renders at a time now, so this pages rather than scrolls —
+   * the scroll is to put the top of the new page under the reader, since the
+   * browser keeps the old scroll position when the content swaps beneath it.
+   */
   const goStep = (key: StepKey) => {
+    if (!canAdvanced) return;
+    setAdvancedOpen(true);
     setStep(key);
-    sections.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" });
+    requestAnimationFrame(() =>
+      sections.current[key]?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   };
+  // The PATH through the form is only the granted steps: a gated step is not
+  // greyed out, it is gone — chips, Back/Next and "Step N of M" all agree.
+  const steps = STEPS.filter(
+    (x) =>
+      (x.key !== "boards" || advancedSections.boards) &&
+      (x.key !== "controls" || advancedSections.controls),
+  );
+  const stepAt = steps.findIndex((x) => x.key === step);
+  const prevStep = stepAt > 0 ? steps[stepAt - 1] : null;
+  const nextStep = stepAt >= 0 && stepAt < steps.length - 1 ? steps[stepAt + 1] : null;
   const sectionRef = (key: StepKey) => (el: HTMLElement | null) => {
     sections.current[key] = el;
   };
@@ -274,6 +316,8 @@ export function CreateChallenge({
   const formatInfo = FORMAT_OPTIONS.find((f) => f.key === format)!;
   const scoringInfo = SCORING_OPTIONS.find((s) => s.key === scoring)!;
   const standingsInfo = STANDINGS_OPTIONS.find((s) => s.key === standings)!;
+  /** What to CALL the robots in prose — the review used to hard-code "BEN". */
+  const engineName = engine === "ben" ? "BEN" : "solver";
 
   // A bidding-only board is never scored against the field, so the scoring
   // question is not asked at all — an inert control the creator cannot act on
@@ -302,9 +346,11 @@ export function CreateChallenge({
       humanSeat: b.humanSeat,
       vul: b.vul,
       ...(b.edited ? { pack: serializePack(b.hands) } : {}),
+      ...(format === "puzzle" && b.puzzle ? { puzzle: b.puzzle } : {}),
     })),
     controlOverrides: controlOverridesOf(controls),
     invites: invited,
+    engine,
     editorBadge,
   });
 
@@ -365,12 +411,13 @@ export function CreateChallenge({
                 Create challenge
               </h1>
               <p className="text-[11px] text-neutral-500">
-                Same boards · your seat · BEN robots
+                Same boards · your seat · {engine === "ben" ? "BEN" : "solver"} robots
               </p>
             </div>
           </div>
+          {advancedOpen && (
           <div className="-mx-1 flex gap-1.5 overflow-x-auto px-1 pb-0.5">
-            {STEPS.map((s) => (
+            {steps.map((s) => (
               <button
                 key={s.key}
                 type="button"
@@ -385,24 +432,31 @@ export function CreateChallenge({
               </button>
             ))}
           </div>
+          )}
         </div>
 
         {/* ── Quick create ──
             Two decisions — how many boards, who's in — and everything else
-            takes the default the wizard below would have given it. The same
-            state backs both, so anything picked here is still picked if you
-            scroll on into the full setup. */}
+            takes the default the advanced form would have given it. This is
+            the whole page until Advanced settings is opened, and the same state
+            backs both, so anything picked here is still picked over there. */}
+        {!advancedOpen && (
         <section className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/40 p-3.5">
           <div className="flex items-baseline gap-2">
             <h2 className="text-[15px] font-extrabold text-emerald-900">Quick create</h2>
             <span className="flex-1" />
-            <button
-              type="button"
-              onClick={() => goStep("basics")}
-              className="text-[11.5px] font-semibold text-emerald-800 underline-offset-2 hover:underline"
-            >
-              Full setup ↓
-            </button>
+            {/* The only way into the long form, and it is a capability: a
+                program that wants challenges made in two taps turns
+                challenge.advanced off and this disappears entirely. */}
+            {canAdvanced && !advancedOpen && (
+              <button
+                type="button"
+                onClick={() => goStep("basics")}
+                className="text-[11.5px] font-semibold text-emerald-800 underline-offset-2 hover:underline"
+              >
+                Advanced settings →
+              </button>
+            )}
           </div>
           <p className="mt-0.5 text-[12px] leading-relaxed text-emerald-900/80">
             Pick the boards and who is in. Everything else takes its default.
@@ -479,9 +533,10 @@ export function CreateChallenge({
             {named ? "" : ` · named “${autoTitle}”`}
           </p>
         </section>
+        )}
 
         {/* ── 01 · Basics ── */}
-        <Section refFn={sectionRef("basics")} num="01" title="Basics">
+        <Section refFn={sectionRef("basics")} num="01" title="Basics" active={advancedOpen && step === "basics"}>
           <p className="mb-4 text-[12.5px] leading-relaxed text-neutral-600">
             Name it, pick how it scores, and how many boards.
           </p>
@@ -528,10 +583,58 @@ export function CreateChallenge({
           </div>
           <Note>{formatInfo.note}</Note>
 
+          {/* ── who the robots are ──
+              Gated by challenge.advanced.engine: a program that keeps the robot
+              choice to admins simply hides the row, and every challenge seats
+              the default solver. */}
+          {advancedSections.engine && format !== "puzzle" && (
+          <>
+          {/* ── who the robots are ──
+              ALWAYS SHOWN, even where BEN cannot be reached. Hiding it there
+              was the first cut and it was wrong: a creator looking for the
+              choice found nothing at all and no explanation, which reads as a
+              missing feature rather than an unavailable option. So the row
+              stays, BEN is disabled, and the note says why.
+
+              Whatever is chosen is STAMPED on the challenge, so everyone
+              entering meets the same opponents however long the contest runs. */}
+          <Label className="mt-4">Robot players</Label>
+          <div className="flex gap-1.5">
+            {ENGINE_OPTIONS.map((e) => {
+              const off = e.key === "ben" && !benOffered;
+              return (
+                <button
+                  key={e.key}
+                  type="button"
+                  aria-pressed={engine === e.key}
+                  disabled={off}
+                  title={off ? "BEN is not configured on this server" : undefined}
+                  onClick={() => setEngine(e.key)}
+                  className={`h-11 flex-1 rounded-lg border px-1.5 text-[13px] ${
+                    engine === e.key
+                      ? "border-emerald-700 bg-emerald-700 font-extrabold text-white"
+                      : off
+                        ? "border-neutral-200 bg-neutral-50 font-semibold text-neutral-400"
+                        : "border-neutral-300 bg-white font-semibold text-neutral-600"
+                  }`}
+                >
+                  {e.label}
+                </button>
+              );
+            })}
+          </div>
+          <Note>
+            {benOffered
+              ? (ENGINE_OPTIONS.find((e) => e.key === engine)?.blurb ?? "")
+              : "BEN is not configured on this server (BEN_ENDPOINT), so every challenge is played against the solver."}
+          </Note>
+          </>
+          )}
+
           {/* Scoring is a question about a FIELD of played boards. A
               bidding-only challenge has none, so it is not asked — the tally
               is "matched BEN's contract on N of M boards" and nothing else. */}
-          {!biddingOnly && (
+          {format === "full" && (
             <>
               <Label className="mt-4">Scoring</Label>
               <div className="flex gap-1.5">
@@ -608,6 +711,7 @@ export function CreateChallenge({
         {/* ── 02 · Boards ── */}
         <Section
           refFn={sectionRef("boards")}
+          active={advancedOpen && step === "boards"}
           num="02"
           title="Boards"
           aside={`${boards.length} boards`}
@@ -667,19 +771,34 @@ export function CreateChallenge({
           )}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {boards.map((board, i) => (
-              <BoardCard
-                key={board.boardNo}
-                board={board}
-                onChange={(patch) => patchBoard(i, patch)}
-                onReroll={() => rerollBoard(i)}
-                onOpenEditor={() => openedEditor(i)}
-              />
+              <div key={board.boardNo} className={format === "puzzle" ? "sm:col-span-2 xl:col-span-3" : undefined}>
+                <BoardCard
+                  board={board}
+                  onChange={(patch) => patchBoard(i, patch)}
+                  onReroll={() => rerollBoard(i)}
+                  onOpenEditor={() => openedEditor(i)}
+                />
+                {/* The puzzle's frozen story — written one LEGAL action at a
+                    time against this very deal, so an illegal position cannot
+                    be typed. Full-width: an auction needs the room. */}
+                {format === "puzzle" && (
+                  <PuzzleEditor
+                    boardNo={board.boardNo}
+                    dealer={board.dealer}
+                    vul={board.vul}
+                    hands={board.hands}
+                    humanSeat={board.humanSeat}
+                    value={board.puzzle ?? emptyPuzzle()}
+                    onChange={(puzzle) => patchBoard(i, { puzzle })}
+                  />
+                )}
+              </div>
             ))}
           </div>
         </Section>
 
         {/* ── 03 · Table controls ── */}
-        <Section refFn={sectionRef("controls")} num="03" title="Table controls">
+        <Section refFn={sectionRef("controls")} num="03" title="Table controls" active={advancedOpen && step === "controls"}>
           <p className="mb-3.5 text-[12.5px] leading-relaxed text-neutral-600">
             Override the access catalogue for this challenge — in both
             directions. <b>Undo</b> and <b>show-all-hands</b> are off by default:
@@ -739,7 +858,7 @@ export function CreateChallenge({
         </Section>
 
         {/* ── 04 · Invites ── */}
-        <Section refFn={sectionRef("invites")} num="04" title="Invites">
+        <Section refFn={sectionRef("invites")} num="04" title="Invites" active={advancedOpen && step === "invites"}>
           <p className="mb-3 text-[12.5px] leading-relaxed text-neutral-600">
             Invitees stay <b>pending</b> until they accept. Moderators see the
             standings and every board as it happens.
@@ -853,7 +972,7 @@ export function CreateChallenge({
         </Section>
 
         {/* ── 05 · Review ── */}
-        <Section refFn={sectionRef("review")} num="05" title="Review & create">
+        <Section refFn={sectionRef("review")} num="05" title="Review & create" active={advancedOpen && step === "review"}>
           <p className="mb-3.5 text-[12.5px] leading-relaxed text-neutral-600">
             {biddingOnly
               ? "BEN bids every board silently after you create — that auction is the one yours is set beside. It needs no card play, so it is quick."
@@ -874,7 +993,7 @@ export function CreateChallenge({
               k="Scoring"
               v={
                 biddingOnly
-                  ? "Matched BEN's contract, board by board — no field scoring"
+                  ? `Matched the ${engineName}'s contract, board by board — no field scoring`
                   : scoringInfo.full
               }
             />
@@ -891,13 +1010,13 @@ export function CreateChallenge({
                   : `Mixed (${seatsUsed.join(", ")})`
               }
             />
-            <ReviewLine k="Controls" v={controlsSummary} />
+            {advancedSections.controls && <ReviewLine k="Controls" v={controlsSummary} />}
             <ReviewLine
               k="Opponents"
               v={
                 biddingOnly
-                  ? "3 BEN robots per seat · BEN's own auction is the reference"
-                  : "3 BEN robots per seat · silent BEN baseline"
+                  ? `3 ${engineName} robots · its own auction is the reference`
+                  : `3 ${engineName} robots per seat · silent baseline`
               }
             />
             <ReviewLine k="Invites" v={`You + ${invited.length} pending`} />
@@ -947,6 +1066,51 @@ export function CreateChallenge({
         </Section>
 
         {/* ── sticky create bar (phone) ── */}
+        {/* ── paging the advanced form ──
+            One step is mounted at a time, so there has to be a way forward and
+            back that is not the chips: the chips are a jump table, this is the
+            path through. The last step has no Next — Review carries Create. */}
+        {advancedOpen && (
+          <div className="mt-2 flex items-center gap-2 border-t border-neutral-200 pt-3">
+            <button
+              type="button"
+              onClick={() => (prevStep ? goStep(prevStep.key) : setAdvancedOpen(false))}
+              className="h-10 rounded-lg border border-neutral-300 px-4 text-[13px] font-semibold text-neutral-700 hover:border-neutral-400"
+            >
+              ← {prevStep ? prevStep.label : "Quick create"}
+            </button>
+            <span className="flex-1 text-center text-[11.5px] text-neutral-500">
+              Step {stepAt + 1} of {steps.length}
+            </span>
+            {nextStep ? (
+              <button
+                type="button"
+                onClick={() => goStep(nextStep.key)}
+                className="h-10 rounded-lg bg-emerald-700 px-4 text-[13px] font-extrabold text-white"
+              >
+                {nextStep.label} →
+              </button>
+            ) : (
+              <span className="w-[96px]" />
+            )}
+          </div>
+        )}
+        {/* Parking work is MORE useful here than on Quick create — the long
+            form is where there is something worth parking — and the button
+            lived only on Quick create, which no longer renders once this is
+            open. Available from every step, since you park when you run out of
+            time, not when you reach a particular one. */}
+        {advancedOpen && (
+          <button
+            type="button"
+            onClick={saveDraft}
+            disabled={pending}
+            className="mt-2 h-[38px] w-full rounded-lg border border-emerald-700/30 text-[13px] font-semibold text-emerald-900 disabled:text-neutral-400"
+          >
+            {savedAt ? `Saved to library · ${savedAt}` : "Save draft to library"}
+          </button>
+        )}
+
         <div className="sticky bottom-0 -mx-3 flex items-center gap-2.5 border-t border-neutral-200 bg-[var(--paper)] px-3 py-2 md:-mx-8 md:px-8 lg:hidden">
           <div className="min-w-0 flex-1">
             <div className="truncate text-[12px] font-bold text-neutral-800">
@@ -975,7 +1139,11 @@ export function CreateChallenge({
           </p>
           <SummaryLine k="Boards" v={String(boards.length)} />
           <SummaryLine k="Format" v={formatInfo.label} />
-          <SummaryLine k="Scoring" v={biddingOnly ? "vs BEN" : scoringInfo.label} />
+          <SummaryLine
+            k="Scoring"
+            v={biddingOnly ? `vs ${engineName}` : scoringInfo.label}
+          />
+          <SummaryLine k="Robots" v={engineName} />
           <SummaryLine k="Invited" v={`1 + ${invited.length}`} />
           <SummaryLine
             k="Editor badge"
@@ -1001,24 +1169,29 @@ export function CreateChallenge({
 
 // ── small presentational pieces ─────────────────────────────────────────────
 
+/**
+ * One page of the advanced form. The steps used to stack on a single scroll,
+ * which made the wizard a very long page; now exactly one is mounted, and the
+ * chips plus the Back/Next footer move between them.
+ */
 function Section({
   refFn,
   num,
   title,
   aside,
+  active,
   children,
 }: Readonly<{
   refFn: (el: HTMLElement | null) => void;
   num: string;
   title: string;
   aside?: string;
+  active: boolean;
   children: React.ReactNode;
 }>) {
+  if (!active) return null;
   return (
-    <section
-      ref={refFn}
-      className="scroll-mt-24 border-b-8 border-neutral-100 py-4 last:border-b-0"
-    >
+    <section ref={refFn} className="scroll-mt-24 py-4">
       <div className="mb-1 flex items-baseline gap-2">
         <span className="text-[11px] font-extrabold tracking-[0.08em] text-emerald-700">
           {num}

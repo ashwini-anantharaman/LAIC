@@ -146,7 +146,9 @@ export async function POST(
                 seat,
                 c.kind === "human"
                   ? { label: "you", human: true }
-                  : c.kind === "ben"
+                  : // BEN and the solver are engines, not roster entries — they
+                    // have a label and nothing to point a playerId at.
+                    c.kind === "ben" || c.kind === "dd"
                     ? { label: c.label }
                     : { label: c.label, playerId: c.playerId },
               ]),

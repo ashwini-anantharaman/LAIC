@@ -420,6 +420,56 @@ export const ACCESS_FEATURES: readonly AccessFeature[] = [
     defaultRoles: ALL,
   },
 
+  // Challenges: the full multi-step setup behind Quick create. Quick create
+  // itself rides on challenge.create — this key only decides who may open the
+  // advanced form (boards, table controls, invites, review, robot choice).
+  // Defaults to everyone, matching who could reach the whole wizard before it
+  // was split, so the key exists to RESTRICT rather than to grant.
+  {
+    key: "challenge.advanced",
+    label: "Advanced challenge setup",
+    group: "Challenges",
+    kind: "feature",
+    description:
+      "The multi-step challenge form behind Quick create; hidden, challenges are created from Quick create alone.",
+    defaultRoles: ALL,
+  },
+
+  // The advanced form's own dials. Each SECTION of the form is a surface a
+  // program can grant or hide, so "advanced" need not mean "everything":
+  // a club can hand coaches the boards editor while keeping the robot picker
+  // and control checklist to admins, or any other cut. Denied sections simply
+  // do not render — the challenge takes their defaults — and the draft the
+  // server validates is unchanged either way. All three default to everyone,
+  // matching what the advanced form showed before it had dials.
+  {
+    key: "challenge.advanced.engine",
+    label: "Advanced: robot picker",
+    group: "Challenges",
+    kind: "feature",
+    description:
+      "Choosing the robots (solver or BEN) in the advanced form; hidden, every challenge seats the default solver.",
+    defaultRoles: ALL,
+  },
+  {
+    key: "challenge.advanced.boards",
+    label: "Advanced: boards step",
+    group: "Challenges",
+    kind: "feature",
+    description:
+      "The per-board step — dealer, vulnerability, seat; hidden, boards keep the standard cycle from Quick create.",
+    defaultRoles: ALL,
+  },
+  {
+    key: "challenge.advanced.controls",
+    label: "Advanced: table controls step",
+    group: "Challenges",
+    kind: "feature",
+    description:
+      "The table-control checklist (undo, hands, coach…); hidden, challenges ship the scored-play defaults.",
+    defaultRoles: ALL,
+  },
+
   // Organization: org-profile editing.
   {
     key: "org.edit_profile",

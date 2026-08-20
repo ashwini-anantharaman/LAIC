@@ -1,23 +1,25 @@
-// Coach — the relationship tab, role-aware like Home. A learner sees who
-// coaches them and the state of their feedback; a coach sees who needs them.
-// Both are launchers into the platform surfaces that already exist.
+// Coach — the relationship tab: who coaches YOU, and the state of your feedback.
 //
-// The LEARNER view is Figma 869:597: "My Coaches" as a row of faces with a green
+// ONE view for everyone, coach included. It used to swap its whole body on
+// isCoach, so a mentor who is also a learner could not see their own coach, their
+// feedback, or the boards assigned to them — they got a roster instead. Home and
+// Play had already dropped that split; this tab was the last one branching the UI
+// on a role.
+//
+// The coach's own surfaces are NOT lost — Learners, Assignments, Create
+// assignment and Reviews are rows in the Menu drawer's "Other" section, each
+// behind the same capability that gated it here. The Figma 870:699 coach frame
+// this file used to render is gone with the split.
+//
+// The view below is Figma 869:597: "My Coaches" as a row of faces with a green
 // + Hire at its end, then two stacked-card tiles — From Coach, and Send for
 // Review. It used to be one card stack, four to six rows of title-and-subtitle
 // that all looked alike; the faces are what make "who coaches me" answerable at
 // a glance, and the two tiles are the only two places anyone actually goes.
 //
-// The COACH view is Figma 870:699: one wide My Learners tile, then Assignments
-// and Reviews side by side, on the same stacked-card idiom. Both of the small
-// tiles carry a cream disc on the corner, and the two discs are DIFFERENT KINDS
-// of thing — Reviews' is a count (how many plays are waiting) and Assignments' is
-// a BUTTON (a + that deals a new one). The + is its own tap target, so the tile
-// still opens the list; it is where the "+ Create Assignment" pill used to be.
-//
-// TWO DELIBERATE DEPARTURES FROM THE FRAMES:
-//   - No top app bar. The frame draws the hamburger-and-avatar bar every frame in
-//     this file draws, but the app puts that bar on HOME ALONE (see brand-chrome)
+// TWO DELIBERATE DEPARTURES FROM THE FRAME:
+//   - No top app bar. The frame draws the hamburger-and-avatar bar, but the app
+//     puts that bar on HOME ALONE (see brand-chrome)
 //     and every other tab starts at CONTENT_TOP_GAP. Following the frame here
 //     would give one tab chrome its four siblings do not have.
 //   - Counts survive as small discs. The frame has none, and the stack it replaces
@@ -26,7 +28,7 @@
 //     is kept as a badge rather than a line of prose.
 
 import { router, useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import {
   Pressable,
   ScrollView,
@@ -43,16 +45,12 @@ import {
   ICON_AVATAR,
   ICON_COACH_ASSIGNMENTS,
   ICON_FEEDBACK_BUBBLE,
-  ICON_GRAD_CAP,
   ICON_PLUS,
-  ICON_PLUS_CIRCLE,
-  ICON_REVIEWS_DOC,
 } from "../../constants/brand-vectors";
 import { Screen } from "../../components/ui";
 import { Brand, Fonts, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { TabLoading } from "../../components/tab-loading";
-import { getBridgeContextCached, isCoach, peekRoleContext } from "../../lib/bridge-role";
 import { peekBridgeOrigin } from "../../lib/launch-cache";
 import { type BridgeSummary, type SummaryCoach } from "../../lib/nexus";
 import { prewarmBridgePages } from "../../lib/prewarm";
@@ -100,54 +98,6 @@ const CO = {
   plus: 13.796,
 };
 
-/**
- * The coach's view (Figma 870:699), in the same 390-wide design space.
- *
- * Both rows are the stacked-card idiom: a `Brand.rowShadow` card behind and below
- * a green face. The wide tile's shadow drops 6 and the small pair's 4, which is
- * the frame's own difference and reads as the bigger card sitting higher.
- */
-const CV = {
-  /** "Coach" title to the wide tile. */
-  headGap: 49,
-  /** The wide tile's box ends at its SHADOW (293 in the frame, not the face's
-   *  287); from there to the pair's face top at 326. */
-  rowGap: 33,
-  wide: {
-    width: 219,
-    height: 100,
-    radius: 20,
-    offset: { x: 5, y: 6 },
-    left: 81,
-    /** The cap sits left of the label rather than above it — the only tile here
-     *  laid out as a row. */
-    glyph: { w: 41, h: 39.51, left: 24 },
-    labelLeft: 83,
-    labelSize: 20.288,
-  },
-  tile: {
-    width: 143,
-    height: 100,
-    radius: 20,
-    offset: { x: 5, y: 4 },
-    left: 33,
-    /** 205 − 33. */
-    pitch: 172,
-    glyphTop: 19,
-    labelTop: 64,
-    labelSize: 18.4,
-  },
-  glyph: { assignments: { w: 43, h: 40.85 }, reviews: { w: 35, h: 40.38 } },
-  /**
-   * The disc on a tile's top-right corner, overhanging on both sides.
-   *
-   * One set of numbers for both, though the frame draws them a unit or two apart
-   * (23 vs 25 across, −10 vs −12 up): they sit side by side at the same height,
-   * and two corners that nearly match read as a mistake where two that match read
-   * as a pair.
-   */
-  badge: { size: 24, right: -5.5, top: -11, textSize: 16.09 },
-};
 
 export default function CoachScreen() {
   const { token } = useAuth();
@@ -160,44 +110,18 @@ export default function CoachScreen() {
   // club-only account, paid in full before the real fetch could start.
   const { selected, loading: clubsLoading } = useClubs();
   const clubId = selected?.programId ?? null;
-  // Role UNKNOWN (null) until the context resolves. Seeding a boolean painted
-  // the learner view over a coach's first sign-in (peek misses on a cold
-  // cache, isCoach(null) is false) and then flipped it to the coach view in
-  // front of them — NEITHER view may claim the screen until we know which one
-  // is true. The sign-in prime usually answers the peek synchronously, so the
-  // known case still paints the real view with no fetch in front.
-  const [coach, setCoach] = useState<boolean | null>(() => {
-    const peeked = token ? peekRoleContext(token, clubId ?? undefined) : null;
-    return peeked ? isCoach(peeked) : null;
-  });
   // Last known summary renders immediately; the focus effect refreshes it.
   const [summary, setSummary] = useState<BridgeSummary | null>(() =>
     token ? peekSummary(token, clubId ?? undefined) : null,
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    if (!token || clubsLoading) return;
-    // Re-seed on a club switch: this club's role may be cached (answer now) or
-    // not (back to unknown — never the previous club's answer).
-    const peeked = peekRoleContext(token, clubId ?? undefined);
-    setCoach(peeked ? isCoach(peeked) : null);
-    getBridgeContextCached(token, clubId ?? undefined).then((ctx) => {
-      if (!cancelled) setCoach(isCoach(ctx));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [token, clubId, clubsLoading]);
-
   useFocusEffect(
     useCallback(() => {
       if (!token || clubsLoading) return;
-      // Warm the screens this tab's cards open (role decides which are shown,
-      // but warming both costs one idempotent GET each).
+      // Warm the screens reachable from here — this tab's own tiles, and the
+      // coaching rows in the Menu drawer. Each is one idempotent GET.
       prewarmBridgePages(
-        // /m/assignments is on this screen's own cards (both roles) and was the
-        // one card that always opened a cold function.
+        // /m/assignments was the one door that always opened a cold function.
         ["/m/reviews", "/m/plays", "/m/library/new", "/m/assignments"],
         peekBridgeOrigin(token),
       );
@@ -252,181 +176,6 @@ export default function CoachScreen() {
       onPress: () => router.push("/plays"),
     },
   ];
-
-  // Unknown role: the tab veil, not a guessed view that corrects itself. The
-  // main return below mounts its own veil at full opacity, so the swap from
-  // this branch to the real view reads as one continuous cover that fades.
-  if (coach === null) {
-    return (
-      <Screen>
-        <TabLoading ready={false} />
-      </Screen>
-    );
-  }
-
-  // ── The coach's own view — Figma 870:699 ─────────────────────────────────
-  if (coach) {
-    return (
-      <Screen>
-        {/* SCROLLS, like every tab here: the tab bar floats over the content, so
-            its clearance is paid at the end of the scroll body — where it is
-            room to scroll into rather than a permanent dead band, and where a
-            third row added later lands on screen instead of behind the bar. */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollBody}
-        >
-          <View style={styles.headerBlockLearner}>
-            <Text style={[styles.titleLearner, { marginLeft: 23 * sc }]}>Coach</Text>
-          </View>
-
-          {/* My Learners — wide, and first, because everything else on this
-              screen is a queue belonging to someone on that list. */}
-          <View style={{ marginTop: CV.headGap * sc, height: (CV.wide.height + CV.wide.offset.y) * sc }}>
-            <StackTile
-              left={CV.wide.left}
-              width={CV.wide.width}
-              height={CV.wide.height}
-              offset={CV.wide.offset}
-              scale={sc}
-              onPress={() => router.push("/learners")}
-              accessibilityLabel={
-                s === null
-                  ? "My Learners"
-                  : `My Learners, ${s.roster_count} learner${s.roster_count === 1 ? "" : "s"}`
-              }
-            >
-              <View
-                style={{ position: "absolute", left: CV.wide.glyph.left * sc, top: 0, bottom: 0, justifyContent: "center" }}
-              >
-                <SvgXml
-                  xml={tintSvg(ICON_GRAD_CAP, Brand.cream)}
-                  width={CV.wide.glyph.w * sc}
-                  height={CV.wide.glyph.h * sc}
-                />
-              </View>
-              <View
-                style={{ position: "absolute", left: CV.wide.labelLeft * sc, top: 0, bottom: 0, justifyContent: "center" }}
-              >
-                <Text style={[styles.tileLabelCream, { fontSize: CV.wide.labelSize * sc }]}>
-                  My Learners
-                </Text>
-              </View>
-            </StackTile>
-          </View>
-
-          <View
-            style={{
-              marginTop: CV.rowGap * sc,
-              height: (CV.tile.height + CV.tile.offset.y) * sc,
-            }}
-          >
-            {/* Assignments. The + is a SEPARATE tap target on the same tile: the
-                tile opens what you have delegated, the disc deals a new one.
-                Drawn after the tile so it wins the press where they overlap. */}
-            <StackTile
-              left={CV.tile.left}
-              width={CV.tile.width}
-              height={CV.tile.height}
-              offset={CV.tile.offset}
-              scale={sc}
-              onPress={() => router.push("/assignments")}
-              accessibilityLabel="Assignments"
-            >
-              <SquareTileContent
-                icon={ICON_COACH_ASSIGNMENTS}
-                glyph={CV.glyph.assignments}
-                label="Assignments"
-                scale={sc}
-              />
-            </StackTile>
-            <Pressable
-              onPress={() => router.push("/create-assignment")}
-              accessibilityRole="button"
-              accessibilityLabel="Create assignment"
-              // The disc is visually small; the finger's target is not.
-              hitSlop={12}
-              style={({ pressed }) => [
-                {
-                  position: "absolute",
-                  left: (CV.tile.left + CV.tile.width - CV.badge.size - CV.badge.right) * sc,
-                  top: CV.badge.top * sc,
-                },
-                pressed && styles.pressed,
-              ]}
-            >
-              <View
-                style={{
-                  width: CV.badge.size * sc,
-                  height: CV.badge.size * sc,
-                  borderRadius: (CV.badge.size / 2) * sc,
-                  backgroundColor: Brand.cream,
-                }}
-              >
-                {/* Over a cream disc, not on its own: the glyph is a ring and a
-                    plus with nothing between them, so unbacked it would show the
-                    tile's green through the middle. */}
-                <SvgXml
-                  xml={tintSvg(ICON_PLUS_CIRCLE, Brand.ink)}
-                  width={CV.badge.size * sc}
-                  height={CV.badge.size * sc}
-                />
-              </View>
-            </Pressable>
-
-            {/* Reviews, and how many are still waiting on this coach. The disc is
-                a FACT here rather than a control — absent at zero, and absent
-                while the summary is unknown, so it never states a number it then
-                has to correct. */}
-            <StackTile
-              left={CV.tile.left + CV.tile.pitch}
-              width={CV.tile.width}
-              height={CV.tile.height}
-              offset={CV.tile.offset}
-              scale={sc}
-              onPress={() => router.push("/reviews")}
-              accessibilityLabel={
-                s && s.reviews_pending > 0
-                  ? `Reviews, ${s.reviews_pending} waiting`
-                  : "Reviews"
-              }
-            >
-              <SquareTileContent
-                icon={ICON_REVIEWS_DOC}
-                glyph={CV.glyph.reviews}
-                label="Reviews"
-                scale={sc}
-              />
-            </StackTile>
-            {s && s.reviews_pending > 0 ? (
-              <View
-                style={[
-                  styles.countDisc,
-                  {
-                    left:
-                      (CV.tile.left + CV.tile.pitch + CV.tile.width - CV.badge.size - CV.badge.right) *
-                      sc,
-                    top: CV.badge.top * sc,
-                    width: CV.badge.size * sc,
-                    height: CV.badge.size * sc,
-                    borderRadius: (CV.badge.size / 2) * sc,
-                    borderWidth: Math.max(1, sc),
-                  },
-                ]}
-                pointerEvents="none"
-              >
-                <Text style={[styles.countDiscText, { fontSize: CV.badge.textSize * sc }]}>
-                  {s.reviews_pending > 99 ? "99+" : s.reviews_pending}
-                </Text>
-              </View>
-            ) : null}
-          </View>
-        </ScrollView>
-
-        <TabLoading ready />
-      </Screen>
-    );
-  }
 
   // ── The learner's view — Figma 869:597 ───────────────────────────────────
   //
@@ -503,109 +252,7 @@ export default function CoachScreen() {
   );
 }
 
-/**
- * The stacked card both of the coach's rows are made of: a darker card behind and
- * below, and a green face carrying whatever the caller draws.
- *
- * Positioned absolutely by its design x, so a row is a plain box and the tiles sit
- * at the frame's own coordinates. The face is the touch target; the card behind is
- * allowed to overflow it, as it does everywhere else in the deck.
- */
-function StackTile({
-  left,
-  width,
-  height,
-  offset,
-  scale: sc,
-  onPress,
-  accessibilityLabel,
-  children,
-}: {
-  left: number;
-  width: number;
-  height: number;
-  offset: { x: number; y: number };
-  scale: number;
-  onPress: () => void;
-  accessibilityLabel: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [
-        {
-          position: "absolute",
-          left: left * sc,
-          top: 0,
-          width: (width + offset.x) * sc,
-          height: (height + offset.y) * sc,
-        },
-        pressed && styles.pressed,
-      ]}
-    >
-      <View
-        style={[
-          styles.tileShadow,
-          {
-            left: offset.x * sc,
-            top: offset.y * sc,
-            width: width * sc,
-            height: height * sc,
-            borderRadius: 20 * sc,
-          },
-        ]}
-      />
-      <View
-        style={[
-          styles.tileFaceFilled,
-          { width: width * sc, height: height * sc, borderRadius: 20 * sc },
-        ]}
-      >
-        {children}
-      </View>
-    </Pressable>
-  );
-}
 
-/** The square tiles' inside: glyph over label, both at the frame's own tops. */
-function SquareTileContent({
-  icon,
-  glyph,
-  label,
-  scale: sc,
-}: {
-  icon: string;
-  glyph: { w: number; h: number };
-  label: string;
-  scale: number;
-}) {
-  return (
-    <>
-      <View style={{ position: "absolute", top: CV.tile.glyphTop * sc, left: 0, right: 0, alignItems: "center" }}>
-        <SvgXml xml={tintSvg(icon, Brand.cream)} width={glyph.w * sc} height={glyph.h * sc} />
-      </View>
-      <Text
-        style={[
-          styles.tileLabelCream,
-          {
-            position: "absolute",
-            top: CV.tile.labelTop * sc,
-            left: 0,
-            right: 0,
-            textAlign: "center",
-            fontSize: CV.tile.labelSize * sc,
-          },
-        ]}
-        numberOfLines={1}
-      >
-        {label}
-      </Text>
-    </>
-  );
-}
 
 /** One coach: their face, their name, and what they are holding. */
 function CoachFace({ coach, scale: sc }: { coach: SummaryCoach; scale: number }) {
@@ -837,26 +484,6 @@ const styles = StyleSheet.create({
   /** Positioned children, so the two tiles sit at the frame's own x's. */
   tileRow: { position: "relative" },
   tileShadow: { position: "absolute", backgroundColor: Brand.rowShadow },
-  /** The coach tiles' face: a plain green ground its children position onto,
-   *  unlike the learner tiles' face, which centres a single glyph. */
-  tileFaceFilled: {
-    position: "absolute",
-    left: 0,
-    top: 0,
-    overflow: "hidden",
-    backgroundColor: Brand.green,
-  },
-  tileLabelCream: { fontFamily: Fonts.displayMedium, color: Brand.cream },
-  /** The Reviews count — cream, edged in the shadow card's own colour so it
-   *  belongs to the tile it overhangs. */
-  countDisc: {
-    position: "absolute",
-    backgroundColor: Brand.cream,
-    borderColor: Brand.rowShadow,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  countDiscText: { fontFamily: Fonts.displayMedium, color: Brand.ink },
   tileFace: {
     position: "absolute",
     left: 0,

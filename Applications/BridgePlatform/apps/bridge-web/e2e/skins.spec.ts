@@ -141,8 +141,18 @@ test.describe("skins & appearance configurator", () => {
     await expect(page.getByRole("button", { name: /Bid pad/ })).toBeVisible();
     await expect(page.getByRole("button", { name: /Centre frame/ })).toBeVisible();
     // The Appearance row is an href row — SettingsMenu renders those as
-    // router-driven buttons, not anchors.
-    await expect(page.getByRole("button", { name: /Appearance/ })).toBeVisible();
+    // router-driven buttons, not anchors. It no longer leaves for /bridge/skins:
+    // it opens the WHOLE configurator as an overlay on this same board.
+    await page.getByRole("button", { name: /Appearance/ }).click();
+    await expect(page.getByRole("heading", { name: "Appearance & skins" })).toBeVisible();
+    await expect(page.getByTestId("preset-card").first()).toBeVisible();
+    await expect(page).toHaveURL(/appearance=1/);
+    // Close is a plain link back to the board, configurator gone. The ☰ menu
+    // is client state and never closed — both moves were router navigations —
+    // so it is simply still there for the rows below.
+    await page.getByRole("link", { name: "✕ Close" }).click();
+    await expect(page.getByRole("heading", { name: "Appearance & skins" })).toHaveCount(0);
+    await expect(page.getByText("Table settings")).toBeVisible();
 
     // Skin cycles bbo → midnight: Green baize → Midnight.
     await expect(skinRow).toContainText("Green baize");

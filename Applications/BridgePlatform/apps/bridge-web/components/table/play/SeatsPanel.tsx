@@ -1,6 +1,7 @@
-// The rail's seat panel: who sits where, and the swap menu — including BEN,
-// the neural engine, as a seatable character when the server has an endpoint
-// for it. Server component; each option is a form posting the same
+// The rail's seat panel: who sits where, and the swap menu — including the
+// double dummy solver and BEN as seatable characters. The solver needs no
+// endpoint, so it is always on offer and listed first; BEN only appears when
+// the server has one. Server component; each option is a form posting the same
 // swapSeatAction the old table used (a swap forks the board, as always).
 
 import type { Seat } from "@bridge/events";
@@ -59,6 +60,7 @@ export function SeatsPanel({
               swap (forks this board)
             </p>
             {option(seat, "me", "Sit here yourself", false)}
+            {option(seat, "dd", "Solver · double dummy", seatLabels[seat].startsWith("Solver"))}
             {benOffered && option(seat, "ben", "BEN · neural engine", seatLabels[seat].startsWith("BEN"))}
             {roster.map((p) =>
               option(

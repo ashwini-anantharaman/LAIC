@@ -109,12 +109,26 @@ export function selfPerson(context: NexusBridgeContext): ChallengePerson {
 }
 
 /**
- * Everyone a PRIVATE TABLE may invite: the caller's accepted friends.
+ * Everyone a PRIVATE TABLE may invite: the caller's accepted friends, AND the
+ * members of their own club.
  *
- * A separate directory from the club one rather than an addition to it. A club
- * challenge must not be able to reach outside the club, and a private table must not
- * be limited to it — merging the two would mean whichever call site forgot to say
- * which it wanted got the wrong answer silently.
+ * Still a separate directory from the club challenge's rather than an addition to
+ * it, and for the original reason: a club challenge must not be able to reach
+ * outside the club, and a private table must not be limited to it. What changed is
+ * only that a private table is no longer limited to friendships either — the people
+ * you actually want on a few boards are, in a club app, mostly the people in your
+ * club, and asking them to accept a friend request first was a step with no purpose
+ * behind it.
+ *
+ * THIS WIDENS THE ONE GATE THE CREATE PATH DROPPED FOR PERSONAL TABLES (see
+ * api/bridge/challenges/route.ts: the club's create right does not govern a private
+ * table). It stays safe for the same reason it was safe before — reach, not a
+ * check. Both halves are resolved HERE, from the caller's own identity: friends who
+ * accepted them, and the roster of the club they are themselves in and can already
+ * read. A draft still cannot name anybody outside that, so "never invite blind"
+ * holds exactly as it did; what a person without the club's create right gains is
+ * the ability to invite people they already sit beside to a table that appears on
+ * no club's list.
  *
  * In stub mode there is no Nexus and no friendship, so the stub users stand in;
  * otherwise a private table could not be exercised locally at all.
@@ -123,12 +137,37 @@ export async function listFriendPeople(
   context: NexusBridgeContext,
 ): Promise<ChallengePerson[]> {
   if (nexusMode() === "stub") return listChallengePeople(context);
+
+  const byId = new Map<string, ChallengePerson>();
+  const add = (person: ChallengePerson) => {
+    if (!person.userId || person.userId === context.nexusUserId) return;
+    if (!byId.has(person.userId)) byId.set(person.userId, person);
+  };
+
+  // Friends first, so somebody who is both keeps the friendlier row: an
+  // @username rather than an email address.
   const friends = await listNexusFriends().catch(() => []);
-  return friends
-    .filter((f) => f.profileId && f.profileId !== context.nexusUserId)
-    .map((f) => ({
-      userId: f.profileId,
-      name: f.name,
-      ...(f.username ? { handle: `@${f.username}` } : {}),
-    }));
+  for (const friend of friends)
+    add({
+      userId: friend.profileId,
+      name: friend.name,
+      ...(friend.username ? { handle: `@${friend.username}` } : {}),
+    });
+
+  // The caller's OWN club — nexus_club_program_id first for the same reason
+  // listChallengePeople prefers it: for a partner-club caller nexus_program_id is
+  // the connected parent, and asking with it would answer with the parent's people.
+  const programId = nexusClubProgramId(context) ?? nexusProgramId(context);
+  if (programId) {
+    const members = await listNexusProgramMembers(programId).catch(() => []);
+    for (const member of members)
+      if (member.profile_id)
+        add({
+          userId: member.profile_id,
+          name: member.display_name?.trim() || member.email || member.profile_id,
+          handle: member.email ?? undefined,
+        });
+  }
+
+  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
 }

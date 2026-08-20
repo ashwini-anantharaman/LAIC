@@ -17,6 +17,7 @@ import { NextResponse } from "next/server";
 import { canCreateChallenge, getCatalogue } from "@/lib/access";
 import { apiError, requireContext } from "@/lib/api";
 import { corsHeaders, corsOptions, withCors } from "@/lib/cors";
+import { benAvailable } from "@/lib/benSeat";
 import { canCreateInLibrary, canSeeProgramLibrary } from "@/lib/libraryComponent";
 import { isBridgeCoach } from "@/lib/nexus";
 
@@ -33,6 +34,10 @@ const FEATURE_KEYS = [
   "page.library",
   "page.guide",
   "page.challenges",
+  "challenge.advanced",
+  "challenge.advanced.engine",
+  "challenge.advanced.boards",
+  "challenge.advanced.controls",
   "library.resume",
   "table.undo",
 ] as const;
@@ -64,6 +69,10 @@ export async function GET() {
         isCoach: isBridgeCoach(context),
         features,
         library: { canCreate: libraryCanCreate, programScope: libraryProgramScope },
+        // Which robots the server can actually seat: the solver is always
+        // there (pure and local); BEN needs its endpoint. The wizard's robot
+        // picker shows BEN disabled — never hidden — when this is false.
+        engines: { dd: true, ben: benAvailable() },
       },
       { headers: CORS },
     );

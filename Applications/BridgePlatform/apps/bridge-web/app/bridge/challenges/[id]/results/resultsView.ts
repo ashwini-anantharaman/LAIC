@@ -32,6 +32,7 @@ import {
   contractPhrase,
   formatCell,
   formatTotal,
+  challengeFormat,
   isBiddingOnly,
   scoringName,
   scoringShort,
@@ -213,9 +214,151 @@ export interface ResultsViewInput {
  * the FIGURES differ, and each path builds its own.
  */
 export function buildResultsView(input: ResultsViewInput): ResultsView {
+  if (challengeFormat(input.challenge) === "puzzle") return buildPuzzleResultsView(input);
   return isBiddingOnly(input.challenge)
     ? buildBiddingResultsView(input)
     : buildFieldResultsView(input);
+}
+
+// ── the puzzle path ─────────────────────────────────────────────────────────
+// A puzzle board has exactly one figure: SOLVED or not, graded at the freeze
+// (ChallengePlay.puzzleSolved). No field maths, no datum, no BEN yardstick —
+// the standing is how many of the set you solved.
+
+export const PUZZLE_UNIT = "Puzzles solved";
+export const PUZZLE_LABEL = "solved";
+
+function buildPuzzleResultsView(input: ResultsViewInput): ResultsView {
+  const { viewerId, resultsUnlocked } = input;
+  const common = commonParts(input);
+  const { boards, nameOf, marksFor, myPlays, nextBoardNo } = common;
+
+  const completed = input.plays.filter((p) => p.status === "completed");
+  /** boardNo -> userId -> solved. Absent = not attempted or not graded. */
+  const solvedByBoard = new Map<number, Map<string, boolean>>();
+  for (const p of completed) {
+    if (!solvedByBoard.has(p.boardNo)) solvedByBoard.set(p.boardNo, new Map());
+    solvedByBoard.get(p.boardNo)!.set(p.userId, p.puzzleSolved === true);
+  }
+
+  const players = [...new Set(completed.map((p) => p.userId))];
+  const tally = (userId: string) => {
+    let solved = 0;
+    let attempted = 0;
+    for (const p of completed)
+      if (p.userId === userId) {
+        attempted++;
+        if (p.puzzleSolved === true) solved++;
+      }
+    return { solved, attempted };
+  };
+
+  const ranked = players
+    .map((userId) => ({ userId, ...tally(userId) }))
+    .sort((a, b) => b.solved - a.solved || b.attempted - a.attempted);
+  let rank = 0;
+  let lastSolved = -1;
+  const standings = ranked.map((r, i) => {
+    if (r.solved !== lastSolved) {
+      rank = i + 1;
+      lastSolved = r.solved;
+    }
+    return { ...r, rank };
+  });
+
+  const leaderboard: LeaderboardRow[] = standings.map((s) => ({
+    rank: s.rank,
+    name: nameOf(s.userId),
+    total: `${s.solved}/${boards.length}`,
+    value: s.solved,
+    tone: s.solved === boards.length && boards.length > 0 ? "pos" : "neutral",
+    marks: marksFor(s.userId),
+    isYou: s.userId === viewerId,
+  }));
+
+  const cellText = (solved: boolean | undefined) =>
+    solved === undefined ? "" : solved ? "✓" : "✗";
+  const scorecard: ScorecardView | null = players.length
+    ? {
+        columns: players.map<ScorecardColumn>((id) => ({
+          key: id,
+          label: id === viewerId ? "You" : shortCode(nameOf(id)),
+          name: nameOf(id),
+          isYou: id === viewerId,
+        })),
+        rows: boards.map<ScorecardRow>((b) => ({
+          boardNo: b.boardNo,
+          cells: players.map((id) => {
+            const solved = solvedByBoard.get(b.boardNo)?.get(id);
+            return {
+              text: cellText(solved),
+              ...(solved ? { value: 1 } : {}),
+              tone: solved === undefined ? "neutral" : solved ? "pos" : "neg",
+            };
+          }),
+        })),
+        totals: players.map<ScorecardCell>((id) => {
+          const t = tally(id);
+          return {
+            text: `${t.solved}/${boards.length}`,
+            tone: t.solved === boards.length && boards.length > 0 ? "pos" : "neutral",
+          };
+        }),
+      }
+    : null;
+
+  const squares: BoardSquare[] = boards.map((b) => {
+    const play = myPlays.get(b.boardNo);
+    const done = play?.status === "completed";
+    const solved = done ? play?.puzzleSolved === true : undefined;
+    const show = done && resultsUnlocked;
+    return {
+      boardNo: b.boardNo,
+      state: done ? "done" : b.boardNo === nextBoardNo ? "current" : "todo",
+      score: show ? (solved ? "Solved" : "Not solved") : undefined,
+      ...(show && solved ? { value: 1 } : {}),
+      tone: show ? (solved ? "pos" : "neg") : undefined,
+      disabled: !(done && resultsUnlocked),
+    };
+  });
+
+  const details: Record<number, BoardDetail> = {};
+  if (resultsUnlocked) {
+    for (const b of boards) {
+      const play = myPlays.get(b.boardNo);
+      if (!play || play.status !== "completed") continue;
+      const solved = play.puzzleSolved === true;
+      details[b.boardNo] = {
+        boardNo: b.boardNo,
+        contract: play.snapshot?.contractLabel ?? (solved ? "Solved" : "Not solved"),
+        sub: `Dealer ${b.dealer} ${MIDDOT} ${VUL_LABEL[b.vul]} ${MIDDOT} you sat ${SEAT_LABEL[b.humanSeat]}`,
+        // The authored ANSWER, in the slot the field path keeps for figures —
+        // exactly what a puzzle's detail should say.
+        raw: b.puzzle?.explanation ?? "",
+        rawTone: "neutral",
+        unit: PUZZLE_UNIT,
+        score: solved ? "Solved" : "Not solved",
+        scoreTone: solved ? "pos" : "neg",
+        benReady: true,
+      };
+    }
+  }
+
+  return assemble(input, common, {
+    scoringUnit: PUZZLE_UNIT,
+    scoringLabel: PUZZLE_LABEL,
+    unitName: "puzzles",
+    leaderboard,
+    benRow: null,
+    scorecard,
+    viewerRank: standings.find((s) => s.userId === viewerId)?.rank ?? null,
+    finishedIds: new Set(
+      players.filter((id) => completed.filter((p) => p.userId === id).length >= boards.length),
+    ),
+    squares,
+    details,
+    practiceLabel: "Replay for practice (unscored)",
+  });
 }
 
 // ── the parts both paths share ──────────────────────────────────────────────

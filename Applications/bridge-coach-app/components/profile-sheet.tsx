@@ -305,6 +305,21 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
         </View>
       </Pressable>
 
+      <Pressable
+        onPress={() => {
+          // Dismiss first: signing out sends the AuthGate to the landing screen,
+          // and a sheet left mounted would sit on top of it.
+          onClose();
+          signOut();
+        }}
+        hitSlop={8}
+        accessibilityRole="button"
+        accessibilityLabel="Sign out"
+        style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
+      >
+        <Text style={styles.signOutText}>Sign out</Text>
+      </Pressable>
+
       <Field
         label="Name"
         value={name}
@@ -354,21 +369,6 @@ export function ProfileSheetBody({ onClose }: { onClose: () => void }) {
         <Text style={styles.actionText}>Change password</Text>
         <Ionicons name="chevron-forward" size={18} color="rgba(255,244,215,0.5)" />
       </Pressable>
-
-      <Pressable
-        onPress={() => {
-          // Dismiss first: signing out sends the AuthGate to the landing screen,
-          // and a sheet left mounted would sit on top of it.
-          onClose();
-          signOut();
-        }}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel="Sign out"
-        style={({ pressed }) => [styles.signOut, pressed && styles.pressed]}
-      >
-        <Text style={styles.signOutText}>Sign out</Text>
-      </Pressable>
     </ScrollView>
   );
 }
@@ -396,13 +396,14 @@ const styles = StyleSheet.create({
   },
   /**
    * The sheet opens over the tab bar, and the bar draws ON TOP of it — the bar
-   * belongs to the navigator, the sheet to the screen inside it. So Sign out
-   * needs the bar's whole height of scrollable space beneath it; with only 32 it
+   * belongs to the navigator, the sheet to the screen inside it. So the LAST row
+   * — Change password, now that Sign out sits under the picture — needs the bar's
+   * whole height of scrollable space beneath it; with only 32 it
    * sat under the glass, visible for as long as an overscroll bounce was held
    * and gone the moment you let go.
    */
   body: { paddingHorizontal: 15, paddingBottom: TAB_BAR_CLEARANCE + 32 },
-  avatarWrap: { alignSelf: "center", marginTop: 8, marginBottom: 30 },
+  avatarWrap: { alignSelf: "center", marginTop: 8, marginBottom: 14 },
   /** Circular, matching the glyph it replaces — the source is cropped square. */
   photo: { width: 92, height: 92, borderRadius: 46 },
   avatar: { width: 92, height: 92 },
@@ -458,9 +459,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
     marginBottom: 22,
   },
+  /** Directly under the picture, so it reads as part of that block rather than
+   *  as a footer to the fields. */
   signOut: {
     alignSelf: "center",
-    marginTop: 18,
+    marginBottom: 30,
     paddingVertical: 12,
     paddingHorizontal: 30,
     borderRadius: Radius.button,

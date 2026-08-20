@@ -1,5 +1,18 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "deploymentEnabled": {
+      "yashs-branch": false
+    }
+  },
   "framework": "nextjs",
-  "regions": ["pdx1"]
+  "regions": [
+    "pdx1"
+  ],
+  "crons": [
+    {
+      "path": "/api/bridge/ben-warm",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

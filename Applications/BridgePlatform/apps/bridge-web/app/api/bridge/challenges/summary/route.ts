@@ -16,6 +16,7 @@
 // through the same client. CORS is open because the route never reads cookies
 // for the bearer path and answers only for the token it was handed.
 
+import { challengeFormat } from "@bridge/challenges";
 import { challengeScores, type ChallengeScoring, type ChallengeStatus } from "@bridge/challenges";
 import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse, type NextRequest } from "next/server";
@@ -55,6 +56,8 @@ interface ChallengeSummary {
   description: string;
   createdByName: string;
   scoring: ChallengeScoring;
+  /** "full" | "bidding-only" | "puzzle" — the app badges non-full tiles. */
+  format: string;
   boardCount: number;
   createdAt: string;
   /** Archived challenges are retired: their results stay readable, play does not.
@@ -196,6 +199,7 @@ async function summarize(
     description: challenge.description ?? "",
     createdByName: nameOf(challenge.createdBy),
     scoring: challenge.scoring,
+    format: challengeFormat(challenge),
     boardCount: access.totalBoards,
     createdAt: challenge.createdAt,
     // The app needs this to label an archived challenge and to offer a moderator

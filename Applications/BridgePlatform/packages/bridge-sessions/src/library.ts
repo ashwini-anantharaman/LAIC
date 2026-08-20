@@ -139,10 +139,16 @@ export interface LibraryEntry {
   // exercise. Additive jsonb, like every field above: an older entry has none
   // of this and is still a valid entry of some other kind.
   challengeBoards?: LibraryChallengeBoard[];
-  challengeFormat?: "full" | "bidding-only";
+  challengeFormat?: "full" | "bidding-only" | "puzzle";
   challengeScoring?: string;
   /** How many boards, for the shelf row — a DRAFT has seeds, not packs yet. */
   challengeBoardCount?: number;
+  /**
+   * When the entry last changed, for shelves that order by work rather than by
+   * birth (a club's draft shelf). Additive: an entry that has never been
+   * re-saved has none, and readers fall back to createdAt.
+   */
+  updatedAt?: string;
   /**
    * `draft` = built but not published; `published` = a live challenge exists.
    *

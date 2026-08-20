@@ -20,26 +20,35 @@
 import {
   boardParticipants,
   challengeBoardIsOver,
+  challengeEngine,
+  gradeBiddingPuzzle,
+  gradePlayPuzzle,
+  puzzleBoardIsOver,
+  puzzleKind,
   isBiddingOnly,
   type Challenge,
+  type ChallengeEngine,
   type ChallengeBoard,
   type ChallengePlay,
   type ChallengeSnapshot,
 } from "@bridge/challenges";
 import type { Seat } from "@bridge/events";
-import { SessionService, type SeatConfig } from "@bridge/sessions";
+import type { CompiledKb } from "@bridge/kb";
+import { eventsFromRecording, SessionService, type SeatConfig } from "@bridge/sessions";
 import type { NexusBridgeContext } from "@bridge/nexus-client";
 import { audit } from "@/lib/audit";
+import { BEN_SEAT_LABEL, benAvailable } from "@/lib/benSeat";
+import { DD_SEAT_LABEL } from "@bridge/sessions";
+import { warmBen } from "@/lib/challengeBen";
 import {
   challengeStore,
   challengeViewerAccess,
   getChallenge,
   getChallengeBoard,
 } from "@/lib/challenges";
-import { ensureSeeds } from "@/lib/kb";
+import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
 import { assertAiAllowed, assertKbAllowed } from "@/lib/org";
-import { resolveQuickPlayLineup, type QuickPlayLineup } from "@/lib/quickPlay";
 import { sessionService } from "@/lib/sessions";
 
 const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
@@ -79,12 +88,16 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
   // conservative answer, which never ends a board early.
   const challenge = await getChallenge(play.challengeId);
   const biddingOnly = challenge ? isBiddingOnly(challenge) : false;
-  if (!challengeBoardIsOver(state.phase, biddingOnly)) return play;
+  const board = await getChallengeBoard(play.challengeId, play.boardNo);
+  // A puzzle board ends by ITS rule: the moment the answer is given (bidding),
+  // or the ordinary last trick (play). Everything else keeps the format rule.
+  const over = board?.puzzle
+    ? puzzleBoardIsOver(board.puzzle, state.phase, state.auction.length)
+    : challengeBoardIsOver(state.phase, biddingOnly);
+  if (!over) return play;
 
   const { resultLabel, scoreBoard, seededDeal } = await import("@bridge/engine");
   const { contractLabel } = await import("@bridge/events");
-
-  const board = await getChallengeBoard(play.challengeId, play.boardNo);
   // Null on a bidding-only board that stopped at the end of the auction —
   // there are no tricks to score, and that absence is the point.
   const score = scoreBoard(state);
@@ -117,10 +130,27 @@ export async function freezeChallengePlay(play: ChallengePlay): Promise<Challeng
     contract: state.contract,
   };
 
+  // THE PUZZLE VERDICT, graded here because here is where the truth is whole:
+  // the final auction for a bidding puzzle, the trick count for a play one.
+  const puzzleSolved = board?.puzzle
+    ? puzzleKind(board.puzzle) === "bidding"
+      ? gradeBiddingPuzzle(board.puzzle, state.auction)
+      : state.contract
+        ? gradePlayPuzzle(
+            board.puzzle,
+            state.contract.level,
+            state.contract.declarer === "N" || state.contract.declarer === "S"
+              ? state.trickCount.NS
+              : state.trickCount.EW,
+          )
+        : false
+    : undefined;
+
   const completed: ChallengePlay = {
     ...play,
     status: "completed",
     snapshot,
+    ...(puzzleSolved === undefined ? {} : { puzzleSolved }),
     ...(rawScore === undefined ? {} : { rawScore }),
     completedAt: record.updatedAt ?? new Date().toISOString(),
   };
@@ -158,28 +188,35 @@ export async function reconcileChallengePlays(
 export type ChallengeEntryHref = string | null;
 
 /**
- * THE HOUSE PLAYER PLAYS THE OTHER THREE (owner direction 2026-08-11,
- * superseding spec §2's BEN-everywhere): challenge robots are the same KB
- * house lineup a fresh Play-tab board seats, resolved through the same
- * resolveQuickPlayLineup. BEN was 20-45s per card, which made a six-board
- * challenge an afternoon on a phone; BEN still computes the results page's
- * comparison baselines, where nobody is waiting on it. With no compiling
- * knowledge base there is no opposition — refuse to start rather than burn
- * the one attempt; the list page renders `?error=` as a banner.
+ * BEN EVERYWHERE, NO FALLBACK (spec §2). Without a BEN endpoint the robot seats
+ * would quietly degrade to the shelved KB player, and a one-attempt board played
+ * against the wrong opposition cannot be taken back — so refuse to start rather
+ * than burn the attempt. The list page renders `?error=` as a banner.
  */
-const NO_LINEUP_HREF = `/bridge/challenges?error=${encodeURIComponent(
-  "No knowledge base compiles yet, so there are no house players to seat.",
+const BEN_MISSING_HREF = `/bridge/challenges?error=${encodeURIComponent(
+  "Challenges are played against BEN, and BEN isn't configured on this server yet.",
 )}`;
 
-/** The lineup, or the honest refusal — shared by the scored and practice doors. */
-async function houseLineup(context: NexusBridgeContext): Promise<QuickPlayLineup | null> {
-  await ensureSeeds();
-  await assertAiAllowed(context);
-  const lineup = await resolveQuickPlayLineup(context);
-  if (!lineup) return null;
-  // The lineup cache is a shortcut, never a permission (quick-play's own rule).
-  await assertKbAllowed(context, lineup.kbId);
-  return lineup;
+/**
+ * Poke BEN so the cold start happens while the viewer is still being redirected
+ * rather than while they are staring at a board (spec §2, BEN latency). Fired
+ * and forgotten on purpose: awaiting it would trade "instant start" (A1) for a
+ * container boot, and `warmBen` never throws — its whole job is to make the
+ * request happen.
+ */
+function warmUpBen(): void {
+  void warmBen().catch(() => {});
+}
+
+/** A session still lives inside a knowledge base (it carries the trace
+ *  vocabulary); challenges don't care which, so take the first live compile —
+ *  the same resolution the one-click BEN table uses. */
+async function liveKb(): Promise<{ kbId: string; compiled: CompiledKb }> {
+  for (const kb of (await kbStore().listKbs()).filter((k) => !k.archived)) {
+    const compiled = await kbService().liveCompile(kb.kbId);
+    if (compiled) return { kbId: kb.kbId, compiled };
+  }
+  throw new Error("No knowledge base has a live compile yet — boards are dealt inside one");
 }
 
 /**
@@ -237,16 +274,37 @@ export async function enterChallenge(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return null;
 
-  const lineup = await houseLineup(context);
-  if (!lineup) return NO_LINEUP_HREF;
-  const ai = SessionService.seatFromPlayer(lineup.house, lineup.compiled);
+  // Only BEN needs an endpoint; the solver is local, so a solver challenge
+  // starts on a server with no BEN configured at all.
+  const engine = challengeEngine(challenge);
+  if (engine === "ben" && !benAvailable()) return BEN_MISSING_HREF;
+
+  if (engine === "ben") warmUpBen();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const { kbId, compiled } = await liveKb();
 
   const record = await sessionService().createSession({
-    kbId: lineup.kbId,
-    compiled: lineup.compiled,
-    seats: seatsForBoard(board, userId, ai),
+    kbId,
+    compiled,
+    seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
+    // A PUZZLE board opens mid-story: the authored history replays into the
+    // session as a primed event prefix — the same machinery the library's
+    // Resume rides — so every participant starts at the identical moment.
+    ...(board.puzzle
+      ? {
+          primedEvents: eventsFromRecording({
+            boardRef: `${challengeId}#${boardNo}`,
+            dealer: board.dealer,
+            vul: board.vul,
+            hands: board.pack,
+            auction: board.puzzle.auction,
+            play: board.puzzle.play,
+          }).events,
+        }
+      : {}),
     dealer: board.dealer,
     vul: board.vul,
     boardName: `${challenge.title} · Board ${boardNo}`,
@@ -357,16 +415,37 @@ export async function enterChallengePractice(
   const board = await getChallengeBoard(challengeId, boardNo);
   if (!board) return resultsHref;
 
-  const lineup = await houseLineup(context);
-  if (!lineup) return NO_LINEUP_HREF;
-  const ai = SessionService.seatFromPlayer(lineup.house, lineup.compiled);
+  // Only BEN needs an endpoint; the solver is local, so a solver challenge
+  // starts on a server with no BEN configured at all.
+  const engine = challengeEngine(challenge);
+  if (engine === "ben" && !benAvailable()) return BEN_MISSING_HREF;
+
+  if (engine === "ben") warmUpBen();
+  await ensureSeeds();
+  await assertAiAllowed(context);
+  const { kbId, compiled } = await liveKb();
 
   const record = await sessionService().createSession({
-    kbId: lineup.kbId,
-    compiled: lineup.compiled,
-    seats: seatsForBoard(board, userId, ai),
+    kbId,
+    compiled,
+    seats: seatsForBoard(board, userId, engine),
     seed: boardNo,
     hands: board.pack,
+    // A PUZZLE board opens mid-story: the authored history replays into the
+    // session as a primed event prefix — the same machinery the library's
+    // Resume rides — so every participant starts at the identical moment.
+    ...(board.puzzle
+      ? {
+          primedEvents: eventsFromRecording({
+            boardRef: `${challengeId}#${boardNo}`,
+            dealer: board.dealer,
+            vul: board.vul,
+            hands: board.pack,
+            auction: board.puzzle.auction,
+            play: board.puzzle.play,
+          }).events,
+        }
+      : {}),
     dealer: board.dealer,
     vul: board.vul,
     boardName: `${challenge.title} · Board ${boardNo} · practice`,
@@ -389,24 +468,30 @@ export async function enterChallengePractice(
 
 /**
  * The board's seat plan as session seat configs. Read through
- * `boardParticipants` rather than assuming three robot opponents (ADDENDUM
- * A6) — the day a live human-vs-human table arrives, only the plan changes.
- * Every non-human seat is `ai` — the KB house player the ordinary Play-tab
- * board seats (owner direction 2026-08-11; BEN sat here before, and still
- * computes the results baselines).
+ * `boardParticipants` rather than assuming three robot opponents (ADDENDUM A6)
+ * — the day a live human-vs-human table arrives, only the plan changes. The KB
+ * house player is shelved for challenges and is never seated here, not even as
+ * a fallback.
+ *
+ * `engine` comes from the CHALLENGE, never from today's platform default, so a
+ * contest half-played against BEN keeps meeting BEN on its remaining boards.
  */
 export function seatsForBoard(
   board: Pick<ChallengeBoard, "humanSeat" | "participants">,
   userId: string,
-  ai: SeatConfig,
+  engine: ChallengeEngine = "ben",
 ): Record<Seat, SeatConfig> {
+  const robot: SeatConfig =
+    engine === "dd"
+      ? { kind: "dd", label: DD_SEAT_LABEL }
+      : { kind: "ben", label: BEN_SEAT_LABEL };
   const seats = {} as Record<Seat, SeatConfig>;
   for (const participant of boardParticipants(board, userId)) {
     seats[participant.seat] =
       participant.kind === "user"
         ? { kind: "human", nexusUserId: participant.userId ?? userId }
-        : ai;
+        : robot;
   }
-  for (const seat of SEATS) seats[seat] ??= ai;
+  for (const seat of SEATS) seats[seat] ??= robot;
   return seats;
 }

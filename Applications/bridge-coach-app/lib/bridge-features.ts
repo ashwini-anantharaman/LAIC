@@ -17,6 +17,8 @@ export type BridgeMe = {
   isCoach: boolean;
   features: Record<string, boolean>;
   library: { canCreate: boolean; programScope: boolean };
+  /** Which robots the server can seat; absent on older servers = solver only. */
+  engines?: { dd: boolean; ben: boolean };
 };
 
 let cached: { key: string; me: BridgeMe } | null = null;

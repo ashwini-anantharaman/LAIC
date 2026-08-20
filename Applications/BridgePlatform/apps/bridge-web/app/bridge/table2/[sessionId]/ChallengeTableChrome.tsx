@@ -44,6 +44,14 @@ export interface ChallengeTableChromeProps {
   /** How the board finished, for the done bar's line. */
   resultLine?: string;
   resultScore?: string;
+  /**
+   * A PUZZLE board's brief — what to solve for — shown as its own thin band
+   * under the strip for the whole attempt. Like the strip, it takes its height
+   * as flex:none, so PlayTable prices its bands against what is left.
+   */
+  puzzleBrief?: string;
+  /** The authored ANSWER paragraph, revealed only once the board is done. */
+  puzzleExplanation?: string;
   /** The table itself, rendered on the server and slotted in untouched. */
   children: ReactNode;
 }
@@ -57,6 +65,8 @@ export function ChallengeTableChrome({
   onward,
   resultLine,
   resultScore,
+  puzzleBrief,
+  puzzleExplanation,
   children,
 }: Readonly<ChallengeTableChromeProps>) {
   const [open, setOpen] = useState(false);
@@ -98,7 +108,43 @@ export function ChallengeTableChrome({
         height={CHALLENGE_STRIP_HEIGHT}
         onResults={() => setOpen(true)}
       />
+      {/* The puzzle's brief: what to solve for, in the column's own voice. Its
+          band comes out of the table's budget the same way the strip's does. */}
+      {puzzleBrief && (
+        <div
+          style={{
+            flex: "none",
+            padding: "6px 12px",
+            font: "500 12.5px/1.45 system-ui, sans-serif",
+            background: "#fdf6e3",
+            color: "#5b4a1f",
+            borderBottom: "1px solid rgba(0,0,0,0.08)",
+          }}
+        >
+          🧩 {puzzleBrief}
+        </div>
+      )}
       <div style={{ flex: 1, minHeight: 0, position: "relative" }}>{children}</div>
+      {/* THE ANSWER, only once the board is done — a puzzle that explains
+          itself early is not a puzzle. Scrolls within its own band so a long
+          explanation never squeezes the felt out of the frame. */}
+      {done && puzzleExplanation && (
+        <div
+          style={{
+            flex: "none",
+            maxHeight: 140,
+            overflowY: "auto",
+            padding: "8px 12px",
+            font: "400 12.5px/1.5 system-ui, sans-serif",
+            background: "#f7f7f4",
+            color: "#333",
+            borderTop: "1px solid rgba(0,0,0,0.08)",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          <strong>Answer.</strong> {puzzleExplanation}
+        </div>
+      )}
       {/* Only once the board is over — the band it takes comes straight out of
           the table's budget, so it must not exist a trick early. */}
       {done && onward && (

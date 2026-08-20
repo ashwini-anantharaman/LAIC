@@ -5,7 +5,7 @@ import { canUse, requireFeature } from "@/lib/access";
 import { benAvailable, BEN_SEAT_LABEL } from "@/lib/benSeat";
 import { ensureSeeds, kbService, kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
-import { tryBenAction, tryPlayerAction } from "@/app/bridge/players/actions";
+import { tryEngineAction, tryPlayerAction } from "@/app/bridge/players/actions";
 
 const F = "var(--font-fraunces), serif";
 const K = "var(--font-karla), sans-serif";
@@ -114,7 +114,73 @@ export default async function MobilePlayersPage({
       </div>
 
       {aiTab ? (
-        canAiTab && benAvailable() ? (
+        canAiTab ? (
+          <>
+          {/* The solver: the default opposition, and always available since it
+              is local search with no endpoint behind it. */}
+          <div
+            style={{
+              border: "1px solid #e7e1d3",
+              borderRadius: 12,
+              background: "#fffefa",
+              padding: "13px 14px",
+              marginBottom: 10,
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+              <span style={{ font: `600 14px ${K}`, color: "#1d1a15" }}>Solver · double dummy</span>
+              <span
+                style={{
+                  flex: "none",
+                  font: `700 8px ${K}`,
+                  letterSpacing: ".05em",
+                  textTransform: "uppercase",
+                  color: "#205e63",
+                  background: "#e2ecec",
+                  padding: "3px 7px",
+                  borderRadius: 6,
+                }}
+              >
+                default
+              </span>
+            </div>
+            <p style={{ margin: "5px 0 0", font: `400 11px ${K}`, color: "#7b7466" }}>
+              Sees all four hands and plays the card that wins the most tricks against best
+              defence — a card in under a second, where BEN needs twenty to forty-five. It bids
+              from this knowledge base, not from the solver.
+            </p>
+            {canTry && (
+              <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
+                <form action={tryEngineAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <input type="hidden" name="mobile" value="1" />
+                  <button
+                    type="submit"
+                    style={{
+                      border: "none",
+                      background: "#205e63",
+                      color: "#fff",
+                      borderRadius: 8,
+                      padding: "6px 14px",
+                      font: `600 12px ${K}`,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Play
+                  </button>
+                </form>
+                <form action={tryEngineAction}>
+                  {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  <input type="hidden" name="watch" value="1" />
+                  <input type="hidden" name="mobile" value="1" />
+                  <button type="submit" style={actionBtn}>
+                    Watch 4
+                  </button>
+                </form>
+              </div>
+            )}
+          </div>
+          {benAvailable() && (
           <div
             style={{
               border: "1px solid #e7e1d3",
@@ -155,8 +221,10 @@ export default async function MobilePlayersPage({
             </p>
             {canTry && (
               <div style={{ marginTop: 11, display: "flex", gap: 7 }}>
-                <form action={tryBenAction}>
+                <form action={tryEngineAction}>
                   {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  {/* Say BEN explicitly: the action defaults to the solver. */}
+                  <input type="hidden" name="engine" value="ben" />
                   <input type="hidden" name="mobile" value="1" />
                   <button
                     type="submit"
@@ -173,8 +241,10 @@ export default async function MobilePlayersPage({
                     Play
                   </button>
                 </form>
-                <form action={tryBenAction}>
+                <form action={tryEngineAction}>
                   {activeKb && <input type="hidden" name="kbId" value={activeKb.kb.kbId} />}
+                  {/* Say BEN explicitly: the action defaults to the solver. */}
+                  <input type="hidden" name="engine" value="ben" />
                   <input type="hidden" name="watch" value="1" />
                   <input type="hidden" name="mobile" value="1" />
                   <button type="submit" style={actionBtn}>
@@ -184,6 +254,8 @@ export default async function MobilePlayersPage({
               </div>
             )}
           </div>
+          )}
+          </>
         ) : (
           <p
             style={{
@@ -195,8 +267,8 @@ export default async function MobilePlayersPage({
               color: "#a49d8e",
             }}
           >
-            Engine-backed players (BEN) live here — BEN_ENDPOINT isn&apos;t configured on
-            this server, so no engine is available to seat.
+            Engine-backed players live here — the double dummy solver, and BEN&apos;s trained
+            model. Your access doesn&apos;t include them yet.
           </p>
         )
       ) : (

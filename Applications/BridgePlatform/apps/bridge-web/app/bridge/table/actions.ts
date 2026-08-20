@@ -477,6 +477,12 @@ export async function swapSeatAction(formData: FormData): Promise<void> {
   let config: SeatConfig;
   if (playerId === "me") {
     config = { kind: "human", nexusUserId: context.nexusUserId };
+  } else if (playerId === "dd") {
+    // The double dummy solver. Unlike BEN it is pure and local — no endpoint to
+    // check, nothing to be unavailable — so it only needs the AI gate.
+    await assertAiAllowed(context);
+    const { DD_SEAT_LABEL } = await import("@bridge/sessions");
+    config = { kind: "dd", label: DD_SEAT_LABEL };
   } else if (playerId === "ben") {
     // BEN, the neural engine, as a character. Only offered when the endpoint
     // is configured; checked again here so a stale form can't seat a BEN that
@@ -564,7 +570,9 @@ export async function saveToLibraryAction(formData: FormData): Promise<void> {
               seat,
               c.kind === "human"
                 ? { label: "you", human: true }
-                : c.kind === "ben"
+                : // BEN and the solver are engines, not roster entries — they
+                  // have a label and nothing to point a playerId at.
+                  c.kind === "ben" || c.kind === "dd"
                   ? { label: c.label }
                   : { label: c.label, playerId: c.playerId },
             ]),

@@ -10,6 +10,7 @@
 import type { AuditAction } from "@bridge/audit";
 import {
   challengeFormat,
+  type ChallengeEngine,
   standardVul,
   type Challenge,
   type ChallengeBoard,
@@ -26,6 +27,7 @@ import { redirect } from "next/navigation";
 import { requireFeature, requireCreateChallenge } from "@/lib/access";
 import { requireContext } from "@/lib/api";
 import { audit } from "@/lib/audit";
+import { boardPuzzleFromDraft } from "@/lib/challengePuzzles";
 import { challengeStore, requireChallengeOwnerScope } from "@/lib/challenges";
 import { libraryStore } from "@/lib/sessions";
 import { authoredScope, nexusProgramIdOf, orgScopeOf } from "@/lib/nexus";
@@ -88,6 +90,12 @@ export async function createChallengeAction(
   // record is byte-identical to one created before the option existed — which
   // is what makes this additive with no migration owed.
   const format = challengeFormat(draft);
+  // The creator's choice, defaulting to the solver: a board takes seconds
+  // instead of the minutes BEN needs, and being deterministic it gives every
+  // entrant a genuinely identical opponent. Existing challenges are untouched
+  // — an absent `engine` on a STORED record still means BEN (challengeEngine),
+  // which is what they were created against.
+  const engine: ChallengeEngine = draft.engine === "ben" ? "ben" : "dd";
 
   // 0029: the club this challenge belongs to. Refuses rather than storing a null
   // owner, which the read path would treat as "visible in every club".
@@ -98,6 +106,7 @@ export async function createChallengeAction(
     title: draft.title.trim(),
     ...(draft.description.trim() ? { description: draft.description.trim() } : {}),
     ...(format === "full" ? {} : { format }),
+    engine,
     scoring: draft.scoring,
     createdBy: context.nexusUserId,
     ...(displayNameOf(context) ? { createdByName: displayNameOf(context) } : {}),
@@ -113,16 +122,30 @@ export async function createChallengeAction(
   // The checklist is challenge-wide; it is STORED per board, which is where
   // the table reads it from when it opens one.
   for (const board of draft.boards) {
+    const pack = packOf(board);
     const record: ChallengeBoard = {
       challengeId,
       boardNo: board.boardNo,
-      pack: packOf(board),
+      pack,
       dealer: board.dealer,
       // An imported board carries its own vulnerability; a random one follows
       // the standard cycle for its position.
       vul: board.vul ?? standardVul(board.boardNo),
       humanSeat: board.humanSeat,
       controlOverrides: draft.controlOverrides,
+      // A puzzle board stores its frozen story, replay-validated against this
+      // very pack — the engine refuses an illegal history here, at create,
+      // rather than in front of the first participant.
+      ...(board.puzzle
+        ? {
+            puzzle: boardPuzzleFromDraft(board.puzzle, {
+              boardRef: `${challengeId}#${board.boardNo}`,
+              dealer: board.dealer,
+              vul: board.vul ?? standardVul(board.boardNo),
+              pack,
+            }),
+          }
+        : {}),
     };
     await store.putBoard(record);
   }

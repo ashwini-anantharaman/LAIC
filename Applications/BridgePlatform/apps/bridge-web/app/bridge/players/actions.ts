@@ -102,21 +102,35 @@ export async function deletePlayerAction(formData: FormData): Promise<void> {
 }
 
 /**
- * One-click BEN table: you sit South against three BENs — or watch four play
- * each other with watch=1. A session still lives inside a knowledge base (the
- * trace vocabulary and BEN's degrade fallback come from it), so this uses the
- * posted kbId or falls back to the first live KB.
+ * One-click engine table: you sit South against three robots — or watch four
+ * play each other with watch=1. A session still lives inside a knowledge base
+ * (the trace vocabulary and the degrade fallback come from it), so this uses
+ * the posted kbId or falls back to the first live KB.
+ *
+ * `engine` picks the opposition and DEFAULTS TO THE DOUBLE DUMMY SOLVER: it
+ * answers a card in well under a second against BEN's 20-45s, which is the
+ * difference between playing a board and waiting for one. Post engine=ben for
+ * the neural engine instead.
  */
-export async function tryBenAction(formData: FormData): Promise<void> {
+export async function tryEngineAction(formData: FormData): Promise<void> {
   const context = await requireContext();
   await requireFeature(context, "players.try");
-  await requireFeature(context, "table.ben_seat");
   await ensureSeeds();
   const watch = formData.get("watch") === "1";
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
   await assertAiAllowed(context);
-  const { benAvailable, BEN_SEAT_LABEL } = await import("@/lib/benSeat");
-  if (!benAvailable()) throw new Error("BEN isn't configured on this server (BEN_ENDPOINT)");
+
+  const engine = formData.get("engine") === "ben" ? "ben" : "dd";
+  let robot: SeatConfig;
+  if (engine === "ben") {
+    await requireFeature(context, "table.ben_seat");
+    const { benAvailable, BEN_SEAT_LABEL } = await import("@/lib/benSeat");
+    if (!benAvailable()) throw new Error("BEN isn't configured on this server (BEN_ENDPOINT)");
+    robot = { kind: "ben", label: BEN_SEAT_LABEL };
+  } else {
+    const { DD_SEAT_LABEL } = await import("@bridge/sessions");
+    robot = { kind: "dd", label: DD_SEAT_LABEL };
+  }
 
   const store = kbStore();
   const kbParam = String(formData.get("kbId") ?? "");
@@ -126,8 +140,7 @@ export async function tryBenAction(formData: FormData): Promise<void> {
   const compiled = await kbService().liveCompile(kb.kbId);
   if (!compiled) throw new Error("This knowledge base has no live compile yet");
 
-  const ben: SeatConfig = { kind: "ben", label: BEN_SEAT_LABEL };
-  const seats = { N: ben, E: ben, S: ben, W: ben } as Record<Seat, SeatConfig>;
+  const seats = { N: robot, E: robot, S: robot, W: robot } as Record<Seat, SeatConfig>;
   if (!watch) seats.S = { kind: "human", nexusUserId: context.nexusUserId };
 
   const record = await sessionService().createSession({
@@ -141,7 +154,7 @@ export async function tryBenAction(formData: FormData): Promise<void> {
   });
   await audit(context, "profile.update", "kb_session", record.sessionId, {
     kbId: kb.kbId,
-    tryPlayer: "ben",
+    tryPlayer: engine,
   });
   redirect(`${tableBase}${record.sessionId}`);
 }
