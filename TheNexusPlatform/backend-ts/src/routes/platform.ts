@@ -2744,18 +2744,24 @@ async function _libraryReader(c: Context, pinned: string | null) {
     access.partnerProgramId ?? access.programId,
     access.profileId ?? null,
   );
+  // library.console FIRST, because its entire meaning is "this person may open
+  // the Content Library" — it is what draws the tab. Leaving it out produced the
+  // one thing a permission system must never do: a granted capability that names
+  // a screen, a sidebar entry that appears because of it, and a screen that then
+  // refuses to load, citing a capability nobody was asked for.
   const byCapability =
+    eff.capabilities.includes("learning.library.console") ||
     eff.capabilities.includes("learning.library.share_view") ||
     eff.capabilities.includes("learning.library.share_club") ||
     eff.capabilities.includes("learning.app.administer");
   if (!byCapability && !administers.length) {
-    throw new HttpError(403, "Missing capability: learning.library.share_view");
+    throw new HttpError(403, "Missing capability: learning.library.console");
   }
   return { user, access, eff, administers };
 }
 
 platformRouter.get("/learning/library", async (c) => {
-  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
 
   const objects = await graph.listLearningObjectsMeta(
     access.orgId,
@@ -2821,13 +2827,12 @@ platformRouter.get("/learning/library", async (c) => {
         collection_names: (o.collection_names as string[]) ?? [],
         ...shape(String(o.id)),
       }))
-      .filter((o) => {
-        const libraryWide =
-          eff.capabilities.includes("learning.library.share_view") ||
-          eff.capabilities.includes("learning.library.share_club");
-        if (libraryWide) return true;
-        return o.granted_apps.some((a) => administers.includes(a));
-      }),
+      // BEING AN APP ADMINISTRATOR IS WHAT NARROWS THIS, not the absence of a
+      // sharing capability. Someone who administers an app has a catalogue they
+      // were handed and no business browsing the rest; someone who got here by
+      // capability was given the library by a content manager, and filtering them
+      // to nothing would make the screen they were granted useless.
+      .filter((o) => (administers.length ? o.granted_apps.some((a) => administers.includes(a)) : true)),
     administers_apps: administers,
   });
 });

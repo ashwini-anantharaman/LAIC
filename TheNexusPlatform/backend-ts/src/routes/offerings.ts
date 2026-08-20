@@ -1672,10 +1672,18 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   const lr = await graph.getLearningRoleForEmail(programId, user.email).catch(() => null);
   if (lr) {
     const lp = (lr.perms as Record<string, unknown>) ?? {};
-    if (!perms.learning) {
-      // Only the legacy area map answers "view or edit" — a capability list is not
-      // an "edit" value, so a capabilities-only role reads as view here. That is
-      // the coarse level; the capabilities below are what actually gate the work.
+    // Does this role grant AREAS, or only capabilities? A legacy learning role
+    // (the Studio's own People tab) maps screens to "view"/"edit"; a Content
+    // Manager's sub-role carries nothing but a capability list.
+    const grantsAreas = Object.values(lp).some((v) => v === "edit" || v === "view");
+    if (!perms.learning && grantsAreas) {
+      // Only an area-granting role opens the Content Studio card. A
+      // capabilities-only sub-role must NOT: an app administrator granted
+      // "open the Content Library" and "publish to an app" has been given the
+      // library, not the authoring tool, and surfacing perms.learning would draw
+      // them a Content Studio tab nobody granted. Platform ACCESS is resolved
+      // separately (_platformLevel finds the same learning role), so withholding
+      // the area here narrows the console's nav without closing the API.
       perms.learning = Object.values(lp).includes("edit") ? "edit" : "view";
     }
     anyPlatformRole = true;
