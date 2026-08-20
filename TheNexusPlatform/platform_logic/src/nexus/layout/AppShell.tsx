@@ -48,6 +48,7 @@ import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
 import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
+import { opensContentLibrary } from "@/nexus/access";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
@@ -108,8 +109,10 @@ function programNav(orgId: string, programId: string, isPartner = false): NavIte
  * Most rows are decided by an AREA (`perms.learning`, `perms.bridge`, …), which
  * is the coarse grant an admin ticks. Content Library is the exception: it is a
  * narrower door into the same platform as Content Studio, so an area cannot tell
- * the two apart and it keys off a CAPABILITY instead
- * (`learning.library.console`), which is already carried inside the perms blob.
+ * the two apart and it keys off CAPABILITIES instead, which already travel inside
+ * the perms blob. Which capabilities open it is one shared list —
+ * opensContentLibrary — because three gates asking the question separately is how
+ * a door gets drawn in one place and refused in another.
  *
  * The test is for a capability's PRESENCE, never for another one's absence. A
  * nav built on "has X but not Y" silently reshapes itself every time a
@@ -131,13 +134,14 @@ function confinedProgramNav(
   capabilities: string[] = [],
 ): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
-  const can = (id: string) => capabilities.includes(id);
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
   if (perms.learning) items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
   // Beside Content Studio, not instead of it: a content manager who is ALSO an
   // author holds both, and hiding one behind the other would take a door away
   // from someone who was granted it.
-  if (can("learning.library.console")) {
+  // Any library capability opens it — see opensContentLibrary. Keying on
+  // `console` alone made "share content with clubs" a role with nowhere to do it.
+  if (opensContentLibrary(capabilities)) {
     items.push({ to: `${base}/learning/library`, label: "Content Library", icon: FolderTree });
   }
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });

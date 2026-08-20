@@ -81,7 +81,7 @@ import { getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/a
 import { readBranding } from "@/nexus/branding";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
-import { useProgramAccess } from "@/nexus/access";
+import { useProgramAccess, opensContentLibrary } from "@/nexus/access";
 import { useSession } from "@/nexus/session";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
@@ -211,7 +211,7 @@ export function ProgramOverview() {
   // past the tab, which is keyed on a CAPABILITY rather than an area precisely so
   // it can be narrower than the whole Studio. Areas alone can no longer answer
   // "is there anywhere else to go".
-  const hasLibrary = access.capabilities.includes("learning.library.console");
+  const hasLibrary = opensContentLibrary(access.capabilities);
   const otherAreas = NON_PLATFORM_AREAS.some((a) => access.perms[a]) || hasLibrary;
   const soleActiveKey = active.length === 1 ? active[0] : null;
   useEffect(() => {

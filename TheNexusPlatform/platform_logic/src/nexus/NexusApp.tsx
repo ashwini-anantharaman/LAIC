@@ -48,6 +48,7 @@ import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
 import { ContentLibraryTab } from "@/nexus/routes/ContentLibraryTab";
 import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
+import { opensContentLibrary } from "@/nexus/access";
 import { getMyProgramRole } from "@/services/api";
 import { SessionProvider, useSession } from "@/nexus/session";
 import { apiConfigError } from "@/services/apiBase";
@@ -110,7 +111,7 @@ function MemberLanding({ orgId, programId, role }: { orgId: string; programId: s
         // `{ ...perms, capabilities }`), which is why this reads a key rather
         // than a second request.
         const caps = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
-        const hasLibrary = caps.includes("learning.library.console");
+        const hasLibrary = opensContentLibrary(caps);
         if (platforms.length === 1 && others.length === 0 && !hasLibrary) {
           setDest(`/o/${orgId}/p/${programId}/${PLATFORM_PATHS[platforms[0]]}`);
         } else if (platforms.length === 0 && others.length === 0 && hasLibrary) {

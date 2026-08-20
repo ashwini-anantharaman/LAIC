@@ -32,6 +32,38 @@ export interface ProgramAccess {
   capabilities: string[];
 }
 
+/**
+ * Does this capability set open the Content Library?
+ *
+ * `learning.library.console` is the explicit "you may open this screen" grant,
+ * but every OTHER library capability implies it. A role whose whole purpose is
+ * "share content with clubs and people" and which does not draw the tab is a dead
+ * grant: the server accepts the calls and the person has no screen to make them
+ * from. That was reachable — the editor listed the capabilities as four
+ * independent toggles, and ticking only the useful-sounding one produced a role
+ * that did nothing.
+ *
+ * `console` still means something on its own: browse and nothing else.
+ *
+ * One list, used by all three gates — the sidebar, the login landing and the
+ * overview's destination count. They disagreed once already, and a permission
+ * that draws a door in one place and not another is the bug this whole area keeps
+ * producing.
+ */
+export const CONTENT_LIBRARY_CAPABILITIES = [
+  "learning.library.console",
+  "learning.library.share_view",
+  "learning.library.share_club",
+  "learning.library.share_app",
+  "learning.publish.app_target",
+  "learning.app.publish_club",
+  "learning.app.administer",
+];
+
+export function opensContentLibrary(capabilities: string[]): boolean {
+  return capabilities.some((c) => CONTENT_LIBRARY_CAPABILITIES.includes(c));
+}
+
 /** Pull the capability array out of a perms blob, tolerating its absence — a
  *  coarse role predates capabilities entirely and simply has none. */
 function _capsOf(perms: Record<string, unknown> | null | undefined): string[] {
