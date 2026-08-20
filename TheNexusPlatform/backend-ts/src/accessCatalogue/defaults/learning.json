@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.4",
+  "catalogueVersion": "1.5",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -229,8 +229,8 @@
     },
     {
       "id": "learning.publish.app_target",
-      "label": "Put content on an app",
-      "description": "Publish content so it actually appears in the app. Stronger than handing it to an app's administrators \u2014 this is the decision, not the offer.",
+      "label": "Publish content to an app",
+      "description": "It goes live in the app. Stronger than sharing with the app's administrators, because this is the decision rather than the offer.",
       "group": "publishing",
       "resourceTypes": [
         "learning_object",
@@ -253,8 +253,8 @@
     },
     {
       "id": "learning.library.share_app",
-      "label": "Hand content to an app's administrators",
-      "description": "Grant content to an app so the people who administer it can see it and decide whether to carry it. It does not put anything on the app.",
+      "label": "Share content with an app's administrators",
+      "description": "They see it and decide whether to carry it. Sharing alone puts nothing on the app \u2014 publishing does that.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
