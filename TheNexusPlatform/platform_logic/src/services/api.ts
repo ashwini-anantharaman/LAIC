@@ -1723,11 +1723,23 @@ export async function deleteLibraryAsset(programId: string, assetId: string): Pr
   );
 }
 
-export async function listShareableClubs(programId: string): Promise<ShareableClub[]> {
-  const r = await request<{ clubs: ShareableClub[] }>(
+export interface ShareTargets {
+  clubs: ShareableClub[];
+  /** Everyone in the program. A club is a grouping within it, not the only way to
+   *  belong — so people in no club are reachable through this list. */
+  programMembers: ClubMember[];
+}
+
+export async function listShareTargets(programId: string): Promise<ShareTargets> {
+  const r = await request<{ clubs?: ShareableClub[]; program_members?: ClubMember[] }>(
     `/api/platform/learning/clubs?program_id=${encodeURIComponent(programId)}`,
   );
-  return r.clubs ?? [];
+  return { clubs: r.clubs ?? [], programMembers: r.program_members ?? [] };
+}
+
+/** Clubs alone, for callers that only need the scope picker. */
+export async function listShareableClubs(programId: string): Promise<ShareableClub[]> {
+  return (await listShareTargets(programId)).clubs;
 }
 
 /** Reconcile club and person grants across a selection. Whole-set, not a delta. */

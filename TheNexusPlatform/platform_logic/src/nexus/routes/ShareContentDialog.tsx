@@ -31,8 +31,9 @@ import { Check, ChevronRight, Loader2, Smartphone, Users, User } from "lucide-re
 import { toast } from "sonner";
 
 import {
-  listShareableClubs,
+  listShareTargets,
   setContentShares,
+  type ClubMember,
   type LibraryObject,
   type ShareableClub,
 } from "@/services/api";
@@ -85,6 +86,8 @@ export function ShareContentDialog({
   onSaved: () => void;
 }) {
   const [clubs, setClubs] = useState<ShareableClub[] | null>(null);
+  /** People in the program who are in no club — reachable only through this list. */
+  const [loners, setLoners] = useState<ClubMember[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -100,10 +103,15 @@ export function ShareContentDialog({
 
   useEffect(() => {
     let live = true;
-    listShareableClubs(programId)
-      .then((cs) => {
+    listShareTargets(programId)
+      .then(({ clubs: cs, programMembers }) => {
         if (!live) return;
         setClubs(cs);
+        // Shown under "Program members": whoever is not already listed inside a
+        // club, so the two sections never repeat a person.
+        const inClubs = new Set(cs.flatMap((c) => c.members.map((m) => m.profile_id)));
+        const alone = programMembers.filter((m) => !inClubs.has(m.profile_id));
+        setLoners(alone);
         const c = new Map<string, Tri>();
         const p = new Map<string, Tri>();
         for (const club of cs) {
@@ -115,6 +123,13 @@ export function ShareContentDialog({
             p.set(m.profile_id, mt);
             initialPeople.set(m.profile_id, mt);
           }
+        }
+        // Seed the unaffiliated people too, or their boxes would read "off" for
+        // someone who already holds a grant.
+        for (const m of alone) {
+          const mt = triFor(objects, (o) => o.people, m.profile_id);
+          p.set(m.profile_id, mt);
+          initialPeople.set(m.profile_id, mt);
         }
         setClubState(c);
         setPeopleState(p);
@@ -265,9 +280,9 @@ export function ShareContentDialog({
             <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
               <Loader2 className="size-4 animate-spin" /> Loading clubs…
             </div>
-          ) : clubs.length === 0 ? (
+          ) : clubs.length === 0 && loners.length === 0 ? (
             <p className="px-1 py-8 text-center text-sm text-muted-foreground">
-              This program has no clubs yet. Add one on the Partners tab.
+              This program has no clubs or members yet. Add a club on the Partners tab.
             </p>
           ) : (
             <div className="flex flex-col gap-0.5">
@@ -323,6 +338,34 @@ export function ShareContentDialog({
                   </div>
                 );
               })}
+
+              {/* PEOPLE WITH NO CLUB. A club is a grouping within the program, not
+                  the only way to belong to it — a coach or an administrator who
+                  never joined one was previously unreachable, absent from the only
+                  list this dialog could draw. */}
+              {canShareClubs && loners.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Program members
+                  </p>
+                  {loners.map((m) => (
+                    <button
+                      key={m.profile_id}
+                      type="button"
+                      aria-pressed={peopleState.get(m.profile_id) === "on"}
+                      onClick={() => toggle(peopleState, setPeopleState, m.profile_id)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
+                    >
+                      <Box state={peopleState.get(m.profile_id) ?? "off"} />
+                      <User className="size-3.5 text-muted-foreground" />
+                      <span className="truncate text-sm">{m.display_name}</span>
+                      <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                        no club
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

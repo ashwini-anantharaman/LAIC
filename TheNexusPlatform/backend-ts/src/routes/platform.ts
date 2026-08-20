@@ -2877,6 +2877,18 @@ platformRouter.get("/learning/clubs", async (c) => {
   // publish dialog.
   const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
 
+  const programId = access.partnerProgramId ?? access.programId;
+  // THE PROGRAM'S OWN PEOPLE, not only club rosters.
+  //
+  // A club is a grouping WITHIN the program, not the only way to belong to it. The
+  // first version of this endpoint returned club members alone, so a coach or an
+  // administrator who had never joined a club was unreachable — not hidden, but
+  // absent from the only list the share dialog could draw, and refused by the
+  // write path for the same reason.
+  const programMembers = await graph
+    .listProgramMembers(access.orgId, programId)
+    .catch(() => [] as Row[]);
+
   const partners = await db.listPartnersForProgram(access.programId).catch(() => []);
   const clubs = await Promise.all(
     partners.map(async (p) => {
@@ -2898,7 +2910,20 @@ platformRouter.get("/learning/clubs", async (c) => {
       };
     }),
   );
-  return c.json({ clubs });
+  return c.json({
+    clubs,
+    // Everyone in the program. The client shows under "Program members" whoever is
+    // not already listed inside a club, so the two sections never repeat a person;
+    // sending the complete set keeps that decision in one place rather than making
+    // the server guess which grouping the UI prefers.
+    program_members: programMembers
+      .filter((m) => m.profile_id)
+      .map((m) => ({
+        profile_id: String(m.profile_id),
+        display_name: (m.display_name as string | null) ?? (m.email as string | null) ?? "Member",
+        email: (m.email as string | null) ?? null,
+      })),
+  });
 });
 
 // ── Library assets: files nobody authored ──────────────────────────────────
@@ -3187,15 +3212,23 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   // A person may only be granted content through a club they belong to. Without
   // this the endpoint would share to any profile id in the org — a wider reach
   // than the picker offers, and not one anybody asked for.
+  // A person may be granted content if they belong to this PROGRAM — through a
+  // club or directly. Scoping this to club rosters alone made the program's own
+  // people unreachable, which is the opposite of the intent: the check exists to
+  // stop the endpoint granting to any profile id in the org, not to require a club.
   if (profileIds.length) {
     const allowed = new Set<string>();
+    const own = await graph
+      .listProgramMembers(access.orgId, access.partnerProgramId ?? access.programId)
+      .catch(() => [] as Row[]);
+    for (const m of own) if (m.profile_id) allowed.add(String(m.profile_id));
     for (const clubId of clubs) {
       const members = await graph.listProgramMembers(access.orgId, clubId).catch(() => [] as Row[]);
       for (const m of members) if (m.profile_id) allowed.add(String(m.profile_id));
     }
     const strangers = profileIds.filter((p) => !allowed.has(p));
     if (strangers.length) {
-      throw new HttpError(422, `Not a member of any club in this program: ${strangers.join(", ")}`);
+      throw new HttpError(422, `Not a member of this program or its clubs: ${strangers.join(", ")}`);
     }
   }
 
