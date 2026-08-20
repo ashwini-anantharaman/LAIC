@@ -20,7 +20,7 @@ import type { CuratedConstraint } from "@/lib/curated";
 import { handFromSerialized } from "@/lib/dealText";
 
 import { CURATE_SETTINGS_KEY, type CuratedBoardSettings } from "./curateSettings";
-import { LessonFields, LessonPicker, useLessonChoice } from "./LessonPicker";
+import { LessonField } from "./LessonField";
 
 const SEATS: readonly Seat[] = ["N", "E", "S", "W"];
 const SEAT_NAME: Record<Seat, string> = { N: "North", E: "East", S: "South", W: "West" };
@@ -124,9 +124,6 @@ export function CurateBoardForm({
 /** The curated-only fields, rendered through DealEditor's `footer` slot —
  *  plain form controls, read by the wrapper above off the one FormData. */
 export function CuratedExtras({ app = false }: Readonly<{ app?: boolean }>) {
-  // The lesson is the one field here React owns; everything else is an
-  // uncontrolled input the wrapper reads straight off FormData.
-  const lesson = useLessonChoice();
   const input = app
     ? "w-full rounded-[10px] border border-[#d3ccbb] bg-white px-3 py-2 text-sm"
     : "w-full rounded border border-neutral-300 px-2 py-1.5 text-sm";
@@ -161,15 +158,7 @@ export function CuratedExtras({ app = false }: Readonly<{ app?: boolean }>) {
           What this board teaches{" "}
           <span className="text-neutral-400">(optional)</span>
         </legend>
-        <LessonFields tags={lesson.tags} items={lesson.items} />
-        <LessonPicker
-          tags={lesson.tags}
-          items={lesson.items}
-          onToggleTag={lesson.onToggleTag}
-          onToggleItem={lesson.onToggleItem}
-          onClear={lesson.onClear}
-          skin={app ? "app" : "web"}
-        />
+        <LessonField skin={app ? "app" : "web"} />
       </fieldset>
 
       <div className="grid gap-3 sm:grid-cols-2">

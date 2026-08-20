@@ -26,6 +26,8 @@ import { callLabel, cardLabel } from "@/lib/coach/position";
 import { corsOptions, withCors } from "@/lib/cors";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { decisionIsTheirs, playsFrom } from "@/lib/coach/turn";
+import { partnerOf } from "@bridge/events";
 
 const PARTNER: Record<string, Seat> = { N: "S", S: "N", E: "W", W: "E" };
 
@@ -211,12 +213,12 @@ async function handle(request: Request): Promise<NextResponse> {
 
   if (state.phase !== "play") return NextResponse.json({ tell: null, reason: "not playing" });
 
-  // Whose card is on the table now, and is it the caller's to choose?
-  // Declarer chooses dummy's cards too; dummy chooses nothing.
-  const declarer = state.contract?.declarer;
-  const dummySeat = declarer ? PARTNER[declarer] : undefined;
-  const mine = state.turn === seat || (seat === declarer && state.turn === dummySeat);
-  if (!mine) return NextResponse.json({ tell: null, reason: "not your turn" });
+  // Whose card is on the table now, and is it the caller's to choose? Declarer
+  // chooses dummy's cards too, and a learner dealt dummy plays the declarer's
+  // hand when that chair is a robot's — lib/coach/turn.ts owns both.
+  if (!decisionIsTheirs(record, state, seat))
+    return NextResponse.json({ tell: null, reason: "not your turn" });
+  const from = playsFrom(record, state, seat);
 
   const played = playedToBen(state);
   let result;
@@ -228,16 +230,19 @@ async function handle(request: Request): Promise<NextResponse> {
     result =
       played === ""
         ? await client().lead({
-            hand: handToPbn(originalHand(state, seat)),
-            seat,
+            hand: handToPbn(originalHand(state, from)),
+            seat: from,
             dealer: state.dealer,
             vul: vulToBen(state.vul),
             ctx: auctionToCtx(state.auction),
           })
         : await client().play({
-            hand: handToPbn(originalHand(state, seat)),
-            dummy: dummySeat ? handToPbn(originalHand(state, dummySeat)) : "",
-            seat,
+            // AS THE CHAIR THEY PLAY FROM. At dummy's turn the question is the
+            // declarer's to answer, and under a takeover that chair is not the
+            // one the learner was dealt.
+            hand: handToPbn(originalHand(state, from)),
+            dummy: handToPbn(originalHand(state, partnerOf(from))),
+            seat: from,
             dealer: state.dealer,
             vul: vulToBen(state.vul),
             ctx: auctionToCtx(state.auction),

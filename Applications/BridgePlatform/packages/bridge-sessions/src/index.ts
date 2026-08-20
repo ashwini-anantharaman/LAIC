@@ -153,6 +153,19 @@ export interface SessionRecord {
    */
   curated?: {
     entryId: string;
+    /**
+     * THE COACH SEEING THEIR OWN BOARD AS THE LEARNER WILL (owner ask
+     * 2026-08-19). Same idea as `challenge.practice` above: the sitting is
+     * real — the robots follow the recorded line, the constraint holds, the
+     * overlay speaks — but NOTHING about it is recorded. In particular the
+     * learner's progress stamp (`curatedProgressJson` on the entry) must not
+     * be written, or a coach opening a hint in their own preview would mark
+     * their master entry as if a learner had.
+     *
+     * The flag is carried, never interpreted, by this package: what "not
+     * recorded" means belongs to the host's own writers.
+     */
+    preview?: boolean;
   };
 }
 
@@ -581,6 +594,21 @@ export class SessionService {
   }
 
   /**
+   * The same read, for a caller that can HANDLE the board being gone.
+   *
+   * A session vanishes for ordinary reasons — the player discarded it, another
+   * tab finished with it — and a caller that only wanted to look should not
+   * have to catch an exception to find that out. `requireSession`'s throw stays
+   * for the paths where a missing board really is a fault; this exists so a
+   * table's own controls can answer "that board is no longer here" instead of
+   * turning a routine event into an error page. It never swallows a STORE
+   * failure: only a genuinely absent record answers null.
+   */
+  async getSession(sessionId: string): Promise<SessionRecord | null> {
+    return this.store.getSession(sessionId);
+  }
+
+  /**
    * Re-pin a session to a newer compile — the one deliberate, user-driven
    * exception to "sessions never float": a fellow spots a bad decision at
    * the table, fixes the knowledge item, and continues the SAME board under
@@ -850,6 +878,32 @@ export class SessionService {
       throw new Error(`Seat ${actingSeat} is not a human seat`);
     await replay.step();
     return this.persistNewEvents(record, log.getAll(), replay);
+  }
+
+  /**
+   * Take back the last `count` ACTIONS in ONE read and ONE write.
+   *
+   * `undo()` called in a loop is two store reads, a write and a full event
+   * replay per action — fine for a button pressed once, a real wait when a
+   * caller has to unwind a learner's card plus three robot replies (the curated
+   * take-back, which is why this exists). The truncation is the same rule
+   * either way: the single writer emits logic then action as consecutive seqs,
+   * so cutting below the target action's logic event drops the pairs together.
+   *
+   * `count` is clamped to what is there; taking back more than the board holds
+   * empties it rather than failing.
+   */
+  async undoActions(sessionId: string, count: number): Promise<SessionView> {
+    if (count <= 0) return this.view(sessionId);
+    const record = await this.requireSession(sessionId);
+    const actions = record.events.filter(isActionEvent);
+    if (!actions.length) return this.view(sessionId);
+    const target = actions[Math.max(0, actions.length - count)]!;
+    record.events = record.events.filter((e) => e.seq < target.seq - 1);
+    record.status = "active";
+    record.updatedAt = this.now();
+    await this.store.putSession(record);
+    return this.view(sessionId);
   }
 
   /** Undo the last committed action (and its logic event). */

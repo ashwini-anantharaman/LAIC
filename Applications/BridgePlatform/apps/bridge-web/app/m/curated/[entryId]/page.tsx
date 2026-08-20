@@ -1,6 +1,8 @@
 import { canAccessAdminArea } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 
+import { LessonField } from "@/components/curate/LessonField";
+import { PreviewAsLearnerButton } from "@/components/curate/PreviewAsLearnerButton";
 import { ReviseLineButton } from "@/components/curate/ReviseLineButton";
 import { callLabel, cardLabel } from "@/lib/coach/position";
 import {
@@ -55,10 +57,10 @@ const atLabel = (at: CuratedAt): string =>
 /**
  * Post-publish editing of a curated deal (owner pick #6, 2026-08-15): the
  * coach's words — notes, reasons, hint ladders — editable per annotation
- * without replaying the board. The LINE is fixed: it is the recorded sitting
- * the annotations anchor to. Copy-on-assign means edits reach future
- * assignments only; learners already playing keep the version they were
- * given.
+ * without replaying the board, plus the board settings and the LESSON (owner
+ * ask 2026-08-19). The LINE is fixed: it is the recorded sitting the
+ * annotations anchor to. Copy-on-assign means edits reach future assignments
+ * only; learners already playing keep the version they were given.
  */
 export default async function CuratedEditPage({
   params,
@@ -105,9 +107,10 @@ export default async function CuratedEditPage({
         Edit curated deal
       </h1>
       <p style={{ font: `400 12.5px/1.55 ${G}`, color: "#5e5749", margin: "8px 0 0" }}>
-        The recorded line stays as you played it — these are your words at each
-        decision. Learners already assigned keep the version they were given;
-        edits reach everyone you assign from now on.
+        The recorded line stays as you played it — everything around it is yours
+        to change: what the board teaches, how tightly they&rsquo;re held, and your
+        words at each decision. Learners already assigned keep the version they
+        were given; edits reach everyone you assign from now on.
       </p>
 
       {saved && (
@@ -124,6 +127,22 @@ export default async function CuratedEditPage({
           Saved.
         </p>
       )}
+
+      {/* SEE IT AS YOUR LEARNER — first on the page, and OUTSIDE the form on
+          purpose. It opens the PUBLISHED board, so an edit still sitting in the
+          form below is not in it; keeping it above every field is what makes
+          that read the right way round. */}
+      <div
+        style={{
+          background: PAPER,
+          border: `1px solid #e8ddc3`,
+          borderRadius: 12,
+          padding: "12px 13px",
+          marginTop: 16,
+        }}
+      >
+        <PreviewAsLearnerButton entryId={entryId} tableBase="/m/table/" />
+      </div>
 
       <form action={saveCuratedEditsAction}>
         <input type="hidden" name="entryId" value={entryId} />
@@ -151,6 +170,19 @@ export default async function CuratedEditPage({
           {/* The v2 board settings (owner design 2026-08-18) — the coach's to
               change after publish; the learner seat stays (the annotations
               below are anchored to it). */}
+          {/* WHAT THE BOARD TEACHES, EDITABLE HERE (owner ask 2026-08-19).
+              It used to be publish-time only, carried silently through this
+              form — so changing the lesson meant replaying the whole line,
+              which is backwards: what a board turned out to teach is usually
+              clearer once it exists than it was while building it. */}
+          <div style={{ marginTop: 12 }}>
+            <p style={{ ...SMALLCAPS, margin: "0 0 6px" }}>What this board teaches</p>
+            <LessonField
+              skin="app"
+              tags={payload.kTags ?? []}
+              items={payload.kItems ?? []}
+            />
+          </div>
           <p style={{ ...SMALLCAPS, margin: "12px 0 0" }}>
             Learner sits {SEAT_NAME[learnerSeat]}
           </p>
@@ -196,37 +228,6 @@ export default async function CuratedEditPage({
               style={{ ...FIELD, marginTop: 5, letterSpacing: 0, textTransform: "none" }}
             />
           </label>
-        </div>
-
-        {/* REVISE THE LINE — outside the words-form's concern: a new sitting
-            in the studio, primed with this recording. */}
-        <div
-          style={{
-            background: PAPER,
-            border: `1px solid #e8ddc3`,
-            borderRadius: 12,
-            padding: "12px 13px",
-            marginTop: 12,
-          }}
-        >
-          <ReviseLineButton
-            entryId={entryId}
-            settings={{
-              learnerSeat,
-              constraint,
-              intro: payload.intro ?? "",
-              debrief: payload.debrief ?? "",
-              pin: payload.pin ?? "",
-              notes: entry.notes ?? "",
-              // The lesson rides into the revision — topic AND cards — so
-              // republishing keeps what the board teaches instead of quietly
-              // dropping it.
-              kTags: payload.kTags ?? [],
-              kItems: payload.kItems ?? [],
-            }}
-            annotations={annotations}
-            tableBase="/m/table/"
-          />
         </div>
 
         {annotations.length === 0 && (
@@ -332,32 +333,69 @@ export default async function CuratedEditPage({
           );
         })}
 
-        {annotations.length > 0 && (
-          <>
-            <button
-              type="submit"
-              style={{
-                marginTop: 16,
-                width: "100%",
-                minHeight: 44,
-                background: GREEN,
-                border: 0,
-                borderRadius: 12,
-                color: "#ffffff",
-                font: `700 14px ${G}`,
-                cursor: "pointer",
-                boxShadow: "0 2px 0 #0a3820",
-              }}
-            >
-              Save changes
-            </button>
-            <p style={{ font: `400 11px/1.5 ${G}`, color: FAINT, margin: "8px 0 0" }}>
-              Emptying every field of an annotation removes it, same as the
-              checkbox.
-            </p>
-          </>
-        )}
+        {/* NOTHING ON THIS PAGE SAVES ITSELF, so the button is always here.
+            It used to render only when the deal had annotations — defensible
+            while this form edited nothing else, and a dead end the moment it
+            also edited the lesson and the board settings: a board with no
+            annotations (the common case straight after publishing) had no way
+            to save at all. */}
+        <button
+          type="submit"
+          style={{
+            marginTop: 16,
+            width: "100%",
+            minHeight: 44,
+            background: GREEN,
+            border: 0,
+            borderRadius: 12,
+            color: "#ffffff",
+            font: `700 14px ${G}`,
+            cursor: "pointer",
+            boxShadow: "0 2px 0 #0a3820",
+          }}
+        >
+          Save changes
+        </button>
+        <p style={{ font: `400 11px/1.5 ${G}`, color: FAINT, margin: "8px 0 0" }}>
+          Saves everything above: what the board teaches, how tightly they&rsquo;re
+          held, your words.
+          {annotations.length > 0
+            ? " Emptying every field of an annotation removes it, same as the checkbox."
+            : ""}
+        </p>
       </form>
+
+      {/* REVISE THE LINE — after the form, and outside it. Like the preview
+          above, it carries the SAVED board into the studio, so it must not sit
+          among fields whose edits have not been saved yet. */}
+      <div
+        style={{
+          background: PAPER,
+          border: `1px solid #e8ddc3`,
+          borderRadius: 12,
+          padding: "12px 13px",
+          marginTop: 12,
+        }}
+      >
+        <ReviseLineButton
+          entryId={entryId}
+          settings={{
+            learnerSeat,
+            constraint,
+            intro: payload.intro ?? "",
+            debrief: payload.debrief ?? "",
+            pin: payload.pin ?? "",
+            notes: entry.notes ?? "",
+            // The lesson rides into the revision — topic AND cards — so
+            // republishing keeps what the board teaches instead of quietly
+            // dropping it.
+            kTags: payload.kTags ?? [],
+            kItems: payload.kItems ?? [],
+          }}
+          annotations={annotations}
+          tableBase="/m/table/"
+        />
+      </div>
     </main>
   );
 }

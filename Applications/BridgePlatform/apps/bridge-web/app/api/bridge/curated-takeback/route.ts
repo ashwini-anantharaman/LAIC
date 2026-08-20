@@ -10,10 +10,18 @@
 // back, the learner's diverging card stayed exactly where it was, and the
 // button looked broken because nothing it promised had happened.
 //
-// So the target is a STATE, not a count: undo until the session is back on
-// the coach's line. That is the promise the bubble makes ("take it back and
-// see why?"), and it is right however many robot replies landed in between —
-// none, three, or a whole trick.
+// So the target is a STATE, not a count: the board goes back to where it left
+// the coach's line, however many robot replies landed in between — none,
+// three, or a whole trick.
+//
+// AND IT IS ONE WRITE (bug report 2026-08-19: "sometimes the takeback mechanism
+// lags and doesn't work"). This used to loop `undo()` until `pathStatus` said
+// on-line, and each turn of that loop was two store reads, a write and a full
+// event replay — four of them on a mid-trick divergence, against Postgres, with
+// the learner watching a button that had already stopped saying anything. The
+// line is a PREFIX, so the arithmetic is exact without trying: everything from
+// the divergence onward comes off, which `undoActions` does in a single read and
+// a single write.
 //
 // Body: { sessionId } → { ok, undone } — `undone` is how many actions came
 // off, so the caller can tell a real rewind from a no-op.
@@ -25,12 +33,13 @@ import { lineOf, pathStatus } from "@/lib/curated";
 import { getBridgeContext } from "@/lib/nexus";
 import { libraryStore, sessionService } from "@/lib/sessions";
 import type { Seat } from "@bridge/events";
+import { playsFrom } from "@/lib/coach/turn";
 
 /**
  * A whole trick of robot replies plus the learner's own card is four; twice
  * that is slack for an auction divergence answered by three passes. The cap
- * exists so a line that can never be rejoined (a curated entry edited out
- * from under a live session) unwinds a board instead of looping forever.
+ * exists so a learner who wandered off the line several tricks ago — the nudge
+ * expires, but this door stays open — cannot unwind half a board in one tap.
  */
 const MAX_UNDOS = 8;
 
@@ -72,28 +81,33 @@ async function handle(request: Request): Promise<NextResponse> {
   const line = entry ? lineOf(entry) : null;
   if (!line) return NextResponse.json({ error: "no line to return to" }, { status: 409 });
 
-  /** Actions on the board — the only thing an undo can lower. */
-  const actionCount = (s: typeof view.state): number =>
-    s.auction.length + s.tricks.reduce((n, t) => n + t.plays.length, 0);
+  const state = view.state;
+  // The seat they are CHOOSING FROM: a learner dealt dummy plays the declarer's
+  // hand when that chair is a robot's, and the line questions must be asked
+  // about that chair or the take-back is offered for a move it thinks was
+  // somebody else's.
+  const from = playsFrom(view.record, state, seat);
+  const status = pathStatus(state, line, seat, from);
 
-  let undone = 0;
-  let state = view.state;
-  let count = actionCount(state);
   // Already on the line — nothing to take back. Answer honestly rather than
   // undoing a good move because the bubble was a beat stale.
-  while (!pathStatus(state, line, seat).onPath && undone < MAX_UNDOS) {
-    const next = await sessionService().undo(sessionId);
-    const nextCount = actionCount(next.state);
-    // undo() is a no-op once the event log is empty. Compare the ACTION
-    // COUNT, not the state object: undo returns a freshly built view every
-    // time, so an identity check never fires and the loop would spin to the
-    // cap against a board with nothing left to take back.
-    if (nextCount >= count) break;
-    count = nextCount;
-    state = next.state;
-    undone++;
+  if (status.onPath) return NextResponse.json({ ok: true, undone: 0 });
+  if (!status.divergedAt) {
+    // Off the line with no locatable divergence: the entry's line was edited
+    // out from under this session. Nothing to rejoin.
+    return NextResponse.json({ ok: false, undone: 0 }, { status: 409 });
   }
 
-  const onLine = pathStatus(state, line, seat).onPath;
-  return NextResponse.json({ ok: onLine, undone });
+  /** How many actions were on the board BEFORE the divergence. */
+  const before =
+    status.divergedAt.kind === "call"
+      ? status.divergedAt.auctionIndex
+      : state.auction.length + status.divergedAt.trickIndex * 4 + status.divergedAt.playIndex;
+  const total = state.auction.length + state.tricks.reduce((n, t) => n + t.plays.length, 0);
+  const count = Math.min(total - before, MAX_UNDOS);
+  if (count <= 0) return NextResponse.json({ ok: false, undone: 0 });
+
+  const after = await sessionService().undoActions(sessionId, count);
+  const onLine = pathStatus(after.state, line, seat, from).onPath;
+  return NextResponse.json({ ok: onLine, undone: count });
 }

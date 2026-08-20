@@ -15,6 +15,7 @@
 // the authoritative target, so hint 5 names the same card "What should I
 // play?" would. In the auction the model reasons to its own conclusion.
 
+import { playsFrom } from "@/lib/coach/turn";
 import { NextResponse } from "next/server";
 
 import { advisePlay } from "@/lib/coach/advise";
@@ -79,8 +80,11 @@ async function handle(request: Request): Promise<NextResponse> {
 
   // The turn gate IS the builder: visiblePosition returns null whenever the
   // decision on the table is not the caller's to make (declarer counts for
-  // dummy's turn; dummy and watchers get nothing).
-  const pos = visiblePosition(state, seat as never);
+  // dummy's turn; watchers get nothing). It is asked about the chair the learner
+  // is CHOOSING FROM — a learner dealt dummy plays the declarer's hand when that
+  // chair is a robot's, and asking about their dealt seat answered "dummy makes
+  // no decisions" for every card of the board.
+  const pos = visiblePosition(state, playsFrom(record, state, seat as never));
   if (!pos) return NextResponse.json({ hints: null, reason: "not your turn" });
 
   const key = positionKey(pos);

@@ -293,6 +293,29 @@ export async function playToEndAction(formData: FormData): Promise<void> {
   revalidatePath(`/bridge/table/${sessionId}`);
 }
 
+/**
+ * THE BOARD IS NO LONGER THERE — and that is not an error (bug report
+ * 2026-08-19: "No session bs_…" as a full red error page).
+ *
+ * A session goes away for ordinary reasons: the player discarded it on the way
+ * out, or finished with it in another tab. A table still on screen then posts
+ * its next card to a board that no longer exists, and every control in this
+ * file used to answer that by THROWING — which in a server action means the
+ * whole page is replaced by an error overlay, for something the page itself
+ * already handles gracefully (loadTableView answers `ok: false`, and the table
+ * renders "board gone" or a 404).
+ *
+ * So the play controls ask this first. It revalidates both table chromes and
+ * reports the board gone; the caller returns without touching the engine, the
+ * page re-renders, and its own not-found path does the honest thing.
+ */
+async function boardGone(sessionId: string): Promise<boolean> {
+  if (await sessionService().getSession(sessionId)) return false;
+  revalidatePath(`/bridge/table/${sessionId}`);
+  revalidatePath(`/bridge/table2/${sessionId}`);
+  return true;
+}
+
 /** A LOCKED curated board refuses off-line actions (curated v2). Run the
  *  gate only when the record wears the stamp — ordinary tables pay one
  *  record read they were about to pay in act() anyway. The refusal is
@@ -304,7 +327,10 @@ async function refusedByCoachLine(
   sessionId: string,
   action: { call?: string; card?: Card },
 ): Promise<boolean> {
-  const record = await sessionService().requireSession(sessionId);
+  const record = await sessionService().getSession(sessionId);
+  // Gone: the caller has already been told (boardGone runs first), so there is
+  // nothing here to refuse.
+  if (!record) return false;
   if (!record.curated) return false;
   try {
     const { assertCoachLine } = await import("@/lib/curatedGate");
@@ -327,7 +353,11 @@ export async function bidAction(formData: FormData): Promise<void> {
   // The studio's auction takes the coach's call at ANY chair, including the
   // robots' — so this door checks whose board it is, which the session service
   // (seat KIND, never identity) deliberately does not. See the JSON act door.
-  const record = await sessionService().requireSession(sessionId);
+  const record = await sessionService().getSession(sessionId);
+  if (!record) {
+    await boardGone(sessionId);
+    return;
+  }
   if (record.authoring && !studioAccess(record, context.nexusUserId).studio) return;
   if (await refusedByCoachLine(sessionId, { call })) {
     revalidatePath(`/bridge/table2/${sessionId}`);
@@ -344,6 +374,7 @@ export async function playCardAction(formData: FormData): Promise<void> {
     suit: String(formData.get("suit")) as Suit,
     rank: Number(formData.get("rank")) as Card["rank"],
   };
+  if (await boardGone(sessionId)) return;
   if (await refusedByCoachLine(sessionId, { card })) {
     revalidatePath(`/bridge/table2/${sessionId}`);
     return;
@@ -359,6 +390,7 @@ export async function undoAction(formData: FormData): Promise<void> {
   // Additive, inert by default: the mobile felt UI posts mobile=1 so we return
   // to the /m/table chrome instead of the desktop board.
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
+  if (await boardGone(sessionId)) return;
   await sessionService().undo(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId);
   // BOTH table chromes, because either may be the one that posted. This used to
@@ -388,6 +420,7 @@ export async function rewindAction(formData: FormData): Promise<void> {
   await requireFeature(context, "table.undo");
   const sessionId = String(formData.get("sessionId"));
   const tableBase = formData.get("mobile") === "1" ? "/m/table/" : "/bridge/table/";
+  if (await boardGone(sessionId)) return;
   await sessionService().rewindToStart(sessionId);
   await audit(context, "session.undo", "kb_session", sessionId, { toStart: true });
   revalidatePath(`/bridge/table/${sessionId}`);

@@ -32,7 +32,11 @@ export async function POST(
     // A LOCKED curated board refuses off-line actions before they commit
     // (curated v2). One cheap record read decides whether the gate runs at
     // all — ordinary tables pay nothing.
-    const record = await sessionService().requireSession(id);
+    const record = await sessionService().getSession(id);
+    // A board that is no longer there is a 404, not a 400 with an engine
+    // sentence in it: the caller's table has outlived its session (discarded
+    // on the way out, finished in another tab), which is an ordinary event.
+    if (!record) return NextResponse.json({ error: "No such board" }, { status: 404, headers: CORS });
     // A STUDIO AUCTION ACCEPTS A CALL AT A CHAIR NOBODY SITS IN — the coach
     // bids all four hands (@bridge/sessions coachBidsThisSeat). The session
     // service checks seat KIND and never identity, by design, so the door owes

@@ -17,11 +17,14 @@
 //   · CLOSED until asked for. The host shows the lesson in a line of prose;
 //     the picker opens on a tap. Nothing is set on most boards, and a screen
 //     is not obliged to show the machinery for a field nobody filled in.
-//   · ONE TOPIC CONTROL, not twenty-six chips. A <select> — grouped by where
-//     the topic is taught, each option carrying its card count — collapses the
-//     wall into the control this screen already uses for seats and constraints.
-//     Chosen topics become removable chips, which is the only place they need
-//     to be visible.
+//   · ONE TOPIC CONTROL, not twenty-six chips — and NOT A NATIVE <select>
+//     either (owner report 2026-08-19, with a screenshot: the OS list opened
+//     over the board it was describing, in none of the app's colours, spilling
+//     past the top of the screen). It is a 44px row that expands an in-sheet
+//     grouped list: the app's own paper, edges and green, scrolling with the
+//     sheet rather than floating above it, and it collapses on the pick so the
+//     cards it just narrowed come into view. Chosen topics become removable
+//     chips, which is the only place they need to be visible.
 //   · NO CARDS UNTIL A TOPIC. The card list starts empty with one sentence
 //     telling the coach where to start; browsing the whole catalogue is one tap
 //     away for the coach who wants it. A default of 49 rows is not a default.
@@ -44,6 +47,27 @@ import {
 } from "@/lib/coach/kItems";
 import { MAX_DEAL_ITEMS, MAX_DEAL_TAGS, tagCensus } from "@/lib/coach/kSelection";
 
+/* ──────────────────────── small marks ──────────────────────── */
+
+/** Stroke marks, never glyphs: they scale and recolour with the design. */
+const Tick = ({ size = 12, color = "#fff" }: Readonly<{ size?: number; color?: string }>) => (
+  <svg width={size} height={size * 0.82} viewBox="0 0 12 10" aria-hidden focusable="false">
+    <path d="M1 5l3.2 3.2L11 1.4" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const Chevron = ({ open = false, color }: Readonly<{ open?: boolean; color: string }>) => (
+  <svg
+    width="11"
+    height="7"
+    viewBox="0 0 12 8"
+    aria-hidden
+    focusable="false"
+    style={{ transform: open ? "rotate(180deg)" : undefined, transition: "transform .15s" }}
+  >
+    <path d="M1.5 1.5L6 6l4.5-4.5" fill="none" stroke={color} strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
 /* ───────────────────────── shelves ───────────────────────── */
 
 /** Where a topic or a card is taught — the shelf it sits on, in both lists, so
@@ -179,6 +203,8 @@ export function LessonPicker({
   // open: the whole catalogue with no topic set, and the cards no producer can
   // draw yet. Neither is what a coach building a board is looking for first.
   const [browsing, setBrowsing] = useState(false);
+  // The topic list, expanded in the sheet rather than floating over the board.
+  const [topicsOpen, setTopicsOpen] = useState(false);
   const [showUnready, setShowUnready] = useState(false);
 
   const set = hasLesson(tags, items);
@@ -235,31 +261,105 @@ export function LessonPicker({
           </div>
         )}
         {tags.length < MAX_DEAL_TAGS ? (
-          <select
-            value=""
-            onChange={(e) => {
-              const tag = e.target.value as KTag;
-              if (tag) onToggleTag(tag);
-            }}
-            style={{
-              width: "100%", boxSizing: "border-box",
-              borderRadius: 8, borderWidth: 1, borderStyle: "solid", borderColor: s.line,
-              background: s.paper, color: s.ink,
-              padding: s.compact ? "5px 7px" : "7px 9px",
-              fontSize: s.compact ? 11.5 : 13, fontFamily: "inherit",
-            }}
-          >
-            <option value="">{tags.length ? "Add another topic…" : "Choose a topic…"}</option>
-            {TOPIC_GROUPS.map(([shelf, topics]) => (
-              <optgroup key={shelf} label={SHELF_LABEL[shelf]}>
-                {topics.map(([t, n]) => (
-                  <option key={t.tag} value={t.tag} disabled={tags.includes(t.tag)}>
-                    {t.label} {n ? `(${n} cards)` : "(none yet)"}
-                  </option>
+          <>
+            <button
+              type="button"
+              onClick={() => setTopicsOpen((v) => !v)}
+              aria-expanded={topicsOpen}
+              style={{
+                width: "100%", boxSizing: "border-box", minHeight: 44,
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "0 11px", textAlign: "left",
+                borderRadius: 9, borderWidth: 1, borderStyle: "solid",
+                borderColor: topicsOpen ? s.accent : s.line,
+                background: topicsOpen ? s.accentBg : s.paper,
+                color: topicsOpen ? s.accent : s.ink,
+                fontSize: 12.5, fontWeight: 700, fontFamily: "inherit", cursor: "pointer",
+              }}
+            >
+              <span style={{ flex: 1, minWidth: 0 }}>
+                {tags.length ? "Add another topic" : "Choose a topic"}
+              </span>
+              <Chevron open={topicsOpen} color={topicsOpen ? s.accent : s.muted} />
+            </button>
+
+            {/* THE LIST, IN THE SHEET. Grouped by where the topic is taught,
+                44px a row, each row carrying what it is worth in cards — and it
+                closes on the pick, because the point of picking a topic is to
+                see the cards it leaves behind. */}
+            {topicsOpen && (
+              <div
+                style={{
+                  borderWidth: 1, borderStyle: "solid", borderColor: s.line,
+                  borderRadius: 9, background: s.paper, overflow: "hidden",
+                }}
+              >
+                {TOPIC_GROUPS.map(([shelf, topics]) => (
+                  <div key={shelf}>
+                    <div
+                      style={{
+                        ...SMALLCAPS(s), color: s.head,
+                        padding: "5px 11px", background: s.accentBg,
+                        borderBottomWidth: 1, borderBottomStyle: "solid", borderBottomColor: s.line,
+                      }}
+                    >
+                      {SHELF_LABEL[shelf]}
+                    </div>
+                    {topics.map(([t, n]) => {
+                      const on = tags.includes(t.tag);
+                      return (
+                        <button
+                          key={t.tag}
+                          type="button"
+                          aria-pressed={on}
+                          title={t.description}
+                          onClick={() => {
+                            onToggleTag(t.tag);
+                            setTopicsOpen(false);
+                          }}
+                          style={{
+                            width: "100%", boxSizing: "border-box", minHeight: 44,
+                            display: "flex", alignItems: "center", gap: 9,
+                            padding: "0 11px", textAlign: "left",
+                            background: on ? s.accentBg : "transparent",
+                            borderWidth: 0, borderBottomWidth: 1, borderBottomStyle: "solid",
+                            borderBottomColor: "#f2ede0",
+                            fontFamily: "inherit", cursor: "pointer",
+                          }}
+                        >
+                          <span
+                            aria-hidden
+                            style={{
+                              flex: "none", boxSizing: "border-box",
+                              width: 18, height: 18, borderRadius: 5,
+                              borderWidth: 1, borderStyle: "solid",
+                              borderColor: on ? s.accent : s.line,
+                              background: on ? s.accent : s.paper,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}
+                          >
+                            {on && <Tick size={11} />}
+                          </span>
+                          <span
+                            style={{
+                              flex: 1, minWidth: 0, fontSize: 12.5,
+                              fontWeight: on ? 700 : 500,
+                              color: on ? s.accent : s.ink,
+                            }}
+                          >
+                            {t.label}
+                          </span>
+                          <span style={{ flex: "none", fontSize: 10.5, color: n ? s.muted : s.faint }}>
+                            {n ? `${n} card${n === 1 ? "" : "s"}` : "none yet"}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 ))}
-              </optgroup>
-            ))}
-          </select>
+              </div>
+            )}
+          </>
         ) : (
           <span style={{ fontSize: 10.5, color: s.faint }}>
             That&rsquo;s the most topics one board can name — remove one to swap it.

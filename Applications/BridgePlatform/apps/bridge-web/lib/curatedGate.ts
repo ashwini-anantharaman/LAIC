@@ -25,6 +25,7 @@ import {
   sameAt,
 } from "./curated";
 import { libraryStore } from "./sessions";
+import { playsFrom } from "@/lib/coach/turn";
 
 /** Thrown when a locked board refuses an off-line action. The act doors
  *  render it as 409 { offLine: true, why?, hintAvailable } — never a 400. */
@@ -71,7 +72,7 @@ export async function assertCoachLine(
     ([, c]) => c.kind === "human",
   )?.[0] as Parameters<typeof pathStatus>[2] | undefined;
   if (!seat) return;
-  if (!pathStatus(state, line, seat).onPath) return;
+  if (!pathStatus(state, line, seat, playsFrom(view.record, state, seat)).onPath) return;
 
   const here = currentAt(state);
   if (!here) return;

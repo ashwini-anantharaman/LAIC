@@ -9,7 +9,8 @@
 // the client says only "here", never where "here" is.
 //
 // Body: { sessionId } → { ok: boolean }. Best-effort by design: a lost stamp
-// costs a statistic, never the game, so failures answer ok:false quietly.
+// costs a statistic, never the game, so failures answer ok:false quietly — and
+// a coach's PREVIEW answers ok:false always, on purpose.
 
 import { NextResponse } from "next/server";
 
@@ -40,6 +41,11 @@ async function handle(request: Request): Promise<NextResponse> {
   }
   const { record, state } = view;
   if (!record.curated) return NextResponse.json({ ok: false });
+  // A PREVIEW IS NOT A LEARNER (owner ask 2026-08-19). The coach is looking at
+  // their own board through the learner's eyes, and the entry this stamp would
+  // ride is their MASTER copy — so a hint they open while checking their work
+  // would show up as a learner's ladder for every assignment made from it.
+  if (record.curated.preview) return NextResponse.json({ ok: false });
 
   // Only the player whose board this is may stamp their own progress.
   const isMine = Object.values(record.seats).some(

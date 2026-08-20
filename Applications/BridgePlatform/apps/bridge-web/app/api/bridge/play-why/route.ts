@@ -27,8 +27,8 @@ import { positionKey, visiblePosition } from "@/lib/coach/visible";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { decisionIsTheirs, playsFrom } from "@/lib/coach/turn";
 
-const PARTNER: Record<string, string> = { N: "S", S: "N", E: "W", W: "E" };
 
 /**
  * Same position and same answer → same wording.
@@ -96,20 +96,18 @@ async function handle(request: Request): Promise<NextResponse> {
   if (!seat) return NextResponse.json({ explanation: null, reason: "not seated" });
   if (state.phase !== "play") return NextResponse.json({ explanation: null, reason: "not playing" });
 
-  // Declarer chooses dummy's cards too, so both count as theirs; dummy chooses
-  // nothing. Same rule as the hint route, because it must be explaining the same
-  // decision the hint just answered.
-  const declarer = state.contract?.declarer;
-  const dummy = declarer ? PARTNER[declarer] : undefined;
-  const mine = state.turn === seat || (seat === declarer && state.turn === dummy);
-  if (!mine) return NextResponse.json({ explanation: null, reason: "not your turn" });
+  // The same rule as the hint route — lib/coach/turn.ts, so it must be
+  // explaining the same decision the hint just answered, takeover included.
+  if (!decisionIsTheirs(record, state, seat as never))
+    return NextResponse.json({ explanation: null, reason: "not your turn" });
+  const from = playsFrom(record, state, seat as never);
 
-  const pos = visiblePosition(state, seat as never);
+  const pos = visiblePosition(state, from);
   if (!pos) return NextResponse.json({ explanation: null, reason: "nothing to explain" });
 
   const advice = await advisePlay({
     state,
-    learnerSeat: seat as never,
+    learnerSeat: from,
     actor: state.turn,
     system: {
       compiled: await sessionService().compiledFor(record),

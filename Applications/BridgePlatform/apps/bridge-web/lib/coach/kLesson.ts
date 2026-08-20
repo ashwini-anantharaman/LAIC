@@ -30,6 +30,7 @@ import {
   isKItemId, isKTag, itemsName, kItem, kItemsForIds, kItemsForTags, lessonName,
   parseKItemIds, parseKTags,
 } from "./kItems";
+import type { KFact } from "./kFacts";
 import type { KItemId, KPhase, KTag } from "./kItems";
 
 /* ───────────────────── matching a rendered card to an item ───────────────────── */
@@ -112,6 +113,16 @@ export interface LessonPlan {
   name: string;
   /** The K item ids this lesson expects in this phase, in teaching order. */
   items: KItemId[];
+  /**
+   * VALUES FOR THOSE ITEMS, from this position (owner ask 2026-08-19: the
+   * lesson's cards must hold real content, moving with the board).
+   *
+   * Filled by the host beside the plan — `kFactsFor` in kFacts.ts, which
+   * produces by registry ID rather than by title. Absent or short is normal: an
+   * item the position cannot support yet has no value, and the pane says so
+   * rather than inventing one.
+   */
+  facts?: KFact[];
   /** The phase the plan was built for. */
   phase: KPhase;
 }
@@ -161,8 +172,15 @@ export interface LessonSlot<C> {
   title: string;
   /** The teacher's line on why this is worth tracking. */
   why: string;
-  /** The panel's card for it, when the position can produce one. */
+  /** The panel's card for it, when one of the older producers made it. */
   card?: C;
+  /**
+   * The value the ID-KEYED producer made for it, when no card matched. Carried
+   * separately from `card` because it is not one of the panel's own cards — the
+   * pane draws it with the registry's title, which is the title it would have
+   * had anyway.
+   */
+  fact?: KFact;
 }
 
 /**
@@ -186,10 +204,20 @@ export function lessonSlots<C extends CardLike>(
     // and a lesson slot holds one card.
     if (id && !byId.has(id)) byId.set(id, c);
   }
+  const facts = new Map((plan.facts ?? []).map((f) => [f.id, f]));
   return plan.items.map((id) => {
     const def = kItem(id);
     const card = byId.get(id);
-    return { id, title: def.title, why: def.why, ...(card ? { card } : {}) };
+    // A CARD THE PANEL ALREADY HOLDS WINS. It is the same fact either way, and
+    // the panel's own card is the one the learner may also meet in the side
+    // views — matching them keeps one card per fact rather than two spellings
+    // of it. The id-keyed value fills what nothing produced.
+    const fact = card ? undefined : facts.get(id);
+    return {
+      id, title: def.title, why: def.why,
+      ...(card ? { card } : {}),
+      ...(fact ? { fact } : {}),
+    };
   });
 }
 

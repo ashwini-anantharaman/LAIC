@@ -209,6 +209,40 @@ describe("laying the lesson against the cards on screen", () => {
     expect([...keys].some((k) => k.startsWith("HCP dealt|"))).toBe(false);
   });
 
+  it("hands a slot the VALUE the id-keyed producer made for it", () => {
+    // The lesson's cards come from two places: a card the panel already holds
+    // (matched by title) or a value produced for the item id. This is the
+    // second path — the one that turned the waiting list into readings.
+    const plan = lessonPlan({ kItems: ["tricks-remaining", "points-hidden"] }, "play")!;
+    const withFacts = {
+      ...plan,
+      facts: [{ id: "tricks-remaining" as const, value: "12", detail: "One trick complete." }],
+    };
+    const slots = lessonSlots(withFacts, panelCards(st, "S"));
+    const left = slots.find((s) => s.id === "tricks-remaining")!;
+    expect(left.card).toBeUndefined();
+    expect(left.fact).toEqual({ id: "tricks-remaining", value: "12", detail: "One trick complete." });
+  });
+
+  it("prefers the panel's OWN card when both exist", () => {
+    // Two spellings of one fact would read as two facts. The card the learner
+    // may also meet in the side views is the one that wins.
+    const plan = lessonPlan({ kItems: ["points-hidden"] }, "play")!;
+    const slots = lessonSlots(
+      { ...plan, facts: [{ id: "points-hidden" as const, value: "99", detail: "no" }] },
+      panelCards(st, "S"),
+    );
+    expect(slots[0]!.card).toBeTruthy();
+    expect(slots[0]!.fact).toBeUndefined();
+  });
+
+  it("leaves a slot empty when neither a card nor a value exists", () => {
+    const plan = lessonPlan({ kItems: ["show-out-partner"] }, "play")!;
+    const slots = lessonSlots(plan, panelCards(st, "S"));
+    expect(slots[0]!.card).toBeUndefined();
+    expect(slots[0]!.fact).toBeUndefined();
+  });
+
   it("marks nothing when there is no lesson", () => {
     expect(lessonCardKeys(null, panelCards(st, "S"), (c) => c.title).size).toBe(0);
   });

@@ -24,8 +24,8 @@ import { partnershipSystem } from "@/lib/coach/verdicts";
 import { kbStore } from "@/lib/kb";
 import { getBridgeContext } from "@/lib/nexus";
 import { sessionService } from "@/lib/sessions";
+import { decisionIsTheirs, playsFrom } from "@/lib/coach/turn";
 
-const PARTNER: Record<string, string> = { N: "S", S: "N", E: "W", W: "E" };
 
 export const OPTIONS = corsOptions("GET");
 
@@ -55,15 +55,18 @@ async function handle(request: Request): Promise<NextResponse> {
   if (state.phase !== "play") return NextResponse.json({ hint: null, reason: "not playing" });
 
   // Whose card is on the table now, and is it the caller's to choose? Declarer
-  // chooses dummy's cards too, so both count as theirs; dummy chooses nothing.
-  const declarer = state.contract?.declarer;
-  const dummy = declarer ? PARTNER[declarer] : undefined;
-  const mine = state.turn === seat || (seat === declarer && state.turn === dummy);
-  if (!mine) return NextResponse.json({ hint: null, reason: "not your turn" });
+  // chooses dummy's cards too — and a learner dealt DUMMY plays the declarer's
+  // hand when that chair is a robot's (lib/coach/turn.ts owns both rules; this
+  // door used to know only the first, so a taken-over learner was told "not your
+  // turn" at every decision of the board).
+  if (!decisionIsTheirs(record, state, seat as never))
+    return NextResponse.json({ hint: null, reason: "not your turn" });
+  const from = playsFrom(record, state, seat as never);
 
   const advice = await advisePlay({
     state,
-    learnerSeat: seat as never,
+    // The chair they are CHOOSING FROM, which is what the coach reasons about.
+    learnerSeat: from,
     actor: state.turn,
     system: {
       compiled: await sessionService().compiledFor(record),

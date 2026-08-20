@@ -209,6 +209,72 @@ describe("pathStatus — on the coach's line, or off it", () => {
   });
 });
 
+describe("pathStatus under the TAKEOVER: dealt dummy, playing declarer's hand", () => {
+  // The learner sits South and was dealt dummy; North declares and is a robot,
+  // so South plays North's cards. A wrong card out of that hand is stamped with
+  // NORTH'S seat — and reading it against the dealt seat alone made it somebody
+  // else's move: no nudge, no take-back offered, just "you're off the line"
+  // (bug report 2026-08-19, with a screenshot of exactly that sentence).
+  const line = lineOf({
+    auction: [call("N", "1S"), call("E", "P"), call("S", "2S"), call("W", "P")],
+    play: [card("W", "S", 9), card("N", "S", 3)],
+  });
+  const auction = [call("N", "1S"), call("E", "P"), call("S", "2S"), call("W", "P")];
+  const contract = { level: 2, strain: "S", declarer: "N" as const, doubled: 0 };
+  // North's card is wrong: the line charts the 3♠, the board played the 10♠.
+  const off = {
+    auction,
+    contract,
+    tricks: [{ leader: "W", plays: [card("W", "S", 9), card("N", "S", 10)] }],
+  };
+
+  it("without the takeover seat it reads as somebody else's move", () => {
+    const st = pathStatus(off as never, line, "S");
+    expect(st.onPath).toBe(false);
+    expect(st.divergedAtOwn).toBe(false); // the old behaviour, and the bug
+  });
+
+  it("with it, the move is theirs and the take-back is offered", () => {
+    const st = pathStatus(off as never, line, "S", "N");
+    expect(st.onPath).toBe(false);
+    expect(st.divergedAtOwn).toBe(true);
+    expect(st.divergedJustNow).toBe(true);
+    expect(st.divergedAt).toEqual({ kind: "play", trickIndex: 0, playIndex: 1 });
+  });
+
+  it("still counts their own dealt hand as theirs, not only the chair they took", () => {
+    // A guard rather than a discovery: `actor === seat` must stay in the test
+    // alongside the new `actor === from`, or fixing the takeover would break
+    // the ordinary case — a wrong card out of the learner's OWN hand.
+    const longer = lineOf({
+      auction,
+      play: [card("W", "S", 9), card("N", "S", 3), card("E", "S", 4), card("S", "S", 2)],
+    });
+    const ownCardWrong = {
+      auction,
+      contract,
+      tricks: [
+        { leader: "W", plays: [card("W", "S", 9), card("N", "S", 3), card("E", "S", 4), card("S", "S", 5)] },
+      ],
+    };
+    const st = pathStatus(ownCardWrong as never, longer, "S", "N");
+    expect(st.onPath).toBe(false);
+    expect(st.divergedAt).toEqual({ kind: "play", trickIndex: 0, playIndex: 3 });
+    expect(st.divergedAtOwn).toBe(true);
+  });
+
+  it("leaves the opponents' cards out of it", () => {
+    const theirs = {
+      auction,
+      contract,
+      tricks: [{ leader: "W", plays: [card("W", "S", 8)] }],
+    };
+    const st = pathStatus(theirs as never, line, "S", "N");
+    expect(st.onPath).toBe(false);
+    expect(st.divergedAtOwn).toBe(false); // West's card, not the learner's
+  });
+});
+
 describe("currentAt / chartedActionAt — the addressing", () => {
   it("addresses the next call during the auction", () => {
     const at = currentAt({ phase: "auction", auction: [call("N", "1S")], tricks: [] });

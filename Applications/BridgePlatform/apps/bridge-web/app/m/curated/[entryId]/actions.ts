@@ -2,8 +2,11 @@
 
 // Post-publish editing of a curated deal (owner pick #6, 2026-08-15). The
 // LINE is fixed — it is the recorded sitting, and changing it would orphan
-// every annotation — but the coach's words are theirs to fix without
-// replaying the board: notes, reasons and hint ladders, per annotation.
+// every annotation — but everything around it is the coach's to fix without
+// replaying the board: the words at each decision (notes, reasons, hint
+// ladders), the board settings, and WHAT THE BOARD TEACHES (owner ask
+// 2026-08-19 — the lesson used to be publish-time only, so a coach who saw
+// more clearly afterwards had to replay the whole line to say so).
 //
 // Copy-on-assign is what makes this safe: learners already assigned hold
 // their own copy of the entry, so an edit here reaches FUTURE assignments
@@ -13,6 +16,7 @@ import { canAccessAdminArea } from "@bridge/nexus-client";
 import { redirect } from "next/navigation";
 
 import { requireContext } from "@/lib/api";
+import { parseKItemIds, parseKTags } from "@/lib/coach/kItems";
 import { audit } from "@/lib/audit";
 import {
   parseCurated,
@@ -67,6 +71,8 @@ export async function saveCuratedEditsAction(formData: FormData): Promise<void> 
   const constraint = CONSTRAINTS.includes(constraintRaw as CuratedConstraint)
     ? (constraintRaw as CuratedConstraint)
     : parsed.constraint;
+  const lessonTags = parseKTags(formData.getAll("kTag"));
+  const lessonItems = parseKItemIds(formData.getAll("kItem"));
   const intro = String(formData.get("intro") ?? "").trim();
   const debrief = String(formData.get("debrief") ?? "").trim();
   const pin = String(formData.get("pin") ?? "").trim();
@@ -82,12 +88,14 @@ export async function saveCuratedEditsAction(formData: FormData): Promise<void> 
       ...(intro ? { intro } : {}),
       ...(debrief ? { debrief } : {}),
       ...(pin ? { pin } : {}),
-      // THE LESSON SURVIVES A WORDS-ONLY EDIT. This form rewrites the coach's
-      // prose, not what the board teaches — rebuilding the payload without
-      // carrying the topic and the chosen cards over would silently empty the
-      // learner's Know panel the next time anyone fixed a typo.
-      ...(parsed.kTags?.length ? { kTags: parsed.kTags } : {}),
-      ...(parsed.kItems?.length ? { kItems: parsed.kItems } : {}),
+      // THE LESSON IS EDITABLE HERE (owner ask 2026-08-19) — read from the
+      // form, through the registry's own parsers so a stale name cannot enter
+      // the payload. An empty answer means the coach cleared it, and clearing
+      // is a real choice: the learner's Know panel goes back to its own
+      // defaults. (Absent inputs would read the same way, which is why the
+      // picker always posts what it holds.)
+      ...(lessonTags.length ? { kTags: lessonTags } : {}),
+      ...(lessonItems.length ? { kItems: lessonItems } : {}),
     }),
   );
 
@@ -100,6 +108,7 @@ export async function saveCuratedEditsAction(formData: FormData): Promise<void> 
   await audit(context, "profile.update", "kb_library", entryId, {
     curated: true,
     annotations: payload.annotations.length,
+    ...(payload.kItems?.length ? { lessonCards: payload.kItems.length } : {}),
   });
   redirect(`/m/curated/${encodeURIComponent(entryId)}?saved=1`);
 }

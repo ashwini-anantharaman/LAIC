@@ -198,6 +198,37 @@ export default async function PlayTablePage({
       declarer={state.contract?.declarer ?? null}
       dummySeat={dummy}
       lineSummary={authoring ? curateLineSummary : null}
+      // THE LINE METER's numbers (owner direction 2026-08-19). The summary
+      // above is the sentence; these fill the rail's pips, so how much of the
+      // board is recorded can be read at a glance.
+      progress={
+        authoring
+          ? {
+              calls: state.auction.length,
+              tricks: state.tricks.filter((t) => t.winner).length,
+              phase: state.phase === "auction" ? "auction" : boardOver ? "complete" : "play",
+            }
+          : null
+      }
+      // THE RECORD behind each note's position strip (owner ask 2026-08-19).
+      // Calls and cards only — the board's public half. Nothing here can leak a
+      // hand, because no hand is in it.
+      line={
+        authoring
+          ? {
+              auction: state.auction.map((c) => ({ seat: c.seat, call: c.call as string })),
+              tricks: state.tricks.map((t) => ({
+                plays: t.plays.map((pl) => ({
+                  seat: pl.seat,
+                  card: { suit: pl.card.suit as string, rank: pl.card.rank as number },
+                })),
+              })),
+              contract: state.contract
+                ? `${state.contract.level}${SUIT_CHAR[state.contract.strain]} by ${state.contract.declarer}`
+                : null,
+            }
+          : null
+      }
     />
   ) : null;
   // The coach payload (his engine): the facts layer (looking) and the reasoning
@@ -768,6 +799,22 @@ export default async function PlayTablePage({
           whether leaving needs a save-or-discard prompt. */}
       <EmbedTableState sessionId={sessionId} phase={state.phase} />
       {headlessDriver}
+      {/* A PREVIEW SAYS SO (owner ask 2026-08-19). The coach is inside their own
+          board as the learner meets it — same intro, same lesson, same nudges —
+          and the one thing that view cannot tell them is that it is a rehearsal.
+          The way back out belongs here too: this sitting is disposable. */}
+      {record.curated?.preview && (
+        <p className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          <span className="font-semibold">Preview — this is your board as your learner meets it.</span>
+          <span className="text-amber-800">Nothing here is recorded.</span>
+          <Link
+            href={`/m/curated/${encodeURIComponent(record.curated.entryId)}`}
+            className="font-semibold underline-offset-2 hover:underline"
+          >
+            Back to the deal →
+          </Link>
+        </p>
+      )}
       {error && (
         <p className="mb-2 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
           {error}

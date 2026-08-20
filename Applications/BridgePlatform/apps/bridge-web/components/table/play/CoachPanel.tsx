@@ -1367,6 +1367,9 @@ function CuratedCoachVoice({
   const nudgeKept = answeredEpoch === epoch;
   const [undoing, setUndoing] = useState(false);
   const [undoFailed, setUndoFailed] = useState(false);
+  // Bumped when a take-back lands, to force the overlay refetch below even if
+  // the rewind put the board back on an address it had already shown.
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let alive = true;
@@ -1376,13 +1379,26 @@ function CuratedCoachVoice({
     setUndoFailed(false);
     fetchCuratedOverlay(sessionId, epoch)
       .then((o) => {
-        if (alive) setOverlay(o);
+        if (alive) {
+          setOverlay(o);
+          // The board has answered: whatever the take-back was waiting for has
+          // arrived, so the button stops saying it is working.
+          setUndoing(false);
+        }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (alive) setUndoing(false);
+      });
     return () => {
       alive = false;
     };
-  }, [sessionId, epoch]);
+    // `reload` IS a dependency, not noise: EPOCHS REPEAT ACROSS A REWIND — a
+    // take-back can land the board on the very address it was already showing
+    // ("play#3:1" before the diverging card, "play#3:1" after taking it back),
+    // and then nothing in this list changes, the refetch never runs, and the
+    // nudge bubble sits there over a board that has already moved. Which is
+    // what "the takeback doesn't work" looked like from the outside.
+  }, [sessionId, epoch, reload]);
 
   // The question has gone — taken back, or the board moved past it. Forget
   // the answer, because epochs REPEAT across a rewind (`auction#5` can be a
@@ -1418,20 +1434,35 @@ function CuratedCoachVoice({
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean };
       if (!res.ok || !body.ok) {
         setUndoFailed(true);
+        setUndoing(false);
         return;
       }
       // The rewind that follows is one the learner was ASKED to make, so the
       // driver must not read it as "someone is inspecting" and pause.
       noteTakeBack();
+      // THE BUBBLE GOES NOW. The server has already rewound; waiting for the
+      // page refresh and then a second round trip for the overlay left the
+      // question standing on screen for a beat or two, which reads as a tap
+      // that did nothing — and invites a second tap.
+      setOverlay((o) => {
+        if (!o) return o;
+        const next = { ...o };
+        delete next.nudge;
+        return next;
+      });
+      setReload((n) => n + 1);
       // NOT marked answered. A rewind makes epochs repeat — `auction#5` for
       // the bid taken back, `auction#4` after it, `auction#5` again for the
       // next one — so remembering this epoch would silently suppress the
       // nudge for a genuinely new divergence. The refetch below clears the
       // question by itself, because the board is back on the line.
       router.refresh();
+      // NOT cleared here: `undoing` is released by the refetch above, when the
+      // board it is waiting for actually arrives. Clearing it the instant the
+      // POST returned made the button look ready again while the felt still
+      // showed the old position — the window every double-tap came from.
     } catch {
       setUndoFailed(true);
-    } finally {
       setUndoing(false);
     }
   };
@@ -2314,10 +2345,17 @@ function LessonPane({
   onOpen: () => void;
   onMore: (card: StateCard) => void;
 }>) {
-  const slots = lessonSlots(lesson, cards);
-  const here = slots.filter((s) => s.card);
-  const waiting = slots.filter((s) => !s.card);
-  const keys = here.map((s) => `${epoch}|${s.card!.title}|${s.card!.value}`);
+  // A LESSON CARD COMES FROM ONE OF TWO PLACES (owner ask 2026-08-19): a card
+  // the panel already holds, matched by title, or a value the registry's own
+  // producer made for that item id (kFacts.ts) and the overlay carried here.
+  // The second is why this pane shows readings instead of a list of names.
+  const slots = lessonSlots(lesson, cards).map((s) => ({
+    ...s,
+    shown: s.card ?? (s.fact ? { title: s.title, value: s.fact.value, detail: s.fact.detail } : null),
+  }));
+  const here = slots.filter((s) => s.shown);
+  const waiting = slots.filter((s) => !s.shown);
+  const keys = here.map((s) => `${epoch}|${s.shown!.title}|${s.shown!.value}`);
   const opened = useUnlockedCount(keys);
   const done = here.length > 0 && opened === here.length;
   return (
@@ -2363,10 +2401,10 @@ function LessonPane({
           {here.map((s) => (
             <div key={`${epoch}|lesson|${s.id}`} style={{ display: "flex", minWidth: 0 }}>
               <FlipCard
-                card={s.card!}
-                unlockKey={`${epoch}|${s.card!.title}|${s.card!.value}`}
+                card={s.shown!}
+                unlockKey={`${epoch}|${s.shown!.title}|${s.shown!.value}`}
                 onOpen={onOpen}
-                onMore={() => onMore(s.card!)}
+                onMore={() => onMore(s.shown!)}
               />
             </div>
           ))}

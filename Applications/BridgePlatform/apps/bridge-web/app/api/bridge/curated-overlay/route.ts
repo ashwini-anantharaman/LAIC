@@ -17,6 +17,7 @@
 import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse } from "next/server";
 
+import { kFactsFor } from "@/lib/coach/kFacts";
 import { lessonPlan } from "@/lib/coach/kLesson";
 import { callLabel, cardLabel } from "@/lib/coach/position";
 import { corsOptions, withCors } from "@/lib/cors";
@@ -35,6 +36,7 @@ import {
 } from "@/lib/curated";
 import { getBridgeContext } from "@/lib/nexus";
 import { assignmentStore, libraryStore, sessionService } from "@/lib/sessions";
+import { playsFrom } from "@/lib/coach/turn";
 
 export const OPTIONS = corsOptions("GET");
 
@@ -80,10 +82,16 @@ async function handle(request: Request): Promise<NextResponse> {
   // auction lesson and a play lesson select differently from the same choice.
   // Null when the coach named no lesson, and the panel then behaves exactly as
   // it always has, which is what every deal authored before this needs.
-  const lesson =
+  const plan =
     state.phase === "auction" || state.phase === "play"
       ? lessonPlan(payload, state.phase)
       : null;
+  // AND THE VALUES THEMSELVES (owner ask 2026-08-19). The plan says which cards
+  // this board teaches; these are what they READ right now, counted from this
+  // learner's seat over what they may see. Recomputed per decision, because the
+  // overlay is fetched per decision — that is what makes the lesson's cards move
+  // with the board instead of standing there as names.
+  const lesson = plan ? { ...plan, facts: kFactsFor(plan.items, state, seat) } : null;
 
   // WHO the coach is — the assignment that issued this entry knows (owner
   // pick #3, 2026-08-15: "Coach Sarah", not "Your coach"). Best-effort: a
@@ -100,7 +108,11 @@ async function handle(request: Request): Promise<NextResponse> {
     // Name resolution must never cost the overlay.
   }
 
-  const status = pathStatus(state, line, seat);
+  // The chair the learner is choosing from — theirs, or the declarer's under a
+  // takeover. Every line question below (are they on it, whose move left it,
+  // may they still take it back) is answered against that seat.
+  const from = playsFrom(record, state, seat);
+  const status = pathStatus(state, line, seat, from);
 
   // THE FINISH (owner pick #4): the board is over — say how the journey
   // went against the coach's line. An undo that returned to the line leaves

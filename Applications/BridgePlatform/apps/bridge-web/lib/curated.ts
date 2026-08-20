@@ -224,6 +224,17 @@ export function pathStatus(
   state: Pick<GameState, "auction" | "tricks"> & Partial<Pick<GameState, "contract">>,
   line: CuratedLine,
   seat: Seat,
+  /**
+   * The chair the learner is CHOOSING FROM, when it is not the one they were
+   * dealt — a learner dealt dummy plays the declarer's hand whenever that chair
+   * is a robot's ("the learner never sits out"). Absent means the two are the
+   * same, which is every ordinary table.
+   *
+   * It has to be passed in: this file knows payloads and lines, never session
+   * records, so it cannot tell a robot chair from a person's. The host computes
+   * it once (lib/coach/turn.ts `playsFrom`) and hands it down.
+   */
+  actsFrom?: Seat,
 ): {
   onPath: boolean;
   divergedAtOwn: boolean;
@@ -242,10 +253,18 @@ export function pathStatus(
    * were off the line with nothing to do about it (owner report 2026-08-17 —
    * "take it back during play doesn't really work").
    */
+  const from = actsFrom ?? seat;
   const isOwn = (actor: Seat): boolean =>
     actor === seat ||
+    // The chair they play from, when the takeover gave them another one. Without
+    // this, a learner dealt dummy whose robot partner declares was told they had
+    // left the line and offered NOTHING to do about it — the card came out of
+    // the declarer's hand, stamped with the declarer's seat, and this read it as
+    // somebody else's move (bug report 2026-08-19: "it doesn't even show the
+    // take back pop up for me to choose from").
+    actor === from ||
     (state.contract != null &&
-      state.contract.declarer === seat &&
+      state.contract.declarer === from &&
       actor === partnerOf(state.contract.declarer));
 
   // The auction prefix.

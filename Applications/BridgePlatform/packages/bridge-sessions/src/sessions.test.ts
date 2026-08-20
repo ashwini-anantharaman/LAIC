@@ -626,6 +626,58 @@ describe("the dummy takeover, end to end", () => {
 // The coach's studio: the auction is the coach's, the play is the table's
 // ---------------------------------------------------------------------------
 
+describe("taking back several actions at once", () => {
+  // The curated take-back has to unwind the learner's card plus whatever robot
+  // replies auto-play slipped in — as ONE write, or the learner watches a button
+  // that has already stopped saying anything (bug report 2026-08-19).
+  it("drops exactly `count` actions, and stops at the deal", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId, compiled, seats: allAi, seed: 7, createdBy: "u",
+    });
+    let view = await service.view(record.sessionId);
+    for (let i = 0; i < 6; i++) view = await service.step(record.sessionId);
+    const actions = (v: typeof view) => v.state.auction.length;
+    expect(actions(view)).toBe(6);
+
+    const back = await service.undoActions(record.sessionId, 4);
+    expect(actions(back)).toBe(2);
+    // Every dropped action took its logic event with it: the log holds pairs.
+    expect(back.record.events.filter(isActionEvent).length).toBe(2);
+    expect(back.record.events.length).toBe(4);
+
+    // More than the board holds empties it rather than failing.
+    const empty = await service.undoActions(record.sessionId, 99);
+    expect(actions(empty)).toBe(0);
+    expect(empty.record.events.length).toBe(0);
+  });
+
+  it("does nothing for a count of zero", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId, compiled, seats: allAi, seed: 7, createdBy: "u",
+    });
+    await service.step(record.sessionId);
+    const before = await service.view(record.sessionId);
+    const after = await service.undoActions(record.sessionId, 0);
+    expect(after.record.events.length).toBe(before.record.events.length);
+  });
+})
+
+describe("reading a session that may not be there", () => {
+  it("answers the record, or null — and requireSession still throws", async () => {
+    // A table outliving its session is ordinary (discarded on the way out), and
+    // the caller that can say so gracefully needs an answer, not an exception.
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const record = await service.createSession({
+      kbId, compiled, seats: allAi, seed: 3, createdBy: "u",
+    });
+    expect((await service.getSession(record.sessionId))?.sessionId).toBe(record.sessionId);
+    expect(await service.getSession("bs_gone")).toBeNull();
+    await expect(service.requireSession("bs_gone")).rejects.toThrow(/No session/);
+  });
+})
+
 describe("an authoring sitting (the coach's studio)", () => {
   // The studio seats the coach where the LEARNER will sit and fills the other
   // three chairs with robots, exactly as an ordinary board does. What is not
