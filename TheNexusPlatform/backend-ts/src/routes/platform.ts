@@ -2279,6 +2279,38 @@ function _requireLearningCap(
   }
 }
 
+/**
+ * Learning MEMBERSHIP, without the author-level bar — for the governance surface.
+ *
+ * `_learningAuthor` requires level admin|edit, which is right for authoring: you
+ * should not be able to write content you were only given to read. It is wrong
+ * for the Content Library, and shipping it there quietly broke the sub-roles
+ * feature this file already enforces.
+ *
+ * A learning sub-role stores its grant as `perms.capabilities`, so the coarse
+ * level derived for its holder is "view" (_platformLevel looks for an "edit"
+ * VALUE among the perms, and an array of capability ids is not one). A role
+ * granting library.share_club therefore arrived here as a viewer and was refused
+ * before its capability was ever consulted — the ceiling machinery working
+ * perfectly and the door bolted anyway.
+ *
+ * So these routes gate on the CAPABILITY alone, via _requireLearningCapStrict.
+ * That is the same call the write paths already make, and it is stricter than the
+ * level test in the way that matters: the level is inherited from how someone
+ * launched, the capability is what an administrator deliberately granted.
+ *
+ * The org's module check stays — a disabled platform is still closed.
+ */
+async function _learningMember(c: Context, pinned: string | null) {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", pinned);
+  if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
+    throw new HttpError(403, "The learning module is disabled for this organization");
+  }
+  const eff = await _learningEffective(user, access);
+  return { user, access, eff };
+}
+
 async function _learningAuthor(c: Context, pinned: string | null) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", pinned);
@@ -2576,7 +2608,7 @@ async function _clubIdsFor(access: ResolvedPlatformAccess): Promise<Set<string>>
 }
 
 platformRouter.get("/learning/objects/:object_id/shares", async (c) => {
-  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
   const objectId = c.req.param("object_id");
   // Scoped read first: "who is this shared with?" must not answer for an object
   // the caller could not open, or the share list becomes an existence oracle for
@@ -2601,7 +2633,7 @@ platformRouter.put("/learning/objects/:object_id/shares", async (c) => {
     club_program_ids?: string[];
     program_id?: string;
   };
-  const { access, eff } = await _learningAuthor(
+  const { access, eff } = await _learningMember(
     c, body.program_id ?? c.req.query("program_id") ?? null,
   );
   const objectId = c.req.param("object_id");
@@ -2641,7 +2673,7 @@ platformRouter.put("/learning/objects/:object_id/shares", async (c) => {
 // ── App targets ─────────────────────────────────────────────────────────────
 
 platformRouter.get("/learning/objects/:object_id/app-targets", async (c) => {
-  const { access } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const { access } = await _learningMember(c, c.req.query("program_id") ?? null);
   const objectId = c.req.param("object_id");
   const object = await graph.getLearningObject(
     access.orgId, objectId, access.programId, access.partnerProgramId ?? null,
@@ -2654,7 +2686,7 @@ platformRouter.get("/learning/objects/:object_id/app-targets", async (c) => {
 
 platformRouter.put("/learning/objects/:object_id/app-targets", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { app_keys?: string[]; program_id?: string };
-  const { user, access, eff } = await _learningAuthor(
+  const { user, access, eff } = await _learningMember(
     c, body.program_id ?? c.req.query("program_id") ?? null,
   );
   const objectId = c.req.param("object_id");
@@ -2692,7 +2724,7 @@ platformRouter.put("/learning/objects/:object_id/app-targets", async (c) => {
 // waterfall the length of the library.
 
 platformRouter.get("/learning/library", async (c) => {
-  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
   _requireLearningCapStrict(eff, "learning.library.share_view", null);
 
   const objects = await graph.listLearningObjectsMeta(
@@ -2747,7 +2779,7 @@ platformRouter.get("/learning/library", async (c) => {
  * click.
  */
 platformRouter.get("/learning/clubs", async (c) => {
-  const { access, eff } = await _learningAuthor(c, c.req.query("program_id") ?? null);
+  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
   _requireLearningCapStrict(eff, "learning.library.share_view", null);
 
   const partners = await db.listPartnersForProgram(access.programId).catch(() => []);
@@ -2783,7 +2815,7 @@ const _bulkSharesSchema = z.object({
 
 platformRouter.put("/learning/shares/bulk", async (c) => {
   const req = parseBody(_bulkSharesSchema, await c.req.json());
-  const { access, eff } = await _learningAuthor(
+  const { access, eff } = await _learningMember(
     c, req.program_id ?? c.req.query("program_id") ?? null,
   );
   // No object type is in hand for a batch, so a type-scoped role cannot be
@@ -2836,7 +2868,7 @@ const _bulkAppTargetsSchema = z.object({
 
 platformRouter.put("/learning/app-targets/bulk", async (c) => {
   const req = parseBody(_bulkAppTargetsSchema, await c.req.json());
-  const { access, eff } = await _learningAuthor(
+  const { access, eff } = await _learningMember(
     c, req.program_id ?? c.req.query("program_id") ?? null,
   );
   _requireLearningCapStrict(eff, "learning.publish.app_target", null);

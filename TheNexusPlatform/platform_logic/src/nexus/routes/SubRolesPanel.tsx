@@ -31,7 +31,6 @@ import {
   listSubRoles,
   updateSubRole,
   type LearningCapability,
-  type LearningCapabilityGroup,
   type LearningPerson,
   type SubRole,
 } from "@/services/api";
@@ -48,8 +47,56 @@ import { EmptyState } from "@/nexus/ui/kit";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { cn } from "@/app/components/ui/utils";
 
-/** Never grantable onward, however the catalogue evolves. */
-const NEVER_DELEGABLE = new Set(["learning.roles.delegate"]);
+/**
+ * What a sub-role can be about: the things THIS SCREEN does, and nothing else.
+ *
+ * The learning catalogue holds 29 capabilities covering authoring, sources,
+ * review, teaching and the learner runtime. None of those happen here, and
+ * offering them would make a Content Manager the gatekeeper of the whole Studio
+ * by accident — they would be handing out powers they cannot see the effects of
+ * from this tab.
+ *
+ * So the list is the library's own surface, in the order someone reasons about
+ * it: get in, look, share, publish. Four toggles, deliberately.
+ *
+ * `learning.roles.delegate` is absent and must stay absent: a sub-role that can
+ * mint sub-roles turns one grant into an unbounded tree, and the server withholds
+ * it too, so a toggle for it would be a control that does nothing.
+ *
+ * Adding to the library's surface means adding here. That is the intended
+ * coupling — this list is the answer to "what can be delegated", and it should
+ * change only when the screen does.
+ */
+const LIBRARY_CAPABILITIES = [
+  "learning.library.console",
+  "learning.library.share_view",
+  "learning.library.share_club",
+  "learning.publish.app_target",
+] as const;
+
+const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
+
+/**
+ * Said in terms of this screen, not the catalogue.
+ *
+ * The catalogue's own labels are written for the platform's role builder and
+ * describe capabilities in the abstract ("Set program, organization, cohort, or
+ * participant audience"). Someone here is delegating a job on a page they are
+ * looking at, so the words name the buttons in front of them.
+ */
+const SUBROLE_LABELS: Record<string, string> = {
+  "learning.library.console": "Open the Content Library",
+  "learning.library.share_view": "See who content is shared with",
+  "learning.library.share_club": "Share content with clubs and people",
+  "learning.publish.app_target": "Publish content to an app",
+};
+
+const SUBROLE_HINTS: Record<string, string> = {
+  "learning.library.console": "Without this the tab does not appear at all.",
+  "learning.library.share_view": "Read-only: they can see the clubs and people on each item.",
+  "learning.library.share_club": "The share dialog — grant and revoke access.",
+  "learning.publish.app_target": "The publish dialog — choose which app content appears in.",
+};
 
 const capsOf = (r: SubRole): string[] => {
   const c = (r.perms as { capabilities?: unknown })?.capabilities;
@@ -60,7 +107,6 @@ function RoleEditor({
   programId,
   role,
   grantable,
-  groups,
   onClose,
   onSaved,
 }: {
@@ -68,31 +114,12 @@ function RoleEditor({
   /** null = creating. */
   role: SubRole | null;
   grantable: LearningCapability[];
-  groups: LearningCapabilityGroup[];
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [name, setName] = useState(role?.name ?? "");
   const [picked, setPicked] = useState<Set<string>>(() => new Set(role ? capsOf(role) : []));
   const [saving, setSaving] = useState(false);
-
-  const byGroup = useMemo(() => {
-    const m = new Map<string, LearningCapability[]>();
-    for (const c of grantable) {
-      const list = m.get(c.group) ?? [];
-      list.push(c);
-      m.set(c.group, list);
-    }
-    return m;
-  }, [grantable]);
-
-  const ordered = useMemo(
-    () =>
-      [...groups]
-        .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .filter((g) => (byGroup.get(g.id) ?? []).length > 0),
-    [groups, byGroup],
-  );
 
   async function save() {
     setSaving(true);
@@ -130,55 +157,51 @@ function RoleEditor({
           />
         </div>
 
-        <div className="max-h-[42vh] space-y-4 overflow-y-auto">
-          {ordered.length === 0 ? (
+        {/* A flat list, because there are four of these. Grouping four items by
+            catalogue section is filing cabinets for a single sheet of paper. */}
+        <div className="flex flex-col gap-0.5">
+          {grantable.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">
-              Your role holds no capabilities that can be passed on.
+              Your own role holds none of the Content Library&rsquo;s capabilities, so there is
+              nothing to pass on.
             </p>
           ) : (
-            ordered.map((g) => (
-              <div key={g.id}>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {g.label}
-                </p>
-                <div className="flex flex-col gap-0.5">
-                  {(byGroup.get(g.id) ?? []).map((c) => {
-                    const on = picked.has(c.id);
-                    return (
-                      <button
-                        key={c.id}
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() =>
-                          setPicked((s) => {
-                            const n = new Set(s);
-                            n.has(c.id) ? n.delete(c.id) : n.add(c.id);
-                            return n;
-                          })
-                        }
-                        className="flex items-start gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
-                      >
-                        <span
-                          aria-hidden
-                          className={cn(
-                            "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs",
-                            on
-                              ? "border-primary bg-primary text-primary-foreground"
-                              : "border-input bg-input-background dark:bg-input/30",
-                          )}
-                        >
-                          {on && <Check className="size-3.5" />}
-                        </span>
-                        <span className="min-w-0">
-                          <span className="block text-sm">{c.label}</span>
-                          <span className="block font-mono text-[11px] text-muted-foreground">{c.id}</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))
+            grantable.map((c) => {
+              const on = picked.has(c.id);
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() =>
+                    setPicked((s) => {
+                      const n = new Set(s);
+                      n.has(c.id) ? n.delete(c.id) : n.add(c.id);
+                      return n;
+                    })
+                  }
+                  className="flex items-start gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/50"
+                >
+                  <span
+                    aria-hidden
+                    className={cn(
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-[4px] border shadow-xs",
+                      on
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-input bg-input-background dark:bg-input/30",
+                    )}
+                  >
+                    {on && <Check className="size-3.5" />}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm">{SUBROLE_LABELS[c.id] ?? c.label}</span>
+                    <span className="block text-xs text-muted-foreground">
+                      {SUBROLE_HINTS[c.id] ?? c.description ?? c.id}
+                    </span>
+                  </span>
+                </button>
+              );
+            })
           )}
         </div>
 
@@ -204,10 +227,9 @@ function RoleEditor({
 
 export function SubRolesPanel({ programId }: { programId: string }) {
   const [ceiling, setCeiling] = useState<string[] | null>(null);
-  const [catalogue, setCatalogue] = useState<{
-    capabilities: LearningCapability[];
-    groups: LearningCapabilityGroup[];
-  } | null>(null);
+  // Only the capabilities are read now — the four toggles render as a flat list,
+  // so the catalogue's own grouping has nothing left to say here.
+  const [catalogue, setCatalogue] = useState<{ capabilities: LearningCapability[] } | null>(null);
   const [roles, setRoles] = useState<SubRole[] | null>(null);
   const [people, setPeople] = useState<LearningPerson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -235,17 +257,25 @@ export function SubRolesPanel({ programId }: { programId: string }) {
     void load();
   }, [load]);
 
-  // What this person may pass on: their ceiling, minus what is never delegable,
-  // intersected with the catalogue so an id with no label never renders bare.
+  // What this person may pass on: the library's own capabilities, intersected
+  // with their ceiling. Ordered by LIBRARY_CAPABILITIES rather than by the
+  // catalogue, so the list reads get-in → look → share → publish instead of
+  // however the catalogue happens to be grouped.
   const grantable = useMemo(() => {
     if (!ceiling || !catalogue) return [];
-    const mine = new Set(ceiling.filter((id) => !NEVER_DELEGABLE.has(id)));
-    return catalogue.capabilities.filter((c) => mine.has(c.id));
+    const mine = new Set(ceiling);
+    const byId = new Map(catalogue.capabilities.map((c) => [c.id, c]));
+    return LIBRARY_CAPABILITIES.filter((id) => DELEGABLE.has(id) && mine.has(id))
+      .map((id) => byId.get(id))
+      .filter(Boolean) as LearningCapability[];
   }, [ceiling, catalogue]);
 
   const labelOf = useMemo(() => {
     const m = new Map((catalogue?.capabilities ?? []).map((c) => [c.id, c.label]));
-    return (id: string) => m.get(id) ?? id;
+    // The screen's words first, so a role's summary reads the same as the editor
+    // that made it. Falling back to the catalogue keeps any legacy capability on
+    // an existing role legible rather than showing a bare id.
+    return (id: string) => SUBROLE_LABELS[id] ?? m.get(id) ?? id;
   }, [catalogue]);
 
   async function assign(email: string, roleId: string | null) {
@@ -390,7 +420,6 @@ export function SubRolesPanel({ programId }: { programId: string }) {
           programId={programId}
           role={editing.role}
           grantable={grantable}
-          groups={catalogue.groups}
           onClose={() => setEditing(null)}
           onSaved={() => void load()}
         />
