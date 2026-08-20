@@ -18,7 +18,7 @@
  * is never reached by accident.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Check, Loader2, Pencil, Plus, Shield, Trash2, UserCog } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Shield, Smartphone, Trash2, UserCog } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -28,8 +28,11 @@ import {
   getLearningCapabilityCatalogue,
   getLearningCeiling,
   listLearningPeople,
+  getAppAdmins,
   listSubRoles,
+  setAppAdmins,
   updateSubRole,
+  type AppAdminApp,
   type LearningCapability,
   type LearningPerson,
   type SubRole,
@@ -71,7 +74,9 @@ const LIBRARY_CAPABILITIES = [
   "learning.library.console",
   "learning.library.share_view",
   "learning.library.share_club",
+  "learning.library.share_app",
   "learning.publish.app_target",
+  "learning.app.publish_club",
 ] as const;
 
 const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
@@ -88,14 +93,18 @@ const SUBROLE_LABELS: Record<string, string> = {
   "learning.library.console": "Open the Content Library",
   "learning.library.share_view": "See who content is shared with",
   "learning.library.share_club": "Share content with clubs and people",
+  "learning.library.share_app": "Share content with an app",
   "learning.publish.app_target": "Publish content to an app",
+  "learning.app.publish_club": "Limit app content to one club",
 };
 
 const SUBROLE_HINTS: Record<string, string> = {
   "learning.library.console": "Without this the tab does not appear at all.",
   "learning.library.share_view": "Read-only: they can see the clubs and people on each item.",
   "learning.library.share_club": "The share dialog — grant and revoke access.",
+  "learning.library.share_app": "Hands a catalogue to an app's administrators to decide on.",
   "learning.publish.app_target": "The publish dialog — choose which app content appears in.",
+  "learning.app.publish_club": "Publish for one club on the app rather than everyone.",
 };
 
 const capsOf = (r: SubRole): string[] => {
@@ -234,20 +243,27 @@ export function SubRolesPanel({ programId }: { programId: string }) {
   const [people, setPeople] = useState<LearningPerson[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<{ role: SubRole | null } | null>(null);
+  const [apps, setApps] = useState<AppAdminApp[] | null>(null);
+  const [candidates, setCandidates] = useState<{ profile_id: string; display_name: string }[]>([]);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [c, cat, rs, ps] = await Promise.all([
+      const [c, cat, rs, ps, aa] = await Promise.all([
         getLearningCeiling(programId),
         getLearningCapabilityCatalogue(programId),
         listSubRoles(programId),
         listLearningPeople(programId).catch(() => [] as LearningPerson[]),
+        // Appointing app administrators needs share_app, which a delegate may not
+        // hold — an empty register is the right answer for them, not an error.
+        getAppAdmins(programId).catch(() => ({ apps: [], candidates: [] })),
       ]);
       setCeiling(c);
       setCatalogue(cat);
       setRoles(rs);
       setPeople(ps);
+      setApps(aa.apps);
+      setCandidates(aa.candidates);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't load sub-roles");
     }
@@ -414,6 +430,87 @@ export function SubRolesPanel({ programId }: { programId: string }) {
           </div>
         )}
       </section>
+
+      {/* THE APP-ADMINISTRATOR REGISTER. An `app` grant hands content to these
+          people, so who they are belongs beside the roles rather than in an org
+          settings screen nobody visits. Empty when the viewer cannot appoint —
+          the endpoint refuses without share_app and the load treats that as "no
+          register", not as an error. */}
+      {apps && apps.length > 0 && (
+        <section>
+          <div className="mb-3">
+            <h2 className="text-lg font-semibold">App administrators</h2>
+            <p className="text-sm text-muted-foreground">
+              Sharing content with an app shares it with these people. They decide what
+              actually goes on the app, and which club sees it there.
+            </p>
+          </div>
+          <div className="overflow-hidden rounded-xl border">
+            {apps.map((app) => (
+              <div key={app.key} className="flex items-start gap-3 border-b p-3 last:border-b-0">
+                <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium">{app.label}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {app.admins.length === 0
+                      ? "Nobody yet — content shared with this app reaches no one."
+                      : app.admins.map((a) => a.display_name).join(" · ")}
+                  </p>
+                </div>
+                <Select
+                  value="__add__"
+                  onValueChange={(v) => {
+                    if (v === "__add__") return;
+                    const next = [...new Set([...app.admins.map((a) => a.profile_id), v])];
+                    void (async () => {
+                      try {
+                        await setAppAdmins(programId, app.key, next);
+                        toast.success("App administrator added");
+                        await load();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Couldn't add them");
+                      }
+                    })();
+                  }}
+                >
+                  <SelectTrigger className="w-44">
+                    <SelectValue placeholder="Add someone" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__add__">Add someone…</SelectItem>
+                    {candidates
+                      .filter((c) => !app.admins.some((a) => a.profile_id === c.profile_id))
+                      .map((c) => (
+                        <SelectItem key={c.profile_id} value={c.profile_id}>
+                          {c.display_name}
+                        </SelectItem>
+                      ))}
+                  </SelectContent>
+                </Select>
+                {app.admins.length > 0 && (
+                  <ConfirmButton
+                    title={`Remove all administrators of ${app.label}?`}
+                    description="Content shared with this app will reach nobody until someone else is appointed."
+                    actionLabel="Remove all"
+                    buttonTitle={`Clear ${app.label} administrators`}
+                    onConfirm={async () => {
+                      try {
+                        await setAppAdmins(programId, app.key, []);
+                        toast.success("Administrators cleared");
+                        await load();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Couldn't clear them");
+                      }
+                    }}
+                  >
+                    <Trash2 className="size-4" />
+                  </ConfirmButton>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {editing && (
         <RoleEditor

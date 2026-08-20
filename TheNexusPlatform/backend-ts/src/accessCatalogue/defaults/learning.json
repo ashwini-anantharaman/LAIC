@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.1",
+  "catalogueVersion": "1.2",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -238,6 +238,54 @@
       "label": "Export the library snapshot",
       "description": "Download the whole library \u2014 every object and folder \u2014 as a JSON snapshot. Ungoverned before this capability existed.",
       "group": "library_governance"
+    },
+    {
+      "id": "learning.library.share_app",
+      "label": "Share content with an app",
+      "description": "Grant content to an app, meaning its administrators may see it and decide whether to carry it. Granting to an app is granting to its administrators \u2014 nobody is an app.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.app.administer",
+      "label": "Administer an app's content",
+      "description": "See what has been granted to an app you administer, and choose what goes on it. Which apps someone administers is set per program, beside the content library.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.app.publish_club",
+      "label": "Limit app content to one club",
+      "description": "Publish to an app for a single club rather than everyone on it. Separate from choosing the app, because 'which app' and 'which club within it' are different decisions.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.library.upload",
+      "label": "Add files to the library",
+      "description": "Add a PDF, video or image directly to the content library and file it into folders. Not authored content \u2014 material that arrives ready-made.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
     }
   ],
   "resourceTypes": [
@@ -589,7 +637,11 @@
         "learning.library.share_view",
         "learning.library.share_club",
         "learning.roles.delegate",
-        "learning.library.export"
+        "learning.library.export",
+        "learning.library.share_app",
+        "learning.app.administer",
+        "learning.app.publish_club",
+        "learning.library.upload"
       ],
       "uiSurfaceIds": [
         "learning.library_console"

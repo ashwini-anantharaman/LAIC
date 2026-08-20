@@ -35,6 +35,7 @@ import { resolveCapabilities, surfacesForCapabilities, grantableCapabilities } f
 import { capabilitiesFor, requireCapability } from "../accessCatalogue/enforce";
 import * as bridgeRoles from "../accessCatalogue/bridgeRoles";
 import * as appRoles from "../accessCatalogue/appRoles";
+import * as appAdmins from "../accessCatalogue/contentAppAdmins";
 import type { ProviderId } from "../accessCatalogue/types";
 import { isOfferingAdmin } from "../permissions";
 import {
@@ -64,6 +65,7 @@ import {
   updateMemberSchema,
   usernameSchema,
   avatarDataUrlSchema,
+  CONTENT_APP_TARGETS,
   CONTENT_APP_TARGET_KEYS,
 } from "../schemas";
 import {
@@ -2723,9 +2725,37 @@ platformRouter.put("/learning/objects/:object_id/app-targets", async (c) => {
 // the share state beside each row, and fetching it per object would be a
 // waterfall the length of the library.
 
+/**
+ * May this caller open the library at all?
+ *
+ * Two independent answers, and an app administrator has the second one. A content
+ * manager holds a CAPABILITY; an app administrator is in the REGISTER for an app,
+ * which is what "an app has administrators" means — there is no capability to
+ * check because the authority is per-app and lives beside the program.
+ *
+ * Gating on the capability alone locked app administrators out of the very screen
+ * built for them. Gating on the register alone would lock out the content manager
+ * who grants to them. It is an OR, and the row filter downstream is what keeps an
+ * app administrator to their own catalogue.
+ */
+async function _libraryReader(c: Context, pinned: string | null) {
+  const { user, access, eff } = await _learningMember(c, pinned);
+  const administers = await appAdmins.appsAdministeredBy(
+    access.partnerProgramId ?? access.programId,
+    access.profileId ?? null,
+  );
+  const byCapability =
+    eff.capabilities.includes("learning.library.share_view") ||
+    eff.capabilities.includes("learning.library.share_club") ||
+    eff.capabilities.includes("learning.app.administer");
+  if (!byCapability && !administers.length) {
+    throw new HttpError(403, "Missing capability: learning.library.share_view");
+  }
+  return { user, access, eff, administers };
+}
+
 platformRouter.get("/learning/library", async (c) => {
-  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
-  _requireLearningCapStrict(eff, "learning.library.share_view", null);
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
 
   const objects = await graph.listLearningObjectsMeta(
     access.orgId,
@@ -2749,20 +2779,56 @@ platformRouter.get("/learning/library", async (c) => {
     people: grants
       .filter((g) => g.object_id === objectId && g.subject_type === "profile")
       .map((g) => String(g.subject_id)),
-    apps: targets.filter((t) => t.object_id === objectId).map((t) => String(t.app_key)),
+    // Granted TO an app — its administrators may see it and decide.
+    granted_apps: grants
+      .filter((g) => g.object_id === objectId && g.subject_type === "app")
+      .map((g) => String(g.subject_id)),
+    // Actually ON an app. Distinct from the grant: being handed content is not
+    // the same as having carried it, and an app administrator's whole job lives
+    // in the gap between those two facts.
+    apps: [
+      ...new Set(
+        targets.filter((t) => t.object_id === objectId).map((t) => String(t.app_key)),
+      ),
+    ],
+    app_scopes: targets
+      .filter((t) => t.object_id === objectId)
+      .map((t) => ({
+        app_key: String(t.app_key),
+        club_program_id: (t.club_program_id as string | null) ?? null,
+      })),
   });
 
+  // What this caller may DO here, answered once by the server rather than
+  // guessed at by the client from a capability list it would have to interpret.
+  const administers = await appAdmins.appsAdministeredBy(
+    access.partnerProgramId ?? access.programId,
+    access.profileId ?? null,
+  );
+
   return c.json({
-    objects: objects.map((o) => ({
-      id: String(o.id),
-      title: (o.title as string) ?? "",
-      type: (o.type as string) ?? "",
-      status: (o.status as string) ?? "draft",
-      published_at: (o.published_at as string | null) ?? null,
-      collection_ids: (o.collection_ids as string[]) ?? [],
-      collection_names: (o.collection_names as string[]) ?? [],
-      ...shape(String(o.id)),
-    })),
+    // An app administrator sees only what their apps were granted. Their remit is
+    // the catalogue they were handed, not the program's whole library — and this
+    // is the filter, not a UI convenience, so a crafted request cannot widen it.
+    objects: objects
+      .map((o) => ({
+        id: String(o.id),
+        title: (o.title as string) ?? "",
+        type: (o.type as string) ?? "",
+        status: (o.status as string) ?? "draft",
+        published_at: (o.published_at as string | null) ?? null,
+        collection_ids: (o.collection_ids as string[]) ?? [],
+        collection_names: (o.collection_names as string[]) ?? [],
+        ...shape(String(o.id)),
+      }))
+      .filter((o) => {
+        const libraryWide =
+          eff.capabilities.includes("learning.library.share_view") ||
+          eff.capabilities.includes("learning.library.share_club");
+        if (libraryWide) return true;
+        return o.granted_apps.some((a) => administers.includes(a));
+      }),
+    administers_apps: administers,
   });
 });
 
@@ -2779,8 +2845,10 @@ platformRouter.get("/learning/library", async (c) => {
  * click.
  */
 platformRouter.get("/learning/clubs", async (c) => {
-  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
-  _requireLearningCapStrict(eff, "learning.library.share_view", null);
+  // Same door as the library: an app administrator needs the club list to say
+  // "only Highbury sees this on the app", and that is the whole point of their
+  // publish dialog.
+  const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
 
   const partners = await db.listPartnersForProgram(access.programId).catch(() => []);
   const clubs = await Promise.all(
@@ -2806,11 +2874,84 @@ platformRouter.get("/learning/clubs", async (c) => {
   return c.json({ clubs });
 });
 
+// ── The app-administrator register ─────────────────────────────────────────
+//
+// Granting content to an app grants it to these people. Kept beside the library
+// because appointing them is the same act as deciding who may carry content —
+// the content manager's job, not the org admin's.
+
+platformRouter.get("/learning/app-admins", async (c) => {
+  const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const programId = access.partnerProgramId ?? access.programId;
+  const admins = await appAdmins.listContentAppAdmins(programId);
+  // Names, not bare ids: a register that reads as a list of uuids cannot be
+  // checked by the person responsible for it.
+  const members = await graph.listProgramMembers(access.orgId, programId).catch(() => [] as Row[]);
+  const nameOf = new Map(
+    members
+      .filter((m) => m.profile_id)
+      .map((m) => [
+        String(m.profile_id),
+        ((m.display_name as string | null) ?? (m.email as string | null) ?? "Member"),
+      ]),
+  );
+  return c.json({
+    apps: CONTENT_APP_TARGETS.map((a) => ({
+      key: a.key,
+      label: a.label,
+      admins: (admins[a.key] ?? []).map((id) => ({
+        profile_id: id,
+        display_name: nameOf.get(id) ?? "Former member",
+      })),
+    })),
+    candidates: members
+      .filter((m) => m.profile_id)
+      .map((m) => ({
+        profile_id: String(m.profile_id),
+        display_name:
+          ((m.display_name as string | null) ?? (m.email as string | null) ?? "Member"),
+      })),
+  });
+});
+
+const _appAdminsSchema = z.object({
+  program_id: z.string().optional(),
+  app_key: z.string(),
+  profile_ids: z.array(z.string()).default([]),
+});
+
+platformRouter.put("/learning/app-admins", async (c) => {
+  const req = parseBody(_appAdminsSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  // Appointing is strictly the sharer's power. An app administrator must not be
+  // able to appoint more app administrators — that is the unbounded-tree problem
+  // roles.delegate already refuses, in another costume.
+  _requireLearningCapStrict(eff, "learning.library.share_app", null);
+  if (!CONTENT_APP_TARGET_KEYS.has(req.app_key)) {
+    throw new HttpError(422, `Unknown app: ${req.app_key}`);
+  }
+  const programId = access.partnerProgramId ?? access.programId;
+  // Only people who are actually in the program: an id from elsewhere would be
+  // stored happily and never match anyone.
+  const members = await graph.listProgramMembers(access.orgId, programId).catch(() => [] as Row[]);
+  const known = new Set(members.filter((m) => m.profile_id).map((m) => String(m.profile_id)));
+  const strangers = req.profile_ids.filter((id) => !known.has(id));
+  if (strangers.length) {
+    throw new HttpError(422, `Not a member of this program: ${strangers.join(", ")}`);
+  }
+  const next = await appAdmins.setContentAppAdmins(programId, req.app_key, req.profile_ids);
+  return c.json({ ok: true, admins: next[req.app_key] ?? [] });
+});
+
 const _bulkSharesSchema = z.object({
   program_id: z.string().optional(),
   object_ids: z.array(z.string()).min(1).max(2000),
   club_program_ids: z.array(z.string()).default([]),
   profile_ids: z.array(z.string()).default([]),
+  /** App slugs. Granting to an app grants to its administrators (0010). */
+  app_keys: z.array(z.string()).default([]),
 });
 
 platformRouter.put("/learning/shares/bulk", async (c) => {
@@ -2821,7 +2962,24 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   // No object type is in hand for a batch, so a type-scoped role cannot be
   // checked per item here. Refuse the bulk route for such a role rather than
   // silently ignoring the scope — the per-object endpoint still serves them.
-  _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  // Two capabilities, because they are two decisions. Sharing with a club is a
+  // curriculum call; sharing with an app hands content to whoever administers
+  // that app's catalogue, which is a different person and a different blast
+  // radius. Each is required only for the targets actually being set, so a role
+  // holding one is not refused for the other's sake.
+  if (req.club_program_ids.length || req.profile_ids.length) {
+    _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  }
+  if (req.app_keys.length) {
+    _requireLearningCapStrict(eff, "learning.library.share_app", null);
+  }
+  // Clearing everything is a revocation of both kinds, so it needs both.
+  if (!req.club_program_ids.length && !req.profile_ids.length && !req.app_keys.length) {
+    _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  }
+
+  const unknownApps = req.app_keys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+  if (unknownApps.length) throw new HttpError(422, `Unknown app: ${unknownApps.join(", ")}`);
 
   const clubs = await _clubIdsFor(access);
   const unknownClubs = req.club_program_ids.filter((id) => !clubs.has(id));
@@ -2846,7 +3004,8 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   let written: string[];
   try {
     written = await graph.setLearningGrantsBulk(
-      access.orgId, req.object_ids, req.club_program_ids, req.profile_ids, access.profileId ?? null,
+      access.orgId, req.object_ids, req.club_program_ids, req.profile_ids,
+      access.profileId ?? null, req.app_keys,
     );
   } catch (e) {
     if (_missingGrantsTable(e)) {
@@ -2864,6 +3023,8 @@ const _bulkAppTargetsSchema = z.object({
   program_id: z.string().optional(),
   object_ids: z.array(z.string()).min(1).max(2000),
   app_keys: z.array(z.string()).default([]),
+  /** Omitted / null = the whole app. A club id limits it to that club. */
+  club_program_id: z.string().nullable().optional(),
 });
 
 platformRouter.put("/learning/app-targets/bulk", async (c) => {
@@ -2871,15 +3032,46 @@ platformRouter.put("/learning/app-targets/bulk", async (c) => {
   const { access, eff } = await _learningMember(
     c, req.program_id ?? c.req.query("program_id") ?? null,
   );
-  _requireLearningCapStrict(eff, "learning.publish.app_target", null);
-
   const unknown = req.app_keys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
   if (unknown.length) throw new HttpError(422, `Unknown app: ${unknown.join(", ")}`);
+
+  // TWO WAYS TO HOLD THIS. A content manager publishes by capability
+  // (publish.app_target) across any app. An APP ADMINISTRATOR publishes to the
+  // app they administer and no other — their authority comes from the register,
+  // not from a capability, which is what "an app has administrators" means.
+  //
+  // Checked per app rather than once: someone who administers Bridge Bird must
+  // not be able to publish to a second app by naming it in the same request.
+  const administers = await appAdmins.appsAdministeredBy(
+    access.partnerProgramId ?? access.programId,
+    access.profileId ?? null,
+  );
+  const byCapability = eff.capabilities.includes("learning.publish.app_target");
+  if (!byCapability) {
+    const beyond = req.app_keys.filter((k) => !administers.includes(k));
+    if (beyond.length || !req.app_keys.length) {
+      throw new HttpError(403, `Missing capability: learning.publish.app_target`);
+    }
+  }
+
+  // Limiting to one club is its own decision, and its own capability. An app
+  // administrator holds it implicitly for their own app — deciding which club
+  // sees what on the app they run is the job.
+  if (req.club_program_id) {
+    if (!administers.length) {
+      _requireLearningCapStrict(eff, "learning.app.publish_club", null);
+    }
+    const clubs = await _clubIdsFor(access);
+    if (!clubs.has(req.club_program_id)) {
+      throw new HttpError(422, `Not a club of this program: ${req.club_program_id}`);
+    }
+  }
 
   let written: string[];
   try {
     written = await graph.setLearningAppTargetsBulk(
       access.orgId, req.object_ids, req.app_keys, access.profileId ?? null,
+      req.club_program_id ?? null,
     );
   } catch (e) {
     if (e instanceof Error && e.message.startsWith("app-targets-unavailable")) {

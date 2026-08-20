@@ -118,10 +118,16 @@ export function ContentLibraryTab() {
   const [sharing, setSharing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
+  /** Apps this viewer administers — empty for a content manager who runs none. */
+  const [administers, setAdministers] = useState<string[]>([]);
+
   const load = useCallback(() => {
     setError(null);
     return getContentLibrary(programId)
-      .then(setObjects)
+      .then((r) => {
+        setObjects(r.objects);
+        setAdministers(r.administersApps);
+      })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Couldn't load this program's content"),
       );
@@ -417,6 +423,7 @@ export function ContentLibraryTab() {
       {publishing && (
         <PublishContentDialog
           programId={programId}
+          administersApps={administers}
           objects={publishing.objects}
           label={publishing.label}
           onClose={() => setPublishing(null)}

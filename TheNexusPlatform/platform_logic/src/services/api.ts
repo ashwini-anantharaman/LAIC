@@ -1618,8 +1618,13 @@ export interface LibraryObject {
   clubs: string[];
   /** Profile ids this object is granted to by name. */
   people: string[];
-  /** App slugs this object is published to. */
+  /** App slugs this object is published to (any club scope). */
   apps: string[];
+  /** App slugs this object has been GRANTED to — their administrators may decide.
+   *  Being handed content is not the same as having carried it. */
+  granted_apps: string[];
+  /** Every publication, with its club scope. null = the whole app. */
+  app_scopes: { app_key: string; club_program_id: string | null }[];
 }
 
 export interface ClubMember {
@@ -1634,11 +1639,17 @@ export interface ShareableClub {
   members: ClubMember[];
 }
 
-export async function getContentLibrary(programId: string): Promise<LibraryObject[]> {
-  const r = await request<{ objects: LibraryObject[] }>(
+export interface ContentLibraryResult {
+  objects: LibraryObject[];
+  /** Apps this caller administers. Empty for a content manager who administers none. */
+  administersApps: string[];
+}
+
+export async function getContentLibrary(programId: string): Promise<ContentLibraryResult> {
+  const r = await request<{ objects: LibraryObject[]; administers_apps?: string[] }>(
     `/api/platform/learning/library?program_id=${encodeURIComponent(programId)}`,
   );
-  return r.objects ?? [];
+  return { objects: r.objects ?? [], administersApps: r.administers_apps ?? [] };
 }
 
 export async function listShareableClubs(programId: string): Promise<ShareableClub[]> {
@@ -1654,6 +1665,7 @@ export async function setContentShares(
   objectIds: string[],
   clubProgramIds: string[],
   profileIds: string[],
+  appKeys: string[] = [],
 ): Promise<{ shared: number; skipped: string[] }> {
   return request(`/api/platform/learning/shares/bulk`, {
     method: "PUT",
@@ -1662,18 +1674,56 @@ export async function setContentShares(
       object_ids: objectIds,
       club_program_ids: clubProgramIds,
       profile_ids: profileIds,
+      app_keys: appKeys,
     }),
   });
 }
 
+/** `clubProgramId` null = the whole app. A scoped write only touches its own
+ *  scope, so publishing for one club leaves the whole-app row alone. */
 export async function setContentAppTargets(
   programId: string,
   objectIds: string[],
   appKeys: string[],
+  clubProgramId: string | null = null,
 ): Promise<{ published: number; skipped: string[] }> {
   return request(`/api/platform/learning/app-targets/bulk`, {
     method: "PUT",
-    body: JSON.stringify({ program_id: programId, object_ids: objectIds, app_keys: appKeys }),
+    body: JSON.stringify({
+      program_id: programId,
+      object_ids: objectIds,
+      app_keys: appKeys,
+      club_program_id: clubProgramId,
+    }),
+  });
+}
+
+// ── The app-administrator register ─────────────────────────────────────────
+
+export interface AppAdminApp {
+  key: string;
+  label: string;
+  admins: { profile_id: string; display_name: string }[];
+}
+
+export async function getAppAdmins(
+  programId: string,
+): Promise<{ apps: AppAdminApp[]; candidates: { profile_id: string; display_name: string }[] }> {
+  const r = await request<{
+    apps?: AppAdminApp[];
+    candidates?: { profile_id: string; display_name: string }[];
+  }>(`/api/platform/learning/app-admins?program_id=${encodeURIComponent(programId)}`);
+  return { apps: r.apps ?? [], candidates: r.candidates ?? [] };
+}
+
+export async function setAppAdmins(
+  programId: string,
+  appKey: string,
+  profileIds: string[],
+): Promise<void> {
+  await request(`/api/platform/learning/app-admins`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, app_key: appKey, profile_ids: profileIds }),
   });
 }
 

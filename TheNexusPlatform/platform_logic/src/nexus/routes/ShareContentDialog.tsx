@@ -1,6 +1,16 @@
 /**
  * "Who can see this?" — the sharing dialog for one folder, one item, or a selection.
  *
+ * THREE KINDS OF RECIPIENT, and each is really a person or group of people:
+ *
+ *   an APP    → its administrators, who then decide what goes on the app
+ *   a CLUB    → its administrators, who then decide what the club sees
+ *   a PERSON  → them, by name
+ *
+ * Nobody "is" an app or a club, so granting to one is granting to whoever runs it.
+ * That indirection is the feature: a content manager hands over a catalogue and
+ * the decision about what to do with it, rather than making both decisions.
+ *
  * A club is a row you can tick on its own, and it expands to the people inside it.
  * Ticking the club shares with the club; ticking a person shares with that person
  * by name. They are separate grants, deliberately: someone can lose their club
@@ -17,7 +27,7 @@
  * silent revoke-everything.
  */
 import { useEffect, useMemo, useState } from "react";
-import { Check, ChevronRight, Loader2, Users, User } from "lucide-react";
+import { Check, ChevronRight, Loader2, Smartphone, Users, User } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -26,6 +36,7 @@ import {
   type LibraryObject,
   type ShareableClub,
 } from "@/services/api";
+import { CONTENT_APP_TARGETS } from "@/types/platform";
 import { Button } from "@/app/components/ui/button";
 import {
   Dialog,
@@ -72,6 +83,8 @@ export function ShareContentDialog({
   const initialPeople = useMemo(() => new Map<string, Tri>(), []);
   const [clubState, setClubState] = useState<Map<string, Tri>>(new Map());
   const [peopleState, setPeopleState] = useState<Map<string, Tri>>(new Map());
+  const initialApps = useMemo(() => new Map<string, Tri>(), []);
+  const [appState, setAppState] = useState<Map<string, Tri>>(new Map());
 
   useEffect(() => {
     let live = true;
@@ -93,6 +106,13 @@ export function ShareContentDialog({
         }
         setClubState(c);
         setPeopleState(p);
+        const ap = new Map<string, Tri>();
+        for (const app of CONTENT_APP_TARGETS) {
+          const t = triFor(objects, (o) => o.granted_apps, app.key);
+          ap.set(app.key, t);
+          initialApps.set(app.key, t);
+        }
+        setAppState(ap);
       })
       .catch((e) =>
         live && setLoadError(e instanceof Error ? e.message : "Couldn't load this program's clubs"),
@@ -100,7 +120,7 @@ export function ShareContentDialog({
     return () => {
       live = false;
     };
-  }, [programId, objects, initialClubs, initialPeople]);
+  }, [programId, objects, initialClubs, initialPeople, initialApps]);
 
   const toggle = (m: Map<string, Tri>, set: (n: Map<string, Tri>) => void, id: string) => {
     const next = new Map(m);
@@ -113,21 +133,24 @@ export function ShareContentDialog({
   const dirty =
     clubs !== null &&
     ([...clubState].some(([k, v]) => initialClubs.get(k) !== v) ||
-      [...peopleState].some(([k, v]) => initialPeople.get(k) !== v));
+      [...peopleState].some(([k, v]) => initialPeople.get(k) !== v) ||
+      [...appState].some(([k, v]) => initialApps.get(k) !== v));
 
   // Rows still reading "some" were never touched, and a whole-set save would
   // flatten them. Keep them by writing them ON only where they already were.
   const untouchedMixed =
     [...clubState].filter(([k, v]) => v === "some" && initialClubs.get(k) === "some").length +
-    [...peopleState].filter(([k, v]) => v === "some" && initialPeople.get(k) === "some").length;
+    [...peopleState].filter(([k, v]) => v === "some" && initialPeople.get(k) === "some").length +
+    [...appState].filter(([k, v]) => v === "some" && initialApps.get(k) === "some").length;
 
   async function save() {
     setSaving(true);
     try {
       const clubIds = [...clubState].filter(([, v]) => v === "on").map(([k]) => k);
       const personIds = [...peopleState].filter(([, v]) => v === "on").map(([k]) => k);
+      const appIds = [...appState].filter(([, v]) => v === "on").map(([k]) => k);
       const res = await setContentShares(
-        programId, objects.map((o) => o.id), clubIds, personIds,
+        programId, objects.map((o) => o.id), clubIds, personIds, appIds,
       );
       toast.success(
         res.skipped?.length
@@ -178,6 +201,39 @@ export function ShareContentDialog({
         </DialogHeader>
 
         <div className="max-h-[46vh] min-h-[120px] overflow-y-auto">
+          {/* APPS FIRST, because it is the least obvious of the three and the one
+              that hands a decision to someone else. Above the clubs, not mixed in
+              with them: an app is not a group of learners. */}
+          {!loadError && clubs !== null && (
+            <div className="mb-3">
+              <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                Apps
+              </p>
+              {CONTENT_APP_TARGETS.map((app) => (
+                <button
+                  key={app.key}
+                  type="button"
+                  aria-pressed={appState.get(app.key) === "on"}
+                  onClick={() => toggle(appState, setAppState, app.key)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left hover:bg-accent/50"
+                >
+                  <Box state={appState.get(app.key) ?? "off"} />
+                  <Smartphone className="size-4 text-muted-foreground" />
+                  <span className="text-sm font-medium">{app.label}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    its administrators decide
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!loadError && clubs !== null && clubs.length > 0 && (
+            <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Clubs and people
+            </p>
+          )}
+
           {loadError ? (
             <p className="px-1 py-6 text-center text-sm text-destructive">{loadError}</p>
           ) : clubs === null ? (

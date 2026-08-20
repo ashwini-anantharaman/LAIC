@@ -3302,7 +3302,7 @@ export async function listLearningGrantsForObjects(
         from learning_object_grants g
         join learning_objects o on o.id = g.object_id
         where o.organization_id = ${orgId}
-          and g.subject_type in ('club', 'profile')
+          and g.subject_type in ('club', 'profile', 'app')
           and g.object_id in (${sql.join(objectIds.map((i) => sql`${i}`), sql`, `)})`);
       return rows as unknown as Row[];
     });
@@ -3323,7 +3323,8 @@ export async function listLearningAppTargetsForObjects(
   try {
     return await asPrivileged(async (tx) => {
       const rows = await tx.execute(sql`
-        select object_id, app_key, published_at::text as published_at
+        select object_id, app_key, club_program_id::text as club_program_id,
+               published_at::text as published_at
         from learning_object_app_targets
         where organization_id = ${orgId}
           and object_id in (${sql.join(objectIds.map((i) => sql`${i}`), sql`, `)})`);
@@ -3360,11 +3361,14 @@ export async function setLearningGrantsBulk(
   clubProgramIds: string[],
   profileIds: string[],
   grantedBy: string | null,
+  /** App slugs. Granting to an app grants to its ADMINISTRATORS (0010). */
+  appKeys: string[] = [],
 ): Promise<string[]> {
   const ids = [...new Set(objectIds.filter(Boolean))];
   if (!ids.length) return [];
   const clubs = [...new Set(clubProgramIds.filter(Boolean))];
   const people = [...new Set(profileIds.filter(Boolean))];
+  const apps = [...new Set(appKeys.filter(Boolean))];
 
   return asPrivileged(async (tx) => {
     // Org check as a set operation, not a loop: one query establishes which of
@@ -3377,9 +3381,10 @@ export async function setLearningGrantsBulk(
     if (!mine.length) return [];
     const inMine = sql.join(mine.map((i) => sql`${i}`), sql`, `);
 
-    const wanted: { type: "club" | "profile"; id: string }[] = [
+    const wanted: { type: "club" | "profile" | "app"; id: string }[] = [
       ...clubs.map((id) => ({ type: "club" as const, id })),
       ...people.map((id) => ({ type: "profile" as const, id })),
+      ...apps.map((id) => ({ type: "app" as const, id })),
     ];
 
     if (wanted.length) {
@@ -3387,7 +3392,7 @@ export async function setLearningGrantsBulk(
       await tx.execute(sql`
         delete from learning_object_grants
         where object_id in (${inMine})
-          and subject_type in ('club', 'profile')
+          and subject_type in ('club', 'profile', 'app')
           and (subject_type, subject_id) not in (${sql.join(
             wanted.map((w) => sql`(${w.type}, ${w.id})`),
             sql`, `,
@@ -3405,7 +3410,7 @@ export async function setLearningGrantsBulk(
     } else {
       await tx.execute(sql`
         delete from learning_object_grants
-        where object_id in (${inMine}) and subject_type in ('club', 'profile')`);
+        where object_id in (${inMine}) and subject_type in ('club', 'profile', 'app')`);
     }
     return mine;
   });
@@ -3493,10 +3498,25 @@ export async function setLearningAppTargetsBulk(
   objectIds: string[],
   appKeys: string[],
   publishedBy: string | null,
+  /**
+   * Which club sees this on the app. null = the whole app.
+   *
+   * SCOPED WRITES ONLY TOUCH THEIR OWN SCOPE. Publishing for one club must not
+   * disturb the whole-app row or another club's, or an app administrator adding
+   * Highbury would silently unpublish everyone else. So the reconcile below is
+   * bounded by the scope it was given.
+   */
+  clubProgramId: string | null = null,
 ): Promise<string[]> {
   const ids = [...new Set(objectIds.filter(Boolean))];
   if (!ids.length) return [];
   const keys = [...new Set(appKeys.filter(Boolean))];
+  // The sentinel the unique index coalesces to, so "whole app" is one row.
+  const NO_CLUB = "00000000-0000-0000-0000-000000000000";
+  const scope = clubProgramId ?? null;
+  const scopeMatch = scope
+    ? sql`and club_program_id = ${scope}::uuid`
+    : sql`and club_program_id is null`;
 
   try {
     return await asPrivileged(async (tx) => {
@@ -3512,22 +3532,26 @@ export async function setLearningAppTargetsBulk(
         await tx.execute(sql`
           delete from learning_object_app_targets
           where organization_id = ${orgId} and object_id in (${inMine})
+            ${scopeMatch}
             and app_key not in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`);
         await tx.execute(sql`
           insert into learning_object_app_targets
-            (organization_id, object_id, app_key, published_at, published_by)
+            (organization_id, object_id, app_key, club_program_id, published_at, published_by)
           values ${sql.join(
             mine.flatMap((oid) =>
-              keys.map((k) => sql`(${orgId}::uuid, ${oid}, ${k}, now(), ${publishedBy})`),
+              keys.map(
+                (k) =>
+                  sql`(${orgId}::uuid, ${oid}, ${k}, ${scope}::uuid, now(), ${publishedBy})`,
+              ),
             ),
             sql`, `,
           )}
-          on conflict (object_id, app_key)
+          on conflict (object_id, app_key, coalesce(club_program_id, ${NO_CLUB}::uuid))
           do update set published_at = now(), published_by = excluded.published_by`);
       } else {
         await tx.execute(sql`
           delete from learning_object_app_targets
-          where organization_id = ${orgId} and object_id in (${inMine})`);
+          where organization_id = ${orgId} and object_id in (${inMine}) ${scopeMatch}`);
       }
       return mine;
     });
