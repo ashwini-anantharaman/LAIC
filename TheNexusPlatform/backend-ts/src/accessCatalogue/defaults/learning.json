@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.5",
+  "catalogueVersion": "1.6",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -231,7 +231,7 @@
       "id": "learning.publish.app_target",
       "label": "Publish content to an app",
       "description": "It goes live in the app. Stronger than sharing with the app's administrators, because this is the decision rather than the offer.",
-      "group": "publishing",
+      "group": "library_governance",
       "resourceTypes": [
         "learning_object",
         "evaluation_object",
@@ -594,8 +594,7 @@
       "capabilityIds": [
         "learning.publish.release",
         "learning.publish.version",
-        "learning.publish.audience",
-        "learning.publish.app_target"
+        "learning.publish.audience"
       ],
       "uiSurfaceIds": [
         "learning.publishing"
@@ -652,6 +651,7 @@
         "learning.roles.delegate",
         "learning.library.export",
         "learning.library.share_app",
+        "learning.publish.app_target",
         "learning.app.administer",
         "learning.app.publish_club",
         "learning.library.upload"
