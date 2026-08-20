@@ -54,6 +54,7 @@ export const CONTENT_LIBRARY_CAPABILITIES = [
   "learning.library.console",
   "learning.library.share_view",
   "learning.library.share_club",
+  "learning.library.share_member",
   "learning.library.share_app",
   "learning.publish.app_target",
   "learning.app.publish_club",

@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.2",
+  "catalogueVersion": "1.3",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -206,7 +206,19 @@
     {
       "id": "learning.library.share_club",
       "label": "Share content with specific clubs",
-      "description": "Grant or revoke an object to particular clubs. Grants are additive \u2014 they widen an audience and never narrow one.",
+      "description": "Grant content to whole clubs. Its administrators decide what the club sees. Named individuals are a separate capability (share_member).",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.library.share_member",
+      "label": "Share content with individual members",
+      "description": "Grant content to named people in the program \u2014 including members who belong to no club. Separate from sharing with a club, so a role can reach one without the other.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
@@ -636,6 +648,7 @@
         "learning.library.console",
         "learning.library.share_view",
         "learning.library.share_club",
+        "learning.library.share_member",
         "learning.roles.delegate",
         "learning.library.export",
         "learning.library.share_app",

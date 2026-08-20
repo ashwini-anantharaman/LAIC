@@ -63,6 +63,7 @@ export function ShareContentDialog({
   objects,
   label,
   canShareClubs = true,
+  canShareMembers = true,
   canShareApps = true,
   onClose,
   onSaved,
@@ -81,6 +82,9 @@ export function ShareContentDialog({
    * was actually allowed to make. An absent section cannot do that.
    */
   canShareClubs?: boolean;
+  /** learning.library.share_member — named people, club or no club. Separate from
+   *  share_club because "a whole club" and "one person" are different reach. */
+  canShareMembers?: boolean;
   canShareApps?: boolean;
   onClose: () => void;
   onSaved: () => void;
@@ -160,7 +164,7 @@ export function ShareContentDialog({
   const dirty =
     clubs !== null &&
     ((canShareClubs && [...clubState].some(([k, v]) => initialClubs.get(k) !== v)) ||
-      (canShareClubs && [...peopleState].some(([k, v]) => initialPeople.get(k) !== v)) ||
+      (canShareMembers && [...peopleState].some(([k, v]) => initialPeople.get(k) !== v)) ||
       (canShareApps && [...appState].some(([k, v]) => initialApps.get(k) !== v)));
 
   // Rows still reading "some" were never touched, and a whole-set save would
@@ -183,7 +187,7 @@ export function ShareContentDialog({
       const clubIds = canShareClubs
         ? [...clubState].filter(([, v]) => v === "on").map(([k]) => k)
         : undefined;
-      const personIds = canShareClubs
+      const personIds = canShareMembers
         ? [...peopleState].filter(([, v]) => v === "on").map(([k]) => k)
         : undefined;
       const appIds = canShareApps
@@ -302,26 +306,42 @@ export function ShareContentDialog({
                           })
                         }
                         className="rounded p-0.5 text-muted-foreground hover:text-foreground"
-                        disabled={club.members.length === 0}
+                        // Nothing to expand into when this viewer cannot grant to
+                        // people: the club row is the whole of their reach here.
+                        disabled={club.members.length === 0 || !canShareMembers}
                       >
                         <ChevronRight className={cn("size-4 transition-transform", open && "rotate-90")} />
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => toggle(clubState, setClubState, club.id)}
-                        aria-pressed={clubState.get(club.id) === "on"}
-                        className="flex flex-1 items-center gap-2.5 text-left"
-                      >
-                        <Box state={clubState.get(club.id) ?? "off"} />
-                        <Users className="size-4 text-muted-foreground" />
-                        <span className="text-sm font-medium">{club.name}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {club.members.length} {club.members.length === 1 ? "member" : "members"}
+                      {/* A role may be able to reach PEOPLE without reaching
+                          whole clubs. Hiding the club row then would hide the
+                          only grouping its members are listed under, so the row
+                          stays as a heading and simply loses its checkbox. */}
+                      {canShareClubs ? (
+                        <button
+                          type="button"
+                          onClick={() => toggle(clubState, setClubState, club.id)}
+                          aria-pressed={clubState.get(club.id) === "on"}
+                          className="flex flex-1 items-center gap-2.5 text-left"
+                        >
+                          <Box state={clubState.get(club.id) ?? "off"} />
+                          <Users className="size-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">{club.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {club.members.length} {club.members.length === 1 ? "member" : "members"}
+                          </span>
+                        </button>
+                      ) : (
+                        <span className="flex flex-1 items-center gap-2.5">
+                          <Users className="size-4 text-muted-foreground" />
+                          <span className="text-sm font-medium">{club.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {club.members.length} {club.members.length === 1 ? "member" : "members"}
+                          </span>
                         </span>
-                      </button>
+                      )}
                     </div>
 
-                    {open &&
+                    {open && canShareMembers &&
                       club.members.map((m) => (
                         <button
                           key={m.profile_id}
@@ -343,7 +363,7 @@ export function ShareContentDialog({
                   the only way to belong to it — a coach or an administrator who
                   never joined one was previously unreachable, absent from the only
                   list this dialog could draw. */}
-              {canShareClubs && loners.length > 0 && (
+              {canShareMembers && loners.length > 0 && (
                 <div className="mt-3">
                   <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                     Program members

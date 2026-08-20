@@ -2753,6 +2753,7 @@ async function _libraryReader(c: Context, pinned: string | null) {
     eff.capabilities.includes("learning.library.console") ||
     eff.capabilities.includes("learning.library.share_view") ||
     eff.capabilities.includes("learning.library.share_club") ||
+    eff.capabilities.includes("learning.library.share_member") ||
     eff.capabilities.includes("learning.app.administer");
   if (!byCapability && !administers.length) {
     throw new HttpError(403, "Missing capability: learning.library.console");
@@ -3190,12 +3191,19 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   // holding one is not refused for the other's sake.
   // Checked on PRESENCE, not on length. Sending an empty list for a kind is a
   // revocation of that kind and needs the same capability as granting it.
-  const touchesClubs = req.club_program_ids !== undefined || req.profile_ids !== undefined;
+  // THREE KINDS, THREE CAPABILITIES. Clubs, named people and apps are separate
+  // decisions with separate reach: a club is a standing group whose administrators
+  // decide onward, a person is one named individual, an app hands a catalogue to
+  // whoever runs it. A role can now be given any one without the others — which
+  // is the whole point of splitting share_member out of share_club.
+  const touchesClubs = req.club_program_ids !== undefined;
+  const touchesPeople = req.profile_ids !== undefined;
   const touchesApps = req.app_keys !== undefined;
-  if (!touchesClubs && !touchesApps) {
+  if (!touchesClubs && !touchesPeople && !touchesApps) {
     throw new HttpError(422, "Nothing to change: name at least one of clubs, people or apps");
   }
   if (touchesClubs) _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  if (touchesPeople) _requireLearningCapStrict(eff, "learning.library.share_member", null);
   if (touchesApps) _requireLearningCapStrict(eff, "learning.library.share_app", null);
 
   const appKeys = req.app_keys ?? [];

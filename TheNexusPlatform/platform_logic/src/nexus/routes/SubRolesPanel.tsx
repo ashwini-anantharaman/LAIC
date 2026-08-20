@@ -74,6 +74,7 @@ const LIBRARY_CAPABILITIES = [
   "learning.library.console",
   "learning.library.share_view",
   "learning.library.share_club",
+  "learning.library.share_member",
   "learning.library.share_app",
   "learning.publish.app_target",
   "learning.app.publish_club",
@@ -93,7 +94,8 @@ const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
 const SUBROLE_LABELS: Record<string, string> = {
   "learning.library.console": "Open the Content Library",
   "learning.library.share_view": "See who content is shared with",
-  "learning.library.share_club": "Share content with clubs and people",
+  "learning.library.share_club": "Share content with whole clubs",
+  "learning.library.share_member": "Share content with individual members",
   "learning.library.share_app": "Share content with an app",
   "learning.publish.app_target": "Publish content to an app",
   "learning.app.publish_club": "Limit app content to one club",
@@ -103,7 +105,8 @@ const SUBROLE_LABELS: Record<string, string> = {
 const SUBROLE_HINTS: Record<string, string> = {
   "learning.library.console": "Without this the tab does not appear at all.",
   "learning.library.share_view": "Read-only: they can see the clubs and people on each item.",
-  "learning.library.share_club": "The share dialog — grant and revoke access.",
+  "learning.library.share_club": "A whole club at once; its administrators decide onward.",
+  "learning.library.share_member": "Named people, including anyone who belongs to no club.",
   "learning.library.share_app": "Hands a catalogue to an app's administrators to decide on.",
   "learning.publish.app_target": "The publish dialog — choose which app content appears in.",
   "learning.app.publish_club": "Publish for one club on the app rather than everyone.",

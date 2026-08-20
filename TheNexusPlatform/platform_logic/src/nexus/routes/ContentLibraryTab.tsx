@@ -131,6 +131,7 @@ export function ContentLibraryTab() {
    */
   const can = (id: string) => access.isAdmin || access.capabilities.includes(id);
   const canShareClubs = can("learning.library.share_club");
+  const canShareMembers = can("learning.library.share_member");
   const canShareApps = can("learning.library.share_app");
   const canDelegate = can("learning.roles.delegate");
   const canUpload = can("learning.library.upload");
@@ -152,7 +153,7 @@ export function ContentLibraryTab() {
   const canPublish = can("learning.publish.app_target") || administers.length > 0;
   // Seeing WHO content reaches is implied by being able to change it.
   const canViewShares =
-    can("learning.library.share_view") || canShareClubs || canShareApps;
+    can("learning.library.share_view") || canShareClubs || canShareMembers || canShareApps;
 
   const load = useCallback(() => {
     setError(null);
@@ -247,7 +248,11 @@ export function ContentLibraryTab() {
       {canViewShares && (
         <Button
           size="icon" variant="ghost"
-          title={canShareClubs || canShareApps ? `Share ${label}` : `Who can see ${label}`}
+          title={
+            canShareClubs || canShareMembers || canShareApps
+              ? `Share ${label}`
+              : `Who can see ${label}`
+          }
           aria-label={`Share ${label}`}
           onClick={() => setSharing({ objects: objs, label })}
         >
@@ -541,6 +546,7 @@ export function ContentLibraryTab() {
         <ShareContentDialog
           programId={programId}
           canShareClubs={canShareClubs}
+          canShareMembers={canShareMembers}
           canShareApps={canShareApps}
           objects={sharing.objects}
           label={sharing.label}
