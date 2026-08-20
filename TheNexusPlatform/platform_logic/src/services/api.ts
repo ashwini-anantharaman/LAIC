@@ -1660,21 +1660,29 @@ export async function listShareableClubs(programId: string): Promise<ShareableCl
 }
 
 /** Reconcile club and person grants across a selection. Whole-set, not a delta. */
+/**
+ * Reconcile grants. A kind passed as `undefined` is OMITTED from the request and
+ * left untouched by the server; an empty array revokes that kind.
+ *
+ * The distinction matters for partial authority: someone who may share with clubs
+ * but not apps must not send an app list at all, or their club edit would revoke
+ * every app grant a content manager made.
+ */
 export async function setContentShares(
   programId: string,
   objectIds: string[],
-  clubProgramIds: string[],
-  profileIds: string[],
-  appKeys: string[] = [],
+  clubProgramIds: string[] | undefined,
+  profileIds: string[] | undefined,
+  appKeys: string[] | undefined,
 ): Promise<{ shared: number; skipped: string[] }> {
   return request(`/api/platform/learning/shares/bulk`, {
     method: "PUT",
     body: JSON.stringify({
       program_id: programId,
       object_ids: objectIds,
-      club_program_ids: clubProgramIds,
-      profile_ids: profileIds,
-      app_keys: appKeys,
+      ...(clubProgramIds !== undefined ? { club_program_ids: clubProgramIds } : {}),
+      ...(profileIds !== undefined ? { profile_ids: profileIds } : {}),
+      ...(appKeys !== undefined ? { app_keys: appKeys } : {}),
     }),
   });
 }

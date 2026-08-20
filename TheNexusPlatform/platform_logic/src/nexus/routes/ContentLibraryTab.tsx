@@ -105,8 +105,23 @@ export function ContentLibraryTab() {
   const access = useProgramAccess(programId);
   // Sub-roles are a second job on this tab, not a second sidebar entry: deciding
   // who may share is the same remit as deciding what gets shared.
-  const canDelegate =
-    access.isAdmin || access.capabilities.includes("learning.roles.delegate");
+  /**
+   * WHAT THIS VIEWER MAY DO, decided once and passed down.
+   *
+   * Every control below is gated from this block rather than each dialog deciding
+   * for itself. The failure this prevents has now happened three times in this
+   * feature: a control drawn for someone the server then refuses. Offering the
+   * Apps section to a role holding only share_club did not merely waste a click —
+   * touching it made the whole save 403, taking their legitimate club changes
+   * with it.
+   *
+   * An app administrator's authority comes from the register, not a capability,
+   * so `administers` counts as publish permission for their own app.
+   */
+  const can = (id: string) => access.isAdmin || access.capabilities.includes(id);
+  const canShareClubs = can("learning.library.share_club");
+  const canShareApps = can("learning.library.share_app");
+  const canDelegate = can("learning.roles.delegate");
 
   const [view, setView] = useState<"content" | "roles">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
@@ -120,6 +135,10 @@ export function ContentLibraryTab() {
 
   /** Apps this viewer administers — empty for a content manager who runs none. */
   const [administers, setAdministers] = useState<string[]>([]);
+  const canPublish = can("learning.publish.app_target") || administers.length > 0;
+  // Seeing WHO content reaches is implied by being able to change it.
+  const canViewShares =
+    can("learning.library.share_view") || canShareClubs || canShareApps;
 
   const load = useCallback(() => {
     setError(null);
@@ -191,20 +210,25 @@ export function ContentLibraryTab() {
 
   const rowActions = (objs: LibraryObject[], label: string) => (
     <>
-      <Button
-        size="icon" variant="ghost"
-        title={`Share ${label}`} aria-label={`Share ${label}`}
-        onClick={() => setSharing({ objects: objs, label })}
-      >
-        <Share2 className="size-4" />
-      </Button>
-      <Button
-        size="icon" variant="ghost"
-        title={`Publish ${label}`} aria-label={`Publish ${label}`}
-        onClick={() => setPublishing({ objects: objs, label })}
-      >
-        <Send className="size-4" />
-      </Button>
+      {canViewShares && (
+        <Button
+          size="icon" variant="ghost"
+          title={canShareClubs || canShareApps ? `Share ${label}` : `Who can see ${label}`}
+          aria-label={`Share ${label}`}
+          onClick={() => setSharing({ objects: objs, label })}
+        >
+          <Share2 className="size-4" />
+        </Button>
+      )}
+      {canPublish && (
+        <Button
+          size="icon" variant="ghost"
+          title={`Publish ${label}`} aria-label={`Publish ${label}`}
+          onClick={() => setPublishing({ objects: objs, label })}
+        >
+          <Send className="size-4" />
+        </Button>
+      )}
     </>
   );
 
@@ -339,14 +363,18 @@ export function ContentLibraryTab() {
               <span className="text-sm font-medium">
                 {selected.size} {selected.size === 1 ? "item" : "items"} selected
               </span>
-              <Button size="sm" variant="secondary"
-                onClick={() => setSharing({ objects: selectedObjects, label: `${selected.size} items` })}>
-                <Share2 className="size-4" /> Share
-              </Button>
-              <Button size="sm" variant="secondary"
-                onClick={() => setPublishing({ objects: selectedObjects, label: `${selected.size} items` })}>
-                <Send className="size-4" /> Publish
-              </Button>
+              {canViewShares && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => setSharing({ objects: selectedObjects, label: `${selected.size} items` })}>
+                  <Share2 className="size-4" /> Share
+                </Button>
+              )}
+              {canPublish && (
+                <Button size="sm" variant="secondary"
+                  onClick={() => setPublishing({ objects: selectedObjects, label: `${selected.size} items` })}>
+                  <Send className="size-4" /> Publish
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
             </div>
           )}
@@ -414,6 +442,8 @@ export function ContentLibraryTab() {
       {sharing && (
         <ShareContentDialog
           programId={programId}
+          canShareClubs={canShareClubs}
+          canShareApps={canShareApps}
           objects={sharing.objects}
           label={sharing.label}
           onClose={() => setSharing(null)}

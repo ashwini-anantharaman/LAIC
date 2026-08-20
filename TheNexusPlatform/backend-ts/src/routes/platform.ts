@@ -2953,10 +2953,14 @@ platformRouter.put("/learning/app-admins", async (c) => {
 const _bulkSharesSchema = z.object({
   program_id: z.string().optional(),
   object_ids: z.array(z.string()).min(1).max(2000),
-  club_program_ids: z.array(z.string()).default([]),
-  profile_ids: z.array(z.string()).default([]),
+  // NO DEFAULTS. Absent means "this caller is not saying anything about that
+  // kind", which is not the same as "none of them" — see setLearningGrantsBulk.
+  // A role holding only share_club omits app_keys, and must not thereby revoke
+  // every app grant a content manager made.
+  club_program_ids: z.array(z.string()).optional(),
+  profile_ids: z.array(z.string()).optional(),
   /** App slugs. Granting to an app grants to its administrators (0010). */
-  app_keys: z.array(z.string()).default([]),
+  app_keys: z.array(z.string()).optional(),
 });
 
 platformRouter.put("/learning/shares/bulk", async (c) => {
@@ -2972,35 +2976,37 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   // that app's catalogue, which is a different person and a different blast
   // radius. Each is required only for the targets actually being set, so a role
   // holding one is not refused for the other's sake.
-  if (req.club_program_ids.length || req.profile_ids.length) {
-    _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  // Checked on PRESENCE, not on length. Sending an empty list for a kind is a
+  // revocation of that kind and needs the same capability as granting it.
+  const touchesClubs = req.club_program_ids !== undefined || req.profile_ids !== undefined;
+  const touchesApps = req.app_keys !== undefined;
+  if (!touchesClubs && !touchesApps) {
+    throw new HttpError(422, "Nothing to change: name at least one of clubs, people or apps");
   }
-  if (req.app_keys.length) {
-    _requireLearningCapStrict(eff, "learning.library.share_app", null);
-  }
-  // Clearing everything is a revocation of both kinds, so it needs both.
-  if (!req.club_program_ids.length && !req.profile_ids.length && !req.app_keys.length) {
-    _requireLearningCapStrict(eff, "learning.library.share_club", null);
-  }
+  if (touchesClubs) _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  if (touchesApps) _requireLearningCapStrict(eff, "learning.library.share_app", null);
 
-  const unknownApps = req.app_keys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+  const appKeys = req.app_keys ?? [];
+  const clubIds = req.club_program_ids ?? [];
+  const profileIds = req.profile_ids ?? [];
+  const unknownApps = appKeys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
   if (unknownApps.length) throw new HttpError(422, `Unknown app: ${unknownApps.join(", ")}`);
 
   const clubs = await _clubIdsFor(access);
-  const unknownClubs = req.club_program_ids.filter((id) => !clubs.has(id));
+  const unknownClubs = clubIds.filter((id) => !clubs.has(id));
   if (unknownClubs.length) {
     throw new HttpError(422, `Not a club of this program: ${unknownClubs.join(", ")}`);
   }
   // A person may only be granted content through a club they belong to. Without
   // this the endpoint would share to any profile id in the org — a wider reach
   // than the picker offers, and not one anybody asked for.
-  if (req.profile_ids.length) {
+  if (profileIds.length) {
     const allowed = new Set<string>();
     for (const clubId of clubs) {
       const members = await graph.listProgramMembers(access.orgId, clubId).catch(() => [] as Row[]);
       for (const m of members) if (m.profile_id) allowed.add(String(m.profile_id));
     }
-    const strangers = req.profile_ids.filter((p) => !allowed.has(p));
+    const strangers = profileIds.filter((p) => !allowed.has(p));
     if (strangers.length) {
       throw new HttpError(422, `Not a member of any club in this program: ${strangers.join(", ")}`);
     }
@@ -3009,8 +3015,15 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
   let written: string[];
   try {
     written = await graph.setLearningGrantsBulk(
-      access.orgId, req.object_ids, req.club_program_ids, req.profile_ids,
-      access.profileId ?? null, req.app_keys,
+      access.orgId,
+      req.object_ids,
+      {
+        // Pass through the PRESENCE, so a kind nobody spoke about stays untouched.
+        ...(req.club_program_ids !== undefined ? { clubs: clubIds } : {}),
+        ...(req.profile_ids !== undefined ? { profiles: profileIds } : {}),
+        ...(req.app_keys !== undefined ? { apps: appKeys } : {}),
+      },
+      access.profileId ?? null,
     );
   } catch (e) {
     if (_missingGrantsTable(e)) {

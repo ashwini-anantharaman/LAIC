@@ -3358,17 +3358,27 @@ export async function listLearningAppTargetsForObjects(
 export async function setLearningGrantsBulk(
   orgId: string,
   objectIds: string[],
-  clubProgramIds: string[],
-  profileIds: string[],
+  /**
+   * Which kinds to reconcile. A kind left UNDEFINED is not touched at all.
+   *
+   * This is not a convenience — it is the difference between a partial-authority
+   * caller editing their own kind and wiping someone else's. A role holding only
+   * share_club sends no app list; if that read as "no apps", their club edit would
+   * silently revoke every app grant the content manager had made. Empty array
+   * means "none of this kind"; absent means "not mine to say".
+   */
+  spec: { clubs?: string[]; profiles?: string[]; apps?: string[] },
   grantedBy: string | null,
-  /** App slugs. Granting to an app grants to its ADMINISTRATORS (0010). */
-  appKeys: string[] = [],
 ): Promise<string[]> {
   const ids = [...new Set(objectIds.filter(Boolean))];
   if (!ids.length) return [];
-  const clubs = [...new Set(clubProgramIds.filter(Boolean))];
-  const people = [...new Set(profileIds.filter(Boolean))];
-  const apps = [...new Set(appKeys.filter(Boolean))];
+
+  // Kind → the subject_type it writes. Only the kinds present are reconciled.
+  const kinds: { type: "club" | "profile" | "app"; wanted: string[] }[] = [];
+  if (spec.clubs !== undefined) kinds.push({ type: "club", wanted: [...new Set(spec.clubs.filter(Boolean))] });
+  if (spec.profiles !== undefined) kinds.push({ type: "profile", wanted: [...new Set(spec.profiles.filter(Boolean))] });
+  if (spec.apps !== undefined) kinds.push({ type: "app", wanted: [...new Set(spec.apps.filter(Boolean))] });
+  if (!kinds.length) return [];
 
   return asPrivileged(async (tx) => {
     // Org check as a set operation, not a loop: one query establishes which of
@@ -3381,36 +3391,30 @@ export async function setLearningGrantsBulk(
     if (!mine.length) return [];
     const inMine = sql.join(mine.map((i) => sql`${i}`), sql`, `);
 
-    const wanted: { type: "club" | "profile" | "app"; id: string }[] = [
-      ...clubs.map((id) => ({ type: "club" as const, id })),
-      ...people.map((id) => ({ type: "profile" as const, id })),
-      ...apps.map((id) => ({ type: "app" as const, id })),
-    ];
-
-    if (wanted.length) {
-      // Revocations first so a shrinking set never momentarily holds both.
-      await tx.execute(sql`
-        delete from learning_object_grants
-        where object_id in (${inMine})
-          and subject_type in ('club', 'profile', 'app')
-          and (subject_type, subject_id) not in (${sql.join(
-            wanted.map((w) => sql`(${w.type}, ${w.id})`),
+    for (const { type, wanted } of kinds) {
+      // Revocations first, so a shrinking set never momentarily holds both. Bounded
+      // to this subject_type — a role grant belongs to the personal tier's own UI
+      // and is never touched here.
+      if (wanted.length) {
+        await tx.execute(sql`
+          delete from learning_object_grants
+          where object_id in (${inMine}) and subject_type = ${type}
+            and subject_id not in (${sql.join(wanted.map((w) => sql`${w}`), sql`, `)})`);
+        await tx.execute(sql`
+          insert into learning_object_grants (object_id, subject_type, subject_id, level, granted_by)
+          values ${sql.join(
+            mine.flatMap((oid) =>
+              wanted.map((w) => sql`(${oid}, ${type}, ${w}, 'view', ${grantedBy}::uuid)`),
+            ),
             sql`, `,
-          )})`);
-      await tx.execute(sql`
-        insert into learning_object_grants (object_id, subject_type, subject_id, level, granted_by)
-        values ${sql.join(
-          mine.flatMap((oid) =>
-            wanted.map((w) => sql`(${oid}, ${w.type}, ${w.id}, 'view', ${grantedBy}::uuid)`),
-          ),
-          sql`, `,
-        )}
-        on conflict (object_id, subject_type, subject_id)
-        do update set level = excluded.level, granted_by = excluded.granted_by, created_at = now()`);
-    } else {
-      await tx.execute(sql`
-        delete from learning_object_grants
-        where object_id in (${inMine}) and subject_type in ('club', 'profile', 'app')`);
+          )}
+          on conflict (object_id, subject_type, subject_id)
+          do update set level = excluded.level, granted_by = excluded.granted_by, created_at = now()`);
+      } else {
+        await tx.execute(sql`
+          delete from learning_object_grants
+          where object_id in (${inMine}) and subject_type = ${type}`);
+      }
     }
     return mine;
   });

@@ -61,6 +61,8 @@ export function ShareContentDialog({
   programId,
   objects,
   label,
+  canShareClubs = true,
+  canShareApps = true,
   onClose,
   onSaved,
 }: {
@@ -69,6 +71,16 @@ export function ShareContentDialog({
   objects: LibraryObject[];
   /** What the person thinks they are sharing ("Opening Bids", "4 folders"). */
   label: string;
+  /**
+   * learning.library.share_club / share_app.
+   *
+   * A SECTION THE VIEWER CANNOT WRITE IS NOT SHOWN, not shown-and-disabled. The
+   * server checks each kind separately, so a role holding only share_club that
+   * touched an app row had its whole save refused — losing the club changes it
+   * was actually allowed to make. An absent section cannot do that.
+   */
+  canShareClubs?: boolean;
+  canShareApps?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -132,9 +144,9 @@ export function ShareContentDialog({
 
   const dirty =
     clubs !== null &&
-    ([...clubState].some(([k, v]) => initialClubs.get(k) !== v) ||
-      [...peopleState].some(([k, v]) => initialPeople.get(k) !== v) ||
-      [...appState].some(([k, v]) => initialApps.get(k) !== v));
+    ((canShareClubs && [...clubState].some(([k, v]) => initialClubs.get(k) !== v)) ||
+      (canShareClubs && [...peopleState].some(([k, v]) => initialPeople.get(k) !== v)) ||
+      (canShareApps && [...appState].some(([k, v]) => initialApps.get(k) !== v)));
 
   // Rows still reading "some" were never touched, and a whole-set save would
   // flatten them. Keep them by writing them ON only where they already were.
@@ -146,9 +158,22 @@ export function ShareContentDialog({
   async function save() {
     setSaving(true);
     try {
-      const clubIds = [...clubState].filter(([, v]) => v === "on").map(([k]) => k);
-      const personIds = [...peopleState].filter(([, v]) => v === "on").map(([k]) => k);
-      const appIds = [...appState].filter(([, v]) => v === "on").map(([k]) => k);
+      // Send only the kinds this viewer may set. Sending an unchanged app list
+      // they cannot write would still trip the server's per-kind check, turning a
+      // legitimate club change into a 403.
+      // UNDEFINED, not empty. A kind this viewer cannot write is omitted from the
+      // request entirely, so the server leaves it alone. Sending [] would revoke
+      // it — which for a club-only role means wiping the content manager's app
+      // grants as a side effect of ticking a club.
+      const clubIds = canShareClubs
+        ? [...clubState].filter(([, v]) => v === "on").map(([k]) => k)
+        : undefined;
+      const personIds = canShareClubs
+        ? [...peopleState].filter(([, v]) => v === "on").map(([k]) => k)
+        : undefined;
+      const appIds = canShareApps
+        ? [...appState].filter(([, v]) => v === "on").map(([k]) => k)
+        : undefined;
       const res = await setContentShares(
         programId, objects.map((o) => o.id), clubIds, personIds, appIds,
       );
@@ -204,7 +229,7 @@ export function ShareContentDialog({
           {/* APPS FIRST, because it is the least obvious of the three and the one
               that hands a decision to someone else. Above the clubs, not mixed in
               with them: an app is not a group of learners. */}
-          {!loadError && clubs !== null && (
+          {!loadError && clubs !== null && canShareApps && (
             <div className="mb-3">
               <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 Apps
@@ -228,7 +253,7 @@ export function ShareContentDialog({
             </div>
           )}
 
-          {!loadError && clubs !== null && clubs.length > 0 && (
+          {!loadError && clubs !== null && clubs.length > 0 && canShareApps && (
             <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Clubs and people
             </p>
