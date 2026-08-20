@@ -1,35 +1,46 @@
 /**
  * The Content Library — a program tab, answered by Nexus.
  *
- * Deliberately NOT the Content Studio in a frame. This screen exists to decide who
- * content reaches, which is a governance question the console owns; the Studio owns
- * authoring. Framing it would have put an authoring tool inside a permissions tab
- * and left the sharing controls one app away from the person doing the granting.
+ * Deliberately NOT the Content Studio in a frame. This screen decides who content
+ * reaches, which is governance the console owns; the Studio owns authoring.
  *
- * The shape is a folder list, because that is how the library is already organised
- * and how someone thinks about "share this lot". Every row — the whole library, one
- * folder, one item — is the same gesture at a different scale, so `share` and
- * `publish` take a list of objects and nothing else knows the difference.
+ * Drive-shaped: a list of folders, click one to go in, breadcrumb back out. Every
+ * row carries the same two actions at a different scale — share and publish take a
+ * list of objects, so "this folder", "these 24 items" and "this one" are one code
+ * path rather than three.
  *
- * SELECTION IS BY OBJECT, NOT BY FOLDER. An object can sit in several folders, so
- * ticking two folders that overlap must not share the same item twice or count it
- * twice; the selection is a set of object ids and the folder checkboxes are a view
- * onto it.
+ * SELECTION IS BY OBJECT ID, NOT BY FOLDER. An object can sit in several folders,
+ * so ticking two overlapping folders must not share the same item twice or count it
+ * twice. The folder checkboxes are a view onto a set of ids.
+ *
+ * WHY THERE IS NO "NEW FOLDER" HERE. Folders live in the Studio's localStorage,
+ * per author (objectCollectionsStore.ts) — there is no collections table and no
+ * API. Nexus can SEE them because each object carries its folder ids and names
+ * (migration 0003 denormalises them), but it has nowhere to write a new one. A
+ * button that cannot persist is worse than an absent one, so "New" offers content
+ * instead and hands the Studio the folder to file it into. Two consequences worth
+ * knowing: nesting is invisible here (parentId never leaves the Studio), and two
+ * authors can see different folders for the same content.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
-  Check, ChevronRight, Folder, FolderOpen, Loader2, RefreshCw, Search,
-  Share2, Send, Users, User, Smartphone,
+  ChevronDown, ChevronRight, Check, Folder, Loader2, Plus, RefreshCw, Search,
+  Share2, Send, Smartphone, User, Users,
 } from "lucide-react";
+import { toast } from "sonner";
 
-import { getContentLibrary, type LibraryObject } from "@/services/api";
+import { getContentLibrary, launchLearningPlatform, type LibraryObject } from "@/services/api";
 import { useProgramAccess } from "@/nexus/access";
 import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
 import { PageHeader, EmptyState } from "@/nexus/ui/kit";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 
@@ -42,8 +53,18 @@ interface FolderGroup {
   objects: LibraryObject[];
 }
 
-/** The tri-state box used across this screen. A dash means "some", and that
- *  distinction is the whole reason the screen is worth having. */
+/** What "New" can make. Short on purpose: the things someone files into a folder,
+ *  not every type the platform authors. The full set lives on the Studio's Create,
+ *  which is where a decision about WHAT to make belongs. */
+const CREATABLE: { type: string; label: string }[] = [
+  { type: "tutorial-v3", label: "Tutorial" },
+  { type: "quiz", label: "Quiz" },
+  { type: "flashcard-set", label: "Flashcard set" },
+  { type: "video-script", label: "Video script" },
+];
+
+/** Tri-state box. A dash means "some", and that distinction is the whole reason
+ *  this screen is worth having over a list of checkboxes. */
 function Box({ state, className }: { state: Tri; className?: string }) {
   return (
     <span
@@ -94,20 +115,21 @@ function ReachSummary({ o }: { o: LibraryObject }) {
 export function ContentLibraryTab() {
   const { programId = "" } = useParams();
   const access = useProgramAccess(programId);
-  // Sub-roles are a second job on this tab, not a second tab in the sidebar:
-  // deciding who may share is the same remit as deciding what gets shared, and a
-  // Content Manager should not have to leave the library to delegate part of it.
-  // Admins see it too — they hold every capability, so the ceiling is everything.
+  // Sub-roles are a second job on this tab, not a second sidebar entry: deciding
+  // who may share is the same remit as deciding what gets shared.
   const canDelegate =
     access.isAdmin || access.capabilities.includes("learning.roles.delegate");
+
   const [view, setView] = useState<"content" | "roles">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  /** null = at the root, showing folders. */
+  const [openKey, setOpenKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
+  const [launching, setLaunching] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -126,19 +148,14 @@ export function ContentLibraryTab() {
   // One object can belong to several folders, so it appears under each — the same
   // rule the Studio's library follows, and the reason selection is by object id.
   const folders = useMemo<FolderGroup[]>(() => {
-    const list = (objects ?? []).filter((o) =>
-      query.trim() ? o.title.toLowerCase().includes(query.trim().toLowerCase()) : true,
-    );
+    const q = query.trim().toLowerCase();
+    const list = (objects ?? []).filter((o) => (q ? o.title.toLowerCase().includes(q) : true));
     const byKey = new Map<string, FolderGroup>();
     for (const o of list) {
       const names = o.collection_names.length ? o.collection_names : [UNFILED];
       names.forEach((name, i) => {
         const key = o.collection_ids[i] ?? name;
-        const g = byKey.get(key) ?? {
-          key,
-          name: name === UNFILED ? "Unfiled" : name,
-          objects: [],
-        };
+        const g = byKey.get(key) ?? { key, name: name === UNFILED ? "Unfiled" : name, objects: [] };
         g.objects.push(o);
         byKey.set(key, g);
       });
@@ -148,21 +165,24 @@ export function ContentLibraryTab() {
     );
   }, [objects, query]);
 
+  const openFolder = openKey ? folders.find((f) => f.key === openKey) ?? null : null;
+  // Searching while inside a folder that no longer matches would leave someone
+  // staring at an empty room with no clue why — go back to the root instead.
+  useEffect(() => {
+    if (openKey && !folders.some((f) => f.key === openKey)) setOpenKey(null);
+  }, [openKey, folders]);
+
   const allIds = useMemo(
     () => [...new Set(folders.flatMap((f) => f.objects.map((o) => o.id)))],
     [folders],
   );
-  const byId = useMemo(
-    () => new Map((objects ?? []).map((o) => [o.id, o])),
-    [objects],
-  );
+  const byId = useMemo(() => new Map((objects ?? []).map((o) => [o.id, o])), [objects]);
 
   const triOf = (ids: string[]): Tri => {
     if (!ids.length) return "off";
     const n = ids.filter((id) => selected.has(id)).length;
     return n === 0 ? "off" : n === ids.length ? "on" : "some";
   };
-
   const setMany = (ids: string[], on: boolean) =>
     setSelected((s) => {
       const n = new Set(s);
@@ -174,10 +194,90 @@ export function ContentLibraryTab() {
     () => [...selected].map((id) => byId.get(id)).filter(Boolean) as LibraryObject[],
     [selected, byId],
   );
+  const reload = () => void load();
 
-  const reload = () => {
-    void load();
-  };
+  /**
+   * Hand authoring to the Studio, with the folder to file into.
+   *
+   * Nexus cannot author, and pretending otherwise would mean rebuilding the whole
+   * creation pipeline here. A launch token is minted per click so the Studio gets
+   * a fresh session, and `folder` carries the destination the person was looking
+   * at — the Studio pins it over the type's own home folder (App.tsx).
+   */
+  async function createContent(type: string, folderId: string | null) {
+    setLaunching(true);
+    try {
+      const l = await launchLearningPlatform(programId);
+      if (!l.launch_url) {
+        toast.error("No Content Studio is connected to this program yet");
+        return;
+      }
+      const params = new URLSearchParams({
+        launch_token: l.launch_token,
+        program_id: programId,
+        screen: "cd-create",
+        type,
+      });
+      // Only when a real folder is open: at the root the Studio's own filing
+      // rules are the right answer, and pinning nothing would override them
+      // with nothing.
+      if (folderId && folderId !== UNFILED) params.set("folder", folderId);
+      window.location.href = `${l.launch_url}?${params.toString()}`;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't open the Content Studio");
+    } finally {
+      setLaunching(false);
+    }
+  }
+
+  const newMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" disabled={launching}>
+          {launching ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+          New
+          <ChevronDown className="size-3.5 opacity-70" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-60">
+        <DropdownMenuLabel>
+          {openFolder ? `Create in “${openFolder.name}”` : "Create content"}
+        </DropdownMenuLabel>
+        {CREATABLE.map((c) => (
+          <DropdownMenuItem
+            key={c.type}
+            onSelect={() => void createContent(c.type, openFolder?.key ?? null)}
+          >
+            {c.label}
+          </DropdownMenuItem>
+        ))}
+        <DropdownMenuSeparator />
+        {/* Said plainly rather than shown as a disabled row someone keeps trying. */}
+        <DropdownMenuLabel className="font-normal text-xs text-muted-foreground">
+          Folders are created in the Content Studio.
+        </DropdownMenuLabel>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+
+  const rowActions = (objs: LibraryObject[], label: string) => (
+    <>
+      <Button
+        size="icon" variant="ghost"
+        title={`Share ${label}`} aria-label={`Share ${label}`}
+        onClick={() => setSharing({ objects: objs, label })}
+      >
+        <Share2 className="size-4" />
+      </Button>
+      <Button
+        size="icon" variant="ghost"
+        title={`Publish ${label}`} aria-label={`Publish ${label}`}
+        onClick={() => setPublishing({ objects: objs, label })}
+      >
+        <Send className="size-4" />
+      </Button>
+    </>
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -207,9 +307,12 @@ export function ContentLibraryTab() {
               </div>
             )}
             {view === "content" && (
-              <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
-                <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
-              </Button>
+              <>
+                <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
+                  <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
+                </Button>
+                {newMenu}
+              </>
             )}
           </>
         }
@@ -219,10 +322,7 @@ export function ContentLibraryTab() {
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SubRolesPanel programId={programId} />
         </div>
-      ) : (
-      <>
-
-      {error ? (
+      ) : error ? (
         <EmptyState>
           <p className="font-medium text-foreground">The content library didn&rsquo;t load</p>
           <p className="mt-1">{error}</p>
@@ -235,23 +335,33 @@ export function ContentLibraryTab() {
         <EmptyState>
           <p className="font-medium text-foreground">No content yet</p>
           <p className="mt-1">
-            Content authored in the Content Studio for this program appears here, ready to share.
+            Use <span className="font-medium text-foreground">New</span> to author something, or
+            create it in the Content Studio — it appears here ready to share.
           </p>
         </EmptyState>
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setMany(allIds, triOf(allIds) !== "on")}
-              className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent/50"
-            >
-              <Box state={triOf(allIds)} />
-              <span className="font-medium">Select all</span>
-              <span className="text-xs text-muted-foreground">
-                {folders.length} {folders.length === 1 ? "folder" : "folders"} · {allIds.length} items
-              </span>
-            </button>
+            {/* Breadcrumb, so "where am I" is answered without a back button. */}
+            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+              <button
+                type="button"
+                onClick={() => setOpenKey(null)}
+                className={cn(
+                  "rounded px-1.5 py-0.5",
+                  openFolder ? "text-muted-foreground hover:text-foreground" : "font-semibold",
+                )}
+              >
+                All folders
+              </button>
+              {openFolder && (
+                <>
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                  <span className="font-semibold">{openFolder.name}</span>
+                </>
+              )}
+            </nav>
+
             <div className="relative ml-auto w-56">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -263,6 +373,38 @@ export function ContentLibraryTab() {
             </div>
           </div>
 
+          <div className="mb-3 flex flex-wrap items-center gap-3">
+            {openFolder ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const ids = openFolder.objects.map((o) => o.id);
+                  setMany(ids, triOf(ids) !== "on");
+                }}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent/50"
+              >
+                <Box state={triOf(openFolder.objects.map((o) => o.id))} />
+                <span className="font-medium">Select everything in this folder</span>
+                <span className="text-xs text-muted-foreground">
+                  {openFolder.objects.length}{" "}
+                  {openFolder.objects.length === 1 ? "item" : "items"}
+                </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setMany(allIds, triOf(allIds) !== "on")}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-accent/50"
+              >
+                <Box state={triOf(allIds)} />
+                <span className="font-medium">Select all</span>
+                <span className="text-xs text-muted-foreground">
+                  {folders.length} {folders.length === 1 ? "folder" : "folders"} · {allIds.length} items
+                </span>
+              </button>
+            )}
+          </div>
+
           {/* The action bar appears only with a selection: a permanently visible
               "share 0 items" is a control that spends a click to say no. */}
           {selected.size > 0 && (
@@ -270,152 +412,76 @@ export function ContentLibraryTab() {
               <span className="text-sm font-medium">
                 {selected.size} {selected.size === 1 ? "item" : "items"} selected
               </span>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  setSharing({ objects: selectedObjects, label: `${selected.size} items` })
-                }
-              >
+              <Button size="sm" variant="secondary"
+                onClick={() => setSharing({ objects: selectedObjects, label: `${selected.size} items` })}>
                 <Share2 className="size-4" /> Share
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() =>
-                  setPublishing({ objects: selectedObjects, label: `${selected.size} items` })
-                }
-              >
+              <Button size="sm" variant="secondary"
+                onClick={() => setPublishing({ objects: selectedObjects, label: `${selected.size} items` })}>
                 <Send className="size-4" /> Publish
               </Button>
-              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
-                Clear
-              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
             </div>
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border">
-            {folders.map((f) => {
-              const ids = f.objects.map((o) => o.id);
-              const isOpen = open.has(f.key);
-              return (
-                <div key={f.key} className="border-b last:border-b-0">
-                  <div className="flex items-center gap-2 px-3 py-2.5 hover:bg-accent/30">
+            {openFolder
+              ? openFolder.objects.map((o) => (
+                  <div key={o.id} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
                     <button
                       type="button"
-                      aria-label={isOpen ? "Collapse folder" : "Expand folder"}
-                      onClick={() =>
-                        setOpen((s) => {
-                          const n = new Set(s);
-                          n.has(f.key) ? n.delete(f.key) : n.add(f.key);
-                          return n;
-                        })
-                      }
-                      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                      onClick={() => setMany([o.id], !selected.has(o.id))}
+                      aria-pressed={selected.has(o.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
                     >
-                      <ChevronRight className={cn("size-4 transition-transform", isOpen && "rotate-90")} />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setMany(ids, triOf(ids) !== "on")}
-                      aria-pressed={triOf(ids) === "on"}
-                      className="flex flex-1 items-center gap-2.5 text-left"
-                    >
-                      <Box state={triOf(ids)} />
-                      {isOpen ? (
-                        <FolderOpen className="size-4 text-muted-foreground" />
-                      ) : (
-                        <Folder className="size-4 text-muted-foreground" />
-                      )}
-                      <span className="text-sm font-medium">{f.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        {f.objects.length} {f.objects.length === 1 ? "item" : "items"}
+                      <Box state={selected.has(o.id) ? "on" : "off"} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{o.title || "Untitled"}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {o.type.replace(/_/g, " ")}
+                          </span>
+                          <ReachSummary o={o} />
+                        </span>
                       </span>
                     </button>
-
-                    {/* Per-folder, per the brief: share everything in it in one act. */}
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title={`Share “${f.name}” and everything in it`}
-                      aria-label={`Share ${f.name}`}
-                      onClick={() => setSharing({ objects: f.objects, label: f.name })}
-                    >
-                      <Share2 className="size-4" />
-                    </Button>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      title={`Publish “${f.name}”`}
-                      aria-label={`Publish ${f.name}`}
-                      onClick={() => setPublishing({ objects: f.objects, label: f.name })}
-                    >
-                      <Send className="size-4" />
-                    </Button>
+                    {rowActions([o], o.title || "Untitled")}
                   </div>
-
-                  {isOpen && (
-                    <div className="bg-muted/20">
+                ))
+              : folders.map((f) => {
+                  const ids = f.objects.map((o) => o.id);
+                  return (
+                    <div key={f.key} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
                       <button
                         type="button"
                         onClick={() => setMany(ids, triOf(ids) !== "on")}
-                        className="flex w-full items-center gap-2.5 border-t px-3 py-1.5 pl-12 text-left text-xs text-muted-foreground hover:bg-accent/30"
+                        aria-pressed={triOf(ids) === "on"}
+                        aria-label={`Select ${f.name}`}
+                        className="shrink-0"
                       >
-                        <Box state={triOf(ids)} className="size-3.5" />
-                        Select everything in this folder
+                        <Box state={triOf(ids)} />
                       </button>
-                      {f.objects.map((o) => (
-                        <div
-                          key={`${f.key}:${o.id}`}
-                          className="flex items-center gap-2.5 border-t px-3 py-2 pl-12 hover:bg-accent/30"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => setMany([o.id], !selected.has(o.id))}
-                            aria-pressed={selected.has(o.id)}
-                            className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
-                          >
-                            <Box state={selected.has(o.id) ? "on" : "off"} />
-                            <span className="min-w-0 flex-1">
-                              <span className="block truncate text-sm">{o.title || "Untitled"}</span>
-                              <span className="mt-0.5 flex items-center gap-2">
-                                <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                                  {o.type.replace(/_/g, " ")}
-                                </span>
-                                <ReachSummary o={o} />
-                              </span>
-                            </span>
-                          </button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title="Share this item"
-                            aria-label={`Share ${o.title}`}
-                            onClick={() => setSharing({ objects: [o], label: o.title || "Untitled" })}
-                          >
-                            <Share2 className="size-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title="Publish this item"
-                            aria-label={`Publish ${o.title}`}
-                            onClick={() => setPublishing({ objects: [o], label: o.title || "Untitled" })}
-                          >
-                            <Send className="size-4" />
-                          </Button>
-                        </div>
-                      ))}
+                      {/* The NAME opens the folder — the checkbox selects it.
+                          Conflating the two is how a click to look becomes a
+                          click that changes what Share will act on. */}
+                      <button
+                        type="button"
+                        onClick={() => setOpenKey(f.key)}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                      >
+                        <Folder className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="truncate text-sm font-medium">{f.name}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {f.objects.length} {f.objects.length === 1 ? "item" : "items"}
+                        </span>
+                      </button>
+                      {rowActions(f.objects, f.name)}
+                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                  );
+                })}
           </div>
         </>
-      )}
-      </>
       )}
 
       {sharing && (

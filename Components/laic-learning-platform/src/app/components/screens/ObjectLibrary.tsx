@@ -39,6 +39,7 @@ import {
 } from '../../../lib/objectCollectionsStore';
 import { GlassFolder, GlassFolderTile } from '../GlassFolder';
 import { ShareWithClubsModal } from './ShareWithClubsModal';
+import { LibraryNewMenu } from './LibraryNewMenu';
 import { useConfirm } from '../ConfirmDialog';
 import { ObjectVersionsModal } from './ObjectVersionsModal';
 
@@ -221,7 +222,23 @@ export function ObjectLibrary() {
     clearPendingLibraryFolderId,
     learningCapabilities,
     learningIsAdmin,
+    setCreateCollectionIds,
+    setCreatorObjectType,
+    navigate,
   } = useApp();
+
+  /**
+   * Make content that lands in the folder being looked at.
+   *
+   * `pinned` is what makes the menu item honest: without it the type's own home
+   * folder wins (libraryFiling.ts) and a tutorial created from inside "quiz"
+   * would file itself under bb-tutorials, which is not what the menu said.
+   */
+  const createInFolder = (type: string, folderId: string | null) => {
+    setCreateCollectionIds(folderId ? [folderId] : [], { pinned: !!folderId });
+    setCreatorObjectType(type);
+    navigate('cd-creator');
+  };
 
   // Capability gates for the actions this screen offers.
   //
@@ -847,14 +864,12 @@ export function ObjectLibrary() {
                   style={{ fontSize: 13, color: '#F8FAFC' }}
                 />
               </div>
-              <button
-                type="button"
-                onClick={() => setShowNewCol(true)}
-                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-full shrink-0"
-                style={{ background: 'rgba(255,255,255,0.12)', color: '#F8FAFC', fontSize: 12.5, fontWeight: 600, border: '1px solid rgba(255,255,255,0.14)' }}
-              >
-                <Plus size={14} /> New folder
-              </button>
+              <LibraryNewMenu
+                dark
+                folderName={null}
+                onNewFolder={() => setShowNewCol(true)}
+                onCreate={(type) => createInFolder(type, null)}
+              />
               {/* This downloads EVERY object and folder in one click. It ran
                   ungoverned until learning.library.export existed — a purely
                   client-side blob, so no server check ever saw it, which is
@@ -947,14 +962,13 @@ export function ObjectLibrary() {
               </p>
             </div>
 
-            <button
-              type="button"
-              onClick={() => setShowNewCol(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full shrink-0"
-              style={{ fontSize: 12, fontWeight: 600, color: '#0B1220', border: '1px solid rgba(0,0,0,0.1)', background: '#fff' }}
-            >
-              <Plus size={13} /> New subfolder
-            </button>
+            {/* Inside a folder the menu names it, so "Create in “quiz”" is the
+                promise — and `pinned` is what keeps it. */}
+            <LibraryNewMenu
+              folderName={opened?.name ?? null}
+              onNewFolder={() => setShowNewCol(true)}
+              onCreate={(type) => createInFolder(type, opened?.id ?? null)}
+            />
 
             <div
               className="flex items-center rounded-full p-0.5 shrink-0"

@@ -214,7 +214,9 @@ export interface AppState {
   setActiveObjectCollectionId: (id: string) => void;
   /** Collections chosen on Create for the next new object (multi-select). */
   createCollectionIds: string[];
-  setCreateCollectionIds: (ids: string[]) => void;
+  /** `pinned` = the author NAMED this folder (New ▾ inside an open folder), so it
+   *  wins over the type's own home folder. One-shot. */
+  setCreateCollectionIds: (ids: string[], opts?: { pinned?: boolean }) => void;
   createObjectCollection: (name: string, parentId?: string | null) => ObjectCollection;
   renameObjectCollection: (id: string, name: string) => void;
   deleteObjectCollection: (id: string) => void;
@@ -346,6 +348,10 @@ function StudioApp() {
   const [createCollectionIds, setCreateCollectionIdsState] = useState<string[]>([]);
   const createCollectionIdsRef = useRef<string[]>([]);
   createCollectionIdsRef.current = createCollectionIds;
+  /** Did the author NAME the destination folder (New ▾ inside an open folder),
+   *  rather than merely have one selected? One-shot: cleared once used, so it
+   *  cannot leak into the next ordinary Create. */
+  const createFolderPinnedRef = useRef(false);
 
   const refreshObjectCollections = useCallback((userId: string) => {
     const list = ensureDefaultObjectCollection(userId);
@@ -558,6 +564,22 @@ function StudioApp() {
         const allowed =
           wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
         setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
+        // A launch may also name the FOLDER it wants content filed into — the
+        // Nexus Content Library sends this when someone picks "Create content"
+        // while looking at a folder there. Pinned, so the type's own home folder
+        // does not quietly win over the destination they were looking at.
+        //
+        // The id is the Studio's own collection id, which reached Nexus by riding
+        // along on each object (migration 0003 denormalises collection_ids), so
+        // the two sides are talking about the same folder without Nexus ever
+        // owning one.
+        const wantedFolder = bootParams.get('folder');
+        if (wantedFolder) {
+          setPendingLibraryFolderId(wantedFolder);
+          setCreateCollectionIdsState([wantedFolder]);
+          createCollectionIdsRef.current = [wantedFolder];
+          createFolderPinnedRef.current = true;
+        }
         setIsLoggedIn(true);
         if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring
@@ -724,8 +746,21 @@ function StudioApp() {
       // even if the author happened to have a tutorials folder selected when
       // they hit Create. Falls back to the picked folder for types with no
       // home of their own.
-      const byType = folderIdForType(ownerId, partial.type);
-      const collectionIds = byType
+      //
+      // UNLESS THE AUTHOR NAMED ONE. That rule was written for a folder that
+      // happened to be selected — an accident of navigation. "New ▾" inside an
+      // open folder is the opposite: someone looking at a folder asking for
+      // content in THAT folder, and overriding them there would make the menu
+      // item lie about what it does. Pinned is one-shot (cleared on use), so the
+      // ordinary Create flow keeps filing by type.
+      const pinned = createFolderPinnedRef.current && fromCreate.length ? fromCreate : null;
+      // Spend it here: the next Create must file by type again, or one use of the
+      // folder menu would silently change how everything after it is filed.
+      if (createFolderPinnedRef.current) createFolderPinnedRef.current = false;
+      const byType = pinned ? null : folderIdForType(ownerId, partial.type);
+      const collectionIds = pinned
+        ? pinned
+        : byType
         ? [byType]
         : (fromPartial.length
           ? fromPartial
@@ -963,10 +998,11 @@ function StudioApp() {
     setActiveObjectCollectionIdState(id);
   }, []);
 
-  const setCreateCollectionIds = useCallback((ids: string[]) => {
+  const setCreateCollectionIds = useCallback((ids: string[], opts?: { pinned?: boolean }) => {
     const unique = [...new Set(ids.filter(Boolean))];
     // Keep ref in sync immediately so the next addObject (same tick) sees the pick.
     createCollectionIdsRef.current = unique;
+    createFolderPinnedRef.current = !!opts?.pinned && unique.length > 0;
     setCreateCollectionIdsState(unique);
     if (unique[0]) {
       storeSetActiveObjectCollectionId(activeUserIdRef.current, unique[0]);
