@@ -2985,6 +2985,23 @@ export async function getSharedLearningObject(id: string): Promise<Row | null> {
 }
 
 /**
+ * 23514 — a CHECK constraint refused the row.
+ *
+ * Here that means one thing in practice: a subject_type the database has not been
+ * taught yet. learning_object_grants shipped in 0007 allowing only 'profile' and
+ * 'role'; 'club' arrives with 0008 and 'app' with 0010. A deploy ahead of those
+ * migrations rejects the insert, and it surfaced as a bare 500 — a content manager
+ * clicking Save got "Couldn't update sharing" and no way to learn the cause was an
+ * unapplied migration. A missing TABLE already says so plainly; a constraint that
+ * has not been widened should too.
+ */
+function _isCheckViolation(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
+    ?? (e as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "23514";
+}
+
+/**
  * Postgres 42P01 = undefined_table. `learning_object_grants` arrives with 0007, and
  * a deploy that lands first must still serve every list.
  */
@@ -3380,7 +3397,8 @@ export async function setLearningGrantsBulk(
   if (spec.apps !== undefined) kinds.push({ type: "app", wanted: [...new Set(spec.apps.filter(Boolean))] });
   if (!kinds.length) return [];
 
-  return asPrivileged(async (tx) => {
+  try {
+    return await asPrivileged(async (tx) => {
     // Org check as a set operation, not a loop: one query establishes which of
     // these ids are ours, and everything below works from that list.
     const owned = (await tx.execute(sql`
@@ -3414,10 +3432,21 @@ export async function setLearningGrantsBulk(
         await tx.execute(sql`
           delete from learning_object_grants
           where object_id in (${inMine}) and subject_type = ${type}`);
+        }
       }
+      return mine;
+    });
+  } catch (e) {
+    if (_isCheckViolation(e)) {
+      throw new Error(
+        "grants-subject-unavailable: this database does not accept that kind of grant yet (run migrations)",
+      );
     }
-    return mine;
-  });
+    if (_isUndefinedRelation(e)) {
+      throw new Error("shares-unavailable: learning_object_grants missing (run migrations)");
+    }
+    throw e;
+  }
 }
 
 // ── App targets (learning_object_app_targets, 0007) ─────────────────────────

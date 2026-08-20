@@ -3026,6 +3026,18 @@ platformRouter.put("/learning/shares/bulk", async (c) => {
       access.profileId ?? null,
     );
   } catch (e) {
+    // Name the missing piece. "Couldn't update sharing" over an unapplied
+    // migration is undiagnosable from the outside — and this exact case shipped
+    // as a bare 500, which is how a working feature looks broken.
+    if (e instanceof Error && e.message.startsWith("grants-subject-unavailable")) {
+      throw new HttpError(
+        503,
+        "This deployment's database has not been migrated for club and app sharing yet (learning pack 0008/0010)",
+      );
+    }
+    if (e instanceof Error && e.message.startsWith("shares-unavailable")) {
+      throw new HttpError(503, "Per-club sharing is not enabled yet on this deployment");
+    }
     if (_missingGrantsTable(e)) {
       throw new HttpError(503, "Per-club sharing is not enabled yet on this deployment");
     }
