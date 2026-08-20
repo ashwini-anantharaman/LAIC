@@ -39,6 +39,7 @@ export function PublishContentDialog({
   objects,
   label,
   administersApps = [],
+  canScopeToClub = true,
   onClose,
   onSaved,
 }: {
@@ -49,6 +50,15 @@ export function PublishContentDialog({
    *  publish.app_target, and may scope to a club without publish_club — running
    *  the app is what those permissions describe. */
   administersApps?: string[];
+  /**
+   * learning.app.publish_club — or administering an app, which carries it for
+   * that app: deciding which club sees what on the app you run IS the job.
+   *
+   * Without it the audience picker is not shown at all. Showing it and refusing
+   * the save is how someone chooses "Only B2F3", presses Save, and gets a 403
+   * that takes the whole publish with it.
+   */
+  canScopeToClub?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -68,6 +78,7 @@ export function PublishContentDialog({
   const [clubs, setClubs] = useState<ShareableClub[] | null>(null);
 
   useEffect(() => {
+    if (!canScopeToClub) return; // nothing to draw, so nothing to fetch
     let live = true;
     listShareableClubs(programId)
       .then((cs) => live && setClubs(cs))
@@ -75,7 +86,7 @@ export function PublishContentDialog({
     return () => {
       live = false;
     };
-  }, [programId]);
+  }, [programId, canScopeToClub]);
 
   // Re-read the current state THROUGH the chosen scope: "on" for the whole app is
   // not "on" for Highbury, and showing the whole-app answer while a club is
@@ -178,7 +189,7 @@ export function PublishContentDialog({
 
         {/* WHO SEES IT ON THE APP. An app administrator's second decision, and
             the reason the row above is not the whole story. */}
-        {clubs && clubs.length > 0 && (
+        {canScopeToClub && clubs && clubs.length > 0 && (
           <div>
             <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               On the app, visible to

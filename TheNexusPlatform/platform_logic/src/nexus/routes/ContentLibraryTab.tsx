@@ -151,6 +151,9 @@ export function ContentLibraryTab() {
   /** Apps this viewer administers — empty for a content manager who runs none. */
   const [administers, setAdministers] = useState<string[]>([]);
   const canPublish = can("learning.publish.app_target") || administers.length > 0;
+  // Narrowing an app's audience to one club is its own permission — and an app's
+  // administrator holds it for the app they run, because that IS the job.
+  const canScopeToClub = can("learning.app.publish_club") || administers.length > 0;
   // Seeing WHO content reaches is implied by being able to change it.
   const canViewShares =
     can("learning.library.share_view") || canShareClubs || canShareMembers || canShareApps;
@@ -567,6 +570,7 @@ export function ContentLibraryTab() {
         <PublishContentDialog
           programId={programId}
           administersApps={administers}
+          canScopeToClub={canScopeToClub}
           objects={publishing.objects}
           label={publishing.label}
           onClose={() => setPublishing(null)}

@@ -98,7 +98,7 @@ const SUBROLE_LABELS: Record<string, string> = {
   "learning.library.share_member": "Share content with individual members",
   "learning.library.share_app": "Share content with an app's administrators",
   "learning.publish.app_target": "Publish content to an app",
-  "learning.app.publish_club": "Limit app content to one club",
+  "learning.app.publish_club": "Choose which club sees content on the app",
   "learning.library.upload": "Add files to the library",
 };
 
@@ -109,7 +109,7 @@ const SUBROLE_HINTS: Record<string, string> = {
   "learning.library.share_member": "Named people, including anyone who belongs to no club.",
   "learning.library.share_app": "They see it and decide. Sharing puts nothing on the app.",
   "learning.publish.app_target": "The publish dialog. Stronger than sharing — it goes live in the app.",
-  "learning.app.publish_club": "Publish for one club on the app rather than everyone.",
+  "learning.app.publish_club": "Narrow a publish to one club instead of everyone on the app.",
   "learning.library.upload": "Upload or link a PDF, image or video, and file it into folders.",
 };
 
