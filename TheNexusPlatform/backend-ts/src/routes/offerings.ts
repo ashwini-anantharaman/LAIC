@@ -1661,12 +1661,32 @@ offeringsRouter.get("/programs/:program_id/my-role", async (c) => {
   // learning_role_assignments) also grants the Learning platform — surface it
   // as perms.learning so Nexus shows the Learning card and auto-launches a
   // learning-only member, just like a prebuilt assignment.
-  if (!perms.learning) {
-    const lr = await graph.getLearningRoleForEmail(programId, user.email).catch(() => null);
-    if (lr) {
-      const lp = (lr.perms as Record<string, string>) ?? {};
+  //
+  // ALWAYS LOOKED UP, not only when perms.learning is unset. The area and the
+  // CAPABILITIES are two different facts, and the second one is why: a Content
+  // Manager's sub-roles live in learning_roles, and the console's nav and landing
+  // gates read perms.capabilities. Skipping the lookup because some other role
+  // already granted the learning AREA meant a sub-role holder never got the
+  // Content Library tab — the capability was granted, enforced server-side, and
+  // invisible to the one screen that decides whether the door is drawn.
+  const lr = await graph.getLearningRoleForEmail(programId, user.email).catch(() => null);
+  if (lr) {
+    const lp = (lr.perms as Record<string, unknown>) ?? {};
+    if (!perms.learning) {
+      // Only the legacy area map answers "view or edit" — a capability list is not
+      // an "edit" value, so a capabilities-only role reads as view here. That is
+      // the coarse level; the capabilities below are what actually gate the work.
       perms.learning = Object.values(lp).includes("edit") ? "edit" : "view";
-      anyPlatformRole = true;
+    }
+    anyPlatformRole = true;
+
+    // UNION, never replace. A person can hold a program role AND a learning
+    // sub-role, and each was granted deliberately by someone; dropping either
+    // silently takes away access an administrator gave.
+    const fromLearning = Array.isArray(lp.capabilities) ? (lp.capabilities as string[]) : [];
+    if (fromLearning.length) {
+      const existing = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+      perms.capabilities = [...new Set([...existing, ...fromLearning])];
     }
   }
   if (!role && !anyPlatformRole) return c.json(null);
