@@ -13,34 +13,32 @@
  * so ticking two overlapping folders must not share the same item twice or count it
  * twice. The folder checkboxes are a view onto a set of ids.
  *
- * WHY THERE IS NO "NEW FOLDER" HERE. Folders live in the Studio's localStorage,
- * per author (objectCollectionsStore.ts) — there is no collections table and no
- * API. Nexus can SEE them because each object carries its folder ids and names
- * (migration 0003 denormalises them), but it has nowhere to write a new one. A
- * button that cannot persist is worse than an absent one, so "New" offers content
- * instead and hands the Studio the folder to file it into. Two consequences worth
- * knowing: nesting is invisible here (parentId never leaves the Studio), and two
- * authors can see different folders for the same content.
+ * NOTHING IS CREATED HERE — no content, no folders. This tab governs an existing
+ * library: who each piece reaches, and which app it publishes to. Authoring lives
+ * in the Content Studio, and the split is the point rather than a limitation, so
+ * there is no New button to imply otherwise.
+ *
+ * It is also what the data allows. Folders live in the Studio's localStorage, per
+ * author (objectCollectionsStore.ts) — no collections table, no API. Nexus can SEE
+ * them only because each object carries its folder ids and names (migration 0003
+ * denormalises them). Two consequences worth knowing while reading this file:
+ * nesting is invisible here (parentId never leaves the Studio), and two authors can
+ * see different folders for the same content.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
-  ChevronDown, ChevronRight, Check, Folder, Loader2, Plus, RefreshCw, Search,
+  ChevronRight, Check, Folder, Loader2, RefreshCw, Search,
   Share2, Send, Smartphone, User, Users,
 } from "lucide-react";
-import { toast } from "sonner";
 
-import { getContentLibrary, launchLearningPlatform, type LibraryObject } from "@/services/api";
+import { getContentLibrary, type LibraryObject } from "@/services/api";
 import { useProgramAccess } from "@/nexus/access";
 import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
 import { PageHeader, EmptyState } from "@/nexus/ui/kit";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
-import {
-  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
-  DropdownMenuSeparator, DropdownMenuTrigger,
-} from "@/app/components/ui/dropdown-menu";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 
@@ -52,16 +50,6 @@ interface FolderGroup {
   name: string;
   objects: LibraryObject[];
 }
-
-/** What "New" can make. Short on purpose: the things someone files into a folder,
- *  not every type the platform authors. The full set lives on the Studio's Create,
- *  which is where a decision about WHAT to make belongs. */
-const CREATABLE: { type: string; label: string }[] = [
-  { type: "tutorial-v3", label: "Tutorial" },
-  { type: "quiz", label: "Quiz" },
-  { type: "flashcard-set", label: "Flashcard set" },
-  { type: "video-script", label: "Video script" },
-];
 
 /** Tri-state box. A dash means "some", and that distinction is the whole reason
  *  this screen is worth having over a list of checkboxes. */
@@ -129,7 +117,6 @@ export function ContentLibraryTab() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
-  const [launching, setLaunching] = useState(false);
 
   const load = useCallback(() => {
     setError(null);
@@ -196,70 +183,6 @@ export function ContentLibraryTab() {
   );
   const reload = () => void load();
 
-  /**
-   * Hand authoring to the Studio, with the folder to file into.
-   *
-   * Nexus cannot author, and pretending otherwise would mean rebuilding the whole
-   * creation pipeline here. A launch token is minted per click so the Studio gets
-   * a fresh session, and `folder` carries the destination the person was looking
-   * at — the Studio pins it over the type's own home folder (App.tsx).
-   */
-  async function createContent(type: string, folderId: string | null) {
-    setLaunching(true);
-    try {
-      const l = await launchLearningPlatform(programId);
-      if (!l.launch_url) {
-        toast.error("No Content Studio is connected to this program yet");
-        return;
-      }
-      const params = new URLSearchParams({
-        launch_token: l.launch_token,
-        program_id: programId,
-        screen: "cd-create",
-        type,
-      });
-      // Only when a real folder is open: at the root the Studio's own filing
-      // rules are the right answer, and pinning nothing would override them
-      // with nothing.
-      if (folderId && folderId !== UNFILED) params.set("folder", folderId);
-      window.location.href = `${l.launch_url}?${params.toString()}`;
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Couldn't open the Content Studio");
-    } finally {
-      setLaunching(false);
-    }
-  }
-
-  const newMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button size="sm" disabled={launching}>
-          {launching ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
-          New
-          <ChevronDown className="size-3.5 opacity-70" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel>
-          {openFolder ? `Create in “${openFolder.name}”` : "Create content"}
-        </DropdownMenuLabel>
-        {CREATABLE.map((c) => (
-          <DropdownMenuItem
-            key={c.type}
-            onSelect={() => void createContent(c.type, openFolder?.key ?? null)}
-          >
-            {c.label}
-          </DropdownMenuItem>
-        ))}
-        <DropdownMenuSeparator />
-        {/* Said plainly rather than shown as a disabled row someone keeps trying. */}
-        <DropdownMenuLabel className="font-normal text-xs text-muted-foreground">
-          Folders are created in the Content Studio.
-        </DropdownMenuLabel>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
-
   const rowActions = (objs: LibraryObject[], label: string) => (
     <>
       <Button
@@ -311,7 +234,6 @@ export function ContentLibraryTab() {
                 <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
                   <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
                 </Button>
-                {newMenu}
               </>
             )}
           </>
@@ -335,8 +257,7 @@ export function ContentLibraryTab() {
         <EmptyState>
           <p className="font-medium text-foreground">No content yet</p>
           <p className="mt-1">
-            Use <span className="font-medium text-foreground">New</span> to author something, or
-            create it in the Content Studio — it appears here ready to share.
+            Content authored in the Content Studio for this program appears here, ready to share.
           </p>
         </EmptyState>
       ) : (

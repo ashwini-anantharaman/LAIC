@@ -564,22 +564,6 @@ function StudioApp() {
         const allowed =
           wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
         setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
-        // A launch may also name the FOLDER it wants content filed into — the
-        // Nexus Content Library sends this when someone picks "Create content"
-        // while looking at a folder there. Pinned, so the type's own home folder
-        // does not quietly win over the destination they were looking at.
-        //
-        // The id is the Studio's own collection id, which reached Nexus by riding
-        // along on each object (migration 0003 denormalises collection_ids), so
-        // the two sides are talking about the same folder without Nexus ever
-        // owning one.
-        const wantedFolder = bootParams.get('folder');
-        if (wantedFolder) {
-          setPendingLibraryFolderId(wantedFolder);
-          setCreateCollectionIdsState([wantedFolder]);
-          createCollectionIdsRef.current = [wantedFolder];
-          createFolderPinnedRef.current = true;
-        }
         setIsLoggedIn(true);
         if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring
