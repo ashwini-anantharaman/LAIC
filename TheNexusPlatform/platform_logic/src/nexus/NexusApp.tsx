@@ -96,11 +96,27 @@ function MemberLanding({ orgId, programId, role }: { orgId: string; programId: s
     getMyProgramRole(programId)
       .then((r) => {
         if (!live) return;
-        const perms = (r?.perms as Record<string, string>) ?? {};
+        const perms = (r?.perms as Record<string, unknown>) ?? {};
         const platforms = Object.keys(perms).filter((k) => PLATFORM_PATHS[k]);
         const others = Object.keys(perms).filter((k) => NON_PLATFORM_AREAS.includes(k));
-        if (platforms.length === 1 && others.length === 0) {
+        // THE CONTENT LIBRARY IS A DESTINATION. It is keyed on a capability
+        // rather than an area — that is what lets it be narrower than the whole
+        // Content Studio — so counting the perms keys alone cannot see it, and a
+        // Content Manager (one area: Content Studio) looked like someone with
+        // exactly one place to go. They were sent full-screen into the Studio,
+        // past the tab built for them.
+        //
+        // Capabilities live INSIDE the perms blob (routes/offerings.ts writes
+        // `{ ...perms, capabilities }`), which is why this reads a key rather
+        // than a second request.
+        const caps = Array.isArray(perms.capabilities) ? (perms.capabilities as string[]) : [];
+        const hasLibrary = caps.includes("learning.library.console");
+        if (platforms.length === 1 && others.length === 0 && !hasLibrary) {
           setDest(`/o/${orgId}/p/${programId}/${PLATFORM_PATHS[platforms[0]]}`);
+        } else if (platforms.length === 0 && others.length === 0 && hasLibrary) {
+          // The library as someone's whole remit: the overview would be an empty
+          // page, so give them the same straight-in courtesy.
+          setDest(`/o/${orgId}/p/${programId}/learning/library`);
         } else {
           setDest(`/o/${orgId}/p/${programId}`);
         }
