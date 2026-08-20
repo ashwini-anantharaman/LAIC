@@ -2812,7 +2812,29 @@ platformRouter.get("/learning/library", async (c) => {
     access.profileId ?? null,
   );
 
+  // Files ride along in the same response: they live in the same folders and the
+  // screen groups by folder, so fetching them separately would mean rendering the
+  // tree twice or waiting on two requests to draw it once.
+  //
+  // An app administrator is not shown them. Their remit is a granted catalogue,
+  // and an asset cannot be granted yet (0011's header explains why), so every
+  // file would be outside it — listing them would imply otherwise.
+  const assets = administers.length
+    ? []
+    : await graph.listLearningAssets(access.orgId, access.partnerProgramId ?? access.programId);
+
   return c.json({
+    assets: assets.map((a) => ({
+      id: String(a.id),
+      title: (a.title as string) ?? "",
+      kind: (a.kind as string) ?? "link",
+      content_type: (a.content_type as string | null) ?? null,
+      byte_size: (a.byte_size as number | null) ?? null,
+      external_url: (a.external_url as string | null) ?? null,
+      collection_ids: (a.collection_ids as string[]) ?? [],
+      collection_names: (a.collection_names as string[]) ?? [],
+      created_at: (a.created_at as string | null) ?? null,
+    })),
     // An app administrator sees only what their apps were granted. Their remit is
     // the catalogue they were handed, not the program's whole library — and this
     // is the filter, not a UI convenience, so a crafted request cannot widen it.
@@ -2877,6 +2899,171 @@ platformRouter.get("/learning/clubs", async (c) => {
     }),
   );
   return c.json({ clubs });
+});
+
+// ── Library assets: files nobody authored ──────────────────────────────────
+//
+// A handout, an image, a recording. Uploaded or linked, filed into folders, and
+// listed beside authored content in the Content Library.
+//
+// WHY THERE IS A SIZE LIMIT AND A LINK OPTION. Production has no S3 configured,
+// so the storage adapter writes base64 rows into Postgres and an upload travels
+// as base64 inside a JSON body — Vercel caps that at ~4.5 MB, which after base64
+// expansion is about 3 MB of actual file. Fine for a handout, useless for a
+// recording. So video is expected to arrive as a LINK until a bucket exists, and
+// the limit below is enforced rather than discovered.
+
+/** ~3 MB. base64 is 4 bytes per 3, so this lands under the ~4.5 MB body cap. */
+const _MAX_ASSET_BYTES = 3 * 1024 * 1024;
+
+const _ASSET_KIND_FOR_CT: { test: RegExp; kind: string }[] = [
+  { test: /^application\/pdf$/, kind: "pdf" },
+  { test: /^image\//, kind: "image" },
+  { test: /^video\//, kind: "video" },
+];
+
+function _assetKind(contentType: string | null, externalUrl: string | null): string {
+  for (const { test, kind } of _ASSET_KIND_FOR_CT) {
+    if (contentType && test.test(contentType)) return kind;
+  }
+  // A link with no content type: guess from the extension, and fall back to
+  // "link" rather than mislabelling something as a document.
+  const ext = (externalUrl ?? "").split("?")[0].split(".").pop()?.toLowerCase() ?? "";
+  if (["mov", "mp4", "m4v", "webm"].includes(ext)) return "video";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg"].includes(ext)) return "image";
+  if (ext === "pdf") return "pdf";
+  return "link";
+}
+
+const _ASSET_EXT: Record<string, string> = {
+  "application/pdf": "pdf",
+  "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif",
+  "image/webp": "webp", "image/svg+xml": "svg",
+  "video/quicktime": "mov", "video/mp4": "mp4", "video/webm": "webm",
+};
+
+platformRouter.get("/learning/assets", async (c) => {
+  const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  return c.json({
+    assets: await graph.listLearningAssets(
+      access.orgId, access.partnerProgramId ?? access.programId,
+    ),
+  });
+});
+
+const _assetCreateSchema = z.object({
+  program_id: z.string().optional(),
+  title: z.string().trim().min(1).max(300),
+  /** base64 file bytes, OR external_url. Exactly one. */
+  data: z.string().optional(),
+  content_type: z.string().optional(),
+  external_url: z.string().url().optional(),
+  collection_ids: z.array(z.string()).default([]),
+  collection_names: z.array(z.string()).default([]),
+});
+
+platformRouter.post("/learning/assets", async (c) => {
+  const req = parseBody(_assetCreateSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  _requireLearningCapStrict(eff, "learning.library.upload", null);
+
+  const hasFile = !!req.data;
+  const hasLink = !!req.external_url;
+  if (hasFile === hasLink) {
+    throw new HttpError(422, "Provide either file data or an external_url, not both");
+  }
+
+  const programId = access.partnerProgramId ?? access.programId;
+  const id = `ast_${randomBytes(9).toString("base64url")}`;
+  let storageKey: string | null = null;
+  let byteSize: number | null = null;
+  const contentType = req.content_type ?? null;
+
+  if (hasFile) {
+    const buf = Buffer.from(req.data as string, "base64");
+    if (!buf.length) throw new HttpError(422, "Empty upload");
+    if (buf.length > _MAX_ASSET_BYTES) {
+      // Say the number and the way round it. "Too large" with no ceiling and no
+      // alternative is a dead end for someone holding a recording.
+      throw new HttpError(
+        413,
+        `That file is ${(buf.length / 1024 / 1024).toFixed(1)} MB. This deployment can store up to ` +
+          `${(_MAX_ASSET_BYTES / 1024 / 1024).toFixed(0)} MB — add larger files, including video, by link instead.`,
+      );
+    }
+    const ext = _ASSET_EXT[contentType ?? ""] ?? "bin";
+    storageKey = orgKey(access.orgId, `library-assets/${id}.${ext}`);
+    await getStorage().put(storageKey, buf, contentType ?? "application/octet-stream");
+    byteSize = buf.length;
+  }
+
+  // Ids AND names. Names are the only shared truth about folders — Studio folders
+  // live in that app's localStorage — and they are what makes an asset appear
+  // beside authored content in the library's folder list.
+  const names = [...new Set(req.collection_names.map((n) => n.trim()).filter(Boolean))];
+
+  let row: Row | null;
+  try {
+    row = await graph.createLearningAsset(access.orgId, programId, {
+      id,
+      title: req.title.trim(),
+      kind: _assetKind(contentType, req.external_url ?? null),
+      contentType,
+      byteSize,
+      storageKey,
+      externalUrl: req.external_url ?? null,
+      collectionIds: [...new Set(req.collection_ids.filter(Boolean))],
+      collectionNames: names,
+      uploadedBy: access.profileId ?? null,
+    });
+  } catch (e) {
+    // The bytes are already stored; do not leave them orphaned behind a failed row.
+    if (storageKey) await getStorage().delete(storageKey).catch(() => {});
+    if (e instanceof Error && e.message.startsWith("assets-unavailable")) {
+      throw new HttpError(503, "Library files are not enabled yet on this deployment (learning pack 0011)");
+    }
+    throw e;
+  }
+  if (!row) throw new HttpError(500, "The file could not be recorded");
+  return c.json({ ok: true, id, url: storageKey ? await getStorage().url(storageKey) : req.external_url });
+});
+
+const _assetFoldersSchema = z.object({
+  program_id: z.string().optional(),
+  collection_ids: z.array(z.string()).default([]),
+  collection_names: z.array(z.string()).default([]),
+});
+
+platformRouter.put("/learning/assets/:asset_id/folders", async (c) => {
+  const req = parseBody(_assetFoldersSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  _requireLearningCapStrict(eff, "learning.library.upload", null);
+  const ok = await graph.setLearningAssetFolders(
+    access.orgId,
+    c.req.param("asset_id"),
+    [...new Set(req.collection_ids.filter(Boolean))],
+    [...new Set(req.collection_names.map((n) => n.trim()).filter(Boolean))],
+  );
+  if (!ok) throw new HttpError(404, "File not found");
+  return c.json({ ok: true });
+});
+
+platformRouter.delete("/learning/assets/:asset_id", async (c) => {
+  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
+  _requireLearningCapStrict(eff, "learning.library.upload", null);
+  const assetId = c.req.param("asset_id");
+  // Read first so the stored bytes can go too — the table has no cascade to
+  // storage, and an orphaned blob is invisible and paid for forever.
+  const asset = await graph.getLearningAsset(access.orgId, assetId);
+  if (!asset) throw new HttpError(404, "File not found");
+  const ok = await graph.deleteLearningAsset(access.orgId, assetId);
+  if (!ok) throw new HttpError(404, "File not found");
+  if (asset.storage_key) await getStorage().delete(asset.storage_key as string).catch(() => {});
+  return c.json({ ok: true });
 });
 
 // ── The app-administrator register ─────────────────────────────────────────

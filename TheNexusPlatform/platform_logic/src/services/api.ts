@@ -1639,17 +1639,88 @@ export interface ShareableClub {
   members: ClubMember[];
 }
 
+/** A file added straight to the library — not authored by the Studio. */
+export interface LibraryAsset {
+  id: string;
+  title: string;
+  kind: "pdf" | "image" | "video" | "link" | string;
+  content_type: string | null;
+  byte_size: number | null;
+  external_url: string | null;
+  collection_ids: string[];
+  collection_names: string[];
+  created_at: string | null;
+}
+
 export interface ContentLibraryResult {
   objects: LibraryObject[];
+  /** Files, which live in the same folders as the objects. */
+  assets: LibraryAsset[];
   /** Apps this caller administers. Empty for a content manager who administers none. */
   administersApps: string[];
 }
 
 export async function getContentLibrary(programId: string): Promise<ContentLibraryResult> {
-  const r = await request<{ objects: LibraryObject[]; administers_apps?: string[] }>(
-    `/api/platform/learning/library?program_id=${encodeURIComponent(programId)}`,
+  const r = await request<{
+    objects: LibraryObject[];
+    assets?: LibraryAsset[];
+    administers_apps?: string[];
+  }>(`/api/platform/learning/library?program_id=${encodeURIComponent(programId)}`);
+  return { objects: r.objects ?? [], assets: r.assets ?? [], administersApps: r.administers_apps ?? [] };
+}
+
+/**
+ * Add a file. Either `data` (base64) or `externalUrl`, never both.
+ *
+ * The deployment's size ceiling is enforced server-side and reported with the
+ * number and the alternative, so a 413 here is worth surfacing verbatim — video
+ * is expected to arrive as a link until a storage bucket exists.
+ */
+export async function addLibraryAsset(
+  programId: string,
+  input: {
+    title: string;
+    data?: string;
+    contentType?: string;
+    externalUrl?: string;
+    collectionIds?: string[];
+    collectionNames?: string[];
+  },
+): Promise<{ id: string; url: string | null }> {
+  return request(`/api/platform/learning/assets`, {
+    method: "POST",
+    body: JSON.stringify({
+      program_id: programId,
+      title: input.title,
+      ...(input.data ? { data: input.data, content_type: input.contentType } : {}),
+      ...(input.externalUrl ? { external_url: input.externalUrl } : {}),
+      collection_ids: input.collectionIds ?? [],
+      collection_names: input.collectionNames ?? [],
+    }),
+  });
+}
+
+export async function setLibraryAssetFolders(
+  programId: string,
+  assetId: string,
+  collectionNames: string[],
+  collectionIds: string[] = [],
+): Promise<void> {
+  await request(`/api/platform/learning/assets/${encodeURIComponent(assetId)}/folders`, {
+    method: "PUT",
+    body: JSON.stringify({
+      program_id: programId,
+      collection_ids: collectionIds,
+      collection_names: collectionNames,
+    }),
+  });
+}
+
+export async function deleteLibraryAsset(programId: string, assetId: string): Promise<void> {
+  await request(
+    `/api/platform/learning/assets/${encodeURIComponent(assetId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "DELETE" },
   );
-  return { objects: r.objects ?? [], administersApps: r.administers_apps ?? [] };
 }
 
 export async function listShareableClubs(programId: string): Promise<ShareableClub[]> {

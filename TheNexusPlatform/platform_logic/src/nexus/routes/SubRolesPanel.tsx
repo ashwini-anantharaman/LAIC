@@ -77,6 +77,7 @@ const LIBRARY_CAPABILITIES = [
   "learning.library.share_app",
   "learning.publish.app_target",
   "learning.app.publish_club",
+  "learning.library.upload",
 ] as const;
 
 const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
@@ -96,6 +97,7 @@ const SUBROLE_LABELS: Record<string, string> = {
   "learning.library.share_app": "Share content with an app",
   "learning.publish.app_target": "Publish content to an app",
   "learning.app.publish_club": "Limit app content to one club",
+  "learning.library.upload": "Add files to the library",
 };
 
 const SUBROLE_HINTS: Record<string, string> = {
@@ -105,6 +107,7 @@ const SUBROLE_HINTS: Record<string, string> = {
   "learning.library.share_app": "Hands a catalogue to an app's administrators to decide on.",
   "learning.publish.app_target": "The publish dialog — choose which app content appears in.",
   "learning.app.publish_club": "Publish for one club on the app rather than everyone.",
+  "learning.library.upload": "Upload or link a PDF, image or video, and file it into folders.",
 };
 
 const capsOf = (r: SubRole): string[] => {

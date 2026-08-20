@@ -28,11 +28,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
-  ChevronRight, Check, Folder, Loader2, RefreshCw, Search,
-  Share2, Send, Smartphone, User, Users,
+  ChevronRight, Check, FileText, Film, Folder, Image as ImageIcon, Link2, Loader2,
+  Plus, RefreshCw, Search, Share2, Send, Smartphone, Trash2, User, Users,
 } from "lucide-react";
+import { toast } from "sonner";
 
-import { getContentLibrary, type LibraryObject } from "@/services/api";
+import {
+  deleteLibraryAsset, getContentLibrary, type LibraryAsset, type LibraryObject,
+} from "@/services/api";
 import { useProgramAccess } from "@/nexus/access";
 import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
 import { PageHeader, EmptyState } from "@/nexus/ui/kit";
@@ -41,6 +44,7 @@ import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
+import { AddLibraryFileDialog } from "@/nexus/routes/AddLibraryFileDialog";
 
 const UNFILED = "__unfiled__";
 type Tri = "on" | "off" | "some";
@@ -49,7 +53,14 @@ interface FolderGroup {
   key: string;
   name: string;
   objects: LibraryObject[];
+  /** Files filed into this folder. They share the folder and nothing else — a
+   *  file has no clubs, no apps and no publish state (see migration 0011). */
+  assets: LibraryAsset[];
 }
+
+const ASSET_ICON: Record<string, typeof FileText> = {
+  pdf: FileText, image: ImageIcon, video: Film, link: Link2,
+};
 
 /** Tri-state box. A dash means "some", and that distinction is the whole reason
  *  this screen is worth having over a list of checkboxes. */
@@ -122,6 +133,7 @@ export function ContentLibraryTab() {
   const canShareClubs = can("learning.library.share_club");
   const canShareApps = can("learning.library.share_app");
   const canDelegate = can("learning.roles.delegate");
+  const canUpload = can("learning.library.upload");
 
   const [view, setView] = useState<"content" | "roles">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
@@ -133,6 +145,8 @@ export function ContentLibraryTab() {
   const [sharing, setSharing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
+  const [assets, setAssets] = useState<LibraryAsset[]>([]);
+  const [addingFile, setAddingFile] = useState(false);
   /** Apps this viewer administers — empty for a content manager who runs none. */
   const [administers, setAdministers] = useState<string[]>([]);
   const canPublish = can("learning.publish.app_target") || administers.length > 0;
@@ -145,6 +159,7 @@ export function ContentLibraryTab() {
     return getContentLibrary(programId)
       .then((r) => {
         setObjects(r.objects);
+        setAssets(r.assets);
         setAdministers(r.administersApps);
       })
       .catch((e) =>
@@ -163,19 +178,38 @@ export function ContentLibraryTab() {
     const q = query.trim().toLowerCase();
     const list = (objects ?? []).filter((o) => (q ? o.title.toLowerCase().includes(q) : true));
     const byKey = new Map<string, FolderGroup>();
+    const blank = (key: string, name: string): FolderGroup => ({
+      key, name: name === UNFILED ? "Unfiled" : name, objects: [], assets: [],
+    });
     for (const o of list) {
       const names = o.collection_names.length ? o.collection_names : [UNFILED];
       names.forEach((name, i) => {
         const key = o.collection_ids[i] ?? name;
-        const g = byKey.get(key) ?? { key, name: name === UNFILED ? "Unfiled" : name, objects: [] };
+        const g = byKey.get(key) ?? blank(key, name);
         g.objects.push(o);
         byKey.set(key, g);
       });
     }
+    // Files join by NAME. An asset may carry no folder id at all — a content
+    // manager can type a folder that exists in no author's Studio — so the name
+    // is the only key that reliably lands it beside the authored content.
+    const nameToKey = new Map([...byKey.values()].map((g) => [g.name, g.key]));
+    const assetList = assets.filter((a) => (q ? a.title.toLowerCase().includes(q) : true));
+    for (const a of assetList) {
+      const names = a.collection_names.length ? a.collection_names : [UNFILED];
+      for (const raw of names) {
+        const name = raw === UNFILED ? "Unfiled" : raw;
+        const key = nameToKey.get(name) ?? name;
+        const g = byKey.get(key) ?? blank(key, name);
+        if (!nameToKey.has(name)) nameToKey.set(name, key);
+        g.assets.push(a);
+        byKey.set(key, g);
+      }
+    }
     return [...byKey.values()].sort((a, b) =>
       a.name === "Unfiled" ? 1 : b.name === "Unfiled" ? -1 : a.name.localeCompare(b.name),
     );
-  }, [objects, query]);
+  }, [objects, assets, query]);
 
   const openFolder = openKey ? folders.find((f) => f.key === openKey) ?? null : null;
   // Searching while inside a folder that no longer matches would leave someone
@@ -264,6 +298,14 @@ export function ContentLibraryTab() {
                 <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
                   <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
                 </Button>
+                {/* Files, not content. Authoring still belongs to the Studio — this
+                    adds material that arrives ready-made, which is why the button
+                    says "file" and not "new". */}
+                {canUpload && (
+                  <Button size="sm" onClick={() => setAddingFile(true)}>
+                    <Plus className="size-4" /> Add file
+                  </Button>
+                )}
               </>
             )}
           </>
@@ -381,7 +423,8 @@ export function ContentLibraryTab() {
 
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border">
             {openFolder
-              ? openFolder.objects.map((o) => (
+              ? [
+                  ...openFolder.objects.map((o) => (
                   <div key={o.id} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
                     <button
                       type="button"
@@ -402,7 +445,60 @@ export function ContentLibraryTab() {
                     </button>
                     {rowActions([o], o.title || "Untitled")}
                   </div>
-                ))
+                  )),
+                  // FILES SIT BELOW THE AUTHORED CONTENT, and carry no checkbox:
+                  // they cannot be shared or published yet (migration 0011 says
+                  // why), so a checkbox would enlist them in a Share the server
+                  // would refuse. Their affordances are open and remove.
+                  ...openFolder.assets.map((a) => {
+                    const Icon = ASSET_ICON[a.kind] ?? Link2;
+                    return (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-3 border-b bg-muted/20 p-3 last:border-b-0 hover:bg-accent/30"
+                      >
+                        <span className="size-4 shrink-0" />
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{a.title || "Untitled file"}</span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                            <span className="uppercase tracking-wide">{a.kind}</span>
+                            {a.byte_size ? <span>{(a.byte_size / 1024 / 1024).toFixed(1)} MB</span> : null}
+                            <span>{a.external_url ? "linked" : "stored"}</span>
+                          </span>
+                        </span>
+                        {a.external_url && (
+                          <Button size="sm" variant="ghost" asChild>
+                            <a href={a.external_url} target="_blank" rel="noreferrer">Open</a>
+                          </Button>
+                        )}
+                        {canUpload && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title={`Remove ${a.title}`}
+                            aria-label={`Remove ${a.title}`}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  await deleteLibraryAsset(programId, a.id);
+                                  toast.success(`Removed \u201c${a.title}\u201d`);
+                                  reload();
+                                } catch (e) {
+                                  toast.error(
+                                    e instanceof Error ? e.message : "Couldn't remove that file",
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }),
+                ]
               : folders.map((f) => {
                   const ids = f.objects.map((o) => o.id);
                   return (
@@ -428,6 +524,8 @@ export function ContentLibraryTab() {
                         <span className="truncate text-sm font-medium">{f.name}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">
                           {f.objects.length} {f.objects.length === 1 ? "item" : "items"}
+                          {f.assets.length > 0 &&
+                            ` · ${f.assets.length} ${f.assets.length === 1 ? "file" : "files"}`}
                         </span>
                       </button>
                       {rowActions(f.objects, f.name)}
@@ -447,6 +545,15 @@ export function ContentLibraryTab() {
           objects={sharing.objects}
           label={sharing.label}
           onClose={() => setSharing(null)}
+          onSaved={reload}
+        />
+      )}
+      {addingFile && (
+        <AddLibraryFileDialog
+          programId={programId}
+          folders={folders.map((f) => f.name)}
+          defaultFolder={openFolder?.name ?? null}
+          onClose={() => setAddingFile(false)}
           onSaved={reload}
         />
       )}

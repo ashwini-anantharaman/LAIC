@@ -58,6 +58,7 @@ export const CONTENT_LIBRARY_CAPABILITIES = [
   "learning.publish.app_target",
   "learning.app.publish_club",
   "learning.app.administer",
+  "learning.library.upload",
 ];
 
 export function opensContentLibrary(capabilities: string[]): boolean {

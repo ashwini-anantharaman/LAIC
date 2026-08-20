@@ -4014,3 +4014,128 @@ export async function listLearningPeople(orgId: string, programId: string): Prom
     });
   });
 }
+
+// ── Library assets (learning_assets, 0011) ──────────────────────────────────
+//
+// Files nobody authored: a handout, an image, a recording. Their own table
+// because a file has no blocks, no versions and no publish pipeline, and putting
+// an unknown `type` into learning_objects would put it in front of every reader
+// that switches on type — including the Bridge Bird app.
+
+/** One asset as the library screen wants it. */
+export async function listLearningAssets(
+  orgId: string,
+  programId: string | null | undefined,
+): Promise<Row[]> {
+  try {
+    return await asPrivileged(async (tx) => {
+      // Unpinned rows count as this program's, the same accommodation
+      // _programScope makes for content authored before program_id existed.
+      const scope = programId
+        ? sql`and (program_id = ${programId}::uuid or program_id is null)`
+        : sql``;
+      const rows = await tx.execute(sql`
+        select id, title, kind, content_type, byte_size, storage_key, external_url,
+               coalesce(collection_ids, '[]'::jsonb)   as collection_ids,
+               coalesce(collection_names, '[]'::jsonb) as collection_names,
+               created_at::text as created_at
+        from learning_assets
+        where organization_id = ${orgId} ${scope}
+        order by created_at desc`);
+      return rows as unknown as Row[];
+    });
+  } catch (e) {
+    // A library that renders without its files beats one that does not render.
+    // The WRITE path still refuses loudly when the table is missing.
+    if (_isUndefinedRelation(e)) return [];
+    throw e;
+  }
+}
+
+export async function createLearningAsset(
+  orgId: string,
+  programId: string | null,
+  asset: {
+    id: string;
+    title: string;
+    kind: string;
+    contentType: string | null;
+    byteSize: number | null;
+    storageKey: string | null;
+    externalUrl: string | null;
+    collectionIds: string[];
+    collectionNames: string[];
+    uploadedBy: string | null;
+  },
+): Promise<Row | null> {
+  try {
+    return await asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        insert into learning_assets
+          (id, organization_id, program_id, title, kind, content_type, byte_size,
+           storage_key, external_url, collection_ids, collection_names, uploaded_by)
+        values (
+          ${asset.id}, ${orgId}::uuid, ${programId}::uuid, ${asset.title}, ${asset.kind},
+          ${asset.contentType}, ${asset.byteSize}, ${asset.storageKey}, ${asset.externalUrl},
+          ${JSON.stringify(asset.collectionIds)}::jsonb,
+          ${JSON.stringify(asset.collectionNames)}::jsonb,
+          ${asset.uploadedBy}::uuid
+        )
+        returning id, title, kind, external_url, storage_key`);
+      return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+    });
+  } catch (e) {
+    if (_isUndefinedRelation(e)) {
+      throw new Error("assets-unavailable: learning_assets missing (run migrations)");
+    }
+    throw e;
+  }
+}
+
+/**
+ * Re-file an asset. Whole-set, like every other reconcile in this file: the
+ * picker knows the folders it wants and sending them entire removes the
+ * read-modify-write race between two managers each toggling one.
+ *
+ * Returns false when the asset is not this org's, so the route can 404 rather
+ * than silently writing nothing.
+ */
+export async function setLearningAssetFolders(
+  orgId: string,
+  assetId: string,
+  collectionIds: string[],
+  collectionNames: string[],
+): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      update learning_assets
+      set collection_ids = ${JSON.stringify(collectionIds)}::jsonb,
+          collection_names = ${JSON.stringify(collectionNames)}::jsonb,
+          updated_at = now()
+      where organization_id = ${orgId} and id = ${assetId}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+/** The row, so a caller can clean up the stored bytes before dropping it. */
+export async function getLearningAsset(orgId: string, assetId: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, title, kind, storage_key, external_url
+      from learning_assets
+      where organization_id = ${orgId} and id = ${assetId}
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+export async function deleteLearningAsset(orgId: string, assetId: string): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      delete from learning_assets
+      where organization_id = ${orgId} and id = ${assetId}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
