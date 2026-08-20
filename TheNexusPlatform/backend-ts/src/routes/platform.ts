@@ -2878,8 +2878,17 @@ platformRouter.get("/learning/clubs", async (c) => {
   // publish dialog.
   const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
 
-  const programId = access.partnerProgramId ?? access.programId;
-  // THE PROGRAM'S OWN PEOPLE, not only club rosters.
+  // THE PARENT PROGRAM'S PEOPLE, not the club's.
+  //
+  // `clubs` below comes from listPartnersForProgram(access.programId) — the
+  // PARENT's clubs. So the complement has to be drawn from the same place, or the
+  // two lists describe different populations. Using `partnerProgramId ?? programId`
+  // here (the idiom for club-scoped DATA) returned the CLUB's own members for a
+  // club-scoped caller, every one of whom is then filtered out as "already in a
+  // club" — leaving the Program members section silently empty for exactly the
+  // people most likely to be looking for it.
+  const programId = access.programId;
+  // The program's own people, not only club rosters.
   //
   // A club is a grouping WITHIN the program, not the only way to belong to it. The
   // first version of this endpoint returned club members alone, so a coach or an
