@@ -54,6 +54,24 @@ export const PROGRAM_FEATURE_KEYS = [
 ] as const;
 export type ProgramFeatureKey = (typeof PROGRAM_FEATURE_KEYS)[number];
 
+// ── Apps content can be published TO ────────────────────────────────────────
+//
+// The destination a "content access granter" picks when publishing. A constant,
+// not a table read, because there is nothing to read: `registered_apps` (core
+// 0005) has ids and CRUD but no row for Bridge Bird, which is a hardcoded Expo
+// client pinned to a literal program id. Inventing a row to point at would be
+// fiction dressed as a foreign key.
+//
+// This IS the migration target though — when Bridge Bird becomes a real
+// registered_apps record, this list becomes a query and `key` stays as the
+// stable slug already written into learning_object_app_targets.app_key.
+export const CONTENT_APP_TARGETS = [
+  { key: "clubapp", label: "Bridge Bird" },
+] as const;
+export const CONTENT_APP_TARGET_KEYS: ReadonlySet<string> = new Set(
+  CONTENT_APP_TARGETS.map((a) => a.key),
+);
+
 // New programs get everything on; the org admin then trims what they don't want.
 export const DEFAULT_PROGRAM_FEATURES: Record<ProgramFeatureKey, boolean> = {
   learning: true,

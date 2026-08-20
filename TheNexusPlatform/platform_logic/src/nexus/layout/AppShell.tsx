@@ -28,6 +28,7 @@ import {
   LogOut,
   Menu,
   Settings as SettingsIcon,
+  FolderTree,
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "next-themes";
@@ -87,6 +88,10 @@ function programNav(orgId: string, programId: string, isPartner = false): NavIte
     { to: `${base}/gates`, label: "Gates", icon: DoorOpen },
     { to: `${base}/groups`, label: "Participants & Groups", icon: Users },
     { to: `${base}/community`, label: "Community", icon: MessagesSquare },
+    // Admins get it too. It is a confined role's ONLY door to the Studio, but it
+    // is also the one screen where "which clubs see this?" is answered — and an
+    // administrator who cannot open the tab cannot check what they granted.
+    { to: `${base}/learning/library`, label: "Content Library", icon: FolderTree },
     { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
@@ -99,11 +104,42 @@ function programNav(orgId: string, programId: string, isPartner = false): NavIte
 /**
  * A member's confined program nav: Overview plus only the areas their role
  * grants. Mirrors the prototype's five permissionable areas.
+ *
+ * Most rows are decided by an AREA (`perms.learning`, `perms.bridge`, …), which
+ * is the coarse grant an admin ticks. Content Library is the exception: it is a
+ * narrower door into the same platform as Content Studio, so an area cannot tell
+ * the two apart and it keys off a CAPABILITY instead
+ * (`learning.library.console`), which is already carried inside the perms blob.
+ *
+ * The test is for a capability's PRESENCE, never for another one's absence. A
+ * nav built on "has X but not Y" silently reshapes itself every time a
+ * capability is added to the catalogue — and the catalogue is editable in-app.
  */
-function confinedProgramNav(orgId: string, programId: string, perms: Record<string, string>, isPartner = false): NavItem[] {
+/** The capability ids inside a perms blob. They travel there because that is
+ *  where POST /programs/:id/roles writes them (routes/offerings.ts); the same
+ *  read as useProgramAccess's, kept local so the nav has no extra dependency. */
+function _capsOf(perms: Record<string, unknown> | null | undefined): string[] {
+  const raw = perms?.capabilities;
+  return Array.isArray(raw) ? (raw as string[]).filter((c) => typeof c === "string") : [];
+}
+
+function confinedProgramNav(
+  orgId: string,
+  programId: string,
+  perms: Record<string, string>,
+  isPartner = false,
+  capabilities: string[] = [],
+): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
+  const can = (id: string) => capabilities.includes(id);
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
   if (perms.learning) items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
+  // Beside Content Studio, not instead of it: a content manager who is ALSO an
+  // author holds both, and hiding one behind the other would take a door away
+  // from someone who was granted it.
+  if (can("learning.library.console")) {
+    items.push({ to: `${base}/learning/library`, label: "Content Library", icon: FolderTree });
+  }
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Studio", icon: AppWindow });
   if (perms.community) items.push({ to: `${base}/community`, label: "Community", icon: MessagesSquare });
@@ -559,6 +595,9 @@ export function AppShell() {
   const NAV_FEATURE: Record<string, string> = {
     shells: "appbuilder", community: "community", team: "teams", "access-catalogue": "teams",
     partners: "partners", learning: "learning", bridge: "bridge",
+    // Content Library lives at .../learning/library, so navKey sees "library".
+    // It is the Content Studio's platform, and dies with the same feature toggle.
+    library: "learning",
   };
   const navKey = (to: string) => to.split("/").pop() ?? "";
 
@@ -580,7 +619,7 @@ export function AppShell() {
 
   if (impersonating && programId) {
     heading = impersonating.roleName;
-    items = confinedProgramNav(orgId, programId, impersonating.perms, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, impersonating.perms, isPartner, _capsOf(impersonating.perms)).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (mode === "nexus") {
     heading = "Nexus";
     items = [
@@ -608,7 +647,7 @@ export function AppShell() {
     }
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
-    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner, _capsOf(myRolePerms)).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = programName ?? "Program";
     items = programNav(orgId, programId, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));

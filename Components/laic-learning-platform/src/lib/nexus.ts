@@ -318,6 +318,79 @@ export async function updateLearningRole(id: string, patch: { name?: string; per
   if (!res.ok) throw new Error(`Update role failed (${res.status})`);
 }
 
+// ── Clubs, per-club shares, and app targets ────────────────────────────────
+
+export interface ClubSummary { id: string; name: string }
+export interface ObjectShare { club_program_id: string; level: string; granted_at?: string }
+export interface AppTarget { app_key: string; published_at: string | null }
+
+/** The clubs this program can share content to — its partner programs. */
+export async function listClubs(): Promise<ClubSummary[]> {
+  const res = await nexusFetch(`/api/platform/programs/${encodeURIComponent(pid())}/partners`);
+  if (!res.ok) return [];
+  const rows = (await res.json()) as { id: string; name: string }[];
+  return rows.map((r) => ({ id: String(r.id), name: r.name }));
+}
+
+/**
+ * Which clubs one object is currently shared with.
+ *
+ * THROWS on failure rather than answering `[]`. The empty array is a real,
+ * meaningful answer here — "shared with nobody" — and the caller writes the whole
+ * set back on save, so a swallowed 403 or a dropped connection would read as
+ * "revoke every existing grant" and then do exactly that. Silence is the one
+ * thing this call must not return.
+ */
+export async function listObjectShares(objectId: string): Promise<ObjectShare[]> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/shares?program_id=${encodeURIComponent(pid())}`,
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't read who this is shared with (${res.status})`);
+  }
+  return (await res.json()) as ObjectShare[];
+}
+
+/**
+ * Set an object's clubs to exactly this list — the whole set, not a delta.
+ *
+ * Throws with the server's own words rather than a status code: 503 means the
+ * migration has not run and 422 means a club id the program does not own, and
+ * both send a content manager somewhere different. Sharing is the one act here
+ * that must never report a success it did not have.
+ */
+export async function setObjectShares(objectId: string, clubProgramIds: string[]): Promise<void> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/shares`,
+    { method: 'PUT', body: JSON.stringify({ club_program_ids: clubProgramIds, program_id: pid() }) },
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't update sharing (${res.status})`);
+  }
+}
+
+/** Which apps an object is published to. */
+export async function listObjectAppTargets(objectId: string): Promise<AppTarget[]> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/app-targets?program_id=${encodeURIComponent(pid())}`,
+  );
+  if (!res.ok) return [];
+  return (await res.json()) as AppTarget[];
+}
+
+export async function setObjectAppTargets(objectId: string, appKeys: string[]): Promise<void> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/app-targets`,
+    { method: 'PUT', body: JSON.stringify({ app_keys: appKeys, program_id: pid() }) },
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't set the target app (${res.status})`);
+  }
+}
+
 // ── Shared learning catalogue (the app's inventory of surfaces + capabilities) ──
 export async function fetchLearningCatalogue(): Promise<CapabilityCatalogueDocument> {
   const res = await nexusFetch(`/api/platform/learning/catalogue?program_id=${encodeURIComponent(pid())}`);

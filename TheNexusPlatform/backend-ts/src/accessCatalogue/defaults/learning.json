@@ -9,7 +9,7 @@
     "kind": "platform",
     "id": "learning-platform"
   },
-  "catalogueVersion": "1.0",
+  "catalogueVersion": "1.1",
   "capabilities": [
     {
       "id": "learning.object.read",
@@ -184,6 +184,60 @@
       "label": "View learning and authoring analytics",
       "description": "View learning and authoring analytics",
       "group": "administration"
+    },
+    {
+      "id": "learning.library.console",
+      "label": "Open the Content Library as a program tab",
+      "description": "Reveals the Content Library at the program level, outside the full Content Studio. The tab a Content Manager gets instead of the whole Studio.",
+      "group": "library_governance"
+    },
+    {
+      "id": "learning.library.share_view",
+      "label": "See which clubs content is shared with",
+      "description": "Read the per-club grants on an object. Split from granting because 'who can see this?' is a question a reviewer or coordinator asks without being the one who answers it.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.library.share_club",
+      "label": "Share content with specific clubs",
+      "description": "Grant or revoke an object to particular clubs. Grants are additive \u2014 they widen an audience and never narrow one.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.publish.app_target",
+      "label": "Choose which app content publishes to",
+      "description": "Pick the destination app when publishing. Separate from publish.release so a role can be allowed to press Publish without choosing where it lands, or the reverse.",
+      "group": "publishing",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.roles.delegate",
+      "label": "Create and edit sub-roles",
+      "description": "Mint roles inside the Content Studio, clamped to the creator's own capabilities. A holder can never grant what they do not themselves hold.",
+      "group": "library_governance"
+    },
+    {
+      "id": "learning.library.export",
+      "label": "Export the library snapshot",
+      "description": "Download the whole library \u2014 every object and folder \u2014 as a JSON snapshot. Ungoverned before this capability existed.",
+      "group": "library_governance"
     }
   ],
   "resourceTypes": [
@@ -395,6 +449,16 @@
         "learning.repository.organize",
         "learning.analytics.view"
       ]
+    },
+    {
+      "id": "learning.library_console",
+      "label": "Content Library (program tab)",
+      "kind": "navigation",
+      "group": "learning",
+      "routeOrComponent": "/learning/library",
+      "requiredAnyCapabilities": [
+        "learning.library.console"
+      ]
     }
   ],
   "groups": [
@@ -470,7 +534,8 @@
       "capabilityIds": [
         "learning.publish.release",
         "learning.publish.version",
-        "learning.publish.audience"
+        "learning.publish.audience",
+        "learning.publish.app_target"
       ],
       "uiSurfaceIds": [
         "learning.publishing"
@@ -513,6 +578,21 @@
       ],
       "uiSurfaceIds": [
         "learning.admin"
+      ]
+    },
+    {
+      "id": "library_governance",
+      "label": "Content Library",
+      "order": 10,
+      "capabilityIds": [
+        "learning.library.console",
+        "learning.library.share_view",
+        "learning.library.share_club",
+        "learning.roles.delegate",
+        "learning.library.export"
+      ],
+      "uiSurfaceIds": [
+        "learning.library_console"
       ]
     }
   ],
@@ -564,6 +644,42 @@
           "platformInstanceId": "placeholder-learning-instance",
           "capabilityIds": [
             "learning.runtime.use"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "content-manager",
+      "name": "Content Manager",
+      "description": "Curates the content library, decides which content reaches which club, and mints sub-roles within their own ceiling.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-learning-instance",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.repository.organize",
+            "learning.library.console",
+            "learning.library.share_view",
+            "learning.library.share_club",
+            "learning.library.export",
+            "learning.publish.release",
+            "learning.publish.app_target",
+            "learning.roles.delegate"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "content-access-granter",
+      "name": "Content Access Granter",
+      "description": "May publish individual content and choose its target app. Nothing else \u2014 the worked example of a Content Manager sub-role.",
+      "grants": [
+        {
+          "platformInstanceId": "placeholder-learning-instance",
+          "capabilityIds": [
+            "learning.object.read",
+            "learning.publish.release",
+            "learning.publish.app_target"
           ]
         }
       ]

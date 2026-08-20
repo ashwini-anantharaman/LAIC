@@ -494,8 +494,19 @@ function StudioApp() {
       const bootParams = new URLSearchParams(window.location.search);
       const deepLinkObjectId = bootParams.get('object');
       const embedBoot = bootParams.get('embed') === '1';
+      // TWO SEPARATE THINGS, and they used to be one.
+      //
+      //   chrome=none → render the screen alone: no sidebar, no topbar.
+      //   embed=1     → that, PLUS wear the club app's cream-and-Neco skin.
+      //
+      // The Nexus console frames this app to show its Content Library as a
+      // program tab, and wants the first without the second: dressing a Nexus
+      // panel in BirdBridge's brand would be an app wearing another app's
+      // clothes. `embed=1` keeps its established meaning for the club app,
+      // which passes it and does expect the skin.
+      const chromeless = embedBoot || bootParams.get('chrome') === 'none';
+      if (chromeless) setEmbedMode(true);
       if (embedBoot) {
-        setEmbedMode(true);
         // Dress the page as its host: the club app's WEB build shows this
         // reader in a cross-origin iframe it cannot style, so the skin must
         // come from in here (its native WebView injects the same sheet).

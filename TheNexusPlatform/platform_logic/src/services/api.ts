@@ -1598,3 +1598,81 @@ export async function exchangeLaunchToken(launchToken: string): Promise<{ access
     body: JSON.stringify({ launch_token: launchToken }),
   });
 }
+
+// ── The Nexus-level Content Library ─────────────────────────────────────────
+//
+// Content, its folders, and who each piece reaches — answered by Nexus, not by
+// opening the Content Studio. See routes/platform.ts, "The Nexus-level Content
+// Library", for why the share state comes back beside the objects rather than
+// being fetched per row.
+
+export interface LibraryObject {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  published_at: string | null;
+  collection_ids: string[];
+  collection_names: string[];
+  /** Partner-program ids this object is granted to. */
+  clubs: string[];
+  /** Profile ids this object is granted to by name. */
+  people: string[];
+  /** App slugs this object is published to. */
+  apps: string[];
+}
+
+export interface ClubMember {
+  profile_id: string;
+  display_name: string;
+  email: string | null;
+}
+
+export interface ShareableClub {
+  id: string;
+  name: string;
+  members: ClubMember[];
+}
+
+export async function getContentLibrary(programId: string): Promise<LibraryObject[]> {
+  const r = await request<{ objects: LibraryObject[] }>(
+    `/api/platform/learning/library?program_id=${encodeURIComponent(programId)}`,
+  );
+  return r.objects ?? [];
+}
+
+export async function listShareableClubs(programId: string): Promise<ShareableClub[]> {
+  const r = await request<{ clubs: ShareableClub[] }>(
+    `/api/platform/learning/clubs?program_id=${encodeURIComponent(programId)}`,
+  );
+  return r.clubs ?? [];
+}
+
+/** Reconcile club and person grants across a selection. Whole-set, not a delta. */
+export async function setContentShares(
+  programId: string,
+  objectIds: string[],
+  clubProgramIds: string[],
+  profileIds: string[],
+): Promise<{ shared: number; skipped: string[] }> {
+  return request(`/api/platform/learning/shares/bulk`, {
+    method: "PUT",
+    body: JSON.stringify({
+      program_id: programId,
+      object_ids: objectIds,
+      club_program_ids: clubProgramIds,
+      profile_ids: profileIds,
+    }),
+  });
+}
+
+export async function setContentAppTargets(
+  programId: string,
+  objectIds: string[],
+  appKeys: string[],
+): Promise<{ published: number; skipped: string[] }> {
+  return request(`/api/platform/learning/app-targets/bulk`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, object_ids: objectIds, app_keys: appKeys }),
+  });
+}

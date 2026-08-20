@@ -45,6 +45,7 @@ import {
 import { ProgramTeam } from "@/nexus/routes/ProgramTeam";
 import { GatePage } from "@/nexus/routes/GatePage";
 import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
+import { ContentLibraryTab } from "@/nexus/routes/ContentLibraryTab";
 import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
 import { getMyProgramRole } from "@/services/api";
@@ -184,6 +185,10 @@ function Routed() {
         <Route path="/o/:orgId/p/:programId/gates" element={<ProgramGates />} />
         <Route path="/o/:orgId/p/:programId/groups" element={<ProgramGroups />} />
         <Route path="/o/:orgId/p/:programId/community" element={<ProgramCommunity />} />
+        {/* INSIDE the shell, unlike /learning — a tab keeps the program's own
+            navigation, and only its panel changes. The Studio is framed there and
+            asked for the library alone. */}
+        <Route path="/o/:orgId/p/:programId/learning/library" element={<ContentLibraryTab />} />
         <Route path="/o/:orgId/p/:programId/team" element={<ProgramTeam />} />
         <Route path="/o/:orgId/p/:programId/access-catalogue" element={<ProgramAccessCatalogue />} />
         <Route path="/o/:orgId/p/:programId/partners" element={<ProgramPartners />} />
