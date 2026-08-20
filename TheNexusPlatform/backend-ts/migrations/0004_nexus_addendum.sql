@@ -29,8 +29,17 @@ begin
   end if;
 end $$;
 
+--
+-- STATED AS THE UNION, not as this file's era. The runner has no ledger and
+-- replays every migration on every run (scripts/runMigrations.ts), so a check
+-- constraint here is not a historical step — it is asserted again today, against
+-- today's rows. Naming only the roles this file introduced meant the ALTER could
+-- not validate once later roles existed, and a failed ALTER aborts the whole run:
+-- every migration after it, core and platform packs alike, silently never applied.
+-- Widening later is safe; narrowing is what breaks, so each definition states
+-- every role in use.
 alter table org_memberships add constraint org_memberships_role_check
-  check (role in ('owner', 'administrator', 'instructor'));
+  check (role in ('owner', 'administrator', 'instructor', 'member', 'learner'));
 
 -- ── Unified Invitation columns on join_codes ────────────────────────────────
 alter table join_codes add column if not exists delivery_method text not null default 'join_code'

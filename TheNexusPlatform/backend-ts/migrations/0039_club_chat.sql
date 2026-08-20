@@ -20,9 +20,18 @@ create table if not exists club_chat_messages (
   created_at timestamptz not null default now()
 );
 
+-- STATED AS THE END STATE, not as this file's era. The runner replays every
+-- migration on every run, so this constraint is asserted again today against
+-- today's rows — and 0045 removed the 1-character floor so a picture could be
+-- sent with no words. Re-imposing the floor here could not validate against those
+-- image-only messages, and a failed ALTER aborts the entire run: every migration
+-- after this point, core and platform packs alike, silently never applied.
+--
+-- The floor's intent survives in 0045's club_chat_messages_not_empty, which says
+-- what was actually meant: a message must carry SOMETHING, words or a picture.
 alter table club_chat_messages drop constraint if exists club_chat_messages_body_len;
 alter table club_chat_messages add constraint club_chat_messages_body_len
-  check (char_length(body) between 1 and 2000);
+  check (char_length(body) <= 2000);
 
 -- The only read pattern is "this club's thread, oldest first".
 create index if not exists club_chat_messages_program_created_idx

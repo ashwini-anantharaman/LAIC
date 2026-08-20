@@ -11,6 +11,12 @@
  * SQL is read from backend-ts/migrations (this backend owns its schema — v0.4).
  */
 
+// Read .env like every other script in this folder. Without this, `npm run
+// migrate` reported DATABASE_URL as unset even when it was configured — the one
+// script in here that did not load it, and the reason a correctly configured
+// project could be told to go and configure itself.
+import "dotenv/config";
+
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
