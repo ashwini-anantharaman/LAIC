@@ -269,6 +269,19 @@ export default async function LibraryPage({
                     Edit
                   </Link>
                 )}
+                {/* A CURATED BOARD'S OWN EDITOR (owner ask 2026-08-19) — the
+                    coach's words, the lesson and the settings, without replaying
+                    the line. Distinct from the deal editor above, which edits
+                    the CARDS: a curated deal's line is fixed, and the button
+                    that changes it says "revise" inside that page. */}
+                {e.curatedJson && (
+                  <Link
+                    href={`/m/curated/${e.entryId}`}
+                    className="rounded border border-emerald-700 px-3 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-50"
+                  >
+                    Edit deal
+                  </Link>
+                )}
                 {canResume &&
                   (e.kind === "table" ? (
                     <form action={startTableEntryAction}>

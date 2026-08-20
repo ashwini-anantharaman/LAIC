@@ -2370,7 +2370,12 @@ function LessonPane({
       >
         <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 9.5, fontWeight: 700, letterSpacing: ".08em", textTransform: "uppercase", color: TINT_EDGE }}>
-            This board teaches
+            {/* A set pinned to THIS decision says so (owner direction
+                2026-08-19). The cards change under the learner as the board
+                moves, and a heading that still claimed to describe the whole
+                board would make that read as a glitch rather than as their
+                coach pointing at something. */}
+            {lesson.scope === "here" ? "Right here, look at" : "This board teaches"}
           </p>
           <p style={{ margin: "2px 0 0", fontFamily: "Georgia, 'Times New Roman', serif", fontSize: 15.5, fontWeight: 700, lineHeight: 1.25, color: FELT_DEEP, overflowWrap: "break-word" }}>
             {lesson.name}

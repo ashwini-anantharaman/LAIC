@@ -36,6 +36,10 @@ function metaLine(e: LibraryEntry): string {
       .join(", ")}`;
   return (
     [
+      // A COACH'S BOARD SAYS SO, FIRST (owner ask 2026-08-19: "in the library, I
+      // don't see any edit button" — before an edit button can be found, the
+      // rows that have one have to be tellable apart).
+      e.curatedJson ? "curated" : null,
       e.dealer && `dealer ${e.dealer}`,
       e.vul && `vul ${e.vul}`,
       e.auction?.length ? `${e.auction.length} calls` : null,
@@ -285,6 +289,29 @@ export default async function MobileLibraryPage({
                       {metaLine(e)}
                     </div>
                   </div>
+                  {/* EDIT A PUBLISHED CURATED DEAL (owner ask 2026-08-19). The
+                      editor has existed since the deal did; nothing pointed at
+                      it from the shelf, so the only way back into a board was
+                      the link in the studio's finish panel — gone the moment the
+                      tab closed. The page re-checks who may edit, so the link is
+                      safe to offer to any coach. */}
+                  {coach && e.curatedJson && (
+                    <Link
+                      href={`/m/curated/${encodeURIComponent(e.entryId)}`}
+                      style={{
+                        flex: "none",
+                        border: "1px solid #e0d7c2",
+                        background: "#fffdf6",
+                        color: "#1d1a15",
+                        borderRadius: 8,
+                        padding: "5px 12px",
+                        font: `600 12px ${K}`,
+                        textDecoration: "none",
+                      }}
+                    >
+                      Edit
+                    </Link>
+                  )}
                   {coach && !!e.hands && e.kind !== "table" && (
                     <Link
                       href={`/m/assign?entry=${encodeURIComponent(e.entryId)}`}

@@ -109,6 +109,64 @@ describe("parseCurated — the v2 board settings", () => {
   });
 });
 
+describe("cards pinned to one decision", () => {
+  it("round-trips the cards an annotation names", () => {
+    const p = parseCurated(
+      JSON.stringify({
+        annotations: [
+          { at: { kind: "play", trickIndex: 2, playIndex: 1 }, cards: ["trumps-out", "my-trumps"] },
+        ],
+      }),
+    );
+    expect(p.annotations[0]?.cards).toEqual(["trumps-out", "my-trumps"]);
+  });
+
+  it("keeps an annotation ALIVE on cards alone", () => {
+    // Pointing at what to look at here is teaching, even with no prose: the
+    // old rule ("says nothing = not an annotation") would have dropped it.
+    const p = parseCurated(
+      JSON.stringify({
+        annotations: [{ at: { kind: "call", auctionIndex: 0 }, cards: ["hcp"] }],
+      }),
+    );
+    expect(p.annotations).toHaveLength(1);
+    expect(p.annotations[0]?.note).toBeUndefined();
+  });
+
+  it("still drops one that says nothing at all", () => {
+    const p = parseCurated(
+      JSON.stringify({
+        annotations: [{ at: { kind: "call", auctionIndex: 0 }, cards: [] }],
+      }),
+    );
+    expect(p.annotations).toHaveLength(0);
+  });
+
+  it("drops a card it has never heard of, keeping the rest", () => {
+    const p = parseCurated(
+      JSON.stringify({
+        annotations: [
+          { at: { kind: "call", auctionIndex: 1 }, note: "hi", cards: ["no-such-card", "hcp"] },
+        ],
+      }),
+    );
+    expect(p.annotations[0]?.cards).toEqual(["hcp"]);
+  });
+
+  it("caps them like the board's own lesson", () => {
+    const many = [
+      "hcp", "distribution", "shape", "longest-suit", "vulnerability",
+      "total-points", "quick-tricks", "our-tricks", "their-tricks",
+    ];
+    const p = parseCurated(
+      JSON.stringify({
+        annotations: [{ at: { kind: "call", auctionIndex: 1 }, cards: many }],
+      }),
+    );
+    expect(p.annotations[0]?.cards).toHaveLength(MAX_DEAL_ITEMS);
+  });
+});
+
 describe("pathStatus — on the coach's line, or off it", () => {
   const line = lineOf({
     auction: [call("N", "1S"), call("E", "P"), call("S", "2S"), call("W", "P")],

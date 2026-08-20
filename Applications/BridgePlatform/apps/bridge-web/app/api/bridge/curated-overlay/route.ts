@@ -18,7 +18,7 @@ import { stubDisplayName } from "@bridge/nexus-client";
 import { NextResponse } from "next/server";
 
 import { kFactsFor } from "@/lib/coach/kFacts";
-import { lessonPlan } from "@/lib/coach/kLesson";
+import { lessonPlan, momentPlan } from "@/lib/coach/kLesson";
 import { callLabel, cardLabel } from "@/lib/coach/position";
 import { corsOptions, withCors } from "@/lib/cors";
 import { partnerOf } from "@bridge/events";
@@ -82,16 +82,8 @@ async function handle(request: Request): Promise<NextResponse> {
   // auction lesson and a play lesson select differently from the same choice.
   // Null when the coach named no lesson, and the panel then behaves exactly as
   // it always has, which is what every deal authored before this needs.
-  const plan =
-    state.phase === "auction" || state.phase === "play"
-      ? lessonPlan(payload, state.phase)
-      : null;
-  // AND THE VALUES THEMSELVES (owner ask 2026-08-19). The plan says which cards
-  // this board teaches; these are what they READ right now, counted from this
-  // learner's seat over what they may see. Recomputed per decision, because the
-  // overlay is fetched per decision — that is what makes the lesson's cards move
-  // with the board instead of standing there as names.
-  const lesson = plan ? { ...plan, facts: kFactsFor(plan.items, state, seat) } : null;
+  const lessonPhase = state.phase === "auction" || state.phase === "play" ? state.phase : null;
+  const boardPlan = lessonPhase ? lessonPlan(payload, lessonPhase) : null;
 
   // WHO the coach is — the assignment that issued this entry knows (owner
   // pick #3, 2026-08-15: "Coach Sarah", not "Your coach"). Best-effort: a
@@ -231,6 +223,22 @@ async function handle(request: Request): Promise<NextResponse> {
    * already folds in declarer-plays-dummy, so a card out of dummy counts.
    */
   const chartedHere = status.onPath && here && actingIsHuman ? pretty(here) : null;
+
+  // THE MOMENT COMES FIRST (owner direction 2026-08-19: "I don't want to select
+  // K-items and let them appear throughout the entire game… choose to display at
+  // specific play or part of the game"). Cards the coach pinned to the decision
+  // the learner is standing at take over from the board's own lesson for exactly
+  // as long as they are standing there. `annotation` is on-path only, so off the
+  // line the board's lesson stands: those addresses have stopped meaning
+  // anything, and a moment nobody is in teaches nothing.
+  const plan =
+    (lessonPhase ? momentPlan(annotation?.cards, lessonPhase) : null) ?? boardPlan;
+  // AND THE VALUES THEMSELVES (owner ask 2026-08-19). The plan says which cards
+  // to lead with; these are what they READ right now, counted from this
+  // learner's seat over what they may see. Recomputed per decision, because the
+  // overlay is fetched per decision — that is what makes the cards move with the
+  // board instead of standing there as names.
+  const lesson = plan ? { ...plan, facts: kFactsFor(plan.items, state, seat) } : null;
 
   return NextResponse.json({
     overlay: {

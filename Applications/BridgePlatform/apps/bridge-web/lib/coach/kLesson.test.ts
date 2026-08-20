@@ -9,7 +9,7 @@ import type { GameState } from "@bridge/engine";
 import type { Card, Seat, Suit } from "@bridge/events";
 import { describe, expect, it } from "vitest";
 
-import { kItemIdForCard, lessonCardKeys, lessonPlan, lessonSlots } from "./kLesson";
+import { kItemIdForCard, lessonCardKeys, lessonPlan, lessonSlots, momentPlan } from "./kLesson";
 import { lookingAt } from "./looking";
 import { thinkAid } from "./think";
 
@@ -245,5 +245,37 @@ describe("laying the lesson against the cards on screen", () => {
 
   it("marks nothing when there is no lesson", () => {
     expect(lessonCardKeys(null, panelCards(st, "S"), (c) => c.title).size).toBe(0);
+  });
+});
+
+describe("cards pinned to a moment", () => {
+  it("becomes a plan of its own, labelled as one", () => {
+    const plan = momentPlan(["points-hidden", "still-out"], "play")!;
+    expect(plan.items).toEqual(["points-hidden", "still-out"]);
+    expect(plan.scope).toBe("here");
+    expect(plan.tags).toEqual([]);
+    expect(plan.name).toBe("Points hidden and Still out");
+  });
+
+  it("marks the board's own lesson as the board's", () => {
+    expect(lessonPlan({ kItems: ["points-hidden"] }, "play")!.scope).toBe("board");
+  });
+
+  it("is null when the coach pinned nothing — the board's lesson then stands", () => {
+    expect(momentPlan(undefined, "play")).toBeNull();
+    expect(momentPlan([], "play")).toBeNull();
+    expect(momentPlan(["no-such-card"], "play")).toBeNull();
+  });
+
+  it("is null when nothing pinned can appear in this phase", () => {
+    // total-points is an auction card; pinning it to a trick teaches nothing,
+    // and an empty pane with a heading is worse than the board's own lesson.
+    expect(momentPlan(["total-points"], "play")).toBeNull();
+    expect(momentPlan(["total-points"], "auction")).not.toBeNull();
+  });
+
+  it("drops what the producers cannot draw yet, like the board's lesson does", () => {
+    const plan = momentPlan(["hcp", "honour-location"], "play")!;
+    expect(plan.items).toEqual(["hcp"]);
   });
 });

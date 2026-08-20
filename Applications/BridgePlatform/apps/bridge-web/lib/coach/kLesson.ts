@@ -125,6 +125,15 @@ export interface LessonPlan {
   facts?: KFact[];
   /** The phase the plan was built for. */
   phase: KPhase;
+  /**
+   * WHERE THIS SET CAME FROM (owner direction 2026-08-19).
+   *
+   * "board" — the deal's own lesson, standing all board long.
+   * "here"  — the cards the coach pinned to THIS decision, which take over
+   *           while the learner is at it. The pane says which, because a set
+   *           that changes under you without a word reads as a glitch.
+   */
+  scope?: "board" | "here";
 }
 
 /**
@@ -160,7 +169,30 @@ export function lessonPlan(src: LessonSource | undefined, phase: KPhase): Lesson
   const items = (picks.length ? kItemsForIds(picks, sel) : kItemsForTags(tags, sel)).map(
     (k) => k.id,
   );
-  return { tags, name: tags.length ? lessonName(tags) : itemsName(picks), items, phase };
+  return { tags, name: tags.length ? lessonName(tags) : itemsName(picks), items, phase, scope: "board" };
+}
+
+/**
+ * THE CARDS PINNED TO ONE DECISION (owner direction 2026-08-19: not "throughout
+ * the entire game" but "at specific play or part of the game").
+ *
+ * A plan of its own, so the panel needs no new mechanics: same shape, same slot
+ * filling, same values — only the source and the label differ. Null when the
+ * coach pinned nothing here, and the caller then keeps the board's own lesson,
+ * which is the right answer for every decision they said nothing about.
+ *
+ * Buildable-and-in-phase only, like the board's lesson: a card that cannot
+ * exist at this moment is not a lesson, it is an empty slot with a name on it.
+ */
+export function momentPlan(
+  cards: readonly unknown[] | undefined,
+  phase: KPhase,
+): LessonPlan | null {
+  const picks = parseKItemIds(cards);
+  if (!picks.length) return null;
+  const items = kItemsForIds(picks, { phase, buildableOnly: true }).map((k) => k.id);
+  if (!items.length) return null;
+  return { tags: [], name: itemsName(picks), items, phase, scope: "here" };
 }
 
 /* ───────────────────── what the panel does with it ───────────────────── */

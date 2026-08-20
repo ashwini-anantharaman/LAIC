@@ -141,6 +141,20 @@ export interface SessionRecord {
    */
   authoring?: {
     learnerSeat: Seat;
+    /**
+     * THE COACH'S WORK IN PROGRESS (owner ask 2026-08-19: "save the curated deal
+     * while they are in the middle of the editing and resume at anytime as the
+     * creation of a curated deal is a time consuming feature").
+     *
+     * An OPAQUE STRING, like `curatedJson` on the entry and for the same
+     * reason: what a draft contains is the host's business — annotations,
+     * board settings, the name it will be published under — and the vocabulary
+     * grows without this package ever learning a word of it. Absent until the
+     * studio saves once.
+     */
+    draftJson?: string;
+    /** When it was last saved, so a list can say "yesterday". */
+    draftAt?: string;
   };
   /**
    * CURATED DEAL stamp (owner design 2026-08-15) — this session replays a
@@ -208,6 +222,15 @@ export interface SessionSummary {
   boardName: string;
   status: SessionStatus;
   updatedAt: string;
+  /**
+   * THE STUDIO'S OWN FACTS, projected — never the record.
+   *
+   * A coach's "boards you started" list needs to know which sittings are
+   * authoring ones and whether work is saved in them. Reading records to find
+   * that out is exactly what this type exists to avoid (see above: 2.8 MB to
+   * print 25 names), so the summarizer projects the two booleans instead.
+   */
+  authoring?: { learnerSeat: Seat; hasDraft: boolean; draftAt?: string };
 }
 
 export interface SessionStore {
@@ -229,6 +252,15 @@ export function summarizeSession(s: SessionRecord): SessionSummary {
     boardName: s.board.name,
     status: s.status,
     updatedAt: s.updatedAt,
+    ...(s.authoring
+      ? {
+          authoring: {
+            learnerSeat: s.authoring.learnerSeat,
+            hasDraft: !!s.authoring.draftJson,
+            ...(s.authoring.draftAt ? { draftAt: s.authoring.draftAt } : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -904,6 +936,29 @@ export class SessionService {
     record.updatedAt = this.now();
     await this.store.putSession(record);
     return this.view(sessionId);
+  }
+
+  /**
+   * Save the studio's work in progress onto the sitting itself.
+   *
+   * The BOARD is already durable — it is an event log — so the only thing a
+   * coach can lose by walking away is the words they have written and the
+   * settings they have chosen. Those ride here, on the session they belong to,
+   * which is also what makes "resume" a link rather than a reconstruction.
+   *
+   * The string is stored as given: this package never parses it (see
+   * `authoring.draftJson`). An empty string clears the draft, so a publish can
+   * tidy up after itself.
+   */
+  async saveAuthoringDraft(sessionId: string, draftJson: string): Promise<SessionRecord> {
+    const record = await this.requireSession(sessionId);
+    if (!record.authoring) throw new Error(`Session ${sessionId} is not an authoring sitting`);
+    record.authoring = draftJson
+      ? { ...record.authoring, draftJson, draftAt: this.now() }
+      : { learnerSeat: record.authoring.learnerSeat };
+    record.updatedAt = this.now();
+    await this.store.putSession(record);
+    return record;
   }
 
   /** Undo the last committed action (and its logic event). */

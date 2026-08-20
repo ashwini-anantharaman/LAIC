@@ -35,6 +35,17 @@ export interface CuratedAnnotation {
   why?: string;
   /** A custom hint ladder for this decision, replacing Owlee's (2–5 rungs). */
   hints?: string[];
+  /**
+   * CARDS FOR THIS MOMENT (owner direction 2026-08-19: "I don't want to select
+   * K-items and let them appear throughout the entire game… choose to display
+   * at specific play or part of the game").
+   *
+   * The board's own `kItems` are what the Know panel leads with all board long.
+   * These take over WHILE THE LEARNER IS AT THIS DECISION — so "count the
+   * trumps" can arrive at trick three and nowhere else, which is how a teacher
+   * actually points at something. Absent = the board's lesson stands here too.
+   */
+  cards?: KItemId[];
 }
 
 /** How tightly the learner is held to the line (v2, owner design 2026-08-18).
@@ -160,6 +171,7 @@ export function parseCurated(json: string | undefined): CuratedPayload {
       note?: unknown;
       why?: unknown;
       hints?: unknown;
+      cards?: unknown;
     };
     const idx = (n: unknown): number | null =>
       typeof n === "number" && Number.isInteger(n) && n >= 0 && n < 400 ? n : null;
@@ -182,13 +194,21 @@ export function parseCurated(json: string | undefined): CuratedPayload {
           .map((h) => h.trim().slice(0, MAX_HINT))
           .slice(0, 5)
       : [];
-    // An annotation that says nothing is not an annotation.
-    if (!note && !why && hints.length < 2) continue;
+    // The cards to lead with AT this decision — the registry's own door, so an
+    // id from a newer catalogue drops alone rather than taking the moment with
+    // it.
+    const cards = parseKItemIds(o.cards).slice(0, MAX_ITEMS);
+    // An annotation that says nothing is not an annotation — and POINTING AT
+    // CARDS IS SAYING SOMETHING (owner direction 2026-08-19): a coach who marks
+    // "count the trumps here" and writes no prose has still taught something,
+    // so cards alone keep the annotation alive.
+    if (!note && !why && hints.length < 2 && !cards.length) continue;
     out.push({
       at,
       ...(note ? { note } : {}),
       ...(why ? { why } : {}),
       ...(hints.length >= 2 ? { hints } : {}),
+      ...(cards.length ? { cards } : {}),
     });
   }
   return withSettings(out);

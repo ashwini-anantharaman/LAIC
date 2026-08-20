@@ -626,6 +626,60 @@ describe("the dummy takeover, end to end", () => {
 // The coach's studio: the auction is the coach's, the play is the table's
 // ---------------------------------------------------------------------------
 
+describe("the studio's work in progress", () => {
+  // Building a curated board takes an hour, so the words have to survive a
+  // closed tab (owner ask 2026-08-19). The board always did — it is an event
+  // log; the draft is everything around it.
+  const studio = async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    return service.createSession({
+      kbId, compiled, seats: allAi, seed: 5, createdBy: "u_coach",
+      authoring: { learnerSeat: "S" as Seat },
+    });
+  };
+
+  it("keeps a draft on the sitting, and stamps when", async () => {
+    const record = await studio();
+    const saved = await service.saveAuthoringDraft(record.sessionId, '{"note":"wip"}');
+    expect(saved.authoring?.draftJson).toBe('{"note":"wip"}');
+    expect(saved.authoring?.draftAt).toBe(NOW);
+    // And it survives a read, which is the whole point.
+    expect((await service.getSession(record.sessionId))?.authoring?.draftJson).toBe('{"note":"wip"}');
+  });
+
+  it("clears the draft on an empty string — what publishing does on its way out", async () => {
+    const record = await studio();
+    await service.saveAuthoringDraft(record.sessionId, '{"note":"wip"}');
+    const cleared = await service.saveAuthoringDraft(record.sessionId, "");
+    expect(cleared.authoring?.draftJson).toBeUndefined();
+    // The stamp goes with it: no draft, no "saved at".
+    expect(cleared.authoring?.draftAt).toBeUndefined();
+    // The seat the board is built for is NOT collateral.
+    expect(cleared.authoring?.learnerSeat).toBe("S");
+  });
+
+  it("refuses a sitting that is not an authoring one", async () => {
+    const compiled = (await kbService.liveCompile(kbId))!;
+    const plain = await service.createSession({
+      kbId, compiled, seats: allAi, seed: 6, createdBy: "u",
+    });
+    await expect(service.saveAuthoringDraft(plain.sessionId, "{}")).rejects.toThrow(
+      /not an authoring sitting/,
+    );
+  });
+
+  it("shows up in the SUMMARY list without shipping the sitting", async () => {
+    const record = await studio();
+    await service.saveAuthoringDraft(record.sessionId, '{"note":"wip"}');
+    const rows = await service.listRecentSummaries({ createdBy: "u_coach", status: "active" });
+    const row = rows.find((r) => r.sessionId === record.sessionId)!;
+    expect(row.authoring).toEqual({ learnerSeat: "S", hasDraft: true, draftAt: NOW });
+    // A summary is a name and a date — never the game.
+    expect("events" in row).toBe(false);
+    expect("board" in row).toBe(false);
+  });
+})
+
 describe("taking back several actions at once", () => {
   // The curated take-back has to unwind the learner's card plus whatever robot
   // replies auto-play slipped in — as ONE write, or the learner watches a button

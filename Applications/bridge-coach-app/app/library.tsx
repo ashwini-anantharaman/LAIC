@@ -49,6 +49,9 @@ function metaLine(e: LibraryItem): string {
   }
   return (
     [
+      // A coach's board says so first: before an Edit chip can be found, the
+      // rows that have one have to be tellable apart.
+      e.content.curatedJson ? "curated" : null,
       e.content.dealer && `dealer ${e.content.dealer}`,
       e.content.vul && `vul ${e.content.vul}`,
       e.content.auction?.length ? `${e.content.auction.length} calls` : null,
@@ -243,6 +246,14 @@ export default function LibraryScreen() {
                     {metaLine(e)}
                   </Text>
                 </View>
+                {coach && !!e.content.curatedJson && (
+                  <Pressable
+                    onPress={() => router.push(`/curated-edit?entry=${encodeURIComponent(e.id)}`)}
+                    style={({ pressed }) => [styles.editButton, pressed && styles.pressed]}
+                  >
+                    <Text style={styles.editButtonText}>Edit</Text>
+                  </Pressable>
+                )}
                 {coach && !!e.content.hands && e.kind !== "table" && (
                   <Pressable
                     onPress={() => router.push(`/assign?entry=${encodeURIComponent(e.id)}`)}
@@ -390,6 +401,19 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
   },
   assignButtonText: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: Brand.green },
+
+  // Quieter than Assign and Resume on purpose: three green chips on one row
+  // would make a shelf of curated boards read as three equal invitations, and
+  // editing is the one a coach reaches for least often.
+  editButton: {
+    borderWidth: 1,
+    borderColor: "#e0d7c2",
+    backgroundColor: "#fffdf6",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+  },
+  editButtonText: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: Brand.ink },
 
   pressed: { opacity: 0.75 },
 });

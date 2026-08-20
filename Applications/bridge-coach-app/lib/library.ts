@@ -24,6 +24,15 @@ export type LibraryItemContent = {
   resultLabel?: string;
   kbId?: string;
   seats?: Partial<Record<Seat, { label?: string; human?: boolean }>>;
+  /**
+   * A COACH'S OVERLAY, when the entry carries one — the annotated line of a
+   * curated deal. The library API has always sent it; this type simply never
+   * named it, so the Library screen could not tell a curated board from an
+   * ordinary one and had nothing to hang an Edit chip on (owner report
+   * 2026-08-19: "where is my edit?"). Opaque here: the app never parses it, it
+   * only asks whether there is one.
+   */
+  curatedJson?: string;
 };
 
 export type LibraryItem = {

@@ -43,7 +43,7 @@
 // against the final line, so an undo that orphaned an annotation drops it
 // rather than shipping a ghost.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { Seat } from "@bridge/events";
 
@@ -135,6 +135,10 @@ interface Draft {
   note: string;
   why: string;
   hints: string;
+  /** CARDS FOR THIS MOMENT (owner direction 2026-08-19) — the K items the
+   *  learner's Know panel leads with while they stand at this decision, instead
+   *  of the board's own lesson. Empty = the board's lesson stands here. */
+  cards: KItemId[];
 }
 
 /** What one draft amounts to, for the annotations list. */
@@ -144,9 +148,13 @@ function draftSummary(d: Draft): string | null {
     ...(d.note.trim() ? ["note"] : []),
     ...(d.why.trim() ? ["why"] : []),
     ...(rungs >= 2 ? [`${rungs}-rung ladder`] : []),
+    ...(d.cards.length ? [`${d.cards.length} card${d.cards.length === 1 ? "" : "s"}`] : []),
   ];
   return bits.length ? bits.join(" · ") : null;
 }
+
+/** A blank draft — every field the card edits, so `bound` is never partial. */
+const EMPTY_DRAFT = (label: string): Draft => ({ label, note: "", why: "", hints: "", cards: [] });
 
 const SECTION: React.CSSProperties = {
   background: PAPER, borderWidth: 1, borderStyle: "solid", borderColor: CARD_EDGE,
@@ -209,6 +217,7 @@ export function CurateRail({
   lineSummary = null,
   progress = null,
   line = null,
+  draftJson = null,
 }: Readonly<{
   sessionId: string;
   /** The coach's CURRENT decision address, when it is theirs to make. */
@@ -233,6 +242,13 @@ export function CurateRail({
   dummySeat?: Seat | null;
   /** The sitting's compass — "6 calls so far", "4♠ by S · trick 3 of 13". */
   lineSummary?: string | null;
+  /**
+   * THE WORK SAVED LAST TIME (owner ask 2026-08-19), straight off the sitting —
+   * `authoring.draftJson`, opaque to everything between here and the store. The
+   * rail seeds itself from it on mount, which is the whole of "resume": the
+   * board was never lost, only the words.
+   */
+  draftJson?: string | null;
   /** THE LINE METER's own numbers (owner direction 2026-08-19). The compass
    *  above is a sentence; this is what fills the pips, so the coach can see how
    *  much of the board is recorded without reading. */
@@ -333,6 +349,7 @@ export function CurateRail({
       // A REVISION arrives with the entry's annotations — seed the drafts, or
       // republishing would wipe the coach's words. Only into an empty rail:
       // the coach's live edits always win over the stored copy.
+      // (The SAVED DRAFT, below, seeds the same way and from the same shape.)
       if (stored.annotations?.length) {
         setDrafts((prev) => {
           if (Object.keys(prev).length) return prev;
@@ -346,6 +363,7 @@ export function CurateRail({
               note: a.note ?? "",
               why: a.why ?? "",
               hints: (a.hints ?? []).join("\n"),
+              cards: parseKItemIds(a.cards),
             };
           }
           return seeded;
@@ -356,6 +374,68 @@ export function CurateRail({
       // at publish anyway.
     }
   }, [author, sessionId]);
+
+  /**
+   * RESUME: the draft saved on the sitting, read once on mount.
+   *
+   * It carries the same three things a publish does — the name, the board
+   * settings, the annotations — so seeding is the revision path again rather
+   * than a second shape to keep in step. It runs AFTER the sessionStorage stash
+   * (a separate effect, and later in the file) because the saved draft is the
+   * newer truth: the stash is what the deal screen wrote when the studio opened.
+   */
+  useEffect(() => {
+    if (!author || !draftJson) return;
+    let parsed: {
+      title?: unknown;
+      settings?: unknown;
+      annotations?: unknown;
+      savedAt?: unknown;
+    };
+    try {
+      parsed = JSON.parse(draftJson) as typeof parsed;
+    } catch {
+      // A draft we cannot read is a draft we do not have. The board is intact.
+      return;
+    }
+    if (typeof parsed.title === "string") setTitle(parsed.title);
+    if (typeof parsed.savedAt === "string") setSavedAt(parsed.savedAt);
+    if (parsed.settings && typeof parsed.settings === "object") {
+      const st = parsed.settings as Partial<CuratedBoardSettings>;
+      setSettings((prev) => ({
+        ...prev,
+        ...st,
+        // Through the registry's own door, always.
+        kTags: parseKTags(st.kTags),
+        kItems: parseKItemIds(st.kItems),
+      }));
+    }
+    if (Array.isArray(parsed.annotations)) {
+      const seeded: Record<string, Draft> = {};
+      for (const a of parsed.annotations as CuratedAnnotation[]) {
+        if (!a?.at) continue;
+        seeded[atKey(a.at)] = {
+          label:
+            a.at.kind === "call"
+              ? `Bid #${a.at.auctionIndex + 1}`
+              : `Trick ${a.at.trickIndex + 1}, card ${a.at.playIndex + 1}`,
+          note: a.note ?? "",
+          why: a.why ?? "",
+          hints: (a.hints ?? []).join("\n"),
+          cards: parseKItemIds(a.cards),
+        };
+      }
+      // THE DRAFT WINS OVER THE STASH. Both seed this rail on mount, and they
+      // are not equals: the sessionStorage stash is what the deal screen wrote
+      // when the studio OPENED (or what a revision carried in), while the draft
+      // is the work done since. Deferring to whatever arrived first meant a
+      // resumed board came back with its starting words instead of its saved
+      // ones — the one thing this feature exists to prevent. Live typing is not
+      // at risk: this effect runs once, on mount.
+      setDrafts(seeded);
+    }
+    setDirty(false);
+  }, [author, draftJson]);
 
   // THE ADVISOR STRIP (studio only): what BEN would bid, what DDS counts for
   // every card — fetched on demand per decision, never automatically (BEN is
@@ -376,6 +456,9 @@ export function CurateRail({
   // reopened annotation's fields visible without any extra state.
   const [whyOpen, setWhyOpen] = useState(false);
   const [hintsOpen, setHintsOpen] = useState(false);
+  // The per-decision card picker, folded until asked for — most decisions want
+  // the board's own lesson and nothing else.
+  const [cardsOpen, setCardsOpen] = useState(false);
 
   // WHOSE MOMENT THIS IS. The learner's own decisions — their seat, and
   // dummy's chair while they declare — are where the coach speaks to a
@@ -398,6 +481,7 @@ export function CurateRail({
   useEffect(() => {
     setWhyOpen(false);
     setHintsOpen(false);
+    setCardsOpen(false);
   }, [boundKeyForFolds]);
 
   const askMachines = () => {
@@ -449,10 +533,13 @@ export function CurateRail({
   const [notesOpen, setNotesOpen] = useState(false);
   // The three framing fields, folded: most boards leave them empty.
   const [framingOpen, setFramingOpen] = useState(false);
+  // WORK SAVED, AND WHEN. `dirty` is what has changed since the last save, so
+  // the foot can say "saved" honestly rather than optimistically.
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const boundKey = editKey ?? liveKey;
-  const bound: Draft =
-    (boundKey && drafts[boundKey]) ||
-    ({ label: atLabel ?? "", note: "", why: "", hints: "" } as Draft);
+  const bound: Draft = (boundKey && drafts[boundKey]) || EMPTY_DRAFT(atLabel ?? "");
   const boundLabel = editKey ? (drafts[editKey]?.label ?? "an earlier decision") : atLabel;
 
   const setBound = (patch: Partial<Draft>) => {
@@ -482,12 +569,16 @@ export function CurateRail({
         const hints = d.hints.split("\n").map((h) => h.trim()).filter(Boolean).slice(0, 5);
         const note = d.note.trim();
         const why = d.why.trim();
-        if (!note && !why && hints.length < 2) return null;
+        const cards = parseKItemIds(d.cards);
+        // Cards alone are an annotation: pointing at what to look at here is
+        // teaching, even with no prose beside it.
+        if (!note && !why && hints.length < 2 && !cards.length) return null;
         return {
           at: where,
           ...(note ? { note } : {}),
           ...(why ? { why } : {}),
           ...(hints.length >= 2 ? { hints } : {}),
+          ...(cards.length ? { cards } : {}),
         };
       })
       .filter((a): a is CuratedAnnotation => a !== null);
@@ -763,6 +854,76 @@ export function CurateRail({
     </>
   );
 
+  /**
+   * SAVE THE WORK, not the board (owner ask 2026-08-19).
+   *
+   * The same three things a publish sends — the name, the settings, the
+   * annotations — written to the sitting instead of the library. Debounced by
+   * the effect below rather than called per keystroke, and deliberately
+   * BEST-EFFORT: a failed save must never interrupt someone mid-sentence, so it
+   * reports by leaving `dirty` true (the foot then still says "unsaved") and
+   * tries again on the next change.
+   */
+  const saveDraft = async (): Promise<void> => {
+    if (!author || saving) return;
+    setSaving(true);
+    const at = new Date().toISOString();
+    try {
+      const res = await fetch("/api/bridge/curated/draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sessionId,
+          draftJson: JSON.stringify({
+            v: 1,
+            savedAt: at,
+            title: title.trim(),
+            settings,
+            annotations: annotations(),
+          }),
+        }),
+      });
+      if (!res.ok) return;
+      setSavedAt(at);
+      setDirty(false);
+    } catch {
+      // Offline, or the door refused. The words stay on screen; the next change
+      // tries again.
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // EVERY CHANGE IS DIRTY. One line, rather than a setDirty in each of the
+  // dozen setters — the effect below is what turns that into a save.
+  const draftFingerprint = author
+    ? JSON.stringify({ title, settings, annotations: annotations() })
+    : "";
+  const lastSavedFingerprint = useRef<string | null>(null);
+  useEffect(() => {
+    if (!author) return;
+    if (lastSavedFingerprint.current === null) {
+      // The first pass is the rail settling into its seeded state, not an edit.
+      lastSavedFingerprint.current = draftFingerprint;
+      return;
+    }
+    if (lastSavedFingerprint.current === draftFingerprint) return;
+    setDirty(true);
+    // A COACH TYPES IN SENTENCES, so the save waits for the pause between them.
+    // Two seconds is long enough that a note is not written one letter per
+    // request, and short enough that walking away loses nothing worth naming.
+    const t = setTimeout(() => {
+      lastSavedFingerprint.current = draftFingerprint;
+      void saveDraft();
+    }, 2000);
+    return () => clearTimeout(t);
+    // The fingerprint IS the dependency: saveDraft reads the live state when the
+    // timer fires, and re-creating that timer on every change is exactly the
+    // debounce. (No exhaustive-deps disable — this project's lint config has no
+    // such rule, and a disable for a rule that does not exist is itself an
+    // error.)
+  }, [author, draftFingerprint]);
+
   async function publish() {
     if (publishing) return;
     setPublishing(true);
@@ -806,6 +967,18 @@ export function CurateRail({
       });
       const body = (await res.json()) as { entryId?: string; error?: string };
       if (!res.ok || !body.entryId) throw new Error(body.error ?? "Couldn't publish");
+      // The work has a home now — the entry. Clearing the draft keeps this
+      // sitting out of "boards you started" (and an empty string is how the
+      // draft door says "forget it").
+      try {
+        await fetch("/api/bridge/curated/draft", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId, draftJson: "" }),
+        });
+      } catch {
+        // A draft left behind is untidy, never wrong: the entry is published.
+      }
       try {
         sessionStorage.removeItem(CURATE_SETTINGS_KEY(sessionId));
       } catch {
@@ -830,6 +1003,7 @@ export function CurateRail({
     { label: "Note", on: saved > 0, beat: "line" },
     { label: "Why", on: annotations().some((a) => a.why), beat: "line" },
     { label: "Ladder", on: annotations().some((a) => a.hints), beat: "line" },
+    { label: "Moments", on: annotations().some((a) => a.cards?.length), beat: "line" },
     {
       label: "Framing",
       on: !!(settings.intro.trim() || settings.debrief.trim() || settings.pin.trim()),
@@ -1134,6 +1308,51 @@ export function CurateRail({
           </>
         )}
 
+        {/* CARDS FOR THIS MOMENT (owner direction 2026-08-19). The board's
+            lesson is what the panel leads with all board long; these take over
+            while the learner stands HERE, so a coach can put "count the trumps"
+            at trick three and nowhere else. Same picker as the board's lesson —
+            one control, two scopes — folded until reached for. */}
+        {(cardsOpen || bound.cards.length > 0) && (
+          <div style={{ marginTop: 9, paddingTop: 9, borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: "#f2e8d2" }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 7, marginBottom: 6 }}>
+              <span style={{ ...SMALLCAPS, flex: 1, color: MAROON }}>Cards to show here</span>
+              {bound.cards.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setBound({ cards: [] })}
+                  style={{
+                    flex: "none", minHeight: 30, padding: 0, background: "transparent",
+                    borderWidth: 0, fontSize: 10.5, fontWeight: 700, color: GREEN,
+                    fontFamily: "inherit", cursor: "pointer",
+                  }}
+                >
+                  use the board&rsquo;s
+                </button>
+              )}
+            </div>
+            <LessonPicker
+              skin="rail"
+              fold={false}
+              tags={[]}
+              items={bound.cards}
+              onToggleTag={() => {
+                /* A MOMENT HAS NO TOPIC. Tags name the board's lesson; here the
+                   coach is pointing at cards, and the filter row still narrows
+                   the catalogue while they look — it just has nothing to name. */
+              }}
+              onToggleItem={(id) =>
+                setBound({
+                  cards: bound.cards.includes(id)
+                    ? bound.cards.filter((x) => x !== id)
+                    : [...bound.cards, id].slice(0, MAX_DEAL_ITEMS),
+                })
+              }
+              onClear={() => setBound({ cards: [] })}
+            />
+          </div>
+        )}
+
         {/* The adders — 44px, because they are the two things most often
             reached for on a phone. */}
         {(!(whyOpen || bound.why.trim()) ||
@@ -1168,6 +1387,20 @@ export function CurateRail({
               </button>
             )}
           </div>
+        )}
+        {author && !cardsOpen && bound.cards.length === 0 && (
+          <button
+            type="button"
+            onClick={() => setCardsOpen(true)}
+            style={{
+              marginTop: 6, width: "100%", minHeight: 44, borderRadius: 9,
+              borderWidth: 1, borderStyle: "dashed", borderColor: LINE,
+              background: PAPER, cursor: "pointer",
+              fontSize: 12, fontWeight: 700, color: MUTED, fontFamily: "inherit",
+            }}
+          >
+            + Cards to show here
+          </button>
         )}
 
         {/* ── the advisors, one chip row: Owlee's draft ladder and — in the
@@ -1442,7 +1675,7 @@ export function CurateRail({
         <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
           <span style={{ ...SMALLCAPS, flex: 1, color: MAROON }}>What this board carries</span>
           <span style={{ flex: "none", fontSize: 10.5, fontWeight: 700, color: MUTED }}>
-            {carried} of 5
+            {carried} of {carries.length}
           </span>
         </div>
         {carriesRow(30)}
@@ -1659,6 +1892,33 @@ export function CurateRail({
         borderTopWidth: 1, borderTopStyle: "solid", borderTopColor: CARD_EDGE,
       }}
     >
+      <button
+        type="button"
+        onClick={() => void saveDraft()}
+        disabled={saving || (!dirty && !!savedAt)}
+        title={
+          dirty
+            ? "Save your words now"
+            : savedAt
+              ? `Saved ${new Date(savedAt).toLocaleTimeString()}`
+              : "Nothing to save yet"
+        }
+        style={{
+          flex: "none", minHeight: 44, padding: "0 10px", borderRadius: 10,
+          borderWidth: 1, borderStyle: "solid", borderColor: dirty ? GREEN : LINE,
+          background: dirty ? "#f0f7f2" : PAPER,
+          cursor: saving || (!dirty && !!savedAt) ? "default" : "pointer",
+          fontFamily: "inherit", display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center", gap: 1,
+        }}
+      >
+        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 0.3, textTransform: "uppercase", color: dirty ? GREEN : MUTED }}>
+          {saving ? "Saving" : dirty ? "Save" : savedAt ? "Saved" : "Draft"}
+        </span>
+        <span style={{ fontSize: 8.5, color: FAINT }}>
+          {savedAt ? new Date(savedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}
+        </span>
+      </button>
       <button
         type="button"
         onClick={() => setNotesOpen((v) => !v)}

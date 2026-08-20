@@ -194,6 +194,9 @@ export default async function PlayTablePage({
       boardName={record.board.name}
       fill={embedded}
       author={authoring}
+      // The work saved last time this sitting was open (owner ask 2026-08-19) —
+      // the rail seeds itself from it, which is all "resume" is.
+      draftJson={authoring ? (record.authoring?.draftJson ?? null) : null}
       atSeat={curateAt ? actingSeat : null}
       declarer={state.contract?.declarer ?? null}
       dummySeat={dummy}
