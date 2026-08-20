@@ -24,6 +24,8 @@ import {
 } from "lucide-react";
 
 import { getContentLibrary, type LibraryObject } from "@/services/api";
+import { useProgramAccess } from "@/nexus/access";
+import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
 import { PageHeader, EmptyState } from "@/nexus/ui/kit";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
@@ -91,6 +93,14 @@ function ReachSummary({ o }: { o: LibraryObject }) {
 
 export function ContentLibraryTab() {
   const { programId = "" } = useParams();
+  const access = useProgramAccess(programId);
+  // Sub-roles are a second job on this tab, not a second tab in the sidebar:
+  // deciding who may share is the same remit as deciding what gets shared, and a
+  // Content Manager should not have to leave the library to delegate part of it.
+  // Admins see it too — they hold every capability, so the ceiling is everything.
+  const canDelegate =
+    access.isAdmin || access.capabilities.includes("learning.roles.delegate");
+  const [view, setView] = useState<"content" | "roles">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -175,11 +185,42 @@ export function ContentLibraryTab() {
         title="Content Library"
         subtitle="The content in this program, and which clubs and people each piece reaches."
         actions={
-          <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
-            <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
-          </Button>
+          <>
+            {canDelegate && (
+              <div className="flex rounded-lg border p-0.5">
+                {(["content", "roles"] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setView(v)}
+                    aria-pressed={view === v}
+                    className={cn(
+                      "rounded-md px-3 py-1.5 text-sm font-medium transition-colors",
+                      view === v
+                        ? "bg-accent text-accent-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {v === "content" ? "Content" : "Sub-roles"}
+                  </button>
+                ))}
+              </div>
+            )}
+            {view === "content" && (
+              <Button variant="outline" size="sm" onClick={reload} disabled={objects === null}>
+                <RefreshCw className={cn("size-4", objects === null && "animate-spin")} /> Refresh
+              </Button>
+            )}
+          </>
         }
       />
+
+      {view === "roles" ? (
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SubRolesPanel programId={programId} />
+        </div>
+      ) : (
+      <>
 
       {error ? (
         <EmptyState>
@@ -373,6 +414,8 @@ export function ContentLibraryTab() {
             })}
           </div>
         </>
+      )}
+      </>
       )}
 
       {sharing && (

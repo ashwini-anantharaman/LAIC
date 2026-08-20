@@ -1676,3 +1676,111 @@ export async function setContentAppTargets(
     body: JSON.stringify({ program_id: programId, object_ids: objectIds, app_keys: appKeys }),
   });
 }
+
+// ── Sub-roles, delegated ────────────────────────────────────────────────────
+//
+// A Content Manager holding learning.roles.delegate mints roles beneath
+// themselves. The endpoints are the learning platform's own, and they were
+// already ceilinged server-side (routes/platform.ts, _clampToCeiling): whatever
+// this client sends, a delegate can never grant a capability they do not hold.
+// The UI's job is to not OFFER what would be silently dropped.
+
+export interface LearningCapability {
+  id: string;
+  label: string;
+  description?: string;
+  group: string;
+}
+export interface LearningCapabilityGroup {
+  id: string;
+  label: string;
+  order: number;
+}
+export interface SubRole {
+  id: string;
+  name: string;
+  perms: Record<string, unknown>;
+}
+export interface LearningPerson {
+  email: string | null;
+  display_name: string | null;
+  role_id: string | null;
+  role_name: string | null;
+  is_admin?: boolean;
+}
+
+/**
+ * The caller's OWN effective learning capabilities — their ceiling.
+ *
+ * Read from the platform context rather than from the program role, because the
+ * context is what the server itself enforces against: it folds in the org's
+ * provisioning clamp. Offering a capability the clamp would strip is how a UI
+ * ends up promising a grant the save then drops.
+ */
+export async function getLearningCeiling(programId: string): Promise<string[]> {
+  const r = await request<{ capabilities?: string[] }>(
+    `/api/platform/learning/context?program_id=${encodeURIComponent(programId)}`,
+  );
+  return r.capabilities ?? [];
+}
+
+/** Labels and grouping for those ids. Readable by anyone who may enter learning. */
+export async function getLearningCapabilityCatalogue(
+  programId: string,
+): Promise<{ capabilities: LearningCapability[]; groups: LearningCapabilityGroup[] }> {
+  const r = await request<{
+    capabilities?: LearningCapability[];
+    groups?: LearningCapabilityGroup[];
+  }>(`/api/platform/learning/catalogue?program_id=${encodeURIComponent(programId)}`);
+  return { capabilities: r.capabilities ?? [], groups: r.groups ?? [] };
+}
+
+export async function listSubRoles(programId: string): Promise<SubRole[]> {
+  return request(`/api/platform/learning/roles?program_id=${encodeURIComponent(programId)}`);
+}
+
+export async function createSubRole(
+  programId: string,
+  name: string,
+  capabilities: string[],
+): Promise<SubRole> {
+  return request(`/api/platform/learning/roles`, {
+    method: "POST",
+    body: JSON.stringify({ program_id: programId, name, perms: {}, capabilities }),
+  });
+}
+
+export async function updateSubRole(
+  programId: string,
+  roleId: string,
+  patch: { name?: string; capabilities?: string[] },
+): Promise<SubRole> {
+  return request(
+    `/api/platform/learning/roles/${encodeURIComponent(roleId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "PATCH", body: JSON.stringify(patch) },
+  );
+}
+
+export async function deleteSubRole(programId: string, roleId: string): Promise<void> {
+  await request(
+    `/api/platform/learning/roles/${encodeURIComponent(roleId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function listLearningPeople(programId: string): Promise<LearningPerson[]> {
+  return request(`/api/platform/learning/roster?program_id=${encodeURIComponent(programId)}`);
+}
+
+/** Assign, or clear with roleId null. Clearing is refused for a delegate by the
+ *  server — removing a role drops someone to an ungated launch level. */
+export async function assignSubRole(
+  programId: string,
+  email: string,
+  roleId: string | null,
+): Promise<void> {
+  await request(`/api/platform/learning/assign`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, email, role_id: roleId }),
+  });
+}
