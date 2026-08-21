@@ -669,97 +669,13 @@ export function ContentLibraryTab() {
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border">
-            {openFolder
-              ? [
-                  ...openFolder.objects.map((o) => (
-                  <div key={o.id} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
-                    <button
-                      type="button"
-                      onClick={() => setMany([o.id], !selected.has(o.id))}
-                      aria-pressed={selected.has(o.id)}
-                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
-                    >
-                      <Box state={selected.has(o.id) ? "on" : "off"} />
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm">{o.title || "Untitled"}</span>
-                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
-                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                            {o.type.replace(/_/g, " ")}
-                          </span>
-                          {/* WHICH VERSION WOULD GO. Someone deciding whether to
-                              carry this on an app needs to know it is v3 and not
-                              whatever was saved since — that is the difference
-                              between carrying what they reviewed and carrying
-                              something they have not seen. */}
-                          {o.version_number != null && (
-                            <span className="text-[11px] text-muted-foreground">v{o.version_number}</span>
-                          )}
-                          {o.published_at == null && (
-                            <span className="text-[11px] text-amber-600 dark:text-amber-400">
-                              no published version
-                            </span>
-                          )}
-                          <ReachSummary o={o} />
-                        </span>
-                      </span>
-                    </button>
-                    {rowActions([o], o.title || "Untitled")}
-                  </div>
-                  )),
-                  // FILES SIT BELOW THE AUTHORED CONTENT, and carry no checkbox:
-                  // they cannot be shared or published yet (migration 0011 says
-                  // why), so a checkbox would enlist them in a Share the server
-                  // would refuse. Their affordances are open and remove.
-                  ...openFolder.assets.map((a) => {
-                    const Icon = ASSET_ICON[a.kind] ?? Link2;
-                    return (
-                      <div
-                        key={a.id}
-                        className="flex items-center gap-3 border-b bg-muted/20 p-3 last:border-b-0 hover:bg-accent/30"
-                      >
-                        <span className="size-4 shrink-0" />
-                        <Icon className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm">{a.title || "Untitled file"}</span>
-                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
-                            <span className="uppercase tracking-wide">{a.kind}</span>
-                            {a.byte_size ? <span>{(a.byte_size / 1024 / 1024).toFixed(1)} MB</span> : null}
-                            <span>{a.external_url ? "linked" : "stored"}</span>
-                          </span>
-                        </span>
-                        {a.external_url && (
-                          <Button size="sm" variant="ghost" asChild>
-                            <a href={a.external_url} target="_blank" rel="noreferrer">Open</a>
-                          </Button>
-                        )}
-                        {canUpload && (
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            title={`Remove ${a.title}`}
-                            aria-label={`Remove ${a.title}`}
-                            onClick={() => {
-                              void (async () => {
-                                try {
-                                  await deleteLibraryAsset(programId, a.id);
-                                  toast.success(`Removed \u201c${a.title}\u201d`);
-                                  reload();
-                                } catch (e) {
-                                  toast.error(
-                                    e instanceof Error ? e.message : "Couldn't remove that file",
-                                  );
-                                }
-                              })();
-                            }}
-                          >
-                            <Trash2 className="size-4" />
-                          </Button>
-                        )}
-                      </div>
-                    );
-                  }),
-                ]
-              : folders.map((f) => {
+            {/* SUBFOLDERS FIRST, ALWAYS.
+                This used to render either the folder list (at the root) or the
+                contents (inside a folder), never both — so B2F3's four subfolders
+                were invisible the moment you opened B2F3, and Tutorials could not
+                be reached at all. `folders` is already location-aware: root folders
+                at the top, a folder's children inside it. */}
+            {folders.map((f) => {
                   const ids = f.objects.map((o) => o.id);
                   const real = f.row;
                   const reach =
@@ -884,7 +800,96 @@ export function ContentLibraryTab() {
                       )} />
                     </div>
                   );
-                })}
+            })}
+            {openFolder ? [
+                  ...openFolder.objects.map((o) => (
+                  <div key={o.id} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
+                    <button
+                      type="button"
+                      onClick={() => setMany([o.id], !selected.has(o.id))}
+                      aria-pressed={selected.has(o.id)}
+                      className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                    >
+                      <Box state={selected.has(o.id) ? "on" : "off"} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{o.title || "Untitled"}</span>
+                        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+                          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                            {o.type.replace(/_/g, " ")}
+                          </span>
+                          {/* WHICH VERSION WOULD GO. Someone deciding whether to
+                              carry this on an app needs to know it is v3 and not
+                              whatever was saved since — that is the difference
+                              between carrying what they reviewed and carrying
+                              something they have not seen. */}
+                          {o.version_number != null && (
+                            <span className="text-[11px] text-muted-foreground">v{o.version_number}</span>
+                          )}
+                          {o.published_at == null && (
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                              no published version
+                            </span>
+                          )}
+                          <ReachSummary o={o} />
+                        </span>
+                      </span>
+                    </button>
+                    {rowActions([o], o.title || "Untitled")}
+                  </div>
+                  )),
+                  // FILES SIT BELOW THE AUTHORED CONTENT, and carry no checkbox:
+                  // they cannot be shared or published yet (migration 0011 says
+                  // why), so a checkbox would enlist them in a Share the server
+                  // would refuse. Their affordances are open and remove.
+                  ...openFolder.assets.map((a) => {
+                    const Icon = ASSET_ICON[a.kind] ?? Link2;
+                    return (
+                      <div
+                        key={a.id}
+                        className="flex items-center gap-3 border-b bg-muted/20 p-3 last:border-b-0 hover:bg-accent/30"
+                      >
+                        <span className="size-4 shrink-0" />
+                        <Icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm">{a.title || "Untitled file"}</span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
+                            <span className="uppercase tracking-wide">{a.kind}</span>
+                            {a.byte_size ? <span>{(a.byte_size / 1024 / 1024).toFixed(1)} MB</span> : null}
+                            <span>{a.external_url ? "linked" : "stored"}</span>
+                          </span>
+                        </span>
+                        {a.external_url && (
+                          <Button size="sm" variant="ghost" asChild>
+                            <a href={a.external_url} target="_blank" rel="noreferrer">Open</a>
+                          </Button>
+                        )}
+                        {canUpload && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            title={`Remove ${a.title}`}
+                            aria-label={`Remove ${a.title}`}
+                            onClick={() => {
+                              void (async () => {
+                                try {
+                                  await deleteLibraryAsset(programId, a.id);
+                                  toast.success(`Removed \u201c${a.title}\u201d`);
+                                  reload();
+                                } catch (e) {
+                                  toast.error(
+                                    e instanceof Error ? e.message : "Couldn't remove that file",
+                                  );
+                                }
+                              })();
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }),
+            ] : null}
           </div>
         </>
       )}
