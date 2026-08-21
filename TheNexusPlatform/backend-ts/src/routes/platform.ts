@@ -2892,6 +2892,34 @@ platformRouter.get("/learning/library", async (c) => {
   const inScope = (ids: unknown): boolean =>
     !folderScope || (Array.isArray(ids) && ids.some((i) => folderScope.has(String(i))));
 
+  /**
+   * WHO THIS VIEWER IS, as grant subjects — so a folder-confined person still
+   * sees anything shared with them DIRECTLY.
+   *
+   * Confinement narrows the program's library to the folders someone was given.
+   * It must never narrow away a grant: handing a person a specific object and
+   * then hiding it from them because it sits in a folder they were not given is
+   * the one failure direction sharing can never have. A grant is a deliberate
+   * exception to the default audience (0007's header says exactly this) and
+   * confinement is a default, so the grant wins.
+   *
+   * Only computed when confinement is actually in force; a governing caller sees
+   * everything anyway and this would be pure cost.
+   */
+  const grantSubjects = new Set<string>();
+  if (folderScope) {
+    if (access.profileId) grantSubjects.add(`profile:${access.profileId}`);
+    if (eff.clubRoleId) grantSubjects.add(`role:${eff.clubRoleId}`);
+    if (access.partnerProgramId) grantSubjects.add(`club:${access.partnerProgramId}`);
+    if (access.profileId) {
+      for (const cid of await graph
+        .clubIdsForProfile(access.orgId, access.profileId)
+        .catch(() => [] as string[])) {
+        grantSubjects.add(`club:${cid}`);
+      }
+    }
+  }
+
   const objects = await graph.listLearningObjectsMeta(
     access.orgId,
     access.programId,
@@ -2993,7 +3021,18 @@ platformRouter.get("/learning/library", async (c) => {
       // A folder-confined viewer sees what is filed in their folders and nothing
       // else — including nothing UNFILED, which is the case worth stating: an
       // object in no folder is in none of theirs.
-      .filter((o) => inScope(o.collection_ids)),
+      //
+      // UNLESS IT WAS SHARED WITH THEM. An explicit grant outranks the folder
+      // scope; see grantSubjects above for why that direction and not the other.
+      .filter(
+        (o) =>
+          inScope(o.collection_ids) ||
+          grants.some(
+            (g) =>
+              g.object_id === o.id &&
+              grantSubjects.has(`${g.subject_type}:${g.subject_id}`),
+          ),
+      ),
     confined_to_folders: folderScope !== null,
     administers_apps: administers,
   });
