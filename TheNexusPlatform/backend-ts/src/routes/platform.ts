@@ -3017,7 +3017,21 @@ platformRouter.get("/learning/library", async (c) => {
       // were handed and no business browsing the rest; someone who got here by
       // capability was given the library by a content manager, and filtering them
       // to nothing would make the screen they were granted useless.
-      .filter((o) => (administers.length ? o.granted_apps.some((a) => administers.includes(a)) : true))
+      //
+      // GRANTED TO THEIR APP **OR** ALREADY ON IT. These are two different facts
+      // (0010's header draws the distinction, and it is a real one — being handed
+      // content is not the same as having carried it), but both put the content
+      // squarely in an app administrator's remit. Filtering on the grant alone
+      // meant content PUBLISHED to Bridge Bird was invisible to the person who
+      // administers Bridge Bird: they could not see it, scope it to a club, or
+      // take it down. An administrator must always be able to see what their app
+      // is carrying, however it got there.
+      .filter((o) =>
+        administers.length
+          ? o.granted_apps.some((a) => administers.includes(a)) ||
+            o.apps.some((a) => administers.includes(a))
+          : true,
+      )
       // A folder-confined viewer sees what is filed in their folders and nothing
       // else — including nothing UNFILED, which is the case worth stating: an
       // object in no folder is in none of theirs.
