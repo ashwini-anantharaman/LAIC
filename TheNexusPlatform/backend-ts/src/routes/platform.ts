@@ -2313,18 +2313,47 @@ async function _learningMember(c: Context, pinned: string | null) {
   return { user, access, eff };
 }
 
+/** Capabilities that ARE authoring. Holding one is the same claim `level: edit`
+ *  makes, said in the fine-grained vocabulary instead of the coarse one. */
+const _AUTHORING_CAPABILITIES = [
+  "learning.object.create",
+  "learning.object.edit",
+  "learning.composition.create",
+  "learning.composition.edit",
+];
+
 async function _learningAuthor(c: Context, pinned: string | null) {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", pinned);
-  if (access.level !== "admin" && access.level !== "edit") {
-    throw new HttpError(403, "Content-author access required");
-  }
   if (!(await db.checkModuleAccess(access.orgId, "learning"))) {
     throw new HttpError(403, "The learning module is disabled for this organization");
   }
   // Resolved here so the coarse guard and the fine one are never out of step, and so
   // no route can forget the org's provisioning ceiling (_learningEffective clamps).
   const eff = await _learningEffective(user, access);
+
+  // THE LEVEL **OR** AN AUTHORING CAPABILITY.
+  //
+  // This used to be the level alone, which made every capability-only role
+  // invisible here: a learning role grants capabilities but does not raise the
+  // launch LEVEL, so someone explicitly granted `learning.object.edit` still
+  // arrived as `student` and every authoring write answered
+  // "Content-author access required" — a granted capability the server refuses to
+  // honour, with a message naming an access level nobody can see or set.
+  //
+  // Checked AFTER _learningEffective so the org's provisioning ceiling has already
+  // clamped the list: this can only be satisfied by a capability the org is
+  // actually entitled to, never by one a role merely claims.
+  const authorByLevel = access.level === "admin" || access.level === "edit";
+  const authorByCapability = _AUTHORING_CAPABILITIES.some((cap) =>
+    eff.capabilities.includes(cap),
+  );
+  if (!authorByLevel && !authorByCapability) {
+    throw new HttpError(
+      403,
+      "Content-author access required: this needs edit access to the program, or a role granting learning.object.edit",
+    );
+  }
   return { user, access, eff };
 }
 

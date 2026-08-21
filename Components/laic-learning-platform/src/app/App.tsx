@@ -106,6 +106,7 @@ import {
   getActiveObjectCollectionId,
   setActiveObjectCollectionId as storeSetActiveObjectCollectionId,
   ensureDefaultObjectCollection,
+  mergeProgramFolders,
   subscribeObjectCollections,
   objectCollectionIds,
   BB_TUTORIALS_COLLECTION_ID,
@@ -145,6 +146,7 @@ import {
   type LearningContextFailure,
   contextToRole,
   signOutToNexus,
+  listProgramFolders,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { canAccessScreen, defaultScreenForCapabilities } from '../lib/roleAccess';
@@ -421,6 +423,20 @@ function StudioApp() {
     const gen = ++hydrateGenRef.current;
     setLibraryReady(false);
     ensureSnapshotCollections(userId);
+    // The PROGRAM's library folders, folded into this browser's tree before the
+    // library is filed. Without this, content sitting in a shared folder had no
+    // folder to sit in here — withCollectionIds drops ids it does not recognise,
+    // so a tutorial filed into B2F3 > Tutorials silently fell back to the
+    // author's default folder and the shared folder never appeared at all.
+    //
+    // Best-effort and awaited: no Nexus session simply means no program folders,
+    // which is the correct answer for a standalone Studio rather than an error.
+    try {
+      const { folders } = await listProgramFolders();
+      if (folders.length) mergeProgramFolders(userId, folders);
+    } catch {
+      /* no session, or no access to this program's folders */
+    }
     refreshObjectCollections(userId);
 
     const localRaw = isDemoCdUser(userId) ? loadDemoCdLibrary() : loadUserObjects(userId);

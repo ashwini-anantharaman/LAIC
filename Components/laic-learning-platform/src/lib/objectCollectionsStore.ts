@@ -20,8 +20,62 @@ export const BB_TUTORIALS_COLLECTION_NAME = 'bb-tutorials';
 /** Local-only id from early authoring; remapped to the stable builtin id. */
 export const BB_TUTORIALS_LEGACY_COLLECTION_ID = 'ocol-msidjuqo-copb';
 
+/** A PROGRAM library folder (migration 0012), not one of this browser's. */
+export function isProgramObjectCollection(id: string): boolean {
+  return id.startsWith('lcol-');
+}
+
 export function isBuiltinObjectCollection(id: string): boolean {
-  return id === BB_TUTORIALS_COLLECTION_ID;
+  // Program folders count as builtin here for one reason: they are not this
+  // browser's to rename or delete. They live on the server, a content manager
+  // owns them in Nexus, and letting a local edit appear to change one would show
+  // a rename that silently does not exist for anybody else.
+  return id === BB_TUTORIALS_COLLECTION_ID || isProgramObjectCollection(id);
+}
+
+/**
+ * Fold the PROGRAM's library folders into this browser's tree.
+ *
+ * The Studio's folders have always been local (see KEY below); the program's are
+ * server rows shared by everyone. Both belong in one tree, because an author
+ * choosing where content goes should not have to know which kind a folder is —
+ * and because content filed into a program folder was previously invisible here,
+ * so a mentor could file a tutorial into B2F3 and then not find it.
+ *
+ * Upsert by id, never delete: a folder the server stopped returning may simply be
+ * one this person lost access to, and dropping it would take their filing with
+ * it. Local folders are left completely alone.
+ */
+export function mergeProgramFolders(
+  userId: string,
+  folders: { id: string; name: string; parent_id: string | null }[],
+): ObjectCollection[] {
+  const list = getObjectCollections(userId);
+  const byId = new Map(list.map((c) => [c.id, c]));
+  let changed = false;
+  for (const f of folders) {
+    const prior = byId.get(f.id);
+    const next: ObjectCollection = {
+      id: f.id,
+      name: f.name,
+      createdAt: prior?.createdAt || new Date().toISOString().slice(0, 10),
+      parentId: f.parent_id,
+      builtin: true,
+    };
+    if (!prior || prior.name !== next.name || (prior.parentId ?? null) !== (next.parentId ?? null)) {
+      changed = true;
+    }
+    byId.set(f.id, next);
+  }
+  if (!changed) return list;
+  // Program folders first so they read as the shared structure they are.
+  const merged = [...byId.values()].sort((a, b) => {
+    const ap = isProgramObjectCollection(a.id) ? 0 : 1;
+    const bp = isProgramObjectCollection(b.id) ? 0 : 1;
+    return ap !== bp ? ap - bp : a.name.localeCompare(b.name);
+  });
+  writeList(userId, merged);
+  return merged;
 }
 
 /** Normalize membership — supports multi-collection + legacy single id. */
