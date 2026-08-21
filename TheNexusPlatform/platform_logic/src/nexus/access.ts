@@ -60,6 +60,11 @@ export const CONTENT_LIBRARY_CAPABILITIES = [
   "learning.app.publish_club",
   "learning.app.administer",
   "learning.library.upload",
+  // Both of these NAME the Content Library and are useless without it — a role
+  // given only "publish Studio content into a folder" and no way in would be the
+  // granted-capability-with-no-screen failure this list exists to prevent.
+  "learning.library.folder_manage",
+  "learning.library.file_content",
 ];
 
 export function opensContentLibrary(capabilities: string[]): boolean {

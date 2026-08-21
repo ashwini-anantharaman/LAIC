@@ -371,6 +371,64 @@ export async function setObjectShares(objectId: string, clubProgramIds: string[]
   }
 }
 
+// ── Program-level Content Library folders ──────────────────────────────────
+//
+// The Studio has always had folders, but they were this browser's
+// (objectCollectionsStore.ts). These are the PROGRAM's folders — server rows
+// since migration 0012 — which is what makes them the same folders a content
+// manager sees in Nexus, and what makes filing into one mean anything to anybody
+// else.
+
+export interface ProgramFolder {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  /** False for a folder listed only so a path can be drawn to one you were given. */
+  reachable: boolean;
+}
+
+/**
+ * The program's folder tree, as far as this person is allowed to see it.
+ *
+ * `confined` is true when specific folders were shared with them — a club mentor
+ * given B2F3 sees B2F3 and its subfolders and nothing else. The picker says so,
+ * because "these are the only folders" and "these are all the folders" look
+ * identical otherwise.
+ */
+export async function listProgramFolders(): Promise<{ confined: boolean; folders: ProgramFolder[] }> {
+  const res = await nexusFetch(
+    `/api/platform/learning/collections?program_id=${encodeURIComponent(pid())}`,
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't read this program's folders (${res.status})`);
+  }
+  const body = (await res.json()) as { confined?: boolean; folders?: ProgramFolder[] };
+  return { confined: body.confined ?? false, folders: body.folders ?? [] };
+}
+
+/**
+ * File an object into program-library folders. The whole set, not a delta.
+ *
+ * The server accepts only folders the caller can already see, and says which one
+ * it refused by NAME — so a mentor who picks a folder outside their remit gets
+ * "That folder was not shared with you: Puzzles" rather than a bare 403.
+ */
+export async function setObjectProgramFolders(
+  objectId: string,
+  collectionIds: string[],
+): Promise<{ collection_names: string[] }> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/folders`,
+    { method: 'PUT', body: JSON.stringify({ collection_ids: collectionIds, program_id: pid() }) },
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't file that into the Content Library (${res.status})`);
+  }
+  return (await res.json()) as { collection_names: string[] };
+}
+
 /** Which apps an object is published to. */
 export async function listObjectAppTargets(objectId: string): Promise<AppTarget[]> {
   const res = await nexusFetch(

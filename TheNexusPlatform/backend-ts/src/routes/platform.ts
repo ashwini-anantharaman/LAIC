@@ -1,6 +1,6 @@
 /** Platform layer API routes for orgs, challenges, permissions, and join codes. */
 
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { Hono, type Context } from "hono";
 import { z } from "zod";
@@ -2762,7 +2762,19 @@ async function _libraryReader(c: Context, pinned: string | null) {
 }
 
 platformRouter.get("/learning/library", async (c) => {
-  const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+
+  // FOLDER CONFINEMENT. Null = this caller governs the library and sees all of
+  // it; a Set = specific folders were shared with them and those folders are the
+  // whole of their library. See _libraryFolderScope for why having grants is what
+  // narrows the view rather than lacking a capability.
+  //
+  // Applied HERE, on the server, and not left to the screen: "they only have
+  // access to this folder" has to be a property of the response, or a crafted
+  // request reads the rest of the library anyway.
+  const folderScope = await _libraryFolderScope(access, eff);
+  const inScope = (ids: unknown): boolean =>
+    !folderScope || (Array.isArray(ids) && ids.some((i) => folderScope.has(String(i))));
 
   const objects = await graph.listLearningObjectsMeta(
     access.orgId,
@@ -2822,7 +2834,8 @@ platformRouter.get("/learning/library", async (c) => {
   // file would be outside it — listing them would imply otherwise.
   const assets = administers.length
     ? []
-    : await graph.listLearningAssets(access.orgId, access.partnerProgramId ?? access.programId);
+    : (await graph.listLearningAssets(access.orgId, access.partnerProgramId ?? access.programId))
+        .filter((a) => inScope(a.collection_ids));
 
   return c.json({
     assets: assets.map((a) => ({
@@ -2860,7 +2873,12 @@ platformRouter.get("/learning/library", async (c) => {
       // were handed and no business browsing the rest; someone who got here by
       // capability was given the library by a content manager, and filtering them
       // to nothing would make the screen they were granted useless.
-      .filter((o) => (administers.length ? o.granted_apps.some((a) => administers.includes(a)) : true)),
+      .filter((o) => (administers.length ? o.granted_apps.some((a) => administers.includes(a)) : true))
+      // A folder-confined viewer sees what is filed in their folders and nothing
+      // else — including nothing UNFILED, which is the case worth stating: an
+      // object in no folder is in none of theirs.
+      .filter((o) => inScope(o.collection_ids)),
+    confined_to_folders: folderScope !== null,
     administers_apps: administers,
   });
 });
@@ -3111,6 +3129,342 @@ platformRouter.delete("/learning/assets/:asset_id", async (c) => {
 // Granting content to an app grants it to these people. Kept beside the library
 // because appointing them is the same act as deciding who may carry content —
 // the content manager's job, not the org admin's.
+
+// ── Content Library folders (0012) ──────────────────────────────────────────
+//
+// Folders became server-side rows so that an empty folder can exist, two people
+// can see one tree, and a folder can be SHARED as a folder — see 0012's header
+// for what each of those was impossible before.
+
+const _collectionCreateSchema = z.object({
+  program_id: z.string().optional(),
+  name: z.string().trim().min(1).max(120),
+  /** null / absent = a root folder of this program's library. */
+  parent_id: z.string().nullish(),
+});
+
+const _collectionRenameSchema = z.object({
+  program_id: z.string().optional(),
+  name: z.string().trim().min(1).max(120),
+});
+
+const _collectionSharesSchema = z.object({
+  program_id: z.string().optional(),
+  // NO DEFAULTS, for the reason _bulkSharesSchema gives: absent means "not mine
+  // to say", empty array means "none of this kind". A role holding only
+  // share_member must not revoke the club grants a content manager made.
+  club_program_ids: z.array(z.string()).optional(),
+  profile_ids: z.array(z.string()).optional(),
+  app_keys: z.array(z.string()).optional(),
+});
+
+const _fileIntoFolderSchema = z.object({
+  program_id: z.string().optional(),
+  // The object is the PATH param. It was briefly required in the body too, which
+  // meant every well-formed request was rejected for omitting a value the URL
+  // already carried.
+  /** The folders this object should be filed under. Empty = unfile it. */
+  collection_ids: z.array(z.string()),
+});
+
+/**
+ * Does this caller GOVERN the library, or were they invited into part of it?
+ *
+ * The distinction decides whether folder grants confine them. A content manager
+ * curates the whole library and must keep seeing all of it even after somebody
+ * shares a folder with them; a Content Editor who was handed one folder must see
+ * that folder and nothing else.
+ *
+ * Keyed on the capabilities that ACT on the library as a whole rather than on
+ * `library.console`, which only means "may open this screen" — every one of these
+ * people holds console too, so using it here would exempt everybody and confine
+ * nobody.
+ */
+export function _governsLibrary(eff: { capabilities: string[]; fineGrained?: boolean }): boolean {
+  // A role with no fine-grained capabilities at all is an ungated admin (see
+  // _requireLearningCap) — not a confined viewer.
+  if (eff.fineGrained === false) return true;
+  return (
+    eff.capabilities.includes("learning.library.folder_manage") ||
+    eff.capabilities.includes("learning.library.share_club") ||
+    eff.capabilities.includes("learning.library.share_member") ||
+    eff.capabilities.includes("learning.library.share_app") ||
+    eff.capabilities.includes("learning.roles.delegate")
+  );
+}
+
+/**
+ * Which folders may this caller see — null meaning "all of them".
+ *
+ * CONFINEMENT IS DERIVED FROM HAVING BEEN GIVEN FOLDERS, not from lacking a
+ * capability. Someone with no folder grants is unaffected and sees what they
+ * always saw; the moment a content manager hands them specific folders, those
+ * folders become the whole of their library. That ordering matters twice over:
+ *
+ *   - It cannot regress anyone. No existing role has folder grants, so no
+ *     existing role changes behaviour when this ships.
+ *   - It says what the person sharing meant. "Give Nitin the B2F3 folder" is a
+ *     statement about what Nitin should see, and reading it as "…in addition to
+ *     everything else" would make the gesture pointless.
+ *
+ * A governing role is exempt, so a content manager who shares a folder with
+ * themselves does not thereby lock themselves out of the rest of the library.
+ *
+ * Returns a Set of ids INCLUDING every descendant, because a grant names one
+ * folder and means its subtree.
+ */
+async function _libraryFolderScope(
+  access: ResolvedPlatformAccess,
+  eff: { capabilities: string[]; fineGrained?: boolean; clubRoleId?: string | null },
+): Promise<Set<string> | null> {
+  if (_governsLibrary(eff)) return null;
+  const programId = access.programId;
+  const clubIds = access.profileId
+    ? await graph.clubIdsForProfile(access.orgId, access.profileId).catch(() => [] as string[])
+    : [];
+  if (access.partnerProgramId) clubIds.push(access.partnerProgramId);
+  const roots = await graph.grantedCollectionRootsFor(access.orgId, programId, {
+    profileId: access.profileId ?? null,
+    clubIds,
+    // The club role's id, for grants addressed to a role rather than a person.
+    roleIds: (eff as { clubRoleId?: string | null }).clubRoleId
+      ? [(eff as { clubRoleId?: string | null }).clubRoleId as string]
+      : [],
+  });
+  if (!roots.length) return null;
+  return new Set(await graph.collectionSubtreeIds(access.orgId, roots));
+}
+
+/**
+ * This program's folder tree, plus who each folder is shared with.
+ *
+ * Shares ride along rather than sitting behind a second request, because the
+ * screen draws a share state per row and a request per folder would be a
+ * waterfall for one render. They are omitted for a caller who may not see them —
+ * a folder-confined viewer has no business reading the guest list of a folder
+ * they were invited to.
+ */
+platformRouter.get("/learning/collections", async (c) => {
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const scope = await _libraryFolderScope(access, eff);
+  const all = await graph
+    .listLearningCollections(access.orgId, access.programId)
+    .catch(() => [] as Row[]);
+
+  // Confinement hides the folder AND its ancestors' contents, but the ancestors
+  // themselves have to stay in the payload or the client cannot draw a path to
+  // what it is allowed to open. They are marked, not silently included.
+  const visible = scope ? all.filter((f) => scope.has(String(f.id))) : all;
+  const byId = new Map(all.map((f) => [String(f.id), f]));
+  const withAncestors = new Map(visible.map((f) => [String(f.id), { row: f, reachable: true }]));
+  if (scope) {
+    for (const f of visible) {
+      let pid = (f.parent_id as string | null) ?? null;
+      while (pid && byId.has(pid) && !withAncestors.has(pid)) {
+        withAncestors.set(pid, { row: byId.get(pid)!, reachable: false });
+        pid = (byId.get(pid)!.parent_id as string | null) ?? null;
+      }
+    }
+  }
+
+  const ids = [...withAncestors.keys()];
+  const canSeeShares =
+    eff.capabilities.includes("learning.library.share_view") ||
+    eff.capabilities.includes("learning.library.share_club") ||
+    eff.capabilities.includes("learning.library.share_member") ||
+    eff.capabilities.includes("learning.library.share_app") ||
+    eff.fineGrained === false;
+  const grants = canSeeShares
+    ? await graph.listCollectionGrants(access.orgId, ids).catch(() => [] as Row[])
+    : [];
+  const of = (cid: string, kind: string) =>
+    grants.filter((g) => g.collection_id === cid && g.subject_type === kind)
+      .map((g) => String(g.subject_id));
+
+  return c.json({
+    // `confined` tells the client the truth about its own view, so a screen can
+    // say "shared with you" instead of implying this is the whole library.
+    confined: scope !== null,
+    folders: [...withAncestors.values()].map(({ row, reachable }) => ({
+      id: String(row.id),
+      name: (row.name as string) ?? "",
+      parent_id: (row.parent_id as string | null) ?? null,
+      created_at: (row.created_at as string | null) ?? null,
+      // False for an ancestor included only so a path can be drawn: the folder
+      // is a signpost, not something this caller may open.
+      reachable,
+      clubs: of(String(row.id), "club"),
+      people: of(String(row.id), "profile"),
+      granted_apps: of(String(row.id), "app"),
+    })),
+  });
+});
+
+platformRouter.post("/learning/collections", async (c) => {
+  const req = parseBody(_collectionCreateSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  _requireLearningCapStrict(eff, "learning.library.folder_manage", null);
+  const id = `lcol-${randomUUID()}`;
+  const row = await graph.createLearningCollection(access.orgId, access.programId, {
+    id,
+    name: req.name.trim(),
+    parentId: req.parent_id ?? null,
+    createdBy: access.profileId ?? null,
+  });
+  // Null means the parent was not ours — a 404 rather than a 403, because the
+  // caller should not learn from this endpoint whether a foreign folder id exists.
+  if (!row) throw new HttpError(404, "Parent folder not found");
+  return c.json({
+    id: String(row.id),
+    name: (row.name as string) ?? "",
+    parent_id: (row.parent_id as string | null) ?? null,
+  });
+});
+
+platformRouter.patch("/learning/collections/:id", async (c) => {
+  const req = parseBody(_collectionRenameSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  _requireLearningCapStrict(eff, "learning.library.folder_manage", null);
+  const row = await graph.renameLearningCollection(
+    access.orgId, c.req.param("id"), req.name.trim(),
+  );
+  if (!row) throw new HttpError(404, "Folder not found");
+  return c.json({ id: String(row.id), name: (row.name as string) ?? "" });
+});
+
+platformRouter.delete("/learning/collections/:id", async (c) => {
+  const { access, eff } = await _learningMember(c, c.req.query("program_id") ?? null);
+  _requireLearningCapStrict(eff, "learning.library.folder_manage", null);
+  const ok = await graph.deleteLearningCollection(access.orgId, c.req.param("id"));
+  if (!ok) throw new HttpError(404, "Folder not found");
+  // Said out loud in the response because the cascade is the surprising part:
+  // subfolders go, filed content does not.
+  return c.json({ ok: true, content_kept: true });
+});
+
+/**
+ * Share a folder — and with it everything inside, now and later.
+ *
+ * The per-kind capability checks are the same three as /learning/shares/bulk,
+ * because they are the same three decisions: a club is a standing group whose
+ * administrators decide onward, a person is one named individual, an app hands a
+ * catalogue to whoever runs it. Checked on PRESENCE, so revoking a kind needs the
+ * capability that granted it.
+ *
+ * The subject checks are the same too — a club must be a club of this program, a
+ * person must belong to this program or one of its clubs. Sharing a folder must
+ * not reach further than sharing a single object does.
+ */
+platformRouter.put("/learning/collections/:id/shares", async (c) => {
+  const req = parseBody(_collectionSharesSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const touchesClubs = req.club_program_ids !== undefined;
+  const touchesPeople = req.profile_ids !== undefined;
+  const touchesApps = req.app_keys !== undefined;
+  if (!touchesClubs && !touchesPeople && !touchesApps) {
+    throw new HttpError(422, "Nothing to change: name at least one of clubs, people or apps");
+  }
+  if (touchesClubs) _requireLearningCapStrict(eff, "learning.library.share_club", null);
+  if (touchesPeople) _requireLearningCapStrict(eff, "learning.library.share_member", null);
+  if (touchesApps) _requireLearningCapStrict(eff, "learning.library.share_app", null);
+
+  const appKeys = req.app_keys ?? [];
+  const unknownApps = appKeys.filter((k) => !CONTENT_APP_TARGET_KEYS.has(k));
+  if (unknownApps.length) throw new HttpError(422, `Unknown app: ${unknownApps.join(", ")}`);
+
+  const clubs = await _clubIdsFor(access);
+  const unknownClubs = (req.club_program_ids ?? []).filter((id) => !clubs.has(id));
+  if (unknownClubs.length) {
+    throw new HttpError(422, `Not a club of this program: ${unknownClubs.join(", ")}`);
+  }
+  const profileIds = req.profile_ids ?? [];
+  if (profileIds.length) {
+    const allowed = new Set<string>();
+    const own = await graph
+      .listProgramMembers(access.orgId, access.partnerProgramId ?? access.programId)
+      .catch(() => [] as Row[]);
+    for (const m of own) if (m.profile_id) allowed.add(String(m.profile_id));
+    for (const clubId of clubs) {
+      const members = await graph.listProgramMembers(access.orgId, clubId).catch(() => [] as Row[]);
+      for (const m of members) if (m.profile_id) allowed.add(String(m.profile_id));
+    }
+    const strangers = profileIds.filter((p) => !allowed.has(p));
+    if (strangers.length) {
+      throw new HttpError(422, `Not a member of this program or its clubs: ${strangers.join(", ")}`);
+    }
+  }
+
+  const ok = await graph.setCollectionGrants(
+    access.orgId,
+    c.req.param("id"),
+    {
+      ...(touchesClubs ? { clubs: req.club_program_ids } : {}),
+      ...(touchesPeople ? { profiles: req.profile_ids } : {}),
+      ...(touchesApps ? { apps: req.app_keys } : {}),
+    },
+    access.profileId ?? null,
+  );
+  if (!ok) throw new HttpError(404, "Folder not found");
+  return c.json({ ok: true });
+});
+
+/**
+ * File a Studio object into program-library folders.
+ *
+ * This is the Studio's "publish into the Content Library" — the gesture a club
+ * mentor makes when they pick a tutorial and put it in B2F3 › Tutorials. It sets
+ * folder membership on an object that already exists; it never creates content,
+ * and it never creates a folder.
+ *
+ * ONLY FOLDERS THE CALLER CAN ALREADY SEE. A mentor confined to B2F3's subtree
+ * can file into B2F3 and its four subfolders and nowhere else. Without this check
+ * `collection_ids` would be an arbitrary list of ids from the body, and filing
+ * would be a way to put content into a folder that was never shared with you —
+ * a write that reaches where the matching read cannot.
+ */
+platformRouter.put("/learning/objects/:object_id/folders", async (c) => {
+  const req = parseBody(_fileIntoFolderSchema, await c.req.json());
+  const { access, eff } = await _learningMember(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  _requireLearningCapStrict(
+    eff, "learning.library.file_content", (object.type as string | null) ?? null,
+  );
+
+  const wanted = [...new Set(req.collection_ids.filter(Boolean))];
+  const all = await graph.listLearningCollections(access.orgId, access.programId);
+  const known = new Map(all.map((f) => [String(f.id), (f.name as string) ?? ""]));
+  const unknown = wanted.filter((id) => !known.has(id));
+  if (unknown.length) throw new HttpError(422, `Not a folder of this library: ${unknown.join(", ")}`);
+
+  const scope = await _libraryFolderScope(access, eff);
+  if (scope) {
+    const outside = wanted.filter((id) => !scope.has(id));
+    if (outside.length) {
+      throw new HttpError(
+        403,
+        `That folder was not shared with you: ${outside.map((i) => known.get(i) ?? i).join(", ")}`,
+      );
+    }
+  }
+
+  const ok = await graph.setLearningObjectFolders(
+    access.orgId,
+    c.req.param("object_id"),
+    wanted,
+    wanted.map((id) => known.get(id) ?? ""),
+  );
+  if (!ok) throw new HttpError(404, "Content not found");
+  return c.json({ ok: true, collection_ids: wanted, collection_names: wanted.map((id) => known.get(id) ?? "") });
+});
 
 platformRouter.get("/learning/app-admins", async (c) => {
   const { access } = await _libraryReader(c, c.req.query("program_id") ?? null);

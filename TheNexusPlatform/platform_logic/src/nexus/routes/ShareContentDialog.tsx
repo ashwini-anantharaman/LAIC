@@ -33,6 +33,7 @@ import { toast } from "sonner";
 import {
   listShareTargets,
   setContentShares,
+  setFolderShares,
   type ClubMember,
   type LibraryObject,
   type ShareableClub,
@@ -61,6 +62,7 @@ function triFor(objects: LibraryObject[], pick: (o: LibraryObject) => string[], 
 export function ShareContentDialog({
   programId,
   objects,
+  folder,
   label,
   canShareClubs = true,
   canShareMembers = true,
@@ -71,6 +73,18 @@ export function ShareContentDialog({
   programId: string;
   /** The items being shared — one, a folder's worth, or a whole selection. */
   objects: LibraryObject[];
+  /**
+   * Set to share THE FOLDER ITSELF rather than the items in it.
+   *
+   * The two are genuinely different promises. Sharing a folder's current contents
+   * names the items that happen to be in it today; sharing the folder means it and
+   * everything inside, now and later — so content added tomorrow is covered
+   * without anyone revisiting this dialog. That is what "give these three people
+   * the B2F3 folder" is asking for, and per-item grants cannot express it.
+   *
+   * Every box reads on or off, never "some": one folder has one answer.
+   */
+  folder?: { id: string; name: string; clubs: string[]; people: string[]; granted_apps: string[] };
   /** What the person thinks they are sharing ("Opening Bids", "4 folders"). */
   label: string;
   /**
@@ -116,14 +130,25 @@ export function ShareContentDialog({
         const inClubs = new Set(cs.flatMap((c) => c.members.map((m) => m.profile_id)));
         const alone = programMembers.filter((m) => !inClubs.has(m.profile_id));
         setLoners(alone);
+        // A folder answers for itself; a selection of objects answers per object
+        // and can therefore be mixed.
+        const triClub = (id: string): Tri =>
+          folder ? (folder.clubs.includes(id) ? "on" : "off") : triFor(objects, (o) => o.clubs, id);
+        const triPerson = (id: string): Tri =>
+          folder ? (folder.people.includes(id) ? "on" : "off") : triFor(objects, (o) => o.people, id);
+        const triApp = (id: string): Tri =>
+          folder
+            ? (folder.granted_apps.includes(id) ? "on" : "off")
+            : triFor(objects, (o) => o.granted_apps, id);
+
         const c = new Map<string, Tri>();
         const p = new Map<string, Tri>();
         for (const club of cs) {
-          const t = triFor(objects, (o) => o.clubs, club.id);
+          const t = triClub(club.id);
           c.set(club.id, t);
           initialClubs.set(club.id, t);
           for (const m of club.members) {
-            const mt = triFor(objects, (o) => o.people, m.profile_id);
+            const mt = triPerson(m.profile_id);
             p.set(m.profile_id, mt);
             initialPeople.set(m.profile_id, mt);
           }
@@ -131,7 +156,7 @@ export function ShareContentDialog({
         // Seed the unaffiliated people too, or their boxes would read "off" for
         // someone who already holds a grant.
         for (const m of alone) {
-          const mt = triFor(objects, (o) => o.people, m.profile_id);
+          const mt = triPerson(m.profile_id);
           p.set(m.profile_id, mt);
           initialPeople.set(m.profile_id, mt);
         }
@@ -139,7 +164,7 @@ export function ShareContentDialog({
         setPeopleState(p);
         const ap = new Map<string, Tri>();
         for (const app of CONTENT_APP_TARGETS) {
-          const t = triFor(objects, (o) => o.granted_apps, app.key);
+          const t = triApp(app.key);
           ap.set(app.key, t);
           initialApps.set(app.key, t);
         }
@@ -151,7 +176,7 @@ export function ShareContentDialog({
     return () => {
       live = false;
     };
-  }, [programId, objects, initialClubs, initialPeople, initialApps]);
+  }, [programId, objects, folder, initialClubs, initialPeople, initialApps]);
 
   const toggle = (m: Map<string, Tri>, set: (n: Map<string, Tri>) => void, id: string) => {
     const next = new Map(m);
@@ -193,14 +218,19 @@ export function ShareContentDialog({
       const appIds = canShareApps
         ? [...appState].filter(([, v]) => v === "on").map(([k]) => k)
         : undefined;
-      const res = await setContentShares(
-        programId, objects.map((o) => o.id), clubIds, personIds, appIds,
-      );
-      toast.success(
-        res.skipped?.length
-          ? `Shared ${res.shared} — ${res.skipped.length} couldn't be updated`
-          : `Sharing updated for ${res.shared} ${res.shared === 1 ? "item" : "items"}`,
-      );
+      if (folder) {
+        await setFolderShares(programId, folder.id, clubIds, personIds, appIds);
+        toast.success(`\u201c${folder.name}\u201d and everything in it`);
+      } else {
+        const res = await setContentShares(
+          programId, objects.map((o) => o.id), clubIds, personIds, appIds,
+        );
+        toast.success(
+          res.skipped?.length
+            ? `Shared ${res.shared} — ${res.skipped.length} couldn't be updated`
+            : `Sharing updated for ${res.shared} ${res.shared === 1 ? "item" : "items"}`,
+        );
+      }
       onSaved();
       onClose();
     } catch (e) {
@@ -236,11 +266,19 @@ export function ShareContentDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-md">
         <DialogHeader>
-          <DialogTitle>Share &ldquo;{label}&rdquo;</DialogTitle>
+          <DialogTitle>
+            {folder ? `Share the \u201c${folder.name}\u201d folder` : `Share \u201c${label}\u201d`}
+          </DialogTitle>
           <DialogDescription>
-            {objects.length === 1
-              ? "Choose the clubs and people who can see this."
-              : `Choose the clubs and people who can see these ${objects.length} items.`}
+            {/* Said plainly, because it is the part that surprises people: a
+                folder share covers what is added later, and a per-item share
+                does not. Someone choosing between the two needs to know that
+                before they pick, not after. */}
+            {folder
+              ? "Whoever you choose sees this folder, its subfolders, and everything filed inside — including content added later."
+              : objects.length === 1
+                ? "Choose the clubs and people who can see this."
+                : `Choose the clubs and people who can see these ${objects.length} items.`}
           </DialogDescription>
         </DialogHeader>
 

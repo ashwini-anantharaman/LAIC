@@ -1747,6 +1747,114 @@ export async function listShareableClubs(programId: string): Promise<ShareableCl
 }
 
 /** Reconcile club and person grants across a selection. Whole-set, not a delta. */
+// ── Content Library folders ────────────────────────────────────────────────
+//
+// Folders are server rows (migration 0012). Before that they lived in the
+// Studio's localStorage per author, so an empty folder could not exist, two
+// people saw two trees, and a folder could not be shared as a folder. The tab
+// still shows legacy name-only folders derived from what content carries, so
+// nothing an author already filed disappears — see ContentLibraryTab.
+
+export interface LibraryFolder {
+  id: string;
+  name: string;
+  /** null = a root folder of this program's library. */
+  parent_id: string | null;
+  created_at: string | null;
+  /** False for a folder included ONLY so a path can be drawn to a granted
+   *  descendant. A signpost, not something this caller may open. */
+  reachable: boolean;
+  clubs: string[];
+  people: string[];
+  granted_apps: string[];
+}
+
+export interface LibraryFolderTree {
+  /** True when specific folders were shared with this caller and those folders
+   *  are therefore the whole of their library. The screen says so out loud
+   *  rather than implying it is looking at everything. */
+  confined: boolean;
+  folders: LibraryFolder[];
+}
+
+export async function getLibraryFolders(programId: string): Promise<LibraryFolderTree> {
+  const r = await request<{ confined?: boolean; folders?: LibraryFolder[] }>(
+    `/api/platform/learning/collections?program_id=${encodeURIComponent(programId)}`,
+  );
+  return { confined: r.confined ?? false, folders: r.folders ?? [] };
+}
+
+export async function createLibraryFolder(
+  programId: string,
+  name: string,
+  parentId: string | null,
+): Promise<LibraryFolder> {
+  return request(`/api/platform/learning/collections`, {
+    method: "POST",
+    body: JSON.stringify({ program_id: programId, name, parent_id: parentId }),
+  });
+}
+
+export async function renameLibraryFolder(
+  programId: string,
+  folderId: string,
+  name: string,
+): Promise<{ id: string; name: string }> {
+  return request(`/api/platform/learning/collections/${encodeURIComponent(folderId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ program_id: programId, name }),
+  });
+}
+
+/** Removes the folder and its subfolders. Filed content is kept, and unfiled. */
+export async function deleteLibraryFolder(programId: string, folderId: string): Promise<void> {
+  await request(
+    `/api/platform/learning/collections/${encodeURIComponent(folderId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Share a folder — and with it everything inside, now and later.
+ *
+ * Same `undefined` means untouched / `[]` means revoked contract as
+ * setContentShares, and for the same partial-authority reason.
+ */
+export async function setFolderShares(
+  programId: string,
+  folderId: string,
+  clubProgramIds: string[] | undefined,
+  profileIds: string[] | undefined,
+  appKeys: string[] | undefined,
+): Promise<void> {
+  await request(`/api/platform/learning/collections/${encodeURIComponent(folderId)}/shares`, {
+    method: "PUT",
+    body: JSON.stringify({
+      program_id: programId,
+      ...(clubProgramIds !== undefined ? { club_program_ids: clubProgramIds } : {}),
+      ...(profileIds !== undefined ? { profile_ids: profileIds } : {}),
+      ...(appKeys !== undefined ? { app_keys: appKeys } : {}),
+    }),
+  });
+}
+
+/**
+ * File a Studio object into program-library folders. Empty list = unfile it.
+ *
+ * The server accepts only folders the caller can already see, so this can place
+ * content but never reach a folder that was not shared with them.
+ */
+export async function setObjectFolders(
+  programId: string,
+  objectId: string,
+  collectionIds: string[],
+): Promise<{ collection_ids: string[]; collection_names: string[] }> {
+  return request(`/api/platform/learning/objects/${encodeURIComponent(objectId)}/folders`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, collection_ids: collectionIds }),
+  });
+}
+
 /**
  * Reconcile grants. A kind passed as `undefined` is OMITTED from the request and
  * left untouched by the server; an empty array revokes that kind.

@@ -79,6 +79,8 @@ const LIBRARY_CAPABILITIES = [
   "learning.publish.app_target",
   "learning.app.publish_club",
   "learning.library.upload",
+  "learning.library.folder_manage",
+  "learning.library.file_content",
 ] as const;
 
 const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
@@ -100,6 +102,8 @@ const SUBROLE_LABELS: Record<string, string> = {
   "learning.publish.app_target": "Publish content to an app",
   "learning.app.publish_club": "Choose which club sees content on the app",
   "learning.library.upload": "Add files to the library",
+  "learning.library.folder_manage": "Create and organize folders",
+  "learning.library.file_content": "Publish Studio content into a folder",
 };
 
 const SUBROLE_HINTS: Record<string, string> = {
@@ -111,6 +115,10 @@ const SUBROLE_HINTS: Record<string, string> = {
   "learning.publish.app_target": "The publish dialog. Stronger than sharing — it goes live in the app.",
   "learning.app.publish_club": "Narrow a publish to one club instead of everyone on the app.",
   "learning.library.upload": "Upload or link a PDF, image or video, and file it into folders.",
+  "learning.library.folder_manage":
+    "Make, rename and remove folders. Folders only \u2014 never content. Removing one keeps what was inside.",
+  "learning.library.file_content":
+    "Take a tutorial from the Content Studio and put it in a folder here. Only folders they can already see.",
 };
 
 const capsOf = (r: SubRole): string[] => {

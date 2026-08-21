@@ -13,28 +13,38 @@
  * so ticking two overlapping folders must not share the same item twice or count it
  * twice. The folder checkboxes are a view onto a set of ids.
  *
- * NOTHING IS CREATED HERE — no content, no folders. This tab governs an existing
- * library: who each piece reaches, and which app it publishes to. Authoring lives
- * in the Content Studio, and the split is the point rather than a limitation, so
- * there is no New button to imply otherwise.
+ * NO CONTENT IS CREATED HERE. Authoring lives in the Content Studio and the split
+ * is the point, so there is no New button for content. FOLDERS are different, and
+ * are made here: organising a library is governance, not authoring, and a folder
+ * has to exist before anything can be filed into it or granted through it.
  *
- * It is also what the data allows. Folders live in the Studio's localStorage, per
- * author (objectCollectionsStore.ts) — no collections table, no API. Nexus can SEE
- * them only because each object carries its folder ids and names (migration 0003
- * denormalises them). Two consequences worth knowing while reading this file:
- * nesting is invisible here (parentId never leaves the Studio), and two authors can
- * see different folders for the same content.
+ * FOLDERS ARE REAL ROWS NOW (migration 0012). They used to live only in the
+ * Studio's localStorage per author, which meant an empty folder could not exist,
+ * two people saw two trees, and a folder could not be shared as a folder. This
+ * screen reads the server tree and nests properly.
+ *
+ * LEGACY FOLDERS STILL SHOW. Content filed before 0012 carries a folder NAME and a
+ * Studio-local id that matches no server row (migration 0003 denormalises both).
+ * Those are listed beside the real folders, marked, and are not shareable — there
+ * is no row to grant. Hiding them would make content an author had filed look lost.
+ *
+ * SHARING A FOLDER IS NOT SHARING ITS CONTENTS. The folder grant covers the
+ * subtree and everything added to it later; a per-item share names today's items.
+ * Both are offered because both are real intentions, and the dialog says which
+ * one is happening.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
-  ChevronRight, Check, FileText, Film, Folder, Image as ImageIcon, Link2, Loader2,
-  Plus, RefreshCw, Search, Share2, Send, Smartphone, Trash2, User, Users,
+  ChevronRight, Check, FileText, Film, Folder, FolderPlus, Image as ImageIcon, Link2,
+  Loader2, Pencil, Plus, RefreshCw, Search, Share2, Send, Smartphone, Trash2, User, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  deleteLibraryAsset, getContentLibrary, type LibraryAsset, type LibraryObject,
+  createLibraryFolder, deleteLibraryAsset, deleteLibraryFolder, getContentLibrary,
+  getLibraryFolders, renameLibraryFolder, type LibraryAsset, type LibraryFolder,
+  type LibraryObject,
 } from "@/services/api";
 import { useProgramAccess } from "@/nexus/access";
 import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
@@ -42,6 +52,9 @@ import { PageHeader, EmptyState } from "@/nexus/ui/kit";
 import { Button } from "@/app/components/ui/button";
 import { Input } from "@/app/components/ui/input";
 import { cn } from "@/app/components/ui/utils";
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/app/components/ui/dialog";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 import { AddLibraryFileDialog } from "@/nexus/routes/AddLibraryFileDialog";
@@ -56,6 +69,16 @@ interface FolderGroup {
   /** Files filed into this folder. They share the folder and nothing else — a
    *  file has no clubs, no apps and no publish state (see migration 0011). */
   assets: LibraryAsset[];
+  /**
+   * The server row, when this folder is one (migration 0012). Absent for the two
+   * kinds of folder that are not rows: "Unfiled", and a legacy folder that exists
+   * only as a name on the content filed into it. Only a real folder can be
+   * renamed, deleted, nested into, or shared as a folder — there is nothing to
+   * grant otherwise, and offering the action would produce a 404 on save.
+   */
+  row?: LibraryFolder;
+  /** Subfolder count, so a row can say "3 folders" without opening it. */
+  childCount: number;
 }
 
 const ASSET_ICON: Record<string, typeof FileText> = {
@@ -111,6 +134,78 @@ function ReachSummary({ o }: { o: LibraryObject }) {
   );
 }
 
+/**
+ * Name a folder — used for both creating and renaming.
+ *
+ * One component for both because the difference between them is a starting value
+ * and a verb, and two near-identical dialogs drift apart the first time one gets
+ * a fix. The error is shown IN the dialog rather than as a toast that dismisses
+ * itself: a duplicate name is something to correct here, with the typed name
+ * still on screen, not something to be told about after the dialog has gone.
+ */
+function FolderNameDialog({
+  title,
+  description,
+  confirmLabel,
+  initial = "",
+  onClose,
+  onSubmit,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  initial?: string;
+  onClose: () => void;
+  onSubmit: (name: string) => Promise<void>;
+}) {
+  const [name, setName] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const trimmed = name.trim();
+  const unchanged = trimmed === initial.trim();
+
+  async function go() {
+    if (!trimmed || unchanged) return;
+    setBusy(true);
+    setErr(null);
+    try {
+      await onSubmit(trimmed);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Couldn't save that name");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
+        </DialogHeader>
+        <Input
+          autoFocus
+          value={name}
+          onChange={(e) => { setName(e.target.value); setErr(null); }}
+          onKeyDown={(e) => { if (e.key === "Enter") void go(); }}
+          placeholder="Folder name"
+          maxLength={120}
+          aria-invalid={err ? true : undefined}
+        />
+        {err && <p className="text-sm text-destructive">{err}</p>}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
+          <Button onClick={() => void go()} disabled={busy || !trimmed || unchanged}>
+            {busy && <Loader2 className="size-4 animate-spin" />} {confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ContentLibraryTab() {
   const { programId = "" } = useParams();
   const access = useProgramAccess(programId);
@@ -136,14 +231,28 @@ export function ContentLibraryTab() {
   const canDelegate = can("learning.roles.delegate");
   const canUpload = can("learning.library.upload");
 
+  const canManageFolders = can("learning.library.folder_manage");
+
   const [view, setView] = useState<"content" | "roles">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
-  /** null = at the root, showing folders. */
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  /**
+   * Where we are, as a path of folder ids from the root. Empty = the root.
+   *
+   * A path rather than a single "open folder", because folders nest now: the
+   * breadcrumb has to be able to say B2F3 › Tutorials and walk back to either.
+   */
+  const [path, setPath] = useState<string[]>([]);
+  /** Server folder rows (migration 0012), and whether this viewer is confined. */
+  const [serverFolders, setServerFolders] = useState<LibraryFolder[]>([]);
+  const [confined, setConfined] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [sharing, setSharing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
+  /** Sharing THE FOLDER — the subtree and everything added later. */
+  const [sharingFolder, setSharingFolder] = useState<LibraryFolder | null>(null);
+  const [newFolder, setNewFolder] = useState<{ parentId: string | null; parentName: string } | null>(null);
+  const [renaming, setRenaming] = useState<LibraryFolder | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
@@ -160,11 +269,16 @@ export function ContentLibraryTab() {
 
   const load = useCallback(() => {
     setError(null);
-    return getContentLibrary(programId)
-      .then((r) => {
-        setObjects(r.objects);
-        setAssets(r.assets);
-        setAdministers(r.administersApps);
+    // Both in one round trip's worth of waiting. The tree is what the screen
+    // draws and the content is what fills it, so showing one without the other
+    // would render a library that looks empty or folderless for a beat.
+    return Promise.all([getContentLibrary(programId), getLibraryFolders(programId)])
+      .then(([lib, tree]) => {
+        setObjects(lib.objects);
+        setAssets(lib.assets);
+        setAdministers(lib.administersApps);
+        setServerFolders(tree.folders);
+        setConfined(tree.confined);
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Couldn't load this program's content"),
@@ -176,51 +290,125 @@ export function ContentLibraryTab() {
     void load();
   }, [load]);
 
-  // One object can belong to several folders, so it appears under each — the same
-  // rule the Studio's library follows, and the reason selection is by object id.
-  const folders = useMemo<FolderGroup[]>(() => {
+  const currentId = path.length ? path[path.length - 1] : null;
+  const folderById = useMemo(
+    () => new Map(serverFolders.map((f) => [f.id, f])),
+    [serverFolders],
+  );
+
+  // A folder id that came back as a server row, so legacy name-only folders can
+  // be told apart from real ones without a second pass per object.
+  const serverIds = useMemo(() => new Set(serverFolders.map((f) => f.id)), [serverFolders]);
+
+  /**
+   * What is at the current location: subfolders, then the content filed here.
+   *
+   * THE ROOT IS NOT A FOLDER, so it is assembled differently: real root folders,
+   * plus the legacy name-only folders, plus Unfiled. Inside a folder the answer is
+   * simply its children and its contents.
+   *
+   * Filed-here is decided by ID, not name. Two folders may legitimately share a
+   * name in different parents ("Tutorials" under two clubs), and matching on the
+   * name would pour both into whichever the viewer happened to open.
+   */
+  const { subfolders, hereObjects, hereAssets } = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const list = (objects ?? []).filter((o) => (q ? o.title.toLowerCase().includes(q) : true));
-    const byKey = new Map<string, FolderGroup>();
-    const blank = (key: string, name: string): FolderGroup => ({
-      key, name: name === UNFILED ? "Unfiled" : name, objects: [], assets: [],
+    const objs = (objects ?? []).filter((o) => (q ? o.title.toLowerCase().includes(q) : true));
+    const files = assets.filter((a) => (q ? a.title.toLowerCase().includes(q) : true));
+
+    const childrenOf = (parent: string | null) =>
+      serverFolders.filter((f) => (f.parent_id ?? null) === parent);
+    const countChildren = (id: string) =>
+      serverFolders.filter((f) => (f.parent_id ?? null) === id).length;
+    const objectsIn = (id: string) => objs.filter((o) => o.collection_ids.includes(id));
+    const assetsIn = (id: string) => files.filter((a) => a.collection_ids.includes(id));
+
+    const group = (row: LibraryFolder): FolderGroup => ({
+      key: row.id,
+      name: row.name,
+      objects: objectsIn(row.id),
+      assets: assetsIn(row.id),
+      row,
+      childCount: countChildren(row.id),
     });
-    for (const o of list) {
-      const names = o.collection_names.length ? o.collection_names : [UNFILED];
-      names.forEach((name, i) => {
-        const key = o.collection_ids[i] ?? name;
-        const g = byKey.get(key) ?? blank(key, name);
-        g.objects.push(o);
-        byKey.set(key, g);
+
+    if (currentId) {
+      return {
+        subfolders: childrenOf(currentId).map(group),
+        hereObjects: objectsIn(currentId),
+        hereAssets: assetsIn(currentId),
+      };
+    }
+
+    // At the root. Real folders first, then whatever only exists as a name.
+    const groups: FolderGroup[] = childrenOf(null).map(group);
+
+    // LEGACY: a folder name carried on content whose id matches no server row.
+    // Keyed by name because that is all these ever had — the Studio-local id is
+    // per browser and tells two authors' folders apart when they are the same one.
+    const legacy = new Map<string, FolderGroup>();
+    const addLegacy = (name: string, o?: LibraryObject, a?: LibraryAsset) => {
+      const g = legacy.get(name) ?? { key: `legacy:${name}`, name, objects: [], assets: [], childCount: 0 };
+      if (o) g.objects.push(o);
+      if (a) g.assets.push(a);
+      legacy.set(name, g);
+    };
+    const unfiledObjects: LibraryObject[] = [];
+    for (const o of objs) {
+      const known = o.collection_ids.filter((id) => serverIds.has(id));
+      if (known.length) continue; // lives in a real folder; shown there
+      const names = o.collection_names.filter(Boolean);
+      if (!names.length) { unfiledObjects.push(o); continue; }
+      for (const n of names) addLegacy(n, o, undefined);
+    }
+    const unfiledAssets: LibraryAsset[] = [];
+    for (const a of files) {
+      const known = a.collection_ids.filter((id) => serverIds.has(id));
+      if (known.length) continue;
+      const names = a.collection_names.filter(Boolean);
+      if (!names.length) { unfiledAssets.push(a); continue; }
+      for (const n of names) addLegacy(n, undefined, a);
+    }
+    groups.push(...[...legacy.values()].sort((a, b) => a.name.localeCompare(b.name)));
+    if (unfiledObjects.length || unfiledAssets.length) {
+      groups.push({
+        key: UNFILED, name: "Unfiled", objects: unfiledObjects, assets: unfiledAssets, childCount: 0,
       });
     }
-    // Files join by NAME. An asset may carry no folder id at all — a content
-    // manager can type a folder that exists in no author's Studio — so the name
-    // is the only key that reliably lands it beside the authored content.
-    const nameToKey = new Map([...byKey.values()].map((g) => [g.name, g.key]));
-    const assetList = assets.filter((a) => (q ? a.title.toLowerCase().includes(q) : true));
-    for (const a of assetList) {
-      const names = a.collection_names.length ? a.collection_names : [UNFILED];
-      for (const raw of names) {
-        const name = raw === UNFILED ? "Unfiled" : raw;
-        const key = nameToKey.get(name) ?? name;
-        const g = byKey.get(key) ?? blank(key, name);
-        if (!nameToKey.has(name)) nameToKey.set(name, key);
-        g.assets.push(a);
-        byKey.set(key, g);
-      }
-    }
-    return [...byKey.values()].sort((a, b) =>
-      a.name === "Unfiled" ? 1 : b.name === "Unfiled" ? -1 : a.name.localeCompare(b.name),
-    );
-  }, [objects, assets, query]);
+    return { subfolders: groups, hereObjects: [] as LibraryObject[], hereAssets: [] as LibraryAsset[] };
+  }, [objects, assets, query, serverFolders, serverIds, currentId]);
 
-  const openFolder = openKey ? folders.find((f) => f.key === openKey) ?? null : null;
-  // Searching while inside a folder that no longer matches would leave someone
-  // staring at an empty room with no clue why — go back to the root instead.
+  /** A legacy or Unfiled pseudo-folder opened from the root. */
+  const [openLegacy, setOpenLegacy] = useState<FolderGroup | null>(null);
+  const openFolder: FolderGroup | null = currentId
+    ? {
+        key: currentId,
+        name: folderById.get(currentId)?.name ?? "Folder",
+        objects: hereObjects,
+        assets: hereAssets,
+        row: folderById.get(currentId),
+        childCount: subfolders.length,
+      }
+    : openLegacy;
+
+  // A folder that vanished — deleted, renamed, or filtered out by a search —
+  // must not leave someone staring at an empty room with no clue why.
   useEffect(() => {
-    if (openKey && !folders.some((f) => f.key === openKey)) setOpenKey(null);
-  }, [openKey, folders]);
+    if (path.length && !path.every((id) => folderById.has(id))) {
+      setPath((p) => p.filter((id) => folderById.has(id)));
+    }
+  }, [path, folderById]);
+  useEffect(() => {
+    if (openLegacy && !subfolders.some((f) => f.key === openLegacy.key)) setOpenLegacy(null);
+  }, [openLegacy, subfolders]);
+
+  /** The breadcrumb trail: every ancestor, so any level is one click away. */
+  const trail = useMemo(
+    () => path.map((id) => folderById.get(id)).filter(Boolean) as LibraryFolder[],
+    [path, folderById],
+  );
+
+  const folders = subfolders;
 
   const allIds = useMemo(
     () => [...new Set(folders.flatMap((f) => f.objects.map((o) => o.id)))],
@@ -310,8 +498,25 @@ export function ContentLibraryTab() {
                     adds material that arrives ready-made, which is why the button
                     says "file" and not "new". */}
                 {canUpload && (
-                  <Button size="sm" onClick={() => setAddingFile(true)}>
+                  <Button size="sm" variant="outline" onClick={() => setAddingFile(true)}>
                     <Plus className="size-4" /> Add file
+                  </Button>
+                )}
+                {/* FOLDER, not content — and it says so. Organising a library is
+                    governance and belongs here; authoring is the Studio's, so the
+                    label never shortens to "New". It creates into the folder that
+                    is open, which is what "new folder" means anywhere else. */}
+                {canManageFolders && (
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      setNewFolder({
+                        parentId: currentId,
+                        parentName: currentId ? (folderById.get(currentId)?.name ?? "this folder") : "the library",
+                      })
+                    }
+                  >
+                    <FolderPlus className="size-4" /> New folder
                   </Button>
                 )}
               </>
@@ -333,21 +538,38 @@ export function ContentLibraryTab() {
         <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading content…
         </div>
-      ) : objects.length === 0 ? (
+      ) : objects.length === 0 && serverFolders.length === 0 && assets.length === 0 ? (
+        // Only when there is genuinely nothing — an empty FOLDER is content-free
+        // but not nothing, and this used to swallow the whole tree the moment the
+        // program had no objects, hiding folders somebody had just made.
         <EmptyState>
           <p className="font-medium text-foreground">No content yet</p>
           <p className="mt-1">
             Content authored in the Content Studio for this program appears here, ready to share.
+            {canManageFolders && " You can create folders now and file content into them later."}
           </p>
         </EmptyState>
       ) : (
         <>
+          {/* SAY WHEN THIS IS NOT THE WHOLE LIBRARY. A confined viewer is looking
+              at the folders shared with them; letting the screen imply otherwise
+              would have them hunting for content that was never theirs. */}
+          {confined && (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-sky-300 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
+              <Users className="mt-0.5 size-4 shrink-0" />
+              <span>
+                <span className="font-semibold">Shared with you.</span> You are seeing the
+                folders someone gave you access to, not the whole library.
+              </span>
+            </div>
+          )}
+
           <div className="mb-3 flex flex-wrap items-center gap-3">
-            {/* Breadcrumb, so "where am I" is answered without a back button. */}
-            <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-sm">
+            {/* Breadcrumb across the whole path, so any ancestor is one click. */}
+            <nav aria-label="Breadcrumb" className="flex flex-wrap items-center gap-1.5 text-sm">
               <button
                 type="button"
-                onClick={() => setOpenKey(null)}
+                onClick={() => { setPath([]); setOpenLegacy(null); }}
                 className={cn(
                   "rounded px-1.5 py-0.5",
                   openFolder ? "text-muted-foreground hover:text-foreground" : "font-semibold",
@@ -355,11 +577,28 @@ export function ContentLibraryTab() {
               >
                 All folders
               </button>
-              {openFolder && (
-                <>
+              {trail.map((f, i) => (
+                <span key={f.id} className="flex items-center gap-1.5">
                   <ChevronRight className="size-3.5 text-muted-foreground" />
-                  <span className="font-semibold">{openFolder.name}</span>
-                </>
+                  <button
+                    type="button"
+                    onClick={() => setPath(path.slice(0, i + 1))}
+                    className={cn(
+                      "rounded px-1.5 py-0.5",
+                      i === trail.length - 1
+                        ? "font-semibold"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {f.name}
+                  </button>
+                </span>
+              ))}
+              {openLegacy && (
+                <span className="flex items-center gap-1.5">
+                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                  <span className="font-semibold">{openLegacy.name}</span>
+                </span>
               )}
             </nav>
 
@@ -522,6 +761,9 @@ export function ContentLibraryTab() {
                 ]
               : folders.map((f) => {
                   const ids = f.objects.map((o) => o.id);
+                  const real = f.row;
+                  const reach =
+                    (real?.clubs.length ?? 0) + (real?.people.length ?? 0) + (real?.granted_apps.length ?? 0);
                   return (
                     <div key={f.key} className="flex items-center gap-3 border-b p-3 last:border-b-0 hover:bg-accent/30">
                       <button
@@ -538,19 +780,108 @@ export function ContentLibraryTab() {
                           click that changes what Share will act on. */}
                       <button
                         type="button"
-                        onClick={() => setOpenKey(f.key)}
-                        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                        onClick={() => (real ? setPath([...path, real.id]) : setOpenLegacy(f))}
+                        disabled={real ? !real.reachable : false}
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left disabled:cursor-default"
                       >
-                        <Folder className="size-4 shrink-0 text-muted-foreground" />
-                        <span className="truncate text-sm font-medium">{f.name}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {f.objects.length} {f.objects.length === 1 ? "item" : "items"}
-                          {f.assets.length > 0 &&
-                            ` · ${f.assets.length} ${f.assets.length === 1 ? "file" : "files"}`}
+                        <Folder className={cn(
+                          "size-4 shrink-0",
+                          real?.reachable === false ? "text-muted-foreground/50" : "text-muted-foreground",
+                        )} />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span className="truncate text-sm font-medium">{f.name}</span>
+                            {/* A folder that exists only as a name on the content
+                                filed into it. Marked, because it cannot be shared,
+                                renamed or nested — there is no row to act on. */}
+                            {!real && f.key !== UNFILED && (
+                              <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                from the Studio
+                              </span>
+                            )}
+                            {real?.reachable === false && (
+                              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                                on the way to a folder you were given
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                            {f.childCount > 0 && (
+                              <span>{f.childCount} {f.childCount === 1 ? "folder" : "folders"}</span>
+                            )}
+                            <span>{f.objects.length} {f.objects.length === 1 ? "item" : "items"}</span>
+                            {f.assets.length > 0 && (
+                              <span>{f.assets.length} {f.assets.length === 1 ? "file" : "files"}</span>
+                            )}
+                            {/* WHO THE FOLDER ITSELF REACHES — distinct from who
+                                its current contents reach, and the only place the
+                                subtree grant is visible. */}
+                            {canViewShares && real && reach > 0 && (
+                              <span className="flex items-center gap-1 text-sky-700 dark:text-sky-300">
+                                <Share2 className="size-3" />
+                                folder shared with {real.clubs.length ? `${real.clubs.length} club${real.clubs.length === 1 ? "" : "s"}` : ""}
+                                {real.clubs.length && real.people.length ? ", " : ""}
+                                {real.people.length ? `${real.people.length} ${real.people.length === 1 ? "person" : "people"}` : ""}
+                              </span>
+                            )}
+                          </span>
                         </span>
                       </button>
+
+                      {/* FOLDER actions come before the content actions, because
+                          "share this folder" and "share what is in it right now"
+                          are different promises and the folder one is the outer
+                          scope. Only a real row gets them. */}
+                      {real && canViewShares && (
+                        <Button
+                          size="icon" variant="ghost"
+                          title={`Share the "${f.name}" folder itself, and everything in it`}
+                          aria-label={`Share the ${f.name} folder`}
+                          onClick={() => setSharingFolder(real)}
+                        >
+                          <Users className="size-4" />
+                        </Button>
+                      )}
+                      {real && canManageFolders && (
+                        <>
+                          <Button
+                            size="icon" variant="ghost"
+                            title={`Rename ${f.name}`} aria-label={`Rename ${f.name}`}
+                            onClick={() => setRenaming(real)}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                          <Button
+                            size="icon" variant="ghost"
+                            title={`Delete the ${f.name} folder`} aria-label={`Delete ${f.name}`}
+                            onClick={() => {
+                              void (async () => {
+                                const inside = f.childCount + f.objects.length + f.assets.length;
+                                const warn = f.childCount
+                                  ? `Delete "${f.name}" and its ${f.childCount} subfolder${f.childCount === 1 ? "" : "s"}? Content inside is kept and becomes unfiled.`
+                                  : inside
+                                    ? `Delete "${f.name}"? The ${inside} item${inside === 1 ? "" : "s"} inside are kept and become unfiled.`
+                                    : `Delete the empty folder "${f.name}"?`;
+                                if (!window.confirm(warn)) return;
+                                try {
+                                  await deleteLibraryFolder(programId, real.id);
+                                  toast.success(`Deleted \u201c${f.name}\u201d — content kept`);
+                                  reload();
+                                } catch (e) {
+                                  toast.error(e instanceof Error ? e.message : "Couldn't delete that folder");
+                                }
+                              })();
+                            }}
+                          >
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </>
+                      )}
                       {rowActions(f.objects, f.name)}
-                      <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                      <ChevronRight className={cn(
+                        "size-4 shrink-0 text-muted-foreground",
+                        real?.reachable === false && "opacity-30",
+                      )} />
                     </div>
                   );
                 })}
@@ -573,10 +904,52 @@ export function ContentLibraryTab() {
       {addingFile && (
         <AddLibraryFileDialog
           programId={programId}
-          folders={folders.map((f) => f.name)}
+          // Ids where a real folder exists, so a file lands IN it rather than
+          // beside it under a matching name — see the dialog's `folders` prop.
+          folders={folders.map((f) => ({ id: f.row?.id ?? null, name: f.name }))}
           defaultFolder={openFolder?.name ?? null}
           onClose={() => setAddingFile(false)}
           onSaved={reload}
+        />
+      )}
+      {sharingFolder && (
+        <ShareContentDialog
+          programId={programId}
+          canShareClubs={canShareClubs}
+          canShareMembers={canShareMembers}
+          canShareApps={canShareApps}
+          objects={[]}
+          folder={sharingFolder}
+          label={sharingFolder.name}
+          onClose={() => setSharingFolder(null)}
+          onSaved={reload}
+        />
+      )}
+      {newFolder && (
+        <FolderNameDialog
+          title="New folder"
+          description={`Creates a folder in ${newFolder.parentName}. Folders can be shared as a whole, so anything filed here later is covered too.`}
+          confirmLabel="Create folder"
+          onClose={() => setNewFolder(null)}
+          onSubmit={async (name) => {
+            await createLibraryFolder(programId, name, newFolder.parentId);
+            toast.success(`Created \u201c${name}\u201d`);
+            reload();
+          }}
+        />
+      )}
+      {renaming && (
+        <FolderNameDialog
+          title={`Rename \u201c${renaming.name}\u201d`}
+          description="Content stays where it is; only the folder's name changes. Anyone it was shared with keeps their access."
+          confirmLabel="Rename"
+          initial={renaming.name}
+          onClose={() => setRenaming(null)}
+          onSubmit={async (name) => {
+            await renameLibraryFolder(programId, renaming.id, name);
+            toast.success(`Renamed to \u201c${name}\u201d`);
+            reload();
+          }}
         />
       )}
       {publishing && (

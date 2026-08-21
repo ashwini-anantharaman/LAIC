@@ -3002,6 +3002,18 @@ function _isCheckViolation(e: unknown): boolean {
 }
 
 /**
+ * Postgres 23505 = unique_violation. Two folders of the same name under the same
+ * parent (0012's sibling index). Surfaced as a 409 with the name in it, because
+ * "New folder" clicked twice is a duplicate request and the person needs to know
+ * the first one worked rather than that something broke.
+ */
+function _isUniqueViolation(e: unknown): boolean {
+  const code = (e as { code?: string; cause?: { code?: string } } | null)?.code
+    ?? (e as { cause?: { code?: string } } | null)?.cause?.code;
+  return code === "23505";
+}
+
+/**
  * Postgres 42P01 = undefined_table. `learning_object_grants` arrives with 0007, and
  * a deploy that lands first must still serve every list.
  */
@@ -3813,8 +3825,15 @@ async function _publishLearningObject(
         estimated_time = excluded.estimated_time, blocks = excluded.blocks,
         tags = excluded.tags, source_ids = excluded.source_ids,
         pipeline_draft = excluded.pipeline_draft,
-        collection_ids = excluded.collection_ids,
-        collection_names = excluded.collection_names,
+        -- PRESERVE PROGRAM-LIBRARY FOLDERS. This save carries the AUTHOR'S OWN
+        -- folder ids from their browser; the 'lcol-' ids belong to the program
+        -- library and to a different endpoint entirely. Replacing the whole array
+        -- meant an autosave 2.5s after a mentor filed a tutorial into a shared
+        -- folder silently took it back out. See 0012's "TWO WRITERS" note.
+        collection_ids = learning_apply_studio_folders(
+          learning_objects.collection_ids, excluded.collection_ids, excluded.collection_names) -> 'ids',
+        collection_names = learning_apply_studio_folders(
+          learning_objects.collection_ids, excluded.collection_ids, excluded.collection_names) -> 'names',
         updated_at = now() ${pubUpdate} ${shareUpdate}
       where learning_objects.organization_id = ${orgId}
         ${programGuard}
@@ -4135,6 +4154,338 @@ export async function deleteLearningAsset(orgId: string, assetId: string): Promi
     const rows = await tx.execute(sql`
       delete from learning_assets
       where organization_id = ${orgId} and id = ${assetId}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+// ── Content Library folders (0012) ──────────────────────────────────────────
+//
+// Before 0012 a folder was a string carried on whatever content happened to be
+// filed in it, so an empty folder did not exist, two authors had two trees, and
+// nothing could be shared as a folder. These functions are the shared tree.
+//
+// One rule runs through all of them: a grant names ONE folder and means its whole
+// SUBTREE. Nothing here ever copies a grant down into children — the walk happens
+// at read time (collectionSubtreeIds), so adding a fifth subfolder tomorrow cannot
+// leave yesterday's grant describing four.
+
+/** Every folder in this program's library. The caller assembles the tree. */
+export async function listLearningCollections(
+  orgId: string,
+  programId: string | null,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, name, parent_id, created_by, created_at
+      from learning_collections
+      where organization_id = ${orgId}::uuid
+        and program_id is not distinct from ${programId}::uuid
+      order by lower(btrim(name))`);
+    return rows as unknown as Row[];
+  });
+}
+
+export async function getLearningCollection(orgId: string, id: string): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select id, name, parent_id, program_id, created_by
+      from learning_collections
+      where organization_id = ${orgId}::uuid and id = ${id}
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/**
+ * Create a folder, optionally inside another.
+ *
+ * The parent is verified to be in the SAME org and program before the insert, not
+ * trusted from the body. Without that check a caller could pass any folder id as
+ * `parent_id` and graft a subtree of their own into someone else's library — the
+ * unique-sibling index would not stop it, because a name unique under a foreign
+ * parent is still unique.
+ *
+ * Returns null when the parent is not ours; throws HttpError(409) when a sibling
+ * of that name already exists, because "New folder" clicked twice is a duplicate
+ * request, not a new folder.
+ */
+export async function createLearningCollection(
+  orgId: string,
+  programId: string | null,
+  input: { id: string; name: string; parentId: string | null; createdBy: string | null },
+): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    if (input.parentId) {
+      const parent = (await tx.execute(sql`
+        select id from learning_collections
+        where organization_id = ${orgId}::uuid
+          and id = ${input.parentId}
+          and program_id is not distinct from ${programId}::uuid
+        limit 1`)) as unknown as Row[];
+      if (!parent.length) return null;
+    }
+    try {
+      const rows = await tx.execute(sql`
+        insert into learning_collections
+          (id, organization_id, program_id, parent_id, name, created_by)
+        values (
+          ${input.id}, ${orgId}::uuid, ${programId}::uuid,
+          ${input.parentId}, ${input.name}, ${input.createdBy}::uuid
+        )
+        returning id, name, parent_id, created_at`);
+      return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+    } catch (e) {
+      if (_isUniqueViolation(e)) {
+        throw new HttpError(409, `A folder named "${input.name}" is already here`);
+      }
+      throw e;
+    }
+  });
+}
+
+export async function renameLearningCollection(
+  orgId: string,
+  id: string,
+  name: string,
+): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    try {
+      const rows = await tx.execute(sql`
+        update learning_collections
+        set name = ${name}, updated_at = now()
+        where organization_id = ${orgId}::uuid and id = ${id}
+        returning id, name, parent_id`);
+      return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+    } catch (e) {
+      if (_isUniqueViolation(e)) {
+        throw new HttpError(409, `A folder named "${name}" is already here`);
+      }
+      throw e;
+    }
+  });
+}
+
+/**
+ * Delete a folder and its descendants. CONTENT IS NOT DELETED.
+ *
+ * The cascade in 0012 removes child folders and the grant rows that named them.
+ * Objects and assets keep their own rows and simply become unfiled — losing a
+ * folder must never mean losing content, and this function is where somebody
+ * would be tempted to make it mean that.
+ */
+export async function deleteLearningCollection(orgId: string, id: string): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      delete from learning_collections
+      where organization_id = ${orgId}::uuid and id = ${id}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
+  });
+}
+
+/**
+ * A folder plus every folder beneath it, at any depth.
+ *
+ * This is what makes "shared with me" mean the subtree. A recursive CTE rather
+ * than repeated queries per level, and `cycle` detection because parent_id is a
+ * plain self-reference: a row whose ancestor chain loops would otherwise spin
+ * here forever. The tree cannot legally contain a cycle — the API refuses to
+ * reparent a folder under its own descendant — but a read path must not depend on
+ * a write path having been correct.
+ */
+export async function collectionSubtreeIds(orgId: string, rootIds: string[]): Promise<string[]> {
+  const roots = [...new Set(rootIds.filter(Boolean))];
+  if (!roots.length) return [];
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      with recursive walk as (
+        select id, array[id] as seen
+        from learning_collections
+        where organization_id = ${orgId}::uuid
+          and id in (${sql.join(roots.map((r) => sql`${r}`), sql`, `)})
+        union all
+        select child.id, walk.seen || child.id
+        from learning_collections child
+        join walk on child.parent_id = walk.id
+        where child.organization_id = ${orgId}::uuid
+          and not child.id = any(walk.seen)
+      )
+      select distinct id from walk`)) as unknown as Row[];
+    return rows.map((r) => String(r.id));
+  });
+}
+
+/** Who these folders are shared with — the share sheet's read. */
+export async function listCollectionGrants(
+  orgId: string,
+  collectionIds: string[],
+): Promise<Row[]> {
+  const ids = [...new Set(collectionIds.filter(Boolean))];
+  if (!ids.length) return [];
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select g.collection_id, g.subject_type, g.subject_id, g.level
+      from learning_collection_grants g
+      join learning_collections c on c.id = g.collection_id
+      where c.organization_id = ${orgId}::uuid
+        and g.collection_id in (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
+    return rows as unknown as Row[];
+  });
+}
+
+/**
+ * Reconcile who a folder is shared with, one kind at a time.
+ *
+ * Same contract as setLearningGrantsBulk, and for the same reason: a kind left
+ * UNDEFINED is not touched. A role holding only share_club sends no people list;
+ * if that read as "no people", their club edit would silently revoke every person
+ * the content manager had invited. Empty array means "none of this kind"; absent
+ * means "not mine to say".
+ *
+ * One transaction, revocations before insertions, so a shrinking set never
+ * momentarily holds both.
+ */
+export async function setCollectionGrants(
+  orgId: string,
+  collectionId: string,
+  spec: { clubs?: string[]; profiles?: string[]; apps?: string[]; roles?: string[] },
+  grantedBy: string | null,
+): Promise<boolean> {
+  const kinds: { type: "club" | "profile" | "app" | "role"; wanted: string[] }[] = [];
+  if (spec.clubs !== undefined) kinds.push({ type: "club", wanted: [...new Set(spec.clubs.filter(Boolean))] });
+  if (spec.profiles !== undefined) kinds.push({ type: "profile", wanted: [...new Set(spec.profiles.filter(Boolean))] });
+  if (spec.apps !== undefined) kinds.push({ type: "app", wanted: [...new Set(spec.apps.filter(Boolean))] });
+  if (spec.roles !== undefined) kinds.push({ type: "role", wanted: [...new Set(spec.roles.filter(Boolean))] });
+  if (!kinds.length) return false;
+
+  return asPrivileged(async (tx) => {
+    const owned = (await tx.execute(sql`
+      select id from learning_collections
+      where organization_id = ${orgId}::uuid and id = ${collectionId}
+      limit 1`)) as unknown as Row[];
+    if (!owned.length) return false;
+
+    for (const { type, wanted } of kinds) {
+      if (wanted.length) {
+        await tx.execute(sql`
+          delete from learning_collection_grants
+          where collection_id = ${collectionId} and subject_type = ${type}
+            and subject_id not in (${sql.join(wanted.map((w) => sql`${w}`), sql`, `)})`);
+        await tx.execute(sql`
+          insert into learning_collection_grants
+            (collection_id, subject_type, subject_id, level, granted_by)
+          values ${sql.join(
+            wanted.map((w) => sql`(${collectionId}, ${type}, ${w}, 'view', ${grantedBy}::uuid)`),
+            sql`, `,
+          )}
+          on conflict (collection_id, subject_type, subject_id)
+          do update set level = excluded.level, granted_by = excluded.granted_by, created_at = now()`);
+      } else {
+        await tx.execute(sql`
+          delete from learning_collection_grants
+          where collection_id = ${collectionId} and subject_type = ${type}`);
+      }
+    }
+    return true;
+  });
+}
+
+/**
+ * The folders shared with this viewer, as ROOTS (not yet expanded).
+ *
+ * Four ways a folder can reach someone, matching learning_object_grants' four
+ * subject kinds: as themselves, through a club they belong to, through a learning
+ * role they hold, or through an app they administer.
+ *
+ * Empty result is meaningful and must not be confused with "everything": the
+ * caller decides what no grants means, and for a governing role it means the
+ * whole library while for an invited viewer it means nothing. Deciding that here
+ * would put the difference in the wrong place — see _libraryFolderScope.
+ */
+export async function grantedCollectionRootsFor(
+  orgId: string,
+  programId: string | null,
+  viewer: {
+    profileId?: string | null;
+    clubIds?: readonly string[];
+    roleIds?: readonly string[];
+    appKeys?: readonly string[];
+  },
+): Promise<string[]> {
+  const subjects: { type: string; id: string }[] = [];
+  if (viewer.profileId) subjects.push({ type: "profile", id: viewer.profileId });
+  for (const cid of viewer.clubIds ?? []) if (cid) subjects.push({ type: "club", id: cid });
+  for (const rid of viewer.roleIds ?? []) if (rid) subjects.push({ type: "role", id: rid });
+  for (const ak of viewer.appKeys ?? []) if (ak) subjects.push({ type: "app", id: ak });
+  if (!subjects.length) return [];
+
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select distinct g.collection_id
+      from learning_collection_grants g
+      join learning_collections c on c.id = g.collection_id
+      where c.organization_id = ${orgId}::uuid
+        and c.program_id is not distinct from ${programId}::uuid
+        and (${sql.join(
+          subjects.map((s) => sql`(g.subject_type = ${s.type} and g.subject_id = ${s.id})`),
+          sql` or `,
+        )})`)) as unknown as Row[];
+    return rows.map((r) => String(r.collection_id));
+  });
+}
+
+/** The partner programs (clubs) this profile belongs to — for club folder grants. */
+export async function clubIdsForProfile(orgId: string, profileId: string): Promise<string[]> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select distinct m.program_id
+      from org_memberships m
+      join programs p on p.id = m.program_id
+      where m.org_id = ${orgId}::uuid
+        and m.profile_id = ${profileId}::uuid
+        and m.program_id is not null
+        and p.metadata_json->>'is_partner' = 'true'`)) as unknown as Row[];
+    return rows.map((r) => String(r.program_id));
+  });
+}
+
+/**
+ * Set which folders an object is filed under.
+ *
+ * The asset twin of this (setLearningAssetFolders) has existed since 0011; objects
+ * never had one because folder membership only ever arrived as a side effect of
+ * the Studio publishing its whole row. Filing content into a folder someone else
+ * owns is a different gesture from authoring it, and needs its own write.
+ *
+ * Names are stored beside ids for the reason 0003 gives — a reader can label a
+ * folder without holding the folder table — so both move together or a rename
+ * shows up in one place and not the other.
+ */
+export async function setLearningObjectFolders(
+  orgId: string,
+  objectId: string,
+  collectionIds: string[],
+  collectionNames: string[],
+): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    // The mirror image of the autosave's merge: this endpoint owns the 'lcol-'
+    // ids and must not take the author's own Studio folders away from them as a
+    // side effect of filing something into a shared folder.
+    //
+    // `collectionNames` is accepted for the caller's convenience and deliberately
+    // NOT used for the lcol- names: the function resolves those from
+    // learning_collections, which is authoritative and makes a rename propagate.
+    void collectionNames;
+    const incoming = JSON.stringify(collectionIds);
+    const rows = await tx.execute(sql`
+      update learning_objects
+      set collection_ids =
+            learning_apply_program_folders(collection_ids, collection_names, ${incoming}::jsonb) -> 'ids',
+          collection_names =
+            learning_apply_program_folders(collection_ids, collection_names, ${incoming}::jsonb) -> 'names',
+          updated_at = now()
+      where organization_id = ${orgId} and id = ${objectId}
       returning id`);
     return (rows as unknown as Row[]).length > 0;
   });

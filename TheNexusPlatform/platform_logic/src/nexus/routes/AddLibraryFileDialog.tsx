@@ -7,10 +7,15 @@
  * before a file is chosen rather than after, and steers anything large to a link
  * instead of failing at the end of a long read.
  *
- * FOLDERS BY NAME, and a new one can be typed. Studio folders live in that app's
- * localStorage, so names are the only shared truth — which is also what lets a
- * name that exists in no author's Studio appear here the moment it is used. The
- * existing folders are offered as chips; anything else is a new folder.
+ * FOLDERS BY ID WHERE ONE EXISTS, by name otherwise.
+ *
+ * Real folders are server rows since migration 0012 and a file filed into one
+ * carries its id — which is what makes the file visible to whoever the FOLDER was
+ * shared with, since that grant is checked on ids. Before 0012 folders were only
+ * names living in each author's Studio localStorage, and files filed that way are
+ * still supported: a name typed here that matches no row creates nothing and files
+ * by name alone, exactly as it used to. The chips say which is which by carrying
+ * the id or not.
  */
 import { useMemo, useRef, useState } from "react";
 import { Check, FileText, Film, Image as ImageIcon, Link2, Loader2, Plus, Upload, X } from "lucide-react";
@@ -46,8 +51,17 @@ export function AddLibraryFileDialog({
   onSaved,
 }: {
   programId: string;
-  /** Folder names already in the library, offered as chips. */
-  folders: string[];
+  /**
+   * Folders to offer as chips.
+   *
+   * `id` is the server folder row (migration 0012) when there is one, null for a
+   * legacy name-only folder. THE ID IS WHAT MATTERS: a file filed with a name
+   * alone is invisible to anyone confined to that folder, because confinement is
+   * decided on ids — so a handout dropped into B2F3 would simply not appear for
+   * the people B2F3 was shared with. Names still travel alongside, for readers
+   * with no folder table (0003's reasoning).
+   */
+  folders: { id: string | null; name: string }[];
   /** The folder open when "Add file" was pressed, pre-selected. */
   defaultFolder: string | null;
   onClose: () => void;
@@ -65,9 +79,17 @@ export function AddLibraryFileDialog({
   const inputRef = useRef<HTMLInputElement>(null);
 
   const tooBig = !!file && file.size > MAX_BYTES;
-  const allFolders = useMemo(
-    () => [...new Set([...folders.filter((f) => f !== "Unfiled"), ...picked])].sort(),
-    [folders, picked],
+  const allFolders = useMemo(() => {
+    const named = new Map<string, string | null>();
+    for (const f of folders) if (f.name !== "Unfiled") named.set(f.name, f.id);
+    // A name typed into the picker that matches nothing is a new folder with no
+    // row yet — it files by name only, exactly as before 0012.
+    for (const n of picked) if (!named.has(n)) named.set(n, null);
+    return [...named.entries()].map(([name, id]) => ({ name, id })).sort((a, b) => a.name.localeCompare(b.name));
+  }, [folders, picked]);
+  const idForName = useMemo(
+    () => new Map(allFolders.map((f) => [f.name, f.id])),
+    [allFolders],
   );
 
   const canSave =
@@ -87,11 +109,15 @@ export function AddLibraryFileDialog({
     try {
       const names = [...picked];
       if (newFolder.trim()) names.push(newFolder.trim());
+      // Ids for the folders that have one, positionally paired with names so the
+      // two arrays describe the same folders in the same order.
+      const ids = names.map((n) => idForName.get(n) ?? "").filter(Boolean) as string[];
 
       if (mode === "link") {
         await addLibraryAsset(programId, {
           title: title.trim(),
           externalUrl: url.trim(),
+          collectionIds: ids,
           collectionNames: names,
         });
       } else if (file) {
@@ -107,6 +133,7 @@ export function AddLibraryFileDialog({
           title: title.trim(),
           data,
           contentType: file.type || "application/octet-stream",
+          collectionIds: ids,
           collectionNames: names,
         });
       }
@@ -217,11 +244,11 @@ export function AddLibraryFileDialog({
           <Label>Folders</Label>
           {allFolders.length > 0 && (
             <div className="flex flex-wrap gap-1.5">
-              {allFolders.map((f) => {
+              {allFolders.map(({ name: f, id }) => {
                 const on = picked.has(f);
                 return (
                   <button
-                    key={f}
+                    key={id ?? `name:${f}`}
                     type="button"
                     aria-pressed={on}
                     onClick={() =>

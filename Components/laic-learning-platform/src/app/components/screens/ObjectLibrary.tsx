@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Search, Eye, GitBranch, PenLine, BookOpen, Layers, HelpCircle, Copy, FileText, Lightbulb, Zap, Video,
   BookMarked, Link2, Check, FolderOpen, Plus, FilePenLine, ArrowLeft, LayoutGrid, List, History, Trash2, Download,
-  GripVertical, Upload, Users,
+  GripVertical, Upload, Users, FolderInput,
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import {
@@ -39,6 +39,7 @@ import {
 } from '../../../lib/objectCollectionsStore';
 import { GlassFolder, GlassFolderTile } from '../GlassFolder';
 import { ShareWithClubsModal } from './ShareWithClubsModal';
+import { PublishToLibraryModal } from './PublishToLibraryModal';
 import { LibraryNewMenu } from './LibraryNewMenu';
 import { useConfirm } from '../ConfirmDialog';
 import { ObjectVersionsModal } from './ObjectVersionsModal';
@@ -202,6 +203,7 @@ export function ObjectLibrary() {
   const [versionsFor, setVersionsFor] = useState<LearningObject | null>(null);
   const [versionToast, setVersionToast] = useState<string | null>(null);
   const [sharingFor, setSharingFor] = useState<LearningObject | null>(null);
+  const [filingFor, setFilingFor] = useState<LearningObject | null>(null);
 
   const {
     activeUserId,
@@ -251,6 +253,11 @@ export function ObjectLibrary() {
   const canShareClubs = can('learning.library.share_club');
   const canViewShares = can('learning.library.share_view');
   const canTargetApp = can('learning.publish.app_target');
+  // Putting content into a PROGRAM library folder. Distinct from sharing (who may
+  // see this object) and from publishing to an app (it goes live in a product):
+  // this decides which shared folder the content sits in, and therefore which
+  // audience the folder's own grants hand it to.
+  const canFileToLibrary = can('learning.library.file_content');
   const canExport = can('learning.library.export');
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -717,6 +724,16 @@ export function ObjectLibrary() {
                   <Users size={13} />
                 </button>
               )}
+              {canFileToLibrary && (
+                <button
+                  type="button"
+                  onClick={() => setFilingFor(item)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-gray-100 text-[#9AA3AF]"
+                  title="Publish to a Content Library folder"
+                >
+                  <FolderInput size={13} />
+                </button>
+              )}
               {canEdit(item) && (
                 <button
                   type="button"
@@ -809,6 +826,22 @@ export function ObjectLibrary() {
       )}
       {versionsFor && (
         <ObjectVersionsModal object={versionsFor} onClose={() => setVersionsFor(null)} />
+      )}
+      {filingFor && (
+        <PublishToLibraryModal
+          objectId={filingFor.id}
+          objectTitle={filingFor.title}
+          currentCollectionIds={objectCollectionIds(filingFor)}
+          onClose={() => setFilingFor(null)}
+          onSaved={(names) => {
+            setVersionToast(
+              names.length
+                ? `Published to ${names.join(', ')}`
+                : 'Removed from the Content Library',
+            );
+            window.setTimeout(() => setVersionToast(null), 2600);
+          }}
+        />
       )}
       {sharingFor && (
         <ShareWithClubsModal

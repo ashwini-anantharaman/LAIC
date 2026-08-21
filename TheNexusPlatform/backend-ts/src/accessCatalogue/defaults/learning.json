@@ -218,7 +218,7 @@
     {
       "id": "learning.library.share_member",
       "label": "Share content with individual members",
-      "description": "Grant content to named people in the program \u2014 including members who belong to no club. Separate from sharing with a club, so a role can reach one without the other.",
+      "description": "Grant content to named people in the program — including members who belong to no club. Separate from sharing with a club, so a role can reach one without the other.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
@@ -248,13 +248,13 @@
     {
       "id": "learning.library.export",
       "label": "Export the library snapshot",
-      "description": "Download the whole library \u2014 every object and folder \u2014 as a JSON snapshot. Ungoverned before this capability existed.",
+      "description": "Download the whole library — every object and folder — as a JSON snapshot. Ungoverned before this capability existed.",
       "group": "library_governance"
     },
     {
       "id": "learning.library.share_app",
       "label": "Share content with an app's administrators",
-      "description": "They see it and decide whether to carry it. Sharing alone puts nothing on the app \u2014 publishing does that.",
+      "description": "They see it and decide whether to carry it. Sharing alone puts nothing on the app — publishing does that.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
@@ -278,7 +278,7 @@
     {
       "id": "learning.app.publish_club",
       "label": "Choose which club sees content on the app",
-      "description": "Publish to an app for one club rather than everyone on it. Separate from publishing itself, because 'which app' and 'which club within it' are different decisions \u2014 an app's administrators hold both for the app they run.",
+      "description": "Publish to an app for one club rather than everyone on it. Separate from publishing itself, because 'which app' and 'which club within it' are different decisions — an app's administrators hold both for the app they run.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
@@ -290,7 +290,31 @@
     {
       "id": "learning.library.upload",
       "label": "Add files to the library",
-      "description": "Add a PDF, video or image directly to the content library and file it into folders. Not authored content \u2014 material that arrives ready-made.",
+      "description": "Add a PDF, video or image directly to the content library and file it into folders. Not authored content — material that arrives ready-made.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.library.folder_manage",
+      "label": "Create and organize library folders",
+      "description": "Create, rename and remove folders in the program Content Library, including subfolders. Folders only — this never creates content. Removing a folder unfiles what was in it and never deletes it.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.library.file_content",
+      "label": "Publish Studio content into a library folder",
+      "description": "Take a tutorial or other object from the Content Studio and file it into a folder of the program Content Library. Limited to folders the holder can already see, so it can place content but never reach a folder that was not shared with them.",
       "group": "library_governance",
       "resourceTypes": [
         "learning_object",
@@ -404,7 +428,8 @@
       "group": "learning",
       "routeOrComponent": "/learning/library",
       "requiredAnyCapabilities": [
-        "learning.object.read"
+        "learning.object.read",
+        "learning.library.file_content"
       ]
     },
     {
@@ -654,7 +679,9 @@
         "learning.publish.app_target",
         "learning.app.administer",
         "learning.app.publish_club",
-        "learning.library.upload"
+        "learning.library.upload",
+        "learning.library.folder_manage",
+        "learning.library.file_content"
       ],
       "uiSurfaceIds": [
         "learning.library_console"
@@ -737,7 +764,7 @@
     {
       "id": "content-access-granter",
       "name": "Content Access Granter",
-      "description": "May publish individual content and choose its target app. Nothing else \u2014 the worked example of a Content Manager sub-role.",
+      "description": "May publish individual content and choose its target app. Nothing else — the worked example of a Content Manager sub-role.",
       "grants": [
         {
           "platformInstanceId": "placeholder-learning-instance",
