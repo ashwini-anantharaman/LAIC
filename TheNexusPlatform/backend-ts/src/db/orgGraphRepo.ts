@@ -4511,3 +4511,32 @@ export async function setLearningObjectFolders(
     return (rows as unknown as Row[]).length > 0;
   });
 }
+
+/**
+ * Every publication to one app, as object_id → its audiences.
+ *
+ * An audience of `null` means "the whole app" (0010's nullable club_program_id);
+ * a uuid names one club. Both kinds are returned, because the caller has to tell
+ * "published to everyone" from "published to nobody in particular" from "not
+ * published here at all" — and an object absent from this map is the third case,
+ * which is the one that decides whether the app serves it.
+ */
+export async function listAppTargetAudiences(
+  orgId: string,
+  appKey: string,
+): Promise<Map<string, (string | null)[]>> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select object_id, club_program_id
+      from learning_object_app_targets
+      where organization_id = ${orgId} and app_key = ${appKey}`)) as unknown as Row[];
+    const out = new Map<string, (string | null)[]>();
+    for (const r of rows) {
+      const id = String(r.object_id);
+      const list = out.get(id) ?? [];
+      list.push((r.club_program_id as string | null) ?? null);
+      out.set(id, list);
+    }
+    return out;
+  });
+}

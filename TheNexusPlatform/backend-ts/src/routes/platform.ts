@@ -2036,13 +2036,100 @@ platformRouter.get("/learning/objects", async (c) => {
   // owner's plus whoever it was shared with.
   const effList = await _learningEffective(user, access);
   const viewer = _learningViewer(access, effList.clubRoleId);
+
+  /**
+   * WHAT THE CLUB APP ACTUALLY SERVES.
+   *
+   * This endpoint feeds the app's Learn tab, and it used to ignore
+   * learning_object_app_targets entirely — so publishing to an app and narrowing
+   * it to one club was recorded faithfully and changed nothing about what the app
+   * showed. A control that reports success and has no effect is worse than no
+   * control at all.
+   *
+   * TWO RULES, and the second one is a deliberate, awkward trade:
+   *
+   *  1. CLUB SCOPE IS HONOURED. Content published to this app for specific clubs
+   *     is served only to members of those clubs.
+   *
+   *  2. ONCE A PROGRAM PUBLISHES ANYTHING TO THIS APP, the app serves ONLY what
+   *     was published to it. Before the first publish it serves the whole
+   *     curriculum, exactly as it always has.
+   *
+   * Rule 2 exists because "publish this to the app" has to mean something, and
+   * the alternative readings are both bad: ignoring it (today's behaviour) makes
+   * the feature a lie, and gating unconditionally would empty the Learn tab of
+   * every club that has never touched app targeting. Keying on whether the
+   * program has EVER published makes the feature opt-in by use.
+   *
+   * The wart, stated plainly because someone will hit it: the FIRST publish flips
+   * a program's app from "everything" to "just this", which is a large change from
+   * a small gesture. If that turns out to be the wrong default, the fix is an
+   * explicit per-program setting rather than softening this into ambiguity.
+   *
+   * STAFF ARE EXEMPT — an author or administrator browsing the library needs to
+   * see what they curate, not what a learner would receive.
+   *
+   * "Staff" is decided by CAPABILITY, not by access.level. On this deployment an
+   * ordinary club member resolves to level `edit` (their learning role reads
+   * "content-developer"), so exempting `edit` exempted every learner and the gate
+   * did nothing at all. A level is about the platform; holding object.edit or
+   * library.console is about the job.
+   */
+  // NOT the authoring capabilities. On this deployment an ordinary club member is
+  // provisioned as a "content-developer" and arrives holding object.create,
+  // object.edit, composition.create and more — so keying staff on those exempted
+  // every learner in the club. Authoring rights are the default here and
+  // therefore carry no information about who is staff.
+  //
+  // library.console and app.administer are the ones that do: both are granted
+  // deliberately, by a person, to run the library or an app.
+  const STAFF_CAPABILITIES = [
+    "learning.library.console",
+    "learning.app.administer",
+  ];
+  const narrowForApp = async <T extends Row>(rows: T[]): Promise<T[]> => {
+    // NOT `!fineGrained`. That idiom means "ungated admin" when the subject holds
+    // a role, but a learner holds no role at all and reads the same way — so
+    // including it exempted every learner and the gate did nothing, twice over.
+    const isStaff =
+      access.level === "admin" ||
+      STAFF_CAPABILITIES.some((cap) => effList.capabilities.includes(cap));
+    if (isStaff) return rows;
+    const targets = await graph
+      .listAppTargetAudiences(access.orgId, "clubapp")
+      .catch(() => new Map<string, (string | null)[]>());
+    if (!targets.size) return rows; // this program has never published to the app
+
+    // Which clubs is this viewer in? The club they launched with, plus any
+    // membership — a scope naming their club must match either way.
+    const mine = new Set<string>();
+    if (access.partnerProgramId) mine.add(access.partnerProgramId);
+    if (access.profileId) {
+      for (const id of await graph
+        .clubIdsForProfile(access.orgId, access.profileId)
+        .catch(() => [] as string[])) {
+        mine.add(id);
+      }
+    }
+    return rows.filter((r) => {
+      const audiences = targets.get(String(r.id));
+      if (!audiences) return false;                     // not on this app
+      // null = the whole app; otherwise the viewer must be in a named club.
+      return audiences.some((a) => a === null || mine.has(a));
+    });
+  };
+
   if (c.req.query("meta") === "1") {
     return c.json(
-      await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
+      await narrowForApp(
+        await graph.listLearningObjectsMeta(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
+      ),
     );
   }
   return c.json(
-    await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
+    await narrowForApp(
+      await graph.listLearningObjects(access.orgId, access.programId, access.partnerProgramId ?? null, viewer),
+    ),
   );
 });
 
