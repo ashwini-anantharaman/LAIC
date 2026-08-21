@@ -1612,6 +1612,10 @@ export interface LibraryObject {
   type: string;
   status: string;
   published_at: string | null;
+  /** The version currently live, when one has been published. Not a history —
+   *  version snapshots live in the Studio's browser storage, so Nexus can say
+   *  WHICH version is live but cannot offer a choice between them. */
+  version_number: number | null;
   collection_ids: string[];
   collection_names: string[];
   /** Partner-program ids this object is granted to. */

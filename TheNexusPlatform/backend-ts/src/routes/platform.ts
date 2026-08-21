@@ -2846,6 +2846,11 @@ platformRouter.get("/learning/library", async (c) => {
         type: (o.type as string) ?? "",
         status: (o.status as string) ?? "draft",
         published_at: (o.published_at as string | null) ?? null,
+        // WHICH VERSION IS LIVE, so a governance screen can say what it is about
+        // to put on an app. Not a version LIST — the snapshots live in the
+        // Studio's localStorage (objectVersionsStore.ts, "local-first"), so the
+        // server knows only the number that was published, never the history.
+        version_number: (o.version_number as number | null) ?? null,
         collection_ids: (o.collection_ids as string[]) ?? [],
         collection_names: (o.collection_names as string[]) ?? [],
         ...shape(String(o.id)),

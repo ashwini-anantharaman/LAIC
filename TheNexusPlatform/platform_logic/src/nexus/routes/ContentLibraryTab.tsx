@@ -447,6 +447,19 @@ export function ContentLibraryTab() {
                           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
                             {o.type.replace(/_/g, " ")}
                           </span>
+                          {/* WHICH VERSION WOULD GO. Someone deciding whether to
+                              carry this on an app needs to know it is v3 and not
+                              whatever was saved since — that is the difference
+                              between carrying what they reviewed and carrying
+                              something they have not seen. */}
+                          {o.version_number != null && (
+                            <span className="text-[11px] text-muted-foreground">v{o.version_number}</span>
+                          )}
+                          {o.published_at == null && (
+                            <span className="text-[11px] text-amber-600 dark:text-amber-400">
+                              no published version
+                            </span>
+                          )}
                           <ReachSummary o={o} />
                         </span>
                       </span>

@@ -108,6 +108,11 @@ export function PublishContentDialog({
     setState(new Map(scoped));
   }, [scoped]);
 
+  // Nothing to carry: an object with no published version has no snapshot for a
+  // reader to render, so publishing it to an app would be a no-op dressed as an
+  // action. Said before Save rather than discovered on the app.
+  const unpublished = useMemo(() => objects.filter((o) => o.published_at == null), [objects]);
+
   const dirty = [...state].some(([k, v]) => scoped.get(k) !== v);
 
   async function save() {
@@ -233,11 +238,35 @@ export function PublishContentDialog({
           </div>
         )}
 
-        <p className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
-          Publishing decides where content appears. It does not grant access — that is what
-          sharing decides. Each audience is saved on its own, so publishing for one club
-          leaves the others as they are.
-        </p>
+        {/* WHICH VERSION GOES LIVE. Someone deciding whether to carry content on
+            an app is entitled to know it is v3 and not whatever has been saved
+            since. Nexus can state the live version but cannot offer a CHOICE
+            between versions: the snapshots live in the Studio's browser storage
+            (objectVersionsStore.ts is local-first), so the server knows the number
+            that was published and no history to pick from. Saying where the choice
+            lives beats a picker that cannot be honoured. */}
+        <div className="rounded-lg bg-muted/50 px-3 py-2.5 text-xs leading-relaxed text-muted-foreground">
+          {unpublished.length > 0 ? (
+            <p className="text-amber-700 dark:text-amber-400">
+              {unpublished.length === objects.length
+                ? objects.length === 1
+                  ? "This has no published version yet, so there is nothing for the app to show. Publish it in the Content Studio first."
+                  : `None of these ${objects.length} items has a published version yet, so there is nothing for the app to show. Publish them in the Content Studio first.`
+                : `${unpublished.length} of these ${objects.length} items has no published version yet and will not appear until one is published in the Content Studio.`}
+            </p>
+          ) : (
+            <p>
+              {objects.length === 1 && objects[0].version_number != null
+                ? `Version ${objects[0].version_number} is live and is what the app will carry.`
+                : "Each item appears at its live version. Which version that is, is decided in the Content Studio."}
+            </p>
+          )}
+          <p className="mt-1.5">
+            Publishing decides where content appears. It does not grant access — that is what
+            sharing decides. Each audience is saved on its own, so publishing for one club
+            leaves the others as they are.
+          </p>
+        </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
