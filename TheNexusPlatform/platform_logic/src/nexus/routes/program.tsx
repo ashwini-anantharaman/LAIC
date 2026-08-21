@@ -81,7 +81,7 @@ import { getProgramCatalogue, type CapabilityCatalogueDocument } from "@/nexus/a
 import { readBranding } from "@/nexus/branding";
 import { openInStudio } from "@/services/studio";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
-import { useProgramAccess, opensContentLibrary } from "@/nexus/access";
+import { useProgramAccess, opensContentLibrary, opensContentStudio } from "@/nexus/access";
 import { useSession } from "@/nexus/session";
 
 /** Fetch the current program (no single-get endpoint; list + find). */
@@ -153,7 +153,15 @@ export function ProgramOverview() {
   const allowed = (cap: string) => (caps ? caps.features[cap] !== false : true);
   const enabled = (key: ProgramFeatureKey) => features[key] !== false;
   // A confined member only sees a platform their role grants; admins see all.
-  const granted = (area: string) => access.isAdmin || !!access.perms[area];
+  //
+  // The learning AREA or a Content Studio capability. Area-only meant a role built
+  // purely from capabilities — a Club Mentor holding library.file_content, whose
+  // only button lives in the Studio — got no Content Studio card here and no nav
+  // entry either, so the capability had no reachable screen at all.
+  const granted = (area: string) =>
+    access.isAdmin ||
+    !!access.perms[area] ||
+    (area === "learning" && opensContentStudio(access.capabilities));
 
   async function setFeature(key: ProgramFeatureKey, on: boolean) {
     const prev = features;

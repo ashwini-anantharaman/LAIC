@@ -48,7 +48,7 @@ import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
 import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
-import { opensContentLibrary } from "@/nexus/access";
+import { opensContentLibrary, opensContentStudio } from "@/nexus/access";
 import { useDocumentTitle } from "@/nexus/useDocumentTitle";
 import { Spinner } from "@/nexus/ui/kit";
 import type { Program } from "@/types/platform";
@@ -135,7 +135,12 @@ function confinedProgramNav(
 ): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
-  if (perms.learning) items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
+  // The AREA perm or a Studio capability. Area-only left a Club Mentor holding
+  // library.file_content — a capability whose only button lives in the Studio —
+  // with no way to open it. See opensContentStudio.
+  if (perms.learning || opensContentStudio(capabilities)) {
+    items.push({ to: `${base}/learning`, label: "Content Studio", icon: Rocket });
+  }
   // Beside Content Studio, not instead of it: a content manager who is ALSO an
   // author holds both, and hiding one behind the other would take a door away
   // from someone who was granted it.

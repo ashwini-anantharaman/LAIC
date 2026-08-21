@@ -71,6 +71,33 @@ export function opensContentLibrary(capabilities: string[]): boolean {
   return capabilities.some((c) => CONTENT_LIBRARY_CAPABILITIES.includes(c));
 }
 
+/**
+ * Capabilities that mean "this person works in the Content Studio".
+ *
+ * The Studio's nav entry was gated on the `perms.learning` AREA alone, which a
+ * capability-only role never sets — so a Club Mentor could hold
+ * `library.file_content`, whose entire purpose is a button inside the Studio, and
+ * have no way to reach the Studio from their sidebar. A granted capability whose
+ * screen is unreachable is the same failure `opensContentLibrary` exists to
+ * prevent, one door along.
+ *
+ * Authoring and filing, not governance: `library.console` is deliberately absent,
+ * because someone who may only open the Content Library tab has no business being
+ * pointed at the authoring app.
+ */
+export const CONTENT_STUDIO_CAPABILITIES = [
+  "learning.object.read",
+  "learning.object.edit",
+  "learning.object.create",
+  "learning.composition.create",
+  "learning.composition.edit",
+  "learning.library.file_content",
+];
+
+export function opensContentStudio(capabilities: string[]): boolean {
+  return capabilities.some((c) => CONTENT_STUDIO_CAPABILITIES.includes(c));
+}
+
 /** Pull the capability array out of a perms blob, tolerating its absence — a
  *  coarse role predates capabilities entirely and simply has none. */
 function _capsOf(perms: Record<string, unknown> | null | undefined): string[] {
