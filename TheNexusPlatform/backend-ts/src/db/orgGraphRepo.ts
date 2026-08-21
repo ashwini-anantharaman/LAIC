@@ -3488,6 +3488,16 @@ export async function listLearningObjectAppTargets(orgId: string, objectId: stri
  * people. Clearing a target is an explicit empty-set PUT, not a side effect of
  * publishing somewhere else.
  */
+/**
+ * The sentinel 0010's unique index coalesces a NULL club_program_id to, so
+ * "published to the whole app" stays a single row rather than one per insert.
+ *
+ * Module-level because BOTH writers need it and they must agree: it lived inside
+ * the bulk function while the per-object writer named a narrower conflict target,
+ * which is exactly how the two drifted apart and left one of them raising 42P10.
+ */
+const NO_CLUB = "00000000-0000-0000-0000-000000000000";
+
 export async function setLearningObjectAppTargets(
   orgId: string,
   objectId: string,
@@ -3507,14 +3517,25 @@ export async function setLearningObjectAppTargets(
           delete from learning_object_app_targets
           where organization_id = ${orgId} and object_id = ${objectId}
             and app_key not in (${sql.join(keys.map((k) => sql`${k}`), sql`, `)})`);
+        // THE CONFLICT TARGET MUST MATCH THE INDEX, and 0010 widened it. When
+        // club_program_id arrived, the unique index became
+        // (object_id, app_key, coalesce(club_program_id, sentinel)); this insert
+        // kept naming (object_id, app_key), which matches no constraint, so
+        // Postgres raised 42P10 and every whole-app publish through this endpoint
+        // answered 500. The bulk writer was updated then and this one was not.
+        //
+        // NULL club_program_id is written explicitly: "the whole app" is a real
+        // scope, and the sentinel in the index is what keeps it a single row.
         await tx.execute(sql`
           insert into learning_object_app_targets
-            (organization_id, object_id, app_key, published_at, published_by)
+            (organization_id, object_id, app_key, club_program_id, published_at, published_by)
           values ${sql.join(
-            keys.map((k) => sql`(${orgId}::uuid, ${objectId}, ${k}, now(), ${publishedBy})`),
+            keys.map(
+              (k) => sql`(${orgId}::uuid, ${objectId}, ${k}, null::uuid, now(), ${publishedBy})`,
+            ),
             sql`, `,
           )}
-          on conflict (object_id, app_key)
+          on conflict (object_id, app_key, coalesce(club_program_id, ${NO_CLUB}::uuid))
           do update set published_at = now(), published_by = excluded.published_by`);
       } else {
         await tx.execute(sql`
@@ -3557,7 +3578,7 @@ export async function setLearningAppTargetsBulk(
   if (!ids.length) return [];
   const keys = [...new Set(appKeys.filter(Boolean))];
   // The sentinel the unique index coalesces to, so "whole app" is one row.
-  const NO_CLUB = "00000000-0000-0000-0000-000000000000";
+
   const scope = clubProgramId ?? null;
   const scopeMatch = scope
     ? sql`and club_program_id = ${scope}::uuid`
