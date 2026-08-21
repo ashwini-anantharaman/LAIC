@@ -21,6 +21,19 @@ import {
 const SHARED_SYNC_DELAY_MS = 2500;
 const sharedSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
+/**
+ * A backup that fails must SAY so.
+ *
+ * This used to be a console.warn and nothing else, so an author whose work was
+ * no longer reaching the shared store carried on typing with no sign. Console
+ * warnings are for whoever is looking at a console; the person losing work is not.
+ *
+ * Set by the app on mount. Module-scoped because queueSharedSync is module-scoped,
+ * and reported once per message rather than every 2.5 seconds per edited object.
+ */
+let reportSyncFailure: (message: string) => void = () => {};
+const reportedSyncFailures = new Set<string>();
+
 function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
   const pending = sharedSyncTimers.get(obj.id);
   if (pending) clearTimeout(pending);
@@ -31,7 +44,12 @@ function queueSharedSync(obj: LearningObject, collectionNames: string[]) {
     // rather than logging a refusal every 2.5s per edited object.
     if (!supabaseEnabled()) return;
     publishObject(objectToPublishRow(obj, collectionNames)).catch((err) => {
-      console.warn('[library] could not back up to the shared store:', err?.message || err);
+      const msg = err?.message || String(err);
+      console.warn('[library] could not back up to the shared store:', msg);
+      if (!reportedSyncFailures.has(msg)) {
+        reportedSyncFailures.add(msg);
+        reportSyncFailure(msg);
+      }
     });
   }, SHARED_SYNC_DELAY_MS));
 }
@@ -164,6 +182,9 @@ export interface AppState {
   learningIsAdmin: boolean;
   /** Effective learning-catalogue capability ids from Nexus (null = admin/demo). */
   learningCapabilities: string[] | null;
+  /** Why the last backup to the shared store failed, if it did. Surfaced in the
+   *  chrome so an author is never quietly writing to a browser alone. */
+  syncFailure: string | null;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -314,6 +335,14 @@ function StudioApp() {
   const [learningPerms, setLearningPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [learningIsAdmin, setLearningIsAdmin] = useState(false);
   const [learningCapabilities, setLearningCapabilities] = useState<string[] | null>(null);
+  /** Set when a backup to the shared store has failed — surfaced, not just logged. */
+  const [syncFailure, setSyncFailure] = useState<string | null>(null);
+  useEffect(() => {
+    reportSyncFailure = (m) => setSyncFailure(m);
+    return () => {
+      reportSyncFailure = () => {};
+    };
+  }, []);
   const [previewPerms, setPreviewPerms] = useState<Record<string, AreaLevel> | null>(null);
   const [previewName, setPreviewName] = useState<string | null>(null);
   const [nexusProgramName, setNexusProgramName] = useState<string | null>(null);
@@ -1141,6 +1170,7 @@ function StudioApp() {
     learningPerms: previewing ? previewPerms : learningPerms,
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
+    syncFailure,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,

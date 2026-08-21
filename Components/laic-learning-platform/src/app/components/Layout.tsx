@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, PanelLeft, Users } from 'lucide-react';
+import { Eye, PanelLeft, TriangleAlert, Users } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
@@ -33,6 +33,60 @@ function ReadOnlyBanner() {
  * Absent for a non-club session, where "the shared library" is exactly right and a
  * banner would be noise.
  */
+/**
+ * THIS LIBRARY IS ONLY IN THIS BROWSER.
+ *
+ * Without a Nexus session the Studio is draft-only: queueSharedSync returns early
+ * (App.tsx), so nothing an author writes reaches the shared store. That is a
+ * deliberate design — without a session there is no way to know which club the
+ * content belongs to — but it was SILENT, and silence here is expensive.
+ *
+ * The failure it produced: author for an afternoon, lose the browser state, and
+ * the work is gone with no server copy to restore from. The only recovery was
+ * exporting a snapshot and baking it into the build, which is why that habit
+ * existed at all.
+ *
+ * So the condition is stated permanently, where the work is being done, with the
+ * fix in it: open the Studio from Nexus and everything is backed up.
+ */
+function LocalOnlyBanner() {
+  const { nexusMode } = useApp();
+  if (nexusMode) return null;
+  return (
+    <div className="flex items-start gap-2 border-b border-amber-300 bg-amber-50 px-4 sm:px-5 py-2 text-sm text-amber-900">
+      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        <span className="font-semibold">This library is only in this browser.</span>{" "}
+        Nothing you create here is saved to the server, so clearing site data or opening the
+        Studio from somewhere else will lose it. Open the Studio from Nexus to have your work
+        backed up.
+      </span>
+    </div>
+  );
+}
+
+/**
+ * A backup that stopped working, said out loud.
+ *
+ * With a session the Studio writes every edit to the shared store; when that call
+ * starts failing — an expired token, a program mismatch, an unapplied migration —
+ * the author is still typing into a browser and nothing said so. The message is
+ * the server's own, because "sync failed" sends nobody anywhere.
+ */
+function SyncFailureBanner() {
+  const { syncFailure } = useApp();
+  if (!syncFailure) return null;
+  return (
+    <div className="flex items-start gap-2 border-b border-red-300 bg-red-50 px-4 sm:px-5 py-2 text-sm text-red-900">
+      <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+      <span>
+        <span className="font-semibold">Your work is not being saved to the server.</span>{" "}
+        {syncFailure} Recent edits exist only in this browser until this is fixed.
+      </span>
+    </div>
+  );
+}
+
 function ClubScopeBanner() {
   const { nexusClubName } = useApp();
   if (!nexusClubName) return null;
@@ -251,6 +305,8 @@ export function Layout() {
         {!(editingObject && !mobile) ? (
           <TopBar mobile={mobile} onOpenNav={() => setNavOpen(true)} />
         ) : null}
+        <LocalOnlyBanner />
+        <SyncFailureBanner />
         <ReadOnlyBanner />
         <ClubScopeBanner />
         <main
