@@ -350,6 +350,8 @@ function StudioApp() {
   useEffect(() => { pipelineReadOnlyRef.current = pipelineReadOnly; }, [pipelineReadOnly]);
   /** 'edit' pipeline embed: saves go to the program library as a new version. */
   const pipelineEditRef = useRef(false);
+  /** Any pipeline embed, review or edit -- the confinement applies to both. */
+  const pipelineEmbedRef = useRef(false);
   const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
   const [pipelineSaveError, setPipelineSaveError] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
@@ -604,6 +606,7 @@ function StudioApp() {
       if (pipelineEmbed) {
         setPipelineReadOnly(pipelineMode === 'review');
         pipelineEditRef.current = pipelineMode === 'edit';
+        pipelineEmbedRef.current = true;
       }
       if (embedBoot) {
         // Dress the page as its host: the club app's WEB build shows this
@@ -772,6 +775,24 @@ function StudioApp() {
   }, [nexusMode]);
 
   const navigate = useCallback((screen: string, opts?: { libraryFolderId?: string | null }) => {
+    /**
+     * A PIPELINE EMBED CANNOT NAVIGATE OUT OF ITS OBJECT.
+     *
+     * Hiding the sidebar was not confinement. The creator has its own exits -- a
+     * Back button, and a redirect after save -- and Back landed a content editor
+     * on the Studio's whole Content Library: every collection, a New button, the
+     * lot. They were given ONE FOLDER, so that is the Studio handed over by a
+     * link.
+     *
+     * Gated here because navigate is the one door every screen change goes
+     * through. Gating the Back button instead would leave the redirect, and
+     * whichever exit gets added next.
+     *
+     * Silently ignored rather than reported: leaving is the host dialog's job
+     * (its close button dismisses the frame), so inside a single-object frame the
+     * honest response to "go elsewhere" is nothing at all.
+     */
+    if (pipelineEmbedRef.current && screen !== 'cd-creator') return;
     if (screen === 'cd-library') {
       const folderId = opts && 'libraryFolderId' in opts ? (opts.libraryFolderId || null) : null;
       setPendingLibraryFolderId(folderId);
