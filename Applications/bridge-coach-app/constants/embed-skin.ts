@@ -129,7 +129,19 @@ body div[style*="blur(16px)"] > div > p + p {
    white-on-maroon buttons now, which reads correctly and stays legible. Forcing
    their text white would have put white on a white pill. */
 
-/* Buttons keep their own fills — only the face changes, so an action still reads
-   as an action. */
-button, [role="button"] { color: inherit !important; }
+/* Buttons keep their own fills AND their own text colour — only the face changes,
+   so an action still reads as an action.
+ *
+ * This used to force the colour to INHERIT, which contradicted the rule above it:
+ * body is forced to the ink, so every button inherited DARK text -- including the
+ * ones that set light text on a dark fill themselves. On the quiz card that put
+ * near-black text on a near-black pill: "Enter MCQ questions" was invisible, and
+ * invisible in a way that looked like the app's own styling rather than a bug.
+ *
+ * The web copy of this sheet (laic-learning-platform/src/app/embedSkin.ts) was
+ * corrected for exactly this and the native one was not, so the same page read
+ * correctly in a browser and wrongly in the app. Both now only set the family. */
+button, [role="button"] {
+  font-family: 'NecoApp', Georgia, serif !important;
+}
 `;

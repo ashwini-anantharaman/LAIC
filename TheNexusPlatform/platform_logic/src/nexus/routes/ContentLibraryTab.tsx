@@ -44,8 +44,8 @@ import { toast } from "sonner";
 
 import {
   createLibraryFolder, deleteLibraryAsset, deleteLibraryFolder, getContentLibrary,
-  getLibraryFolders, renameLibraryFolder, type LibraryAsset, type LibraryFolder,
-  type LibraryObject,
+  getLibraryFolders, getObjectPipeline, renameLibraryFolder, type LibraryAsset,
+  type LibraryFolder, type LibraryObject,
 } from "@/services/api";
 import { useProgramAccess } from "@/nexus/access";
 import { SubRolesPanel } from "@/nexus/routes/SubRolesPanel";
@@ -57,7 +57,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/app/components/ui/dialog";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
-import { ObjectPipelinePanel } from "@/nexus/routes/ObjectPipelinePanel";
+import { PipelineStudioDialog } from "@/nexus/routes/PipelineStudioDialog";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 import { AddLibraryFileDialog } from "@/nexus/routes/AddLibraryFileDialog";
 
@@ -255,8 +255,18 @@ export function ContentLibraryTab() {
   const [sharingFolder, setSharingFolder] = useState<LibraryFolder | null>(null);
   const [newFolder, setNewFolder] = useState<{ parentId: string | null; parentName: string } | null>(null);
   const [renaming, setRenaming] = useState<LibraryFolder | null>(null);
-  /** An object opened for review or editing, in place of the list. */
-  const [openObjectId, setOpenObjectId] = useState<string | null>(null);
+  /**
+   * The object whose pipeline is open, with the server's verdict on what this
+   * viewer may do to it.
+   *
+   * `canEdit` is ASKED FOR, not inferred: the level lives on a folder grant, so
+   * the list cannot know it per row, and opening in edit mode for a reviewer
+   * would promise an editor that every save then refuses.
+   */
+  const [pipelineFor, setPipelineFor] = useState<
+    { id: string; title: string; canEdit: boolean } | null
+  >(null);
+  const [openingPipeline, setOpeningPipeline] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
@@ -529,15 +539,7 @@ export function ContentLibraryTab() {
         }
       />
 
-      {openObjectId ? (
-        <div className="min-h-0 flex-1">
-          <ObjectPipelinePanel
-            programId={programId}
-            objectId={openObjectId}
-            onClose={() => { setOpenObjectId(null); reload(); }}
-          />
-        </div>
-      ) : view === "roles" ? (
+      {view === "roles" ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SubRolesPanel programId={programId} />
         </div>
@@ -853,11 +855,30 @@ export function ContentLibraryTab() {
                         the door from an editor or promise editing to a reviewer. */}
                     <Button
                       size="icon" variant="ghost"
-                      title={`Open ${o.title || "this content"}`}
-                      aria-label={`Open ${o.title || "this content"}`}
-                      onClick={() => setOpenObjectId(o.id)}
+                      disabled={openingPipeline === o.id}
+                      title={`Open the pipeline for ${o.title || "this content"}`}
+                      aria-label={`Open the pipeline for ${o.title || "this content"}`}
+                      onClick={() => {
+                        void (async () => {
+                          setOpeningPipeline(o.id);
+                          try {
+                            const p = await getObjectPipeline(programId, o.id);
+                            setPipelineFor({ id: o.id, title: p.title, canEdit: p.can_edit });
+                          } catch (e) {
+                            toast.error(
+                              e instanceof Error ? e.message : "Couldn't open that pipeline",
+                            );
+                          } finally {
+                            setOpeningPipeline(null);
+                          }
+                        })();
+                      }}
                     >
-                      <SquarePen className="size-4" />
+                      {openingPipeline === o.id ? (
+                        <Loader2 className="size-4 animate-spin" />
+                      ) : (
+                        <SquarePen className="size-4" />
+                      )}
                     </Button>
                     {rowActions([o], o.title || "Untitled")}
                   </div>
@@ -940,6 +961,15 @@ export function ContentLibraryTab() {
           defaultFolder={openFolder?.name ?? null}
           onClose={() => setAddingFile(false)}
           onSaved={reload}
+        />
+      )}
+      {pipelineFor && (
+        <PipelineStudioDialog
+          programId={programId}
+          objectId={pipelineFor.id}
+          title={pipelineFor.title}
+          canEdit={pipelineFor.canEdit}
+          onClose={() => { setPipelineFor(null); reload(); }}
         />
       )}
       {sharingFolder && (

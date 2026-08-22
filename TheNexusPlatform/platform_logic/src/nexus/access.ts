@@ -72,27 +72,27 @@ export function opensContentLibrary(capabilities: string[]): boolean {
 }
 
 /**
- * Capabilities that mean "this person works in the Content Studio".
+ * OPENING THE CONTENT STUDIO IS ITS OWN PERMISSION.
  *
- * The Studio's nav entry was gated on the `perms.learning` AREA alone, which a
- * capability-only role never sets — so a Club Mentor could hold
- * `library.file_content`, whose entire purpose is a button inside the Studio, and
- * have no way to reach the Studio from their sidebar. A granted capability whose
- * screen is unreachable is the same failure `opensContentLibrary` exists to
- * prevent, one door along.
+ * This used to be inferred: holding object.read/edit/create meant the Studio nav
+ * appeared. That conflated two different questions, and the difference matters —
  *
- * Authoring and filing, not governance: `library.console` is deliberately absent,
- * because someone who may only open the Content Library tab has no business being
- * pointed at the authoring app.
+ *   "may this person open the Content Studio"      the whole app: its library,
+ *                                                  its create flow, every object
+ *                                                  in the program
+ *   "may this person edit THIS object's pipeline"   one object, reached from the
+ *                                                  Content Library, granted per
+ *                                                  FOLDER as review or edit
+ *
+ * A content editor trusted with one folder needs the second and must not get the
+ * first. Under the old rule they always got both, because editing anything at all
+ * was what opened the door.
+ *
+ * So the Studio now has one explicit capability and nothing else grants it.
+ * Someone with no Studio access can still review or edit a pipeline — that runs
+ * inside the Content Library.
  */
-export const CONTENT_STUDIO_CAPABILITIES = [
-  "learning.object.read",
-  "learning.object.edit",
-  "learning.object.create",
-  "learning.composition.create",
-  "learning.composition.edit",
-  "learning.library.file_content",
-];
+export const CONTENT_STUDIO_CAPABILITIES = ["learning.studio.access"];
 
 export function opensContentStudio(capabilities: string[]): boolean {
   return capabilities.some((c) => CONTENT_STUDIO_CAPABILITIES.includes(c));

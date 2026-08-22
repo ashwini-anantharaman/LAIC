@@ -187,6 +187,14 @@ export interface AppState {
   /** Why the last backup to the shared store failed, if it did. Surfaced in the
    *  chrome so an author is never quietly writing to a browser alone. */
   syncFailure: string | null;
+  /**
+   * True when this session is a REVIEW-only pipeline embed.
+   *
+   * One flag rather than a permission check per editor: the creator has many save
+   * paths (autosave, Save version, Submit, per-unit generate) and each one asking
+   * separately is how one of them ends up not asking.
+   */
+  pipelineReadOnly: boolean;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -325,6 +333,12 @@ function StudioApp() {
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  /** Pipeline embed opened for REVIEW: every save path refuses. */
+  const [pipelineReadOnly, setPipelineReadOnly] = useState(false);
+  // addObject is a useCallback with its own dependency list; a ref keeps the
+  // refusal correct without rebuilding every save path when the flag lands.
+  const pipelineReadOnlyRef = useRef(false);
+  useEffect(() => { pipelineReadOnlyRef.current = pipelineReadOnly; }, [pipelineReadOnly]);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
@@ -555,8 +569,26 @@ function StudioApp() {
       // panel in BirdBridge's brand would be an app wearing another app's
       // clothes. `embed=1` keeps its established meaning for the club app,
       // which passes it and does expect the skin.
-      const chromeless = embedBoot || bootParams.get('chrome') === 'none';
+      /**
+       * PIPELINE EMBED: one object's own authoring pipeline, and nothing else.
+       *
+       *   ?pipeline=edit|review&object=<id>
+       *
+       * The Content Library frames this so somebody granted a folder can review
+       * or edit what is in it WITHOUT being given the Content Studio. It renders
+       * the real creator -- the same Plan / Structure / Sources / Author / Review
+       * the author walked -- rather than a second, thinner imitation, because a
+       * reviewer checking how a quiz was built needs the thing itself.
+       *
+       * `review` makes every save path refuse (see pipelineReadOnly). The server
+       * enforces the same thing from the folder grant's level; this is the screen
+       * not offering what the server would reject.
+       */
+      const pipelineMode = bootParams.get('pipeline');
+      const pipelineEmbed = pipelineMode === 'edit' || pipelineMode === 'review';
+      const chromeless = embedBoot || pipelineEmbed || bootParams.get('chrome') === 'none';
       if (chromeless) setEmbedMode(true);
+      if (pipelineEmbed) setPipelineReadOnly(pipelineMode === 'review');
       if (embedBoot) {
         // Dress the page as its host: the club app's WEB build shows this
         // reader in a cross-origin iframe it cannot style, so the skin must
@@ -570,7 +602,9 @@ function StudioApp() {
       // Embed boot renders exactly one object — fetch just that object (not
       // the whole org library), in parallel with the context read.
       const embedObjectPromise =
-        deepLinkObjectId && embedBoot ? fetchObject(deepLinkObjectId).catch(() => null) : null;
+        deepLinkObjectId && (embedBoot || pipelineEmbed)
+          ? fetchObject(deepLinkObjectId).catch(() => null)
+          : null;
       const ctx = await fetchLearningContext();
       if (!live) return;
       if (ctx) {
@@ -610,7 +644,19 @@ function StudioApp() {
           wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
         setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
-        if (deepLinkObjectId && embedObjectPromise) {
+        if (deepLinkObjectId && pipelineEmbed && embedObjectPromise) {
+          // The creator restores its draft from createdObjects + editingObjectId
+          // + creatorObjectType, so seed exactly those three and send it there.
+          // One object, no library hydration: this session is for this object.
+          const found = await embedObjectPromise;
+          if (!live) return;
+          if (found) {
+            setCreatedObjects([found]);
+            setCreatorObjectTypeState(found.type);
+            setEditingObjectId(found.id);
+          }
+          setCurrentScreen('cd-creator');
+        } else if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring
           // library hydration entirely; the fetch started before the context.
           const found = await embedObjectPromise;
@@ -758,6 +804,20 @@ function StudioApp() {
     partial: Partial<LearningObject> & { type: ObjectType; title: string },
     opts?: AddObjectOptions,
   ) => {
+    // REVIEW ACCESS REFUSES HERE, once, for every save path.
+    //
+    // The creator saves from several places -- autosave, Save version, Submit,
+    // per-unit generate -- and every one of them funnels through addObject. One
+    // refusal at the funnel is the difference between review access holding and
+    // holding on the four paths somebody remembered to check.
+    //
+    // Reported, not silent: a reviewer who edits a question and presses Save is
+    // owed the reason, and the alternative (a save that appears to work and is
+    // then absent) is the worst version of this.
+    if (pipelineReadOnlyRef.current) {
+      opts?.onVersionError?.('Review access: you can read this pipeline but not change it.');
+      return;
+    }
     const versionMode = opts?.version ?? 'auto';
     const onVersionError = opts?.onVersionError;
     const ownerId = activeUserIdRef.current;
@@ -1187,6 +1247,7 @@ function StudioApp() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
     syncFailure,
+    pipelineReadOnly,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,

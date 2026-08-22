@@ -67,21 +67,38 @@ export function McqClusterCard({
     >
       <div
         className="shrink-0 w-10 h-10 rounded-full flex items-center justify-center"
-        style={{ background: 'rgba(5,150,105,0.12)' }}
+        style={{ background: 'rgba(84,16,21,0.10)' }}
       >
-        <BookOpen size={18} style={{ color: '#059669' }} />
+        <BookOpen size={18} style={{ color: '#541015' }} />
       </div>
       <div className="min-w-0 flex-1">
-        <p style={{ fontSize: 14.5, fontWeight: 700, color: '#0B1220', lineHeight: 1.25 }}>
+        <p style={{ fontSize: 14.5, fontWeight: 700, color: '#1f1f1f', lineHeight: 1.25 }}>
           {title}
         </p>
         <p style={{ fontSize: 12.5, color: '#6B7280', marginTop: 2 }}>{sub}</p>
       </div>
+      {/*
+        THE LABEL COLOUR IS INLINE, not a Tailwind class, and that is the point.
+        Inside the club app this page wears an injected skin, and the skin forced
+        every button's colour to inherit from a body set to near-black ink --
+        which put dark text on this dark pill and made the label invisible. A
+        class-based colour lost to `!important`; an inline one does not, so the
+        button stays readable whatever a host sheet asserts.
+
+        Maroon rather than near-black: the app's own accent (Brand.maroon), so
+        the primary action on a quiz matches the primary action on a tutorial
+        instead of being a different app's black.
+      */}
       <button
         type="button"
         onClick={onEnter}
-        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full text-white"
-        style={{ background: '#0B0F1A', fontSize: 12.5, fontWeight: 650 }}
+        className="shrink-0 flex items-center gap-1.5 px-4 py-2 rounded-full"
+        style={{
+          background: '#541015',
+          color: '#fff4d7',
+          fontSize: 12.5,
+          fontWeight: 650,
+        }}
       >
         Enter MCQ questions <span aria-hidden>→</span>
       </button>

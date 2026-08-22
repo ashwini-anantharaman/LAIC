@@ -81,6 +81,7 @@ const LIBRARY_CAPABILITIES = [
   "learning.library.upload",
   "learning.library.folder_manage",
   "learning.library.file_content",
+  "learning.studio.access",
 ] as const;
 
 const DELEGABLE = new Set<string>(LIBRARY_CAPABILITIES);
@@ -104,6 +105,7 @@ const SUBROLE_LABELS: Record<string, string> = {
   "learning.library.upload": "Add files to the library",
   "learning.library.folder_manage": "Create and organize folders",
   "learning.library.file_content": "Publish Studio content into a folder",
+  "learning.studio.access": "Open the Content Studio",
 };
 
 const SUBROLE_HINTS: Record<string, string> = {
@@ -119,6 +121,8 @@ const SUBROLE_HINTS: Record<string, string> = {
     "Make, rename and remove folders. Folders only \u2014 never content. Removing one keeps what was inside.",
   "learning.library.file_content":
     "Take a tutorial from the Content Studio and put it in a folder here. Only folders they can already see.",
+  "learning.studio.access":
+    "The whole authoring app. NOT needed to review or edit one object \u2014 that is granted per folder, here.",
 };
 
 const capsOf = (r: SubRole): string[] => {

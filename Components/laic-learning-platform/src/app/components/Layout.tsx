@@ -180,7 +180,7 @@ export function Layout() {
   // Both worlds meet here: the Nexus-mobile drawer shell (AshwiniNew2) and
   // the host-app embed mode (Quan) — embedMode's content-only early return
   // below bypasses the shell entirely, so the two never fight.
-  const { embedMode, currentScreen, readerObjectId, navigate, nexusMode } = useApp();
+  const { embedMode, currentScreen, readerObjectId, navigate, nexusMode, pipelineReadOnly } = useApp();
   const narrow = useIsMobile();
   const [mobileLaunch, setMobileLaunch] = useState(() => isNexusMobileShell());
   const [navOpen, setNavOpen] = useState(false);
@@ -252,6 +252,21 @@ export function Layout() {
         viewport still scrolls here, as before.
       */
       <main className="h-[100dvh] overflow-y-auto">
+        {/* A read-only pipeline has to SAY so at the top. Otherwise the first
+            sign is a Save that quietly does nothing, and the reviewer is left
+            deciding whether they broke it. */}
+        {pipelineReadOnly && (
+          <div
+            className="flex items-start gap-2 px-4 py-2"
+            style={{ background: 'rgba(2,132,199,0.08)', color: '#075985', fontSize: 12.5 }}
+          >
+            <Eye size={13} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>
+              <strong style={{ fontWeight: 650 }}>Review access.</strong> You can open every stage
+              of this pipeline and read it. Changes are not saved.
+            </span>
+          </div>
+        )}
         <ScreenErrorBoundary key={boundaryKey} onReset={() => navigate(currentScreen || 'cd-library')}>
           <ScreenRouter />
         </ScreenErrorBoundary>

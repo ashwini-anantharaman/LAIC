@@ -322,6 +322,18 @@
         "learning_composition"
       ],
       "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.studio.access",
+      "label": "Open the Content Studio",
+      "description": "Open the Content Studio itself — its library, its create flow, every object in the program. Separate from reviewing or editing one object's pipeline, which is granted per folder in the Content Library and needs no Studio access at all.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object",
+        "evaluation_object",
+        "learning_composition"
+      ],
+      "supportsResourceConstraints": true
     }
   ],
   "resourceTypes": [
@@ -428,8 +440,7 @@
       "group": "learning",
       "routeOrComponent": "/learning/library",
       "requiredAnyCapabilities": [
-        "learning.object.read",
-        "learning.library.file_content"
+        "learning.studio.access"
       ]
     },
     {
@@ -681,7 +692,8 @@
         "learning.app.publish_club",
         "learning.library.upload",
         "learning.library.folder_manage",
-        "learning.library.file_content"
+        "learning.library.file_content",
+        "learning.studio.access"
       ],
       "uiSurfaceIds": [
         "learning.library_console"
