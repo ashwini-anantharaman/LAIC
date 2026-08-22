@@ -55,9 +55,15 @@ import { LearningObject } from "../../../lib/nexus";
 /**
  * The shelves, top to bottom, and which Studio type ids belong on each.
  *
- * Order is the owner's. Tutorials collect two ids because the Studio writes
- * `tutorial-v2` for anything authored in the V2 pipeline and `tutorial` for the
- * older shape; to a learner they are the same kind of thing.
+ * Order is the owner's. Tutorials collect THREE ids because the Studio has had
+ * three tutorial pipelines -- `tutorial` (oldest), `tutorial-v2`, and
+ * `tutorial-v3`, which is the current authoring line. To a learner they are the
+ * same kind of thing, and the shelf says "Tutorials" for all of them.
+ *
+ * v3 was missing here, so every v3 tutorial fell through to leftoverSections and
+ * showed up under the raw id "tutorial-v3" -- a pipeline name leaking onto a
+ * learner's screen. The leftover shelf did its job (nothing vanished), which is
+ * exactly why this was easy to miss.
  *
  * A type NOT listed here still appears — see leftoverSections below. Content
  * silently vanishing behind a filter is the bug this tab just had twice, so the
@@ -66,12 +72,13 @@ import { LearningObject } from "../../../lib/nexus";
 const SECTIONS: { heading: string; types: string[] }[] = [
   { heading: "Concepts", types: ["concept-card"] },
   { heading: "Flashcards", types: ["flashcard-set"] },
-  { heading: "Tutorials", types: ["tutorial-v2", "tutorial"] },
+  { heading: "Tutorials", types: ["tutorial-v3", "tutorial-v2", "tutorial"] },
   { heading: "Quizzes", types: ["quiz"] },
 ];
 
 /** The Studio's type ids, as a learner would read them. */
 const TYPE_LABELS: Record<string, string> = {
+  "tutorial-v3": "Tutorial",
   "tutorial-v2": "Tutorial",
   tutorial: "Tutorial",
   quiz: "Quiz",
