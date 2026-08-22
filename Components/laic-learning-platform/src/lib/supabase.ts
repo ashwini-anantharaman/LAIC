@@ -113,7 +113,29 @@ function fromRow(row: any): LearningObject {
       : (row.collection_id ? [row.collection_id] : undefined),
     collectionId: row.collection_id ?? undefined,
     pipelineDraft: row.pipeline_draft ?? undefined,
-  };
+    /**
+     * LIFT THE AUTHORING DRAFT OUT OF pipeline_draft.
+     *
+     * The creators read `obj.structuredV2Draft` / `obj.tutorialV3Draft` directly
+     * (see draftFromLearningObjectX), but the column they are STORED in is the
+     * single jsonb `pipeline_draft`. Mapping only the container left every
+     * restored object with no draft to restore from — so reopening a quiz showed
+     * an empty Plan with the wrong template, as if it had never been built.
+     *
+     * App.tsx's own row mapper already did this for the two tutorial drafts and
+     * not for the structured one, which is why quizzes were the visible failure.
+     * Both live here now, in the one place every read passes through.
+     */
+    ...(row.pipeline_draft?.structuredV2Draft
+      ? { structuredV2Draft: row.pipeline_draft.structuredV2Draft }
+      : {}),
+    ...(row.pipeline_draft?.tutorialV3Draft
+      ? { tutorialV3Draft: row.pipeline_draft.tutorialV3Draft }
+      : {}),
+    ...(row.pipeline_draft?.tutorialV2Draft
+      ? { tutorialV2Draft: row.pipeline_draft.tutorialV2Draft }
+      : {}),
+  } as LearningObject;
 }
 
 /** Insert or update a learning object via Nexus. Throws on failure. */

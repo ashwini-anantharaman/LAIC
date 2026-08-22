@@ -84,6 +84,11 @@ function sharedRowToObject(row: any): LearningObject {
     ...(row.pipeline_draft?.tutorialV3Draft
       ? { tutorialV3Draft: row.pipeline_draft.tutorialV3Draft }
       : {}),
+    // The structured draft (quiz / flashcard-set / concept-card / video-script)
+    // was missing here, so those types reopened with an empty pipeline.
+    ...(row.pipeline_draft?.structuredV2Draft
+      ? { structuredV2Draft: row.pipeline_draft.structuredV2Draft }
+      : {}),
   } as LearningObject;
 }
 import {
@@ -650,11 +655,20 @@ function StudioApp() {
           // One object, no library hydration: this session is for this object.
           const found = await embedObjectPromise;
           if (!live) return;
-          if (found) {
-            setCreatedObjects([found]);
-            setCreatorObjectTypeState(found.type);
-            setEditingObjectId(found.id);
+          // A creator with no object is a BLANK NEW one -- wrong template, empty
+          // plan, and a Save that would write a second object. Refuse instead of
+          // rendering something that looks like this object's pipeline emptied.
+          if (!found) {
+            setLaunchFailed({
+              reason: 'refused',
+              detail: 'That content could not be loaded for editing.',
+            });
+            setBooting(false);
+            return;
           }
+          setCreatedObjects([found]);
+          setCreatorObjectTypeState(found.type);
+          setEditingObjectId(found.id);
           setCurrentScreen('cd-creator');
         } else if (deepLinkObjectId && embedObjectPromise) {
           // Embedded viewer: one object is all we render — skip the authoring
