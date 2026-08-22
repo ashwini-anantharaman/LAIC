@@ -37,8 +37,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
   ChevronRight, Check, FileText, Film, Folder, FolderPlus, Image as ImageIcon, Link2,
-  Loader2, Pencil, Plus, RefreshCw, Search, Share2, Send, SquarePen, Smartphone, Trash2,
-  User, Users,
+  Loader2, MonitorPlay, Pencil, Plus, RefreshCw, Search, Share2, Send, SquarePen,
+  Smartphone, Trash2, User, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -264,9 +264,30 @@ export function ContentLibraryTab() {
    * would promise an editor that every save then refuses.
    */
   const [pipelineFor, setPipelineFor] = useState<
-    { id: string; title: string; canEdit: boolean } | null
+    { id: string; title: string; canEdit: boolean; view: "pipeline" | "output" } | null
   >(null);
   const [openingPipeline, setOpeningPipeline] = useState<string | null>(null);
+
+  /**
+   * Open one object, on one of its two faces.
+   *
+   * The level is ASKED FOR every time rather than cached on the row: it lives on
+   * a folder grant, so the list cannot know it, and opening in edit mode for a
+   * reviewer would promise an editor that every save then refuses.
+   */
+  const openObject = (o: LibraryObject, view: "pipeline" | "output") => {
+    void (async () => {
+      setOpeningPipeline(o.id);
+      try {
+        const p = await getObjectPipeline(programId, o.id);
+        setPipelineFor({ id: o.id, title: p.title, canEdit: p.can_edit, view });
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Couldn't open that content");
+      } finally {
+        setOpeningPipeline(null);
+      }
+    })();
+  };
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
@@ -858,27 +879,25 @@ export function ContentLibraryTab() {
                       disabled={openingPipeline === o.id}
                       title={`Open the pipeline for ${o.title || "this content"}`}
                       aria-label={`Open the pipeline for ${o.title || "this content"}`}
-                      onClick={() => {
-                        void (async () => {
-                          setOpeningPipeline(o.id);
-                          try {
-                            const p = await getObjectPipeline(programId, o.id);
-                            setPipelineFor({ id: o.id, title: p.title, canEdit: p.can_edit });
-                          } catch (e) {
-                            toast.error(
-                              e instanceof Error ? e.message : "Couldn't open that pipeline",
-                            );
-                          } finally {
-                            setOpeningPipeline(null);
-                          }
-                        })();
-                      }}
+                      onClick={() => openObject(o, "pipeline")}
                     >
                       {openingPipeline === o.id ? (
                         <Loader2 className="size-4 animate-spin" />
                       ) : (
                         <SquarePen className="size-4" />
                       )}
+                    </Button>
+                    {/* THE FINISHED THING, beside the pipeline that made it. It
+                        reads the same row a save just wrote, so an edit shows up
+                        here with nothing needing to push it. */}
+                    <Button
+                      size="icon" variant="ghost"
+                      disabled={openingPipeline === o.id}
+                      title={`See ${o.title || "this content"} as a learner gets it`}
+                      aria-label={`Final output for ${o.title || "this content"}`}
+                      onClick={() => openObject(o, "output")}
+                    >
+                      <MonitorPlay className="size-4" />
                     </Button>
                     {rowActions([o], o.title || "Untitled")}
                   </div>
@@ -969,6 +988,7 @@ export function ContentLibraryTab() {
           objectId={pipelineFor.id}
           title={pipelineFor.title}
           canEdit={pipelineFor.canEdit}
+          view={pipelineFor.view}
           onClose={() => { setPipelineFor(null); reload(); }}
         />
       )}

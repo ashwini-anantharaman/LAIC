@@ -429,6 +429,36 @@ export async function setObjectProgramFolders(
   return (await res.json()) as { collection_names: string[] };
 }
 
+/**
+ * Save one object's pipeline back to the program library, as a new version.
+ *
+ * The pipeline embed's save goes HERE rather than through the Studio's ordinary
+ * publish path, for two reasons that both matter:
+ *
+ *   PERMISSION. This endpoint checks the folder grant's level. The publish path
+ *   checks whether you may author in the program, which a folder editor may not
+ *   — they were trusted with one folder, not with the library.
+ *
+ *   VERSIONS. It bumps version_number server-side and returns it, so "saved" can
+ *   name the version. The Studio's own history is per browser, so it cannot be
+ *   the number anybody else reads.
+ */
+export async function savePipelineToLibrary(
+  objectId: string,
+  patch: { title?: string; description?: string; blocks?: unknown[]; pipeline_draft?: unknown },
+): Promise<{ version_number: number | null }> {
+  const res = await nexusFetch(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/pipeline`,
+    { method: 'PUT', body: JSON.stringify({ program_id: pid(), ...patch }) },
+  );
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't save (${res.status})`);
+  }
+  const body = (await res.json()) as { version_number?: number };
+  return { version_number: body.version_number ?? null };
+}
+
 /** Which apps an object is published to. */
 export async function listObjectAppTargets(objectId: string): Promise<AppTarget[]> {
   const res = await nexusFetch(

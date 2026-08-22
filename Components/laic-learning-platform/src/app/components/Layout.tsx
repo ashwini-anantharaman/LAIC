@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Eye, PanelLeft, TriangleAlert, Users } from 'lucide-react';
+import { Check, Eye, PanelLeft, TriangleAlert, Users } from 'lucide-react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { ScreenErrorBoundary } from './ScreenErrorBoundary';
@@ -180,7 +180,10 @@ export function Layout() {
   // Both worlds meet here: the Nexus-mobile drawer shell (AshwiniNew2) and
   // the host-app embed mode (Quan) — embedMode's content-only early return
   // below bypasses the shell entirely, so the two never fight.
-  const { embedMode, currentScreen, readerObjectId, navigate, nexusMode, pipelineReadOnly } = useApp();
+  const {
+    embedMode, currentScreen, readerObjectId, navigate, nexusMode,
+    pipelineReadOnly, pipelineVersion, pipelineSaveError,
+  } = useApp();
   const narrow = useIsMobile();
   const [mobileLaunch, setMobileLaunch] = useState(() => isNexusMobileShell());
   const [navOpen, setNavOpen] = useState(false);
@@ -255,6 +258,33 @@ export function Layout() {
         {/* A read-only pipeline has to SAY so at the top. Otherwise the first
             sign is a Save that quietly does nothing, and the reviewer is left
             deciding whether they broke it. */}
+        {/* WHICH VERSION LANDED. "Saved" alone leaves an editor unable to tell
+            their change reached the library, and the author unable to see that it
+            did. The number is the server's, so it means the same thing to
+            everyone looking at this object. */}
+        {pipelineVersion != null && (
+          <div
+            className="flex items-start gap-2 px-4 py-2"
+            style={{ background: 'rgba(5,150,105,0.10)', color: '#065F46', fontSize: 12.5 }}
+          >
+            <Check size={13} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>
+              <strong style={{ fontWeight: 650 }}>New version saved — v{pipelineVersion}.</strong>{' '}
+              This is what the Content Library and the app now carry.
+            </span>
+          </div>
+        )}
+        {pipelineSaveError && (
+          <div
+            className="flex items-start gap-2 px-4 py-2"
+            style={{ background: 'rgba(180,35,24,0.10)', color: '#B42318', fontSize: 12.5 }}
+          >
+            <TriangleAlert size={13} style={{ marginTop: 2, flexShrink: 0 }} />
+            <span>
+              <strong style={{ fontWeight: 650 }}>Not saved.</strong> {pipelineSaveError}
+            </span>
+          </div>
+        )}
         {pipelineReadOnly && (
           <div
             className="flex items-start gap-2 px-4 py-2"

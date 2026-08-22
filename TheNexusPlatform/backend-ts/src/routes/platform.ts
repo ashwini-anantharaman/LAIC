@@ -3701,14 +3701,14 @@ platformRouter.put("/learning/objects/:object_id/pipeline", async (c) => {
         : "That content was not shared with you",
     );
   }
-  const ok = await graph.updateLearningObjectPipeline(access.orgId, String(object.id), {
+  const version = await graph.updateLearningObjectPipeline(access.orgId, String(object.id), {
     title: req.title,
     description: req.description,
     blocks: req.blocks,
     pipelineDraft: req.pipeline_draft,
   });
-  if (!ok) throw new HttpError(404, "Content not found");
-  return c.json({ ok: true });
+  if (version === null) throw new HttpError(404, "Content not found");
+  return c.json({ ok: true, version_number: version });
 });
 
 /**

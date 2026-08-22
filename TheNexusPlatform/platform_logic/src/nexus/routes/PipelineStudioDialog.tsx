@@ -41,6 +41,7 @@ export function PipelineStudioDialog({
   objectId,
   title,
   canEdit,
+  view: initialView = "pipeline",
   onClose,
 }: {
   programId: string;
@@ -48,13 +49,22 @@ export function PipelineStudioDialog({
   title: string;
   /** From the server's `can_edit` on the pipeline read — never guessed here. */
   canEdit: boolean;
+  /**
+   * Which face to open on.
+   *   'pipeline' — how it was built, and (with edit access) change it
+   *   'output'   — the finished thing, exactly as a learner receives it
+   */
+  view?: "pipeline" | "output";
   onClose: () => void;
 }) {
+  const [view, setView] = useState<"pipeline" | "output">(initialView);
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
+    setSrc(null);
+    setError(null);
     void (async () => {
       try {
         const l = await launchLearningPlatform(programId);
@@ -66,8 +76,16 @@ export function PipelineStudioDialog({
         const u = new URL(l.launch_url);
         u.searchParams.set("launch_token", l.launch_token);
         u.searchParams.set("object", objectId);
-        u.searchParams.set("pipeline", canEdit ? "edit" : "review");
         u.searchParams.set("program_id", programId);
+        if (view === "pipeline") {
+          u.searchParams.set("pipeline", canEdit ? "edit" : "review");
+        } else {
+          // The learner's own reader. `chrome=none` and no `pipeline` param, so
+          // this is the finished object rather than the authoring surface —
+          // reading the SAME row a save just wrote, which is why an edit shows up
+          // here without anything having to push it.
+          u.searchParams.set("chrome", "none");
+        }
         setSrc(u.toString());
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : "Couldn't open the pipeline");
@@ -78,7 +96,9 @@ export function PipelineStudioDialog({
     };
     // A fresh single-use token per open. Reusing one across opens would fail the
     // second time in a way that looks like a broken screen.
-  }, [programId, objectId, canEdit]);
+    // Re-minted per view as well as per open: each launch token is single-use,
+    // so switching faces needs its own.
+  }, [programId, objectId, canEdit, view]);
 
   return (
     <div
@@ -93,6 +113,7 @@ export function PipelineStudioDialog({
           <span
             className={cn(
               "flex shrink-0 items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium",
+              view === "output" && "hidden sm:flex",
               canEdit
                 ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-200"
                 : "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-200",
@@ -101,7 +122,29 @@ export function PipelineStudioDialog({
             {canEdit ? <SquarePen className="size-3" /> : <Eye className="size-3" />}
             {canEdit ? "Edit access" : "Review access"}
           </span>
-          <Button size="icon" variant="ghost" className="ml-auto" onClick={onClose} aria-label="Close">
+          {/* TWO FACES OF ONE OBJECT, side by side. A reviewer checking a change
+              needs to see the finished thing, and an editor needs to see what
+              their edit did — asking them to close and reopen for that is asking
+              them to hold it in their head. */}
+          <div className="ml-auto flex rounded-lg border p-0.5">
+            {(["pipeline", "output"] as const).map((v) => (
+              <button
+                key={v}
+                type="button"
+                aria-pressed={view === v}
+                onClick={() => setView(v)}
+                className={cn(
+                  "rounded-md px-2.5 py-1 text-xs font-medium transition-colors",
+                  view === v
+                    ? "bg-accent text-accent-foreground"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {v === "pipeline" ? "Pipeline" : "Final output"}
+              </button>
+            ))}
+          </div>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="Close">
             <X className="size-4" />
           </Button>
         </div>

@@ -4648,7 +4648,7 @@ export async function updateLearningObjectPipeline(
     blocks?: unknown[];
     pipelineDraft?: unknown;
   },
-): Promise<boolean> {
+): Promise<number | null> {
   const sets: SQL[] = [];
   if (patch.title !== undefined) sets.push(sql`title = ${patch.title}`);
   if (patch.description !== undefined) sets.push(sql`description = ${patch.description}`);
@@ -4667,13 +4667,22 @@ export async function updateLearningObjectPipeline(
         : sql`pipeline_draft = ${JSON.stringify(patch.pipelineDraft)}::jsonb`,
     );
   }
-  if (!sets.length) return true;
+  if (!sets.length) return null;
+  // EVERY SAVE IS A NEW VERSION, and the number comes back so the screen can say
+  // which one. Editing content somebody else authored has to be legible after the
+  // fact -- "saved" alone leaves a reviewer unable to tell their change landed,
+  // and leaves the author unable to see that it did.
+  //
+  // Server-side and monotonic: the Studio's own version history is per browser
+  // (objectVersionsStore), so it cannot be the count anybody else reads.
+  sets.push(sql`version_number = coalesce(version_number, 0) + 1`);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       update learning_objects
       set ${sql.join(sets, sql`, `)}, updated_at = now()
       where organization_id = ${orgId} and id = ${objectId}
-      returning id`);
-    return (rows as unknown as Row[]).length > 0;
+      returning version_number`);
+    const row = (rows as unknown as Row[])[0];
+    return row ? Number(row.version_number) : null;
   });
 }

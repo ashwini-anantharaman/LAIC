@@ -152,6 +152,7 @@ import {
   contextToRole,
   signOutToNexus,
   listProgramFolders,
+  savePipelineToLibrary,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { canAccessScreen, defaultScreenForCapabilities } from '../lib/roleAccess';
@@ -200,6 +201,9 @@ export interface AppState {
    * separately is how one of them ends up not asking.
    */
   pipelineReadOnly: boolean;
+  /** Version written by the last pipeline save, for the chrome to report. */
+  pipelineVersion: number | null;
+  pipelineSaveError: string | null;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -344,6 +348,10 @@ function StudioApp() {
   // refusal correct without rebuilding every save path when the flag lands.
   const pipelineReadOnlyRef = useRef(false);
   useEffect(() => { pipelineReadOnlyRef.current = pipelineReadOnly; }, [pipelineReadOnly]);
+  /** 'edit' pipeline embed: saves go to the program library as a new version. */
+  const pipelineEditRef = useRef(false);
+  const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
+  const [pipelineSaveError, setPipelineSaveError] = useState<string | null>(null);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
@@ -593,7 +601,10 @@ function StudioApp() {
       const pipelineEmbed = pipelineMode === 'edit' || pipelineMode === 'review';
       const chromeless = embedBoot || pipelineEmbed || bootParams.get('chrome') === 'none';
       if (chromeless) setEmbedMode(true);
-      if (pipelineEmbed) setPipelineReadOnly(pipelineMode === 'review');
+      if (pipelineEmbed) {
+        setPipelineReadOnly(pipelineMode === 'review');
+        pipelineEditRef.current = pipelineMode === 'edit';
+      }
       if (embedBoot) {
         // Dress the page as its host: the club app's WEB build shows this
         // reader in a cross-origin iframe it cannot style, so the skin must
@@ -831,6 +842,34 @@ function StudioApp() {
     if (pipelineReadOnlyRef.current) {
       opts?.onVersionError?.('Review access: you can read this pipeline but not change it.');
       return;
+    }
+    /**
+     * EDITING SOMEBODY ELSE'S OBJECT SAVES TO THE LIBRARY, as a new version.
+     *
+     * Not through the ordinary publish path: that one asks whether you may author
+     * in the program, and a folder editor may not -- they were trusted with one
+     * folder. The pipeline endpoint asks the question that actually applies (the
+     * folder grant's level) and returns the version it wrote, so the screen can
+     * name the version instead of saying a bare "saved".
+     *
+     * The local update below still runs, so the creator's own screen reflects the
+     * edit without a refetch.
+     */
+    if (pipelineEditRef.current && partial.id) {
+      const anyPartial = partial as Record<string, unknown>;
+      const draft: Record<string, unknown> = {};
+      for (const k of ['structuredV2Draft', 'tutorialV3Draft', 'tutorialV2Draft']) {
+        if (anyPartial[k]) draft[k] = anyPartial[k];
+      }
+      setPipelineSaveError(null);
+      void savePipelineToLibrary(partial.id, {
+        ...(partial.title ? { title: partial.title } : {}),
+        ...(partial.description !== undefined ? { description: partial.description } : {}),
+        ...(partial.blocks ? { blocks: partial.blocks } : {}),
+        ...(Object.keys(draft).length ? { pipeline_draft: draft } : {}),
+      })
+        .then(({ version_number }) => setPipelineVersion(version_number))
+        .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'));
     }
     const versionMode = opts?.version ?? 'auto';
     const onVersionError = opts?.onVersionError;
@@ -1261,7 +1300,7 @@ function StudioApp() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
     syncFailure,
-    pipelineReadOnly,
+    pipelineReadOnly, pipelineVersion, pipelineSaveError,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
