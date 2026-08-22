@@ -3891,8 +3891,24 @@ export async function backupLearningObjectDraft(
     const rows = await tx.execute(sql`
       update learning_objects
       set pipeline_draft = ${r.pipeline_draft != null ? JSON.stringify(r.pipeline_draft) : null}::jsonb,
-          collection_ids = ${JSON.stringify(r.collection_ids ?? [])}::jsonb,
-          collection_names = ${JSON.stringify(r.collection_names ?? [])}::jsonb,
+          -- THE SAME MERGE THE PUBLISH UPSERT USES, and this is the path that
+          -- actually runs on every autosave.
+          --
+          -- It replaced the array wholesale, so a tutorial filed into a PROGRAM
+          -- folder was pulled straight back out and re-filed into whichever local
+          -- folder the Studio files that type into (bb-tutorials for tutorials).
+          -- Editing the pipeline and saving therefore moved the object, silently,
+          -- every single time. Two writers, one column, and only one of them had
+          -- been taught the rule (0012's "TWO WRITERS" note) -- the sibling upsert
+          -- was fixed and this one was missed.
+          collection_ids = learning_apply_studio_folders(
+            collection_ids,
+            ${JSON.stringify(r.collection_ids ?? [])}::jsonb,
+            ${JSON.stringify(r.collection_names ?? [])}::jsonb) -> 'ids',
+          collection_names = learning_apply_studio_folders(
+            collection_ids,
+            ${JSON.stringify(r.collection_ids ?? [])}::jsonb,
+            ${JSON.stringify(r.collection_names ?? [])}::jsonb) -> 'names',
           updated_at = now()
       where organization_id = ${orgId} and id = ${id}
         ${programGuard}
