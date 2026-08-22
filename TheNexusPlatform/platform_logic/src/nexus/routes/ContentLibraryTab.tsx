@@ -37,7 +37,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 import {
   ChevronRight, Check, FileText, Film, Folder, FolderPlus, Image as ImageIcon, Link2,
-  Loader2, Pencil, Plus, RefreshCw, Search, Share2, Send, Smartphone, Trash2, User, Users,
+  Loader2, Pencil, Plus, RefreshCw, Search, Share2, Send, SquarePen, Smartphone, Trash2,
+  User, Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -56,6 +57,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/app/components/ui/dialog";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
+import { ObjectPipelinePanel } from "@/nexus/routes/ObjectPipelinePanel";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 import { AddLibraryFileDialog } from "@/nexus/routes/AddLibraryFileDialog";
 
@@ -253,6 +255,8 @@ export function ContentLibraryTab() {
   const [sharingFolder, setSharingFolder] = useState<LibraryFolder | null>(null);
   const [newFolder, setNewFolder] = useState<{ parentId: string | null; parentName: string } | null>(null);
   const [renaming, setRenaming] = useState<LibraryFolder | null>(null);
+  /** An object opened for review or editing, in place of the list. */
+  const [openObjectId, setOpenObjectId] = useState<string | null>(null);
   const [publishing, setPublishing] = useState<{ objects: LibraryObject[]; label: string } | null>(null);
 
   const [assets, setAssets] = useState<LibraryAsset[]>([]);
@@ -525,7 +529,15 @@ export function ContentLibraryTab() {
         }
       />
 
-      {view === "roles" ? (
+      {openObjectId ? (
+        <div className="min-h-0 flex-1">
+          <ObjectPipelinePanel
+            programId={programId}
+            objectId={openObjectId}
+            onClose={() => { setOpenObjectId(null); reload(); }}
+          />
+        </div>
+      ) : view === "roles" ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SubRolesPanel programId={programId} />
         </div>
@@ -834,6 +846,19 @@ export function ContentLibraryTab() {
                         </span>
                       </span>
                     </button>
+                    {/* Open the pipeline. One button for review AND edit,
+                        because which one this viewer gets is the server's answer
+                        (the folder grant's level), not something the list can
+                        know per row — and a wrong guess here would either hide
+                        the door from an editor or promise editing to a reviewer. */}
+                    <Button
+                      size="icon" variant="ghost"
+                      title={`Open ${o.title || "this content"}`}
+                      aria-label={`Open ${o.title || "this content"}`}
+                      onClick={() => setOpenObjectId(o.id)}
+                    >
+                      <SquarePen className="size-4" />
+                    </Button>
                     {rowActions([o], o.title || "Untitled")}
                   </div>
                   )),

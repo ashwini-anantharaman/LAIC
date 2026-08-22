@@ -7,7 +7,7 @@
  * bulk registration import. Postgres-only (RLS-scoped via `scoped()`); returns
  * snake_case rows for the routes.
  */
-import { and, desc, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or, sql, type SQL } from "drizzle-orm";
 
 import { HttpError } from "../httpError";
 import * as localKeys from "../platformLocalStore";
@@ -2948,6 +2948,14 @@ async function _getLearningObject(
     const rows = await tx.execute(sql`
       select id, type, title, owner_id, owner_name, status, scope, reuse_count,
              description, estimated_time, blocks, tags, source_ids, pipeline_draft,
+             -- FOLDER MEMBERSHIP TRAVELS WITH THE ROW. It was missing here while
+             -- every listing carried it, so anything deciding access from an
+             -- object's folders saw a row filed nowhere -- and a person holding a
+             -- perfectly good folder grant was told the content was not shared
+             -- with them. Coalesced because 0003 predates these columns.
+             coalesce(collection_ids, '[]'::jsonb) as collection_ids,
+             coalesce(collection_names, '[]'::jsonb) as collection_names,
+             version_number, published_at::text as published_at,
              created_at::text as created_at, updated_at::text as updated_at
       from learning_objects
       where organization_id = ${orgId} and id = ${id} ${scope} ${personal}
@@ -4370,9 +4378,24 @@ export async function listCollectionGrants(
 export async function setCollectionGrants(
   orgId: string,
   collectionId: string,
-  spec: { clubs?: string[]; profiles?: string[]; apps?: string[]; roles?: string[] },
+  spec: {
+    clubs?: string[];
+    profiles?: string[];
+    apps?: string[];
+    roles?: string[];
+    /**
+     * Per-subject access level, by subject id. Absent = 'view'.
+     *
+     * 'view' is REVIEW ACCESS — open the folder, read a piece of content and its
+     * whole pipeline, change nothing. 'edit' additionally allows changing it.
+     * Both are the same grant row with a different level, which is why sharing a
+     * folder and granting edit on it are one gesture rather than two systems.
+     */
+    levels?: Record<string, "view" | "edit">;
+  },
   grantedBy: string | null,
 ): Promise<boolean> {
+  const levelOf = (id: string): "view" | "edit" => spec.levels?.[id] ?? "view";
   const kinds: { type: "club" | "profile" | "app" | "role"; wanted: string[] }[] = [];
   if (spec.clubs !== undefined) kinds.push({ type: "club", wanted: [...new Set(spec.clubs.filter(Boolean))] });
   if (spec.profiles !== undefined) kinds.push({ type: "profile", wanted: [...new Set(spec.profiles.filter(Boolean))] });
@@ -4397,7 +4420,9 @@ export async function setCollectionGrants(
           insert into learning_collection_grants
             (collection_id, subject_type, subject_id, level, granted_by)
           values ${sql.join(
-            wanted.map((w) => sql`(${collectionId}, ${type}, ${w}, 'view', ${grantedBy}::uuid)`),
+            wanted.map(
+              (w) => sql`(${collectionId}, ${type}, ${w}, ${levelOf(w)}, ${grantedBy}::uuid)`,
+            ),
             sql`, `,
           )}
           on conflict (collection_id, subject_type, subject_id)
@@ -4454,6 +4479,71 @@ export async function grantedCollectionRootsFor(
         )})`)) as unknown as Row[];
     return rows.map((r) => String(r.collection_id));
   });
+}
+
+/**
+ * The folders this viewer may reach, each with the STRONGEST level they hold.
+ *
+ * Two things make this more than a lookup:
+ *
+ *   INHERITANCE. A grant names one folder and means its subtree, so a level on
+ *   "Staging" applies to "Staging › tutorials" without a row of its own.
+ *
+ *   MULTIPLE ROUTES. The same person can reach one folder as themselves, through
+ *   a club, and through a role, each at a different level. The strongest wins —
+ *   the alternative is a person who was explicitly given edit access being held
+ *   to view because a club grant happened to be read-only.
+ *
+ * Returns an empty map when nothing is granted. The caller decides what that
+ * means; it is NOT "everything" (see _libraryFolderScope).
+ */
+export async function collectionLevelsFor(
+  orgId: string,
+  programId: string | null,
+  viewer: {
+    profileId?: string | null;
+    clubIds?: readonly string[];
+    roleIds?: readonly string[];
+    appKeys?: readonly string[];
+  },
+): Promise<Map<string, "view" | "edit">> {
+  const subjects: { type: string; id: string }[] = [];
+  if (viewer.profileId) subjects.push({ type: "profile", id: viewer.profileId });
+  for (const cid of viewer.clubIds ?? []) if (cid) subjects.push({ type: "club", id: cid });
+  for (const rid of viewer.roleIds ?? []) if (rid) subjects.push({ type: "role", id: rid });
+  for (const ak of viewer.appKeys ?? []) if (ak) subjects.push({ type: "app", id: ak });
+  if (!subjects.length) return new Map();
+
+  const rows = await asPrivileged(async (tx) => {
+    return (await tx.execute(sql`
+      select g.collection_id, g.level
+      from learning_collection_grants g
+      join learning_collections c on c.id = g.collection_id
+      where c.organization_id = ${orgId}::uuid
+        and c.program_id is not distinct from ${programId}::uuid
+        and (${sql.join(
+          subjects.map((s) => sql`(g.subject_type = ${s.type} and g.subject_id = ${s.id})`),
+          sql` or `,
+        )})`)) as unknown as Row[];
+  });
+  if (!rows.length) return new Map();
+
+  // Strongest level per granted ROOT, then pushed down the subtree.
+  const rank = (l: string) => (l === "edit" || l === "admin" ? 2 : 1);
+  const rootLevel = new Map<string, "view" | "edit">();
+  for (const r of rows) {
+    const id = String(r.collection_id);
+    const lvl = rank(String(r.level)) === 2 ? "edit" : "view";
+    if (!rootLevel.has(id) || rank(lvl) > rank(rootLevel.get(id)!)) rootLevel.set(id, lvl);
+  }
+
+  const out = new Map<string, "view" | "edit">();
+  for (const [root, lvl] of rootLevel) {
+    for (const id of await collectionSubtreeIds(orgId, [root])) {
+      if (!out.has(id) || rank(lvl) > rank(out.get(id)!)) out.set(id, lvl);
+    }
+  }
+  return out;
 }
 
 /** The partner programs (clubs) this profile belongs to — for club folder grants. */
@@ -4538,5 +4628,52 @@ export async function listAppTargetAudiences(
       out.set(id, list);
     }
     return out;
+  });
+}
+
+/**
+ * Save an edited pipeline. Only the fields provided are written.
+ *
+ * Deliberately narrow: title, description, blocks and the authoring draft. It
+ * cannot change an object's type, folders, owner, program or publish state,
+ * because someone granted edit access to a FOLDER was trusted with the content
+ * in it — not with where it lives or who else can see it.
+ */
+export async function updateLearningObjectPipeline(
+  orgId: string,
+  objectId: string,
+  patch: {
+    title?: string;
+    description?: string;
+    blocks?: unknown[];
+    pipelineDraft?: unknown;
+  },
+): Promise<boolean> {
+  const sets: SQL[] = [];
+  if (patch.title !== undefined) sets.push(sql`title = ${patch.title}`);
+  if (patch.description !== undefined) sets.push(sql`description = ${patch.description}`);
+  // JSON.stringify + ::jsonb is RIGHT HERE, because `sql` is drizzle's: the text
+  // is bound as a parameter and Postgres parses it via the cast. (The same
+  // pattern through the postgres.js driver double-encodes, because that driver
+  // serializes jsonb itself — which is how a jsonb STRING once got stored and
+  // every reader then called .find on text. Different layer, opposite rule.)
+  if (patch.blocks !== undefined) {
+    sets.push(sql`blocks = ${JSON.stringify(patch.blocks)}::jsonb`);
+  }
+  if (patch.pipelineDraft !== undefined) {
+    sets.push(
+      patch.pipelineDraft === null
+        ? sql`pipeline_draft = null`
+        : sql`pipeline_draft = ${JSON.stringify(patch.pipelineDraft)}::jsonb`,
+    );
+  }
+  if (!sets.length) return true;
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      update learning_objects
+      set ${sql.join(sets, sql`, `)}, updated_at = now()
+      where organization_id = ${orgId} and id = ${objectId}
+      returning id`);
+    return (rows as unknown as Row[]).length > 0;
   });
 }

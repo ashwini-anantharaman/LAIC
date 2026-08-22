@@ -34,6 +34,7 @@ import {
   listShareTargets,
   setContentShares,
   setFolderShares,
+  type FolderAccessLevel,
   type ClubMember,
   type LibraryObject,
   type ShareableClub,
@@ -57,6 +58,48 @@ function triFor(objects: LibraryObject[], pick: (o: LibraryObject) => string[], 
   if (!objects.length) return "off";
   const n = objects.filter((o) => pick(o).includes(id)).length;
   return n === 0 ? "off" : n === objects.length ? "on" : "some";
+}
+
+/**
+ * Review or Edit, for one person on one folder.
+ *
+ * Two words rather than a checkbox labelled "can edit", because the weaker
+ * option needs a name too: a reviewer is not "someone with edit off", they are
+ * someone who can open the whole pipeline and read it. Nothing on screen should
+ * make read access look like an absence.
+ */
+function LevelPicker({
+  value,
+  onChange,
+}: {
+  value: FolderAccessLevel;
+  onChange: (l: FolderAccessLevel) => void;
+}) {
+  return (
+    <span className="flex shrink-0 rounded-md border p-0.5" role="group" aria-label="Access level">
+      {(["view", "edit"] as FolderAccessLevel[]).map((l) => (
+        <button
+          key={l}
+          type="button"
+          aria-pressed={value === l}
+          title={
+            l === "view"
+              ? "Review: open the content and read its whole pipeline"
+              : "Edit: change the content and its pipeline"
+          }
+          onClick={() => onChange(l)}
+          className={cn(
+            "rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors",
+            value === l
+              ? "bg-accent text-accent-foreground"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {l === "view" ? "Review" : "Edit"}
+        </button>
+      ))}
+    </span>
+  );
 }
 
 export function ShareContentDialog({
@@ -84,7 +127,15 @@ export function ShareContentDialog({
    *
    * Every box reads on or off, never "some": one folder has one answer.
    */
-  folder?: { id: string; name: string; clubs: string[]; people: string[]; granted_apps: string[] };
+  folder?: {
+    id: string;
+    name: string;
+    clubs: string[];
+    people: string[];
+    granted_apps: string[];
+    /** profile id -> level, so reopening shows what was chosen. */
+    levels?: Record<string, FolderAccessLevel>;
+  };
   /** What the person thinks they are sharing ("Opening Bids", "4 folders"). */
   label: string;
   /**
@@ -118,6 +169,24 @@ export function ShareContentDialog({
   const [peopleState, setPeopleState] = useState<Map<string, Tri>>(new Map());
   const initialApps = useMemo(() => new Map<string, Tri>(), []);
   const [appState, setAppState] = useState<Map<string, Tri>>(new Map());
+  /**
+   * What each ticked person may DO in this folder — review or edit.
+   *
+   * Folder shares only. A per-object share has no level to carry: the level lives
+   * on the folder grant, which is the thing that keeps applying to content added
+   * later. Seeded from the folder's stored levels so reopening the dialog shows
+   * what was chosen rather than resetting everyone to review.
+   */
+  const [levels, setLevels] = useState<Map<string, FolderAccessLevel>>(
+    () => new Map(Object.entries(folder?.levels ?? {}) as [string, FolderAccessLevel][]),
+  );
+  const initialLevels = useMemo(
+    () => new Map(Object.entries(folder?.levels ?? {}) as [string, FolderAccessLevel][]),
+    [folder],
+  );
+  const levelOf = (id: string): FolderAccessLevel => levels.get(id) ?? "view";
+  const setLevel = (id: string, l: FolderAccessLevel) =>
+    setLevels((m) => new Map(m).set(id, l));
 
   useEffect(() => {
     let live = true;
@@ -190,7 +259,15 @@ export function ShareContentDialog({
     clubs !== null &&
     ((canShareClubs && [...clubState].some(([k, v]) => initialClubs.get(k) !== v)) ||
       (canShareMembers && [...peopleState].some(([k, v]) => initialPeople.get(k) !== v)) ||
-      (canShareApps && [...appState].some(([k, v]) => initialApps.get(k) !== v)));
+      (canShareApps && [...appState].some(([k, v]) => initialApps.get(k) !== v)) ||
+      // Changing somebody from review to edit is a change, even when the same
+      // people stay ticked. Without this the Save button stayed dead on the one
+      // edit this dialog exists to make.
+      (!!folder &&
+        canShareMembers &&
+        [...peopleState]
+          .filter(([, v]) => v === "on")
+          .some(([k]) => (initialLevels.get(k) ?? "view") !== levelOf(k))));
 
   // Rows still reading "some" were never touched, and a whole-set save would
   // flatten them. Keep them by writing them ON only where they already were.
@@ -219,7 +296,11 @@ export function ShareContentDialog({
         ? [...appState].filter(([, v]) => v === "on").map(([k]) => k)
         : undefined;
       if (folder) {
-        await setFolderShares(programId, folder.id, clubIds, personIds, appIds);
+        // Only for people actually being granted — a level for somebody unticked
+        // is a statement about nobody.
+        const lv: Record<string, FolderAccessLevel> = {};
+        for (const id of personIds ?? []) lv[id] = levelOf(id);
+        await setFolderShares(programId, folder.id, clubIds, personIds, appIds, lv);
         toast.success(`\u201c${folder.name}\u201d and everything in it`);
       } else {
         const res = await setContentShares(
@@ -381,17 +462,24 @@ export function ShareContentDialog({
 
                     {open && canShareMembers &&
                       club.members.map((m) => (
+                        <div key={m.profile_id} className="ml-8 flex w-[calc(100%-2rem)] items-center gap-2">
                         <button
-                          key={m.profile_id}
                           type="button"
                           onClick={() => toggle(peopleState, setPeopleState, m.profile_id)}
                           aria-pressed={peopleState.get(m.profile_id) === "on"}
-                          className="ml-8 flex w-[calc(100%-2rem)] items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
+                          className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
                         >
                           <Box state={peopleState.get(m.profile_id) ?? "off"} />
                           <User className="size-3.5 text-muted-foreground" />
                           <span className="truncate text-sm">{m.display_name}</span>
                         </button>
+                        {folder && peopleState.get(m.profile_id) === "on" && (
+                          <LevelPicker
+                            value={levelOf(m.profile_id)}
+                            onChange={(l) => setLevel(m.profile_id, l)}
+                          />
+                        )}
+                        </div>
                       ))}
                   </div>
                 );
@@ -407,12 +495,12 @@ export function ShareContentDialog({
                     Program members
                   </p>
                   {loners.map((m) => (
+                    <div key={m.profile_id} className="flex w-full items-center gap-2">
                     <button
-                      key={m.profile_id}
                       type="button"
                       aria-pressed={peopleState.get(m.profile_id) === "on"}
                       onClick={() => toggle(peopleState, setPeopleState, m.profile_id)}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
+                      className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
                     >
                       <Box state={peopleState.get(m.profile_id) ?? "off"} />
                       <User className="size-3.5 text-muted-foreground" />
@@ -421,6 +509,13 @@ export function ShareContentDialog({
                         no club
                       </span>
                     </button>
+                    {folder && peopleState.get(m.profile_id) === "on" && (
+                      <LevelPicker
+                        value={levelOf(m.profile_id)}
+                        onChange={(l) => setLevel(m.profile_id, l)}
+                      />
+                    )}
+                    </div>
                   ))}
                 </div>
               )}

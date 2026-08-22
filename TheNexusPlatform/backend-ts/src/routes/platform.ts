@@ -3319,6 +3319,15 @@ const _collectionRenameSchema = z.object({
 
 const _collectionSharesSchema = z.object({
   program_id: z.string().optional(),
+  /**
+   * Per-person access level: 'view' = review (read the pipeline, change nothing),
+   * 'edit' = edit it. Keyed by profile id; anyone omitted gets 'view'.
+   *
+   * Only profiles carry a level. A club or an app is a standing audience, and
+   * "everyone in this club may edit" is not a thing anybody asked for — it would
+   * hand authoring to whoever joins next.
+   */
+  levels: z.record(z.string(), z.enum(["view", "edit"])).optional(),
   // NO DEFAULTS, for the reason _bulkSharesSchema gives: absent means "not mine
   // to say", empty array means "none of this kind". A role holding only
   // share_member must not revoke the club grants a content manager made.
@@ -3465,6 +3474,13 @@ platformRouter.get("/learning/collections", async (c) => {
       clubs: of(String(row.id), "club"),
       people: of(String(row.id), "profile"),
       granted_apps: of(String(row.id), "app"),
+      // Per-person level, so the share sheet can show Review vs Edit rather than
+      // making the content manager remember which they picked.
+      levels: Object.fromEntries(
+        grants
+          .filter((g) => g.collection_id === row.id && g.subject_type === "profile")
+          .map((g) => [String(g.subject_id), String(g.level) === "edit" ? "edit" : "view"]),
+      ),
     })),
   });
 });
@@ -3576,10 +3592,122 @@ platformRouter.put("/learning/collections/:id/shares", async (c) => {
       ...(touchesClubs ? { clubs: req.club_program_ids } : {}),
       ...(touchesPeople ? { profiles: req.profile_ids } : {}),
       ...(touchesApps ? { apps: req.app_keys } : {}),
+      ...(req.levels ? { levels: req.levels } : {}),
     },
     access.profileId ?? null,
   );
   if (!ok) throw new HttpError(404, "Folder not found");
+  return c.json({ ok: true });
+});
+
+// ── Reviewing and editing one object, without the Content Studio ────────────
+//
+// A folder grant carries a LEVEL (0012): 'view' is review access — open a piece
+// of content and read its whole pipeline — and 'edit' additionally allows
+// changing it. These two endpoints are what those levels actually buy, and they
+// exist so that being trusted with one folder does not require handing somebody
+// the whole authoring app.
+
+/**
+ * The level this caller holds on a given object, via the folders it sits in.
+ *
+ * Returns 'edit', 'view', or null for no access. The STRONGEST level across the
+ * object's folders wins: content filed in two places, one of them shared for
+ * editing, is editable — the alternative would make an object's editability
+ * depend on which of its folders you happened to look at.
+ *
+ * A library GOVERNOR (content manager) always gets 'edit': they curate this
+ * library, and locking them out of content they can already delete would be
+ * theatre.
+ */
+async function _objectAccessLevel(
+  access: ResolvedPlatformAccess,
+  eff: { capabilities: string[]; fineGrained?: boolean; clubRoleId?: string | null },
+  object: Row,
+): Promise<"edit" | "view" | null> {
+  if (access.level === "admin" || _governsLibrary(eff)) return "edit";
+  const clubIds = access.profileId
+    ? await graph.clubIdsForProfile(access.orgId, access.profileId).catch(() => [] as string[])
+    : [];
+  if (access.partnerProgramId) clubIds.push(access.partnerProgramId);
+  const levels = await graph.collectionLevelsFor(access.orgId, access.programId, {
+    profileId: access.profileId ?? null,
+    clubIds,
+    roleIds: eff.clubRoleId ? [eff.clubRoleId] : [],
+  });
+  const ids = Array.isArray(object.collection_ids) ? (object.collection_ids as string[]) : [];
+  let best: "edit" | "view" | null = null;
+  for (const id of ids) {
+    const l = levels.get(String(id));
+    if (l === "edit") return "edit";
+    if (l === "view") best = "view";
+  }
+  return best;
+}
+
+/**
+ * One object's full pipeline, for reading or editing inside Nexus.
+ *
+ * Returns `can_edit` so the screen never has to infer it from a capability list
+ * — the server already knows, and a reviewer shown an editable surface would be
+ * told "no" only on save.
+ */
+platformRouter.get("/learning/objects/:object_id/pipeline", async (c) => {
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  const level = await _objectAccessLevel(access, eff, object);
+  if (!level) throw new HttpError(403, "That content was not shared with you");
+  return c.json({
+    id: String(object.id),
+    title: (object.title as string) ?? "",
+    type: (object.type as string) ?? "",
+    status: (object.status as string) ?? "draft",
+    description: (object.description as string) ?? "",
+    blocks: Array.isArray(object.blocks) ? object.blocks : [],
+    pipeline_draft: object.pipeline_draft ?? null,
+    collection_names: Array.isArray(object.collection_names) ? object.collection_names : [],
+    version_number: (object.version_number as number | null) ?? null,
+    can_edit: level === "edit",
+  });
+});
+
+const _pipelineSaveSchema = z.object({
+  program_id: z.string().optional(),
+  title: z.string().trim().min(1).max(300).optional(),
+  description: z.string().max(4000).optional(),
+  /** The whole block list, as edited. Absent leaves it untouched. */
+  blocks: z.array(z.any()).optional(),
+  /** The authoring draft (sections, parts). Absent leaves it untouched. */
+  pipeline_draft: z.any().optional(),
+});
+
+platformRouter.put("/learning/objects/:object_id/pipeline", async (c) => {
+  const req = parseBody(_pipelineSaveSchema, await c.req.json());
+  const { access, eff } = await _libraryReader(
+    c, req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  const level = await _objectAccessLevel(access, eff, object);
+  // REVIEW ACCESS IS READ-ONLY, and says so in those words. "Missing capability"
+  // would be wrong twice over: they hold the right capability, and the thing they
+  // lack is a level on a folder somebody else controls.
+  if (level !== "edit") {
+    throw new HttpError(
+      403,
+      level === "view"
+        ? "You have review access to this content, not edit access"
+        : "That content was not shared with you",
+    );
+  }
+  const ok = await graph.updateLearningObjectPipeline(access.orgId, String(object.id), {
+    title: req.title,
+    description: req.description,
+    blocks: req.blocks,
+    pipelineDraft: req.pipeline_draft,
+  });
+  if (!ok) throw new HttpError(404, "Content not found");
   return c.json({ ok: true });
 });
 

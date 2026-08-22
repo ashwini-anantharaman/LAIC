@@ -1767,6 +1767,8 @@ export interface LibraryFolder {
   clubs: string[];
   people: string[];
   granted_apps: string[];
+  /** profile id -> level, for the people listed above. Absent entries are 'view'. */
+  levels?: Record<string, FolderAccessLevel>;
 }
 
 export interface LibraryFolderTree {
@@ -1820,12 +1822,57 @@ export async function deleteLibraryFolder(programId: string, folderId: string): 
  * Same `undefined` means untouched / `[]` means revoked contract as
  * setContentShares, and for the same partial-authority reason.
  */
+/**
+ * What one person may do inside a folder.
+ *   'view' — REVIEW access: open content and read its whole pipeline
+ *   'edit' — additionally change it
+ */
+export type FolderAccessLevel = "view" | "edit";
+
+export interface ObjectPipeline {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  description: string;
+  blocks: any[];
+  pipeline_draft: any | null;
+  collection_names: string[];
+  version_number: number | null;
+  /** Decided by the SERVER from the folder grant, not inferred from capabilities. */
+  can_edit: boolean;
+}
+
+/** One object's full pipeline, for reviewing or editing inside Nexus. */
+export async function getObjectPipeline(
+  programId: string,
+  objectId: string,
+): Promise<ObjectPipeline> {
+  return request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/pipeline?program_id=${encodeURIComponent(programId)}`,
+  );
+}
+
+/** Save an edited pipeline. Only what you pass is written. */
+export async function saveObjectPipeline(
+  programId: string,
+  objectId: string,
+  patch: { title?: string; description?: string; blocks?: any[]; pipeline_draft?: any },
+): Promise<void> {
+  await request(`/api/platform/learning/objects/${encodeURIComponent(objectId)}/pipeline`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, ...patch }),
+  });
+}
+
 export async function setFolderShares(
   programId: string,
   folderId: string,
   clubProgramIds: string[] | undefined,
   profileIds: string[] | undefined,
   appKeys: string[] | undefined,
+  /** Per-profile level. Anyone omitted is 'view' (review access). */
+  levels?: Record<string, FolderAccessLevel>,
 ): Promise<void> {
   await request(`/api/platform/learning/collections/${encodeURIComponent(folderId)}/shares`, {
     method: "PUT",
@@ -1834,6 +1881,7 @@ export async function setFolderShares(
       ...(clubProgramIds !== undefined ? { club_program_ids: clubProgramIds } : {}),
       ...(profileIds !== undefined ? { profile_ids: profileIds } : {}),
       ...(appKeys !== undefined ? { app_keys: appKeys } : {}),
+      ...(levels ? { levels } : {}),
     }),
   });
 }
