@@ -155,7 +155,7 @@ export function PipelineStudioDialog({
 
         <div className="min-h-0 flex-1 bg-muted/30">
           {view === "versions" ? (
-            <ObjectVersionsPanel programId={programId} objectId={objectId} />
+            <ObjectVersionsPanel programId={programId} objectId={objectId} canEdit={canEdit} />
           ) : error ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm">
               <div>

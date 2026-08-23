@@ -18,20 +18,32 @@
  *           would make the decisions unfindable.
  */
 import { useEffect, useState } from "react";
-import { Check, FileClock, Loader2, PenLine } from "lucide-react";
+import { Check, FileClock, Loader2, PenLine, RotateCcw } from "lucide-react";
 
-import { getObjectVersions, type ObjectVersion } from "@/services/api";
+import { getObjectVersions, restoreObjectVersion, type ObjectVersion } from "@/services/api";
+import { Button } from "@/app/components/ui/button";
+import { toast } from "sonner";
 import { cn } from "@/app/components/ui/utils";
 
 export function ObjectVersionsPanel({
   programId,
   objectId,
+  canEdit,
 }: {
   programId: string;
   objectId: string;
+  /** Restore changes what the library carries, so reading history is not enough. */
+  canEdit: boolean;
 }) {
+  const [restoring, setRestoring] = useState<number | null>(null);
   const [data, setData] = useState<{ current_version: number | null; versions: ObjectVersion[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    setData(null);
+    setError(null);
+    return getObjectVersions(programId, objectId).then(setData);
+  };
 
   useEffect(() => {
     let live = true;
@@ -120,6 +132,38 @@ export function ObjectVersionsPanel({
                 {v.title ? ` · “${v.title}”` : ""}
               </p>
               {v.note && <p className="mt-1 text-xs italic text-muted-foreground">{v.note}</p>}
+              {/* RESTORE WRITES FORWARD. The label says "Restore" but the result is
+                  a new version carrying this one's content -- nothing after it is
+                  deleted, so reversing a decision stays part of the record. */}
+              {canEdit && !isCurrent && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="mt-2"
+                  disabled={restoring != null}
+                  onClick={() => {
+                    void (async () => {
+                      setRestoring(v.version_number);
+                      try {
+                        const r = await restoreObjectVersion(programId, objectId, v.version_number);
+                        toast.success(`Restored v${v.version_number} — now live as v${r.version_number}`);
+                        await load();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Couldn't restore");
+                      } finally {
+                        setRestoring(null);
+                      }
+                    })();
+                  }}
+                >
+                  {restoring === v.version_number ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <RotateCcw className="size-3.5" />
+                  )}
+                  Restore this version
+                </Button>
+              )}
             </li>
           );
         })}

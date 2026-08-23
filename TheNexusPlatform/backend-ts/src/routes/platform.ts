@@ -3850,6 +3850,60 @@ platformRouter.get("/learning/objects/:object_id/versions", async (c) => {
   });
 });
 
+/**
+ * Put an old version back, as a NEW version.
+ *
+ * HISTORY IS APPEND-ONLY. Restoring v3 does not delete v4..v9 or rewind the
+ * counter -- it writes v3's content forward as v10, noting where it came from. A
+ * restore that erased what it replaced would destroy the record of a decision
+ * being reversed, which is exactly the thing a history exists to keep.
+ *
+ * Needs EDIT access, because it changes what the library and the app carry. Being
+ * able to read the history does not imply being able to move it.
+ */
+platformRouter.post("/learning/objects/:object_id/versions/:n/restore", async (c) => {
+  const programId = c.req.query("program_id") ?? null;
+  const { access, eff } = await _libraryReader(c, programId);
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  const level = await _objectAccessLevel(access, eff, object);
+  if (level !== "edit") {
+    throw new HttpError(
+      403,
+      level === "view"
+        ? "You have review access to this content, not edit access"
+        : "That content was not shared with you",
+    );
+  }
+  const n = Number(c.req.param("n"));
+  if (!Number.isFinite(n)) throw new HttpError(400, "That is not a version number");
+  const snap = await graph.getLearningObjectVersion(access.orgId, String(object.id), n);
+  if (!snap) throw new HttpError(404, "No such version");
+
+  const version = await graph.updateLearningObjectPipeline(access.orgId, String(object.id), {
+    title: (snap.title as string) ?? undefined,
+    blocks: Array.isArray(snap.blocks) ? (snap.blocks as unknown[]) : [],
+    pipelineDraft: snap.pipeline_draft ?? null,
+    bumpVersion: true,
+  });
+  if (version === null) throw new HttpError(404, "Content not found");
+  await graph.recordLearningObjectVersion(access.orgId, String(object.id), {
+    versionNumber: version,
+    title: (snap.title as string) ?? null,
+    blocks: Array.isArray(snap.blocks) ? (snap.blocks as unknown[]) : [],
+    pipelineDraft: snap.pipeline_draft ?? null,
+    createdBy: access.profileId ?? null,
+    createdByName: access.profileId
+      ? await graph.getProfileName(access.orgId, access.profileId).catch(() => null)
+      : null,
+    // Where it came from, in the row itself: a list showing only "v10" would
+    // leave a reader unable to tell a restore from an ordinary save.
+    note: `Restored from v${n}`,
+    status: "committed",
+  });
+  return c.json({ ok: true, version_number: version, restored_from: n });
+});
+
 /** One version's full snapshot, for reading it or comparing against it. */
 platformRouter.get("/learning/objects/:object_id/versions/:n", async (c) => {
   const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);

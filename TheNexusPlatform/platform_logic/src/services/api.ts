@@ -1869,6 +1869,24 @@ export async function getObjectVersions(
   );
 }
 
+/**
+ * Put an old version back, as a NEW version.
+ *
+ * Append-only: restoring v3 writes its content forward rather than deleting what
+ * came after, so the record of a decision being reversed survives. Needs edit
+ * access.
+ */
+export async function restoreObjectVersion(
+  programId: string,
+  objectId: string,
+  versionNumber: number,
+): Promise<{ version_number: number; restored_from: number }> {
+  return request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/versions/${versionNumber}/restore?program_id=${encodeURIComponent(programId)}`,
+    { method: "POST" },
+  );
+}
+
 /** One object's full pipeline, for reviewing or editing inside Nexus. */
 export async function getObjectPipeline(
   programId: string,
