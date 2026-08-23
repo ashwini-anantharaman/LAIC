@@ -1843,6 +1843,32 @@ export interface ObjectPipeline {
   can_edit: boolean;
 }
 
+export interface ObjectVersion {
+  version_number: number;
+  title: string | null;
+  created_by_name: string | null;
+  note: string | null;
+  /** 'committed' — somebody pressed Save. 'draft' — they closed with edits. */
+  status: "committed" | "draft";
+  created_at: string | null;
+  block_count: number;
+}
+
+/**
+ * One object's version history.
+ *
+ * Review access is enough to read it: a reviewer who cannot see what changed is
+ * being asked to review a moving target.
+ */
+export async function getObjectVersions(
+  programId: string,
+  objectId: string,
+): Promise<{ current_version: number | null; versions: ObjectVersion[] }> {
+  return request(
+    `/api/platform/learning/objects/${encodeURIComponent(objectId)}/versions?program_id=${encodeURIComponent(programId)}`,
+  );
+}
+
 /** One object's full pipeline, for reviewing or editing inside Nexus. */
 export async function getObjectPipeline(
   programId: string,

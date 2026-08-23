@@ -33,6 +33,7 @@ import { useEffect, useState } from "react";
 import { Eye, Loader2, SquarePen, X } from "lucide-react";
 
 import { launchLearningPlatform } from "@/services/api";
+import { ObjectVersionsPanel } from "@/nexus/routes/ObjectVersionsPanel";
 import { Button } from "@/app/components/ui/button";
 import { cn } from "@/app/components/ui/utils";
 
@@ -54,10 +55,10 @@ export function PipelineStudioDialog({
    *   'pipeline' — how it was built, and (with edit access) change it
    *   'output'   — the finished thing, exactly as a learner receives it
    */
-  view?: "pipeline" | "output";
+  view?: "pipeline" | "output" | "versions";
   onClose: () => void;
 }) {
-  const [view, setView] = useState<"pipeline" | "output">(initialView);
+  const [view, setView] = useState<"pipeline" | "output" | "versions">(initialView);
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -65,6 +66,9 @@ export function PipelineStudioDialog({
     let live = true;
     setSrc(null);
     setError(null);
+    // Versions come from Nexus's own API, so this view needs no Studio launch —
+    // minting a single-use token for a list nobody frames would be waste.
+    if (view === "versions") return;
     void (async () => {
       try {
         const l = await launchLearningPlatform(programId);
@@ -127,7 +131,7 @@ export function PipelineStudioDialog({
               their edit did — asking them to close and reopen for that is asking
               them to hold it in their head. */}
           <div className="ml-auto flex rounded-lg border p-0.5">
-            {(["pipeline", "output"] as const).map((v) => (
+            {(["pipeline", "output", "versions"] as const).map((v) => (
               <button
                 key={v}
                 type="button"
@@ -140,7 +144,7 @@ export function PipelineStudioDialog({
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                {v === "pipeline" ? "Pipeline" : "Final output"}
+                {v === "pipeline" ? "Pipeline" : v === "output" ? "Final output" : "Versions"}
               </button>
             ))}
           </div>
@@ -150,7 +154,9 @@ export function PipelineStudioDialog({
         </div>
 
         <div className="min-h-0 flex-1 bg-muted/30">
-          {error ? (
+          {view === "versions" ? (
+            <ObjectVersionsPanel programId={programId} objectId={objectId} />
+          ) : error ? (
             <div className="flex h-full items-center justify-center p-6 text-center text-sm">
               <div>
                 <p className="font-medium text-foreground">The pipeline didn&rsquo;t open</p>

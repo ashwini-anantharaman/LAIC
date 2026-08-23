@@ -213,6 +213,8 @@ export interface AppState {
    * editor is not doing, and offer one library save instead.
    */
   pipelineEditMode: boolean;
+  /** Ask that the NEXT save be a committed version. Called by the Save button. */
+  requestPipelineCommit: () => void;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -351,6 +353,9 @@ function StudioApp() {
   const [creatorObjectType, setCreatorObjectTypeState] = useState<string>('lesson');
   const [createdObjects, setCreatedObjects] = useState<LearningObject[]>([]);
   const [editingObjectId, setEditingObjectId] = useState<string | null>(null);
+  // The unload handler is registered once and must not close over a stale id.
+  const editingObjectIdRef = useRef<string | null>(null);
+  useEffect(() => { editingObjectIdRef.current = editingObjectId; }, [editingObjectId]);
   /** Pipeline embed opened for REVIEW: every save path refuses. */
   const [pipelineReadOnly, setPipelineReadOnly] = useState(false);
   // addObject is a useCallback with its own dependency list; a ref keeps the
@@ -364,6 +369,45 @@ function StudioApp() {
   const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
   const [pipelineSaveError, setPipelineSaveError] = useState<string | null>(null);
   const [pipelineSaving, setPipelineSaving] = useState(false);
+  /**
+   * Edits written since the last committed version.
+   *
+   * The creator autosaves constantly, so "has anything changed" cannot be read
+   * off the content -- the content is always current. This tracks whether any of
+   * those autosaves happened since somebody last pressed Save, which is what
+   * decides whether closing the editor is worth recording as a draft version.
+   */
+  const pipelineDirtyRef = useRef(false);
+  /** Set by the Save button, consumed by the next addObject. */
+  const pipelineCommitRef = useRef(false);
+
+  /**
+   * CLOSING WITH UNCOMMITTED EDITS RECORDS A DRAFT VERSION.
+   *
+   * The content is already safe -- autosave wrote it -- but nothing marks where
+   * the person got to, so reopening tells them nothing about whether their last
+   * pass was ever captured. A tagged draft says "this is where you stopped"
+   * without pretending they declared it finished.
+   *
+   * keepalive, because the page is going away: a normal fetch is cancelled on
+   * unload and the draft would be lost precisely when it matters most.
+   */
+  useEffect(() => {
+    if (!pipelineEditRef.current) return;
+    const onLeave = () => {
+      if (!pipelineDirtyRef.current || !editingObjectIdRef.current) return;
+      pipelineDirtyRef.current = false;
+      void savePipelineToLibrary(editingObjectIdRef.current, {
+        commit: true,
+        status: 'draft',
+        note: 'Closed without saving',
+      }).catch(() => {
+        /* Leaving anyway; the content itself was already written. */
+      });
+    };
+    window.addEventListener('pagehide', onLeave);
+    return () => window.removeEventListener('pagehide', onLeave);
+  }, []);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
@@ -892,17 +936,30 @@ function StudioApp() {
       for (const k of ['structuredV2Draft', 'tutorialV3Draft', 'tutorialV2Draft']) {
         if (anyPartial[k]) draft[k] = anyPartial[k];
       }
+      // A commit is claimed once. Reset immediately so a later autosave cannot
+      // ride the flag and cut a version nobody asked for.
+      const committing = pipelineCommitRef.current;
+      pipelineCommitRef.current = false;
       setPipelineSaveError(null);
-      setPipelineSaving(true);
+      if (committing) setPipelineSaving(true);
+      else pipelineDirtyRef.current = true;
       void savePipelineToLibrary(partial.id, {
+        ...(committing ? { commit: true } : {}),
         ...(partial.title ? { title: partial.title } : {}),
         ...(partial.description !== undefined ? { description: partial.description } : {}),
         ...(partial.blocks ? { blocks: partial.blocks } : {}),
         ...(Object.keys(draft).length ? { pipeline_draft: draft } : {}),
       })
-        .then(({ version_number }) => setPipelineVersion(version_number))
-        .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'))
-        .finally(() => setPipelineSaving(false));
+        .then(({ version_number }) => {
+          if (committing) {
+            setPipelineVersion(version_number);
+            pipelineDirtyRef.current = false;
+          }
+        })
+        .catch((e) => {
+          if (committing) setPipelineSaveError(e instanceof Error ? e.message : 'Save failed');
+        })
+        .finally(() => { if (committing) setPipelineSaving(false); });
     }
     const versionMode = opts?.version ?? 'auto';
     const onVersionError = opts?.onVersionError;
@@ -1335,6 +1392,7 @@ function StudioApp() {
     syncFailure,
     pipelineReadOnly, pipelineVersion, pipelineSaveError, pipelineSaving,
     pipelineEditMode: pipelineEditRef.current,
+    requestPipelineCommit: () => { pipelineCommitRef.current = true; },
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,

@@ -4663,6 +4663,8 @@ export async function updateLearningObjectPipeline(
     description?: string;
     blocks?: unknown[];
     pipelineDraft?: unknown;
+    /** Only a deliberate save is a version. See 0013's header. */
+    bumpVersion?: boolean;
   },
 ): Promise<number | null> {
   const sets: SQL[] = [];
@@ -4683,7 +4685,16 @@ export async function updateLearningObjectPipeline(
         : sql`pipeline_draft = ${JSON.stringify(patch.pipelineDraft)}::jsonb`,
     );
   }
-  if (!sets.length) return null;
+  // Nothing to write, but a commit still has to report the number it landed on.
+  if (!sets.length && !patch.bumpVersion) {
+    return asPrivileged(async (tx) => {
+      const rows = await tx.execute(sql`
+        select version_number from learning_objects
+        where organization_id = ${orgId} and id = ${objectId} limit 1`);
+      const row = (rows as unknown as Row[])[0];
+      return row ? Number(row.version_number ?? 0) : null;
+    });
+  }
   // EVERY SAVE IS A NEW VERSION, and the number comes back so the screen can say
   // which one. Editing content somebody else authored has to be legible after the
   // fact -- "saved" alone leaves a reviewer unable to tell their change landed,
@@ -4691,7 +4702,7 @@ export async function updateLearningObjectPipeline(
   //
   // Server-side and monotonic: the Studio's own version history is per browser
   // (objectVersionsStore), so it cannot be the count anybody else reads.
-  sets.push(sql`version_number = coalesce(version_number, 0) + 1`);
+  if (patch.bumpVersion) sets.push(sql`version_number = coalesce(version_number, 0) + 1`);
   return asPrivileged(async (tx) => {
     const rows = await tx.execute(sql`
       update learning_objects
@@ -4700,5 +4711,95 @@ export async function updateLearningObjectPipeline(
       returning version_number`);
     const row = (rows as unknown as Row[])[0];
     return row ? Number(row.version_number) : null;
+  });
+}
+
+/**
+ * Record one committed version of an object.
+ *
+ * Idempotent on (object_id, version_number): a retried save re-records the same
+ * number rather than inventing a second entry for one save.
+ */
+export async function recordLearningObjectVersion(
+  orgId: string,
+  objectId: string,
+  v: {
+    versionNumber: number;
+    title?: string | null;
+    blocks?: unknown[];
+    pipelineDraft?: unknown;
+    createdBy?: string | null;
+    createdByName?: string | null;
+    note?: string | null;
+    /** 'committed' — somebody pressed Save. 'draft' — they closed with edits. */
+    status?: "committed" | "draft";
+  },
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_object_versions
+        (organization_id, object_id, version_number, title, blocks, pipeline_draft,
+         created_by, created_by_name, note, status)
+      values (${orgId}::uuid, ${objectId}, ${v.versionNumber}, ${v.title ?? null},
+              ${JSON.stringify(v.blocks ?? [])}::jsonb,
+              ${v.pipelineDraft != null ? JSON.stringify(v.pipelineDraft) : null}::jsonb,
+              ${v.createdBy ?? null}::uuid, ${v.createdByName ?? null}, ${v.note ?? null},
+              ${v.status ?? "committed"})
+      on conflict (object_id, version_number) do update set
+        title = excluded.title, blocks = excluded.blocks,
+        pipeline_draft = excluded.pipeline_draft, note = excluded.note,
+        -- A commit may LAND ON a number a draft already took (they closed, then
+        -- reopened and saved). Committed wins; a draft never demotes one.
+        status = case when excluded.status = 'committed' then 'committed'
+                      else learning_object_versions.status end`);
+  });
+}
+
+/** One object's committed versions, newest first. Metadata only — no snapshots. */
+export async function listLearningObjectVersions(
+  orgId: string,
+  objectId: string,
+): Promise<Row[]> {
+  return asPrivileged(async (tx) => {
+    // Snapshots are large (a tutorial carries 38 blocks), so a LIST must not
+    // carry them — one open of a history panel would ship every version's whole
+    // content to render a column of dates.
+    const rows = await tx.execute(sql`
+      select version_number, title, created_by, created_by_name, note, status,
+             created_at::text as created_at,
+             jsonb_array_length(coalesce(blocks, '[]'::jsonb)) as block_count
+      from learning_object_versions
+      where organization_id = ${orgId}::uuid and object_id = ${objectId}
+      order by version_number desc`);
+    return rows as unknown as Row[];
+  });
+}
+
+/** One version's full snapshot. */
+export async function getLearningObjectVersion(
+  orgId: string,
+  objectId: string,
+  versionNumber: number,
+): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select version_number, title, blocks, pipeline_draft, created_by_name, note,
+             created_at::text as created_at
+      from learning_object_versions
+      where organization_id = ${orgId}::uuid and object_id = ${objectId}
+        and version_number = ${versionNumber}
+      limit 1`);
+    return ((rows as unknown as Row[])[0] as Row | undefined) ?? null;
+  });
+}
+
+/** A profile's display name, for stamping into records that outlive membership. */
+export async function getProfileName(orgId: string, profileId: string): Promise<string | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select coalesce(display_name, name, email) as n from profiles
+      where organization_id = ${orgId}::uuid and id = ${profileId}::uuid limit 1`);
+    const row = (rows as unknown as Row[])[0];
+    return row ? ((row.n as string) ?? null) : null;
   });
 }

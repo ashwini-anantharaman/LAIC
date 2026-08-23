@@ -231,7 +231,10 @@ export function TutorialV3AssembleEditor({
    * library, and the only question they have is whether it landed there. Leaving
    * both buttons up asked them to guess which one meant that; neither did.
    */
-  const { pipelineEditMode, pipelineSaving, pipelineVersion, pipelineSaveError } = useApp();
+  const {
+    pipelineEditMode, pipelineSaving, pipelineVersion, pipelineSaveError,
+    requestPipelineCommit,
+  } = useApp();
 
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
@@ -862,7 +865,12 @@ export function TutorialV3AssembleEditor({
         <div className="fixed bottom-5 left-5 z-40 flex items-center gap-2.5">
           <button
             type="button"
-            onClick={onSave}
+            onClick={() => {
+              // Declare the intent BEFORE the save runs: this is the one click
+              // that turns continuous autosaving into a version somebody meant.
+              requestPipelineCommit();
+              onSave();
+            }}
             disabled={pipelineSaving}
             className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
             style={{

@@ -3740,6 +3740,26 @@ platformRouter.get("/learning/objects/:object_id/pipeline", async (c) => {
 
 const _pipelineSaveSchema = z.object({
   program_id: z.string().optional(),
+  /**
+   * A DELIBERATE SAVE, not an autosave.
+   *
+   * Only a commit moves the version number and records a snapshot. Every write
+   * used to bump it, autosaves included, so a tutorial reached v11 from being
+   * opened and looked at -- and a history of eleven identical entries buries the
+   * two saves somebody actually made. An autosave still persists the content; it
+   * just does not claim to be a version.
+   */
+  commit: z.boolean().optional(),
+  /**
+   * 'draft' when this commit is the editor closing with uncommitted edits.
+   *
+   * The work is kept -- losing it because somebody clicked the wrong X would be
+   * indefensible -- but it is tagged, because a list that showed an accident
+   * beside a decision would make the decisions unfindable.
+   */
+  status: z.enum(["committed", "draft"]).optional(),
+  /** The author's own words about this save, shown in the history. */
+  note: z.string().trim().max(500).optional(),
   title: z.string().trim().min(1).max(300).optional(),
   description: z.string().max(4000).optional(),
   /** The whole block list, as edited. Absent leaves it untouched. */
@@ -3767,14 +3787,90 @@ platformRouter.put("/learning/objects/:object_id/pipeline", async (c) => {
         : "That content was not shared with you",
     );
   }
+  const commit = req.commit === true;
   const version = await graph.updateLearningObjectPipeline(access.orgId, String(object.id), {
     title: req.title,
     description: req.description,
     blocks: req.blocks,
     pipelineDraft: req.pipeline_draft,
+    bumpVersion: commit,
   });
   if (version === null) throw new HttpError(404, "Content not found");
-  return c.json({ ok: true, version_number: version });
+  if (commit) {
+    // Snapshot what was JUST written, re-read rather than reassembled from the
+    // request: a partial save (blocks only, say) would otherwise record a version
+    // missing everything the request did not mention.
+    const saved = await graph.getLearningObject(access.orgId, String(object.id));
+    await graph.recordLearningObjectVersion(access.orgId, String(object.id), {
+      versionNumber: version,
+      title: (saved?.title as string) ?? null,
+      blocks: Array.isArray(saved?.blocks) ? (saved!.blocks as unknown[]) : [],
+      pipelineDraft: saved?.pipeline_draft ?? null,
+      createdBy: access.profileId ?? null,
+      // The NAME as well as the id, because a history list still has to show who
+      // wrote v11 after that person has left the program and the join is empty.
+      createdByName: access.profileId
+        ? await graph
+            .getProfileName(access.orgId, access.profileId)
+            .catch(() => null)
+        : null,
+      note: req.note ?? null,
+      status: req.status ?? "committed",
+    });
+  }
+  return c.json({ ok: true, version_number: version, committed: commit });
+});
+
+/**
+ * One object's version history.
+ *
+ * REVIEW ACCESS IS ENOUGH. Reading history is reading, and a reviewer who cannot
+ * see what changed is being asked to review a moving target. Writing a version
+ * still needs edit access, which is the save endpoint above.
+ */
+platformRouter.get("/learning/objects/:object_id/versions", async (c) => {
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  if (!(await _objectAccessLevel(access, eff, object))) {
+    throw new HttpError(403, "That content was not shared with you");
+  }
+  const rows = await graph.listLearningObjectVersions(access.orgId, String(object.id));
+  return c.json({
+    current_version: (object.version_number as number | null) ?? null,
+    versions: rows.map((r) => ({
+      version_number: Number(r.version_number),
+      title: (r.title as string) ?? null,
+      created_by_name: (r.created_by_name as string) ?? null,
+      note: (r.note as string) ?? null,
+      status: (r.status as string) ?? "committed",
+      created_at: (r.created_at as string) ?? null,
+      block_count: Number(r.block_count ?? 0),
+    })),
+  });
+});
+
+/** One version's full snapshot, for reading it or comparing against it. */
+platformRouter.get("/learning/objects/:object_id/versions/:n", async (c) => {
+  const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
+  const object = await graph.getLearningObject(access.orgId, c.req.param("object_id"));
+  if (!object) throw new HttpError(404, "Content not found");
+  if (!(await _objectAccessLevel(access, eff, object))) {
+    throw new HttpError(403, "That content was not shared with you");
+  }
+  const n = Number(c.req.param("n"));
+  if (!Number.isFinite(n)) throw new HttpError(400, "That is not a version number");
+  const row = await graph.getLearningObjectVersion(access.orgId, String(object.id), n);
+  if (!row) throw new HttpError(404, "No such version");
+  return c.json({
+    version_number: Number(row.version_number),
+    title: (row.title as string) ?? null,
+    blocks: Array.isArray(row.blocks) ? row.blocks : [],
+    pipeline_draft: row.pipeline_draft ?? null,
+    created_by_name: (row.created_by_name as string) ?? null,
+    note: (row.note as string) ?? null,
+    created_at: (row.created_at as string) ?? null,
+  });
 });
 
 /**

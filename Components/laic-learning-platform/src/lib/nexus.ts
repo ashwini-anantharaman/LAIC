@@ -445,7 +445,24 @@ export async function setObjectProgramFolders(
  */
 export async function savePipelineToLibrary(
   objectId: string,
-  patch: { title?: string; description?: string; blocks?: unknown[]; pipeline_draft?: unknown },
+  patch: {
+    title?: string;
+    description?: string;
+    blocks?: unknown[];
+    pipeline_draft?: unknown;
+    /**
+     * A DELIBERATE SAVE. Only a commit cuts a version.
+     *
+     * Autosaves omit it: they keep the content safe and say nothing about
+     * versions. Without that distinction a tutorial reached v11 from being opened
+     * and looked at, and a history of eleven identical entries buries the two
+     * saves somebody actually made.
+     */
+    commit?: boolean;
+    /** 'draft' marks a commit made because the editor was closed, not saved. */
+    status?: 'committed' | 'draft';
+    note?: string;
+  },
 ): Promise<{ version_number: number | null }> {
   const res = await nexusFetch(
     `/api/platform/learning/objects/${encodeURIComponent(objectId)}/pipeline`,
