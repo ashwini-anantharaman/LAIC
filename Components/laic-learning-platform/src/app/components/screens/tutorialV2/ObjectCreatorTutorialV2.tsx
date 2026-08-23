@@ -150,7 +150,8 @@ export function ObjectCreatorTutorialV2() {
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
     listObjectVersions, objectVersionsTick,
-  } = useApp();
+    pipelineEditMode,
+} = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
@@ -474,6 +475,20 @@ export function ObjectCreatorTutorialV2() {
       compose(draft.id);
       return;
     }
+    /**
+     * A PIPELINE EMBED HAS NO FOLDER DIALOG TO SHOW.
+     *
+     * This dialog answers a Studio question -- "which of your folders did the
+     * draft land in, and do you want to go there?" -- and every part of it is
+     * wrong inside a single-object frame: it names a Studio-local folder rather
+     * than the program folder the content actually lives in, and its "Go to
+     * Content Library" leads somewhere the embed cannot go (navigation out is
+     * blocked, so the button did nothing at all).
+     *
+     * The embed already reports the save where it happened: the button says
+     * "Saved - v6", naming the version the library now carries.
+     */
+    if (pipelineEditMode) return false;
     const continueEditing = await confirm({
       title: 'Saved',
       description: `Saved in folder ${label}. Open Content Library and go to that folder to find and continue this content.`,

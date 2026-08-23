@@ -98,7 +98,8 @@ export function ObjectCreatorStructuredV2() {
     addObject, createCollectionIds,
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
     listObjectVersions, objectVersionsTick,
-  } = useApp();
+    pipelineEditMode,
+} = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
   const confirm = useConfirm();
@@ -347,6 +348,13 @@ export function ObjectCreatorStructuredV2() {
       compose(draft.id);
       return;
     }
+    /**
+     * A PIPELINE EMBED HAS NO FOLDER DIALOG TO SHOW. Same reason as the tutorial
+     * creators: this answers a Studio question, names a Studio-local folder rather
+     * than the program folder the content lives in, and offers a trip the embed
+     * cannot take. The embed reports the save itself, with the version.
+     */
+    if (pipelineEditMode) return false;
     const continueEditing = await confirm({
       title: 'Saved',
       description: `Saved in folder ${label}. Open Content Library and go to that folder to find and continue this content.`,
