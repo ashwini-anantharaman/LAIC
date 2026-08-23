@@ -45,7 +45,7 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, getRolesHeld, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole, type RoleHeld } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import { opensContentLibrary, opensContentStudio } from "@/nexus/access";
@@ -585,6 +585,27 @@ export function AppShell() {
     mode === "member" && !!programMembership && !["administrator", "owner"].includes(programMembership.role);
   const [myRolePerms, setMyRolePerms] = useState<Record<string, string> | null>(null);
   const [myRoleName, setMyRoleName] = useState<string | null>(null);
+  /**
+   * Every role this person holds, named at the top of the console.
+   *
+   * A single role name hid half of what somebody could do: a Club Mentor who was
+   * also given edit access on a folder read as just "Club Mentor". Derived on the
+   * server from the assignment AND the folder grants, so it cannot drift from what
+   * they can actually do — and asked for on every program, not only when the older
+   * single-role lookup applies.
+   */
+  const [rolesHeld, setRolesHeld] = useState<RoleHeld[]>([]);
+  useEffect(() => {
+    if (!programId) {
+      setRolesHeld([]);
+      return;
+    }
+    let live = true;
+    getRolesHeld(programId)
+      .then((r) => { if (live) setRolesHeld(r); })
+      .catch(() => { if (live) setRolesHeld([]); });
+    return () => { live = false; };
+  }, [programId]);
   useEffect(() => {
     if (!isPlainMember || !programId) {
       setMyRolePerms(null);
@@ -732,6 +753,36 @@ export function AppShell() {
         )}
         <span className="font-semibold tracking-tight truncate">{heading}</span>
       </div>
+      {/*
+        EVERY ROLE THIS PERSON HOLDS, at the top.
+        One name was not enough: a Club Mentor also granted edit on a folder read
+        as only "Club Mentor", hiding half of what they could do. An assigned role
+        and a role that comes from what you were GRANTED are different facts, so
+        the access-derived ones are marked rather than blended in — otherwise
+        "Content Editor" looks like something an administrator typed for you.
+      */}
+      {rolesHeld.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 border-b border-sidebar-border px-5 py-2.5">
+          {rolesHeld.map((r) => (
+            <span
+              key={`${r.source}:${r.label}`}
+              title={
+                r.source === "assigned"
+                  ? "A role you were assigned in this program"
+                  : "From what you were granted — the folders shared with you"
+              }
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                r.source === "assigned"
+                  ? "bg-sidebar-accent text-sidebar-foreground"
+                  : "border border-sidebar-border text-sidebar-foreground/70",
+              )}
+            >
+              {r.label}
+            </span>
+          ))}
+        </div>
+      )}
       {/* Tapping a link closes the mobile drawer (harmless on desktop). */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-1" onClick={() => setMobileNavOpen(false)}>
         {backLink}

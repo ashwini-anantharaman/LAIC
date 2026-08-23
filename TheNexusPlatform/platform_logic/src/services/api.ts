@@ -2010,6 +2010,26 @@ export interface LearningPerson {
   is_admin?: boolean;
 }
 
+/** One role label this person holds, and where it comes from. */
+export interface RoleHeld {
+  label: string;
+  /** 'assigned' — a role in this program. 'access' — implied by what they were granted. */
+  source: "assigned" | "access";
+}
+
+/**
+ * Every role the signed-in person holds in this program.
+ *
+ * Derived server-side from their assignment and their folder grants, never a list
+ * anybody typed — so it cannot drift from what they can actually do.
+ */
+export async function getRolesHeld(programId: string): Promise<RoleHeld[]> {
+  const r = await request<{ roles_held?: RoleHeld[] }>(
+    `/api/platform/learning/context?program_id=${encodeURIComponent(programId)}`,
+  );
+  return r.roles_held ?? [];
+}
+
 /**
  * The caller's OWN effective learning capabilities — their ceiling.
  *

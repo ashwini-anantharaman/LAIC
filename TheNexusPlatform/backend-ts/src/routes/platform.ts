@@ -2016,8 +2016,74 @@ platformRouter.get("/learning/context", async (c) => {
     role_name: access.roleName,
     is_admin: isAdmin,
     learning_role: customRole, // { role_id, role_name, perms:{...,capabilities} } or null
+    /**
+     * EVERY ROLE THIS PERSON ACTUALLY HOLDS, for the console to name at the top.
+     *
+     * Derived, never a list somebody typed. Two sources, because a role here comes
+     * from two genuinely different places and a person can hold both:
+     *
+     *   ASSIGNED    a learning role in this program (Club Mentor, Content Editor).
+     *               What they are.
+     *   FROM ACCESS the folder grants they hold. Editing content is a role in
+     *               practice even when nobody assigned it a name — Milind is a Club
+     *               Mentor who was ALSO given edit on a folder, and a header saying
+     *               only "Club Mentor" hides half of what he can do.
+     *
+     * Deduplicated on the label, so somebody assigned Content Editor who also holds
+     * edit access is listed once rather than twice for the same fact.
+     */
+    roles_held: await _rolesHeld(access, eff),
   });
 });
+
+/**
+ * The role labels one person holds in one program.
+ *
+ * The access-derived labels use the STRONGEST level anywhere: edit somewhere makes
+ * you an editor, and only-view everywhere makes you a reviewer. A person with edit
+ * on one folder and view on another is an editor, not both -- "reviewer" would
+ * understate them, and listing both reads as a contradiction.
+ */
+async function _rolesHeld(
+  access: ResolvedPlatformAccess,
+  eff: { capabilities: string[]; clubRoleId?: string | null; customRole?: { role_name?: string } | null },
+): Promise<{ label: string; source: "assigned" | "access" }[]> {
+  const out: { label: string; source: "assigned" | "access" }[] = [];
+  const seen = new Set<string>();
+  const add = (label: string, source: "assigned" | "access") => {
+    const key = label.trim().toLowerCase();
+    if (!label.trim() || seen.has(key)) return;
+    seen.add(key);
+    out.push({ label: label.trim(), source });
+  };
+
+  if (eff.customRole?.role_name) add(eff.customRole.role_name, "assigned");
+  if (access.level === "admin") add("Administrator", "assigned");
+
+  // NOT inferring "Content Manager" from governing capabilities. Milind holds
+  // share_club so he can share with his own club, and that made him read as a
+  // content manager -- a title nobody gave him, sitting in the list beside ones
+  // that were. An assigned role is a thing somebody assigned; anything else here
+  // has to come from a grant and be marked as such.
+
+  if (access.profileId) {
+    const clubIds = await graph
+      .clubIdsForProfile(access.orgId, access.profileId)
+      .catch(() => [] as string[]);
+    if (access.partnerProgramId) clubIds.push(access.partnerProgramId);
+    const levels = await graph
+      .collectionLevelsFor(access.orgId, access.programId, {
+        profileId: access.profileId,
+        clubIds,
+        roleIds: eff.clubRoleId ? [eff.clubRoleId] : [],
+      })
+      .catch(() => new Map<string, "view" | "edit">());
+    const vals = [...levels.values()];
+    if (vals.includes("edit")) add("Content Editor", "access");
+    else if (vals.length) add("Content Reviewer", "access");
+  }
+  return out;
+}
 
 // Learning objects, proxied through Nexus (Option B): the browser no longer
 // hits Supabase directly, so org isolation is preserved. Both routes resolve
