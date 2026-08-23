@@ -8,6 +8,7 @@ import {
   ArrowLeft, Eye, Pencil, Send, Sparkles, ChevronUp, ChevronDown, Trash2,
   ExternalLink, Save, Maximize2, Minimize2, Move,
 } from 'lucide-react';
+import { useApp } from '../../../App';
 import { pastelFromHex } from '../../../../lib/pastel';
 import { movePartToPage, partPageNumbers, partsToBlocks } from '../../../../lib/tutorialV3/draftModel';
 import {
@@ -221,6 +222,17 @@ export function TutorialV3AssembleEditor({
   onBackToPlan?: () => void;
   onBackToStructure?: () => void;
 }) {
+  /**
+   * A PIPELINE EMBED REPLACES THE STUDIO'S SAVE CONTROLS.
+   *
+   * "Submit as..." and the floating "Save" mean Studio things: a submission into
+   * a review queue, and a draft kept in this browser. A folder editor is doing
+   * neither -- they are changing one object that already lives in the program
+   * library, and the only question they have is whether it landed there. Leaving
+   * both buttons up asked them to guess which one meant that; neither did.
+   */
+  const { pipelineEditMode, pipelineSaving, pipelineVersion, pipelineSaveError } = useApp();
+
   const [mode, setMode] = useState<'edit' | 'preview'>('edit');
   const [editingPartId, setEditingPartId] = useState<string | null>(null);
   const [selectedPartId, setSelectedPartId] = useState<string | null>(null);
@@ -442,12 +454,14 @@ export function TutorialV3AssembleEditor({
               <ArrowLeft size={14} /> Back to outline
             </button>
           )}
-          <SubmitVersionMenu
-            versions={submitVersions}
-            canSubmit={parts.length > 0}
-            onSubmit={onSubmit}
-            disabledTitle={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
-          />
+          {!pipelineEditMode && (
+            <SubmitVersionMenu
+              versions={submitVersions}
+              canSubmit={parts.length > 0}
+              onSubmit={onSubmit}
+              disabledTitle={!canSubmit ? 'Some required items are still incomplete — you can still submit a draft for review.' : undefined}
+            />
+          )}
         </div>
         {!fullscreen && rail}
         {!fullscreen && (onBackToPlan || onBackToStructure) && (
@@ -841,21 +855,60 @@ export function TutorialV3AssembleEditor({
           />
         )}
       </div>
-      <button
-        type="button"
-        onClick={onSave}
-        className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
-        style={{
-          fontSize: 13.5,
-          fontWeight: 650,
-          color: '#2f4e39',
-          background: pastelFromHex('#4d7c5a', 0.82),
-          border: '1px solid rgba(77,124,90,0.3)',
-          boxShadow: '0 10px 28px -12px rgba(77,124,90,0.55)',
-        }}
-      >
-        <Save size={15} /> Save
-      </button>
+      {pipelineEditMode ? (
+        /* ONE BUTTON, and it names where the content goes. It also reports the
+           version it wrote: an editor changing somebody else's object needs to
+           see that it reached the library, not just that a click registered. */
+        <div className="fixed bottom-5 left-5 z-40 flex items-center gap-2.5">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={pipelineSaving}
+            className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
+            style={{
+              fontSize: 13.5,
+              fontWeight: 650,
+              color: '#fff',
+              background: pipelineSaving ? '#6B7280' : '#0B0F1A',
+              boxShadow: '0 10px 28px -12px rgba(11,15,26,0.55)',
+            }}
+          >
+            <Save size={15} />
+            {pipelineSaving ? 'Saving to Content Library…' : 'Save to Content Library'}
+          </button>
+          {pipelineSaveError ? (
+            <span
+              className="px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, color: '#B42318', background: 'rgba(180,35,24,0.10)' }}
+            >
+              Not saved — {pipelineSaveError}
+            </span>
+          ) : pipelineVersion != null && !pipelineSaving ? (
+            <span
+              className="px-3 py-1.5 rounded-full"
+              style={{ fontSize: 12, fontWeight: 600, color: '#065F46', background: 'rgba(5,150,105,0.12)' }}
+            >
+              Saved · v{pipelineVersion}
+            </span>
+          ) : null}
+        </div>
+      ) : (
+        <button
+          type="button"
+          onClick={onSave}
+          className="fixed bottom-5 left-5 z-40 inline-flex items-center gap-1.5 px-4 py-2.5 rounded-full"
+          style={{
+            fontSize: 13.5,
+            fontWeight: 650,
+            color: '#2f4e39',
+            background: pastelFromHex('#4d7c5a', 0.82),
+            border: '1px solid rgba(77,124,90,0.3)',
+            boxShadow: '0 10px 28px -12px rgba(77,124,90,0.55)',
+          }}
+        >
+          <Save size={15} /> Save
+        </button>
+      )}
     </div>
   );
 }

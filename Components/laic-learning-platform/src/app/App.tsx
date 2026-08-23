@@ -204,6 +204,15 @@ export interface AppState {
   /** Version written by the last pipeline save, for the chrome to report. */
   pipelineVersion: number | null;
   pipelineSaveError: string | null;
+  pipelineSaving: boolean;
+  /**
+   * True when this session edits ONE object for the program library.
+   *
+   * The editors use it to drop the Studio's own Submit/Save controls, which mean
+   * Studio things (a submission for review, a draft in this browser) that a folder
+   * editor is not doing, and offer one library save instead.
+   */
+  pipelineEditMode: boolean;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
   previewName: string | null;
   startRolePreview: (name: string, perms: Record<string, AreaLevel>) => void;
@@ -354,6 +363,7 @@ function StudioApp() {
   const pipelineEmbedRef = useRef(false);
   const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
   const [pipelineSaveError, setPipelineSaveError] = useState<string | null>(null);
+  const [pipelineSaving, setPipelineSaving] = useState(false);
   const [pendingTemplateId, setPendingTemplateId] = useState<string | null>(null);
   const [pendingAuthoringPath, setPendingAuthoringPath] = useState<'template' | 'write-yourself' | 'source-first' | null>(null);
   const [pendingLibraryFolderId, setPendingLibraryFolderId] = useState<string | null>(null);
@@ -883,6 +893,7 @@ function StudioApp() {
         if (anyPartial[k]) draft[k] = anyPartial[k];
       }
       setPipelineSaveError(null);
+      setPipelineSaving(true);
       void savePipelineToLibrary(partial.id, {
         ...(partial.title ? { title: partial.title } : {}),
         ...(partial.description !== undefined ? { description: partial.description } : {}),
@@ -890,7 +901,8 @@ function StudioApp() {
         ...(Object.keys(draft).length ? { pipeline_draft: draft } : {}),
       })
         .then(({ version_number }) => setPipelineVersion(version_number))
-        .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'));
+        .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'))
+        .finally(() => setPipelineSaving(false));
     }
     const versionMode = opts?.version ?? 'auto';
     const onVersionError = opts?.onVersionError;
@@ -1321,7 +1333,8 @@ function StudioApp() {
     learningIsAdmin: previewing ? false : learningIsAdmin,
     learningCapabilities,
     syncFailure,
-    pipelineReadOnly, pipelineVersion, pipelineSaveError,
+    pipelineReadOnly, pipelineVersion, pipelineSaveError, pipelineSaving,
+    pipelineEditMode: pipelineEditRef.current,
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
     readerObjectId, readerVersionId, creatorObjectType, createdObjects,
