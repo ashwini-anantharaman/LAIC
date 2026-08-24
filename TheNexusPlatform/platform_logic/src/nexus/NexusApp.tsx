@@ -46,6 +46,7 @@ import { ProgramTeam } from "@/nexus/routes/ProgramTeam";
 import { GatePage } from "@/nexus/routes/GatePage";
 import { LearningLaunch } from "@/nexus/routes/LearningLaunch";
 import { ContentLibraryTab } from "@/nexus/routes/ContentLibraryTab";
+import { MyDriveTab } from "@/nexus/routes/MyDriveTab";
 import { BridgeLaunch } from "@/nexus/routes/BridgeLaunch";
 import { Spinner } from "@/nexus/ui/kit";
 import { opensContentLibrary } from "@/nexus/access";
@@ -206,6 +207,9 @@ function Routed() {
             navigation, and only its panel changes. The Studio is framed there and
             asked for the library alone. */}
         <Route path="/o/:orgId/p/:programId/learning/library" element={<ContentLibraryTab />} />
+        {/* Beside the library, not inside it: a drive is a different space, and
+            the library tree subtracts every drive folder. */}
+        <Route path="/o/:orgId/p/:programId/learning/drive" element={<MyDriveTab />} />
         <Route path="/o/:orgId/p/:programId/team" element={<ProgramTeam />} />
         <Route path="/o/:orgId/p/:programId/access-catalogue" element={<ProgramAccessCatalogue />} />
         <Route path="/o/:orgId/p/:programId/partners" element={<ProgramPartners />} />

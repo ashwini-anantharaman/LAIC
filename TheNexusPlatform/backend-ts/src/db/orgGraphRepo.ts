@@ -4973,3 +4973,37 @@ export async function getDriveFor(
     return rows[0] ?? null;
   });
 }
+
+/**
+ * Every collection id that belongs to a DRIVE — the roots and everything under
+ * them.
+ *
+ * The shared Content Library and a drive are different spaces, not two views of
+ * one. A drive appearing in the library tree would put somebody's private work
+ * beside the program's, which is the confusion the whole feature exists to end.
+ * So the library read subtracts this set, and the drive read is the only thing
+ * that adds it back.
+ */
+export async function driveCollectionIds(
+  orgId: string,
+  programId: string | null,
+): Promise<Set<string>> {
+  const roots = await asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select id from learning_collections
+      where organization_id = ${orgId}::uuid
+        and program_id is not distinct from ${programId}::uuid
+        and owner_subject_type is not null`)) as unknown as Row[];
+    return rows.map((r) => String(r.id));
+  });
+  if (!roots.length) return new Set();
+  return new Set(await collectionSubtreeIds(orgId, roots));
+}
+
+/** The subtree under these roots, for callers outside this module. */
+export async function collectionSubtreeIdsPublic(
+  orgId: string,
+  roots: string[],
+): Promise<string[]> {
+  return collectionSubtreeIds(orgId, roots);
+}

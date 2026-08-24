@@ -2959,6 +2959,29 @@ platformRouter.get("/learning/library", async (c) => {
     !folderScope || (Array.isArray(ids) && ids.some((i) => folderScope.has(String(i))));
 
   /**
+   * CONTENT IN A DRIVE IS NOT LIBRARY CONTENT.
+   *
+   * `?scope=drive` reads the other side. An object filed in BOTH a drive and a
+   * shared folder belongs to both and appears in both -- it is only excluded here
+   * when every folder it is in is a drive folder, which is what "this is somebody's
+   * own work and nothing else" actually means.
+   */
+  const driveIds = await graph
+    .driveCollectionIds(access.orgId, access.programId)
+    .catch(() => new Set<string>());
+  const wantDrive = c.req.query("scope") === "drive";
+  const driveRootParam = c.req.query("drive") ?? null;
+  const driveWanted = wantDrive && driveRootParam
+    ? new Set(await graph.collectionSubtreeIdsPublic(access.orgId, [driveRootParam]))
+    : null;
+  const isDriveOnly = (ids: unknown): boolean =>
+    Array.isArray(ids) && ids.length > 0 && ids.every((i) => driveIds.has(String(i)));
+  const driveFilter = (ids: unknown): boolean =>
+    wantDrive
+      ? Array.isArray(ids) && ids.some((i) => (driveWanted ?? driveIds).has(String(i)))
+      : !isDriveOnly(ids);
+
+  /**
    * WHO THIS VIEWER IS, as grant subjects — so a folder-confined person still
    * sees anything shared with them DIRECTLY.
    *
@@ -3104,6 +3127,7 @@ platformRouter.get("/learning/library", async (c) => {
       //
       // UNLESS IT WAS SHARED WITH THEM. An explicit grant outranks the folder
       // scope; see grantSubjects above for why that direction and not the other.
+      .filter((o) => driveFilter(o.collection_ids))
       .filter(
         (o) =>
           inScope(o.collection_ids) ||
@@ -3491,14 +3515,36 @@ async function _libraryFolderScope(
 platformRouter.get("/learning/collections", async (c) => {
   const { access, eff } = await _libraryReader(c, c.req.query("program_id") ?? null);
   const scope = await _libraryFolderScope(access, eff);
-  const all = await graph
+  const everything = await graph
     .listLearningCollections(access.orgId, access.programId)
     .catch(() => [] as Row[]);
+
+  /**
+   * DRIVES ARE NOT PART OF THE SHARED LIBRARY.
+   *
+   * They are a different space, not a second view of one: a personal drive sitting
+   * in the program's tree puts somebody's private work beside the program's, which
+   * is the confusion the whole feature exists to end. `?scope=drive` asks for the
+   * other side -- one drive's subtree and nothing else -- and is how the My Drive
+   * screen reads. Neither view can see the other's folders.
+   */
+  const driveIds = await graph
+    .driveCollectionIds(access.orgId, access.programId)
+    .catch(() => new Set<string>());
+  const wantDrive = c.req.query("scope") === "drive";
+  const driveRoot = c.req.query("drive") ?? null;
+  const all = wantDrive
+    ? everything.filter((f) => driveIds.has(String(f.id)))
+    : everything.filter((f) => !driveIds.has(String(f.id)));
 
   // Confinement hides the folder AND its ancestors' contents, but the ancestors
   // themselves have to stay in the payload or the client cannot draw a path to
   // what it is allowed to open. They are marked, not silently included.
-  const visible = scope ? all.filter((f) => scope.has(String(f.id))) : all;
+  let visible = scope ? all.filter((f) => scope.has(String(f.id))) : all;
+  if (wantDrive && driveRoot) {
+    const wanted = new Set(await graph.collectionSubtreeIdsPublic(access.orgId, [driveRoot]));
+    visible = visible.filter((f) => wanted.has(String(f.id)));
+  }
   const byId = new Map(all.map((f) => [String(f.id), f]));
   const withAncestors = new Map(visible.map((f) => [String(f.id), { row: f, reachable: true }]));
   if (scope) {

@@ -5,6 +5,7 @@
  * version tags, no environment pills, no narration.
  */
 import {
+  HardDrive,
   Building2,
   LayoutDashboard,
   Settings,
@@ -45,7 +46,7 @@ import {
 } from "@/app/components/ui/dropdown-menu";
 import { cn } from "@/app/components/ui/utils";
 import { DEV_ENABLED, OPERATOR_PERSONAS } from "@/nexus/dev/personas";
-import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, getRolesHeld, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole, type RoleHeld } from "@/services/api";
+import { devLoginAs, getDevPersonas, getMyProgramRole, getOrgBySlug, getOrgMyRole, getPlatformBranding, getProgram, getMyDrive, getRolesHeld, listMyOrgs, listProgramRoles, listPrograms, type DevPersonaEntry, type ProgramRole, type RoleHeld } from "@/services/api";
 import { resolveAssetUrl } from "@/services/apiBase";
 import { useSession } from "@/nexus/session";
 import { opensContentLibrary, opensContentStudio } from "@/nexus/access";
@@ -132,6 +133,7 @@ function confinedProgramNav(
   perms: Record<string, string>,
   isPartner = false,
   capabilities: string[] = [],
+  hasDrive = false,
 ): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [{ to: `${base}`, label: "Home", icon: LayoutDashboard, end: true }];
@@ -148,6 +150,13 @@ function confinedProgramNav(
   // `console` alone made "share content with clubs" a role with nowhere to do it.
   if (opensContentLibrary(capabilities)) {
     items.push({ to: `${base}/learning/library`, label: "Content Library", icon: FolderTree });
+  }
+  // MY DRIVE IS ITS OWN DOOR, beside the shared library rather than inside it.
+  // The two are different spaces (a drive is subtracted from the library tree),
+  // so a folder buried in the library was the wrong shape for it. Shown to
+  // anyone who has been given a drive; see hasDriveNav.
+  if (hasDrive) {
+    items.push({ to: `${base}/learning/drive`, label: "My Drive", icon: HardDrive });
   }
   if (perms.bridge) items.push({ to: `${base}/bridge`, label: "Bridge Platform", icon: Waypoints });
   if (perms.appbuilder) items.push({ to: `${base}/shells`, label: "App Studio", icon: AppWindow });
@@ -595,6 +604,16 @@ export function AppShell() {
    * single-role lookup applies.
    */
   const [rolesHeld, setRolesHeld] = useState<RoleHeld[]>([]);
+  /** Whether this person has a drive at all — the nav door depends on it. */
+  const [hasDrive, setHasDrive] = useState(false);
+  useEffect(() => {
+    if (!programId) { setHasDrive(false); return; }
+    let live = true;
+    getMyDrive(programId)
+      .then((d) => { if (live) setHasDrive(d.has_drive === true); })
+      .catch(() => { if (live) setHasDrive(false); });
+    return () => { live = false; };
+  }, [programId]);
   useEffect(() => {
     if (!programId) {
       setRolesHeld([]);
@@ -649,7 +668,7 @@ export function AppShell() {
 
   if (impersonating && programId) {
     heading = impersonating.roleName;
-    items = confinedProgramNav(orgId, programId, impersonating.perms, isPartner, _capsOf(impersonating.perms)).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, impersonating.perms, isPartner, _capsOf(impersonating.perms), hasDrive).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (mode === "nexus") {
     heading = "Nexus";
     items = [
@@ -677,7 +696,7 @@ export function AppShell() {
     }
   } else if (programId && isPlainMember) {
     heading = myRoleName ?? programMembership?.program_name ?? "Program";
-    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner, _capsOf(myRolePerms)).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner, _capsOf(myRolePerms), hasDrive).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = programName ?? "Program";
     items = programNav(orgId, programId, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));

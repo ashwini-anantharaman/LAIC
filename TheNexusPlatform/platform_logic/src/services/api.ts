@@ -1664,12 +1664,23 @@ export interface ContentLibraryResult {
   administersApps: string[];
 }
 
-export async function getContentLibrary(programId: string): Promise<ContentLibraryResult> {
+export async function getContentLibrary(
+  programId: string,
+  /**
+   * `scope: "drive"` reads the OTHER space — one drive's contents instead of the
+   * shared library. The two never overlap: the library subtracts every drive
+   * folder, and this is the only thing that adds one back.
+   */
+  opts?: { scope?: "drive"; drive?: string },
+): Promise<ContentLibraryResult> {
+  const q = new URLSearchParams({ program_id: programId });
+  if (opts?.scope) q.set("scope", opts.scope);
+  if (opts?.drive) q.set("drive", opts.drive);
   const r = await request<{
     objects: LibraryObject[];
     assets?: LibraryAsset[];
     administers_apps?: string[];
-  }>(`/api/platform/learning/library?program_id=${encodeURIComponent(programId)}`);
+  }>(`/api/platform/learning/library?${q.toString()}`);
   return { objects: r.objects ?? [], assets: r.assets ?? [], administersApps: r.administers_apps ?? [] };
 }
 
