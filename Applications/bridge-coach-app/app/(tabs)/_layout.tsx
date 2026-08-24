@@ -25,6 +25,7 @@ import {
 } from "@react-navigation/material-top-tabs";
 import type { ParamListBase, TabNavigationState } from "@react-navigation/native";
 import { useSegments, withLayoutContext } from "expo-router";
+import { useEffect, useState } from "react";
 import { Platform } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -34,6 +35,9 @@ import { BridgeSessionWarmer } from "../../components/bridge-session-warmer";
 import { useBrandSheets } from "../../components/use-brand-sheets";
 import { useRoleRefreshOnForeground } from "../../lib/use-can";
 import { Brand } from "../../constants/theme";
+import { useAuth } from "../../lib/auth-context";
+import { useSelectedClubId } from "../../lib/club-context";
+import { fetchMyDrive } from "../../lib/nexus";
 
 const { Navigator } = createMaterialTopTabNavigator();
 
@@ -72,7 +76,27 @@ export default function TabsLayout() {
    * by existing instead of by being remembered.
    */
   const segments = useSegments();
+  const { token } = useAuth();
+  const clubId = useSelectedClubId();
   const inNestedScreen = segments.length > 2;
+
+  /**
+   * MY DRIVE APPEARS ONLY WHEN THERE IS ONE.
+   *
+   * Having a drive is a grant, not an assumption (migration 0014), so most people
+   * do not have one. An always-present tab that is usually empty teaches people
+   * to ignore a tab; an absent one costs nothing. Read once per session and
+   * failing closed -- a blip hides the tab rather than showing an empty room.
+   */
+  const [hasDrive, setHasDrive] = useState(false);
+  useEffect(() => {
+    if (!token) { setHasDrive(false); return; }
+    let live = true;
+    fetchMyDrive(token, clubId ?? undefined)
+      .then((d) => { if (live) setHasDrive(d.has_drive === true); })
+      .catch(() => { if (live) setHasDrive(false); });
+    return () => { live = false; };
+  }, [token, clubId]);
 
   return (
     <>
@@ -109,6 +133,8 @@ export default function TabsLayout() {
       <SwipeTabs.Screen name="learn" options={{ title: "Learn" }} />
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
+      {/* Last: a personal space is a side room, not a destination the app is for. */}
+      {hasDrive && <SwipeTabs.Screen name="drive" options={{ title: "My Drive" }} />}
       </SwipeTabs>
 
       {/* The Menu drawer — over the tabs, so it survives switching between them. */}

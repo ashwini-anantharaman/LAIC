@@ -1887,6 +1887,56 @@ export async function restoreObjectVersion(
   );
 }
 
+/**
+ * A drive: a folder root owned by somebody rather than by the program.
+ *
+ * One shape for all four owner kinds — a personal drive is simply one whose
+ * owner is a person. See migration 0014.
+ */
+export interface DriveRow {
+  subject_type: "profile" | "coach" | "club" | "app";
+  subject_id: string;
+  has_drive: boolean;
+  can_create: boolean;
+  /** Object types they may author. null = unrestricted, [] = none (deliberate). */
+  create_types: string[] | null;
+  /** Studio surface ids reachable inside the drive. null = the default set. */
+  surfaces: string[] | null;
+  drive_id: string | null;
+  drive_name: string | null;
+}
+
+/** Who has drive permissions in this program. Governors only. */
+export async function listDrives(programId: string): Promise<DriveRow[]> {
+  const r = await request<{ drives?: DriveRow[] }>(
+    `/api/platform/learning/drives?program_id=${encodeURIComponent(programId)}`,
+  );
+  return r.drives ?? [];
+}
+
+/** Grant or change one subject's drive. Creates the drive when has_drive turns on. */
+export async function setDrive(
+  programId: string,
+  d: Omit<DriveRow, "drive_id" | "drive_name"> & { name?: string },
+): Promise<{ drive_id: string | null }> {
+  return request(`/api/platform/learning/drives`, {
+    method: "PUT",
+    body: JSON.stringify({ program_id: programId, ...d }),
+  });
+}
+
+/** The caller's own drive and what they may do in it. */
+export async function getMyDrive(programId: string): Promise<{
+  has_drive: boolean;
+  can_create?: boolean;
+  create_types?: string[] | null;
+  surfaces?: string[] | null;
+  drive_id?: string | null;
+  drive_name?: string | null;
+}> {
+  return request(`/api/platform/learning/drives/mine?program_id=${encodeURIComponent(programId)}`);
+}
+
 /** One object's full pipeline, for reviewing or editing inside Nexus. */
 export async function getObjectPipeline(
   programId: string,

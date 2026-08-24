@@ -230,6 +230,32 @@ export type LearningContext = {
   program_name?: string | null;
 };
 
+/**
+ * A drive: a space of this person's own, separate from the club's library.
+ *
+ * `has_drive` false is the ordinary answer for most people — having one is a
+ * grant, not an assumption (migration 0014), so its absence is not an error and
+ * the tab simply does not appear.
+ *
+ * `create_types` absent means unrestricted; PRESENT AND EMPTY means they may
+ * create nothing. The two must not collapse: an empty list is somebody deciding.
+ */
+export type MyDrive = {
+  has_drive: boolean;
+  can_create?: boolean;
+  create_types?: string[] | null;
+  surfaces?: string[] | null;
+  drive_id?: string | null;
+  drive_name?: string | null;
+};
+
+export function fetchMyDrive(token: string, programId?: string): Promise<MyDrive> {
+  return request<MyDrive>(
+    `/api/platform/learning/drives/mine?program_id=${programId ?? PROGRAM_ID}`,
+    { token },
+  );
+}
+
 /** The learning platform's context for one club — the app reads it only to know
  *  whether to offer authoring. */
 export function fetchLearningContext(token: string, programId?: string): Promise<LearningContext> {

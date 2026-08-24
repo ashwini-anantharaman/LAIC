@@ -996,6 +996,7 @@ export function CDCreate() {
     setCreateCollectionIds,
     createObjectCollection,
     setPendingAuthoringPath,
+    driveCreateMode, driveCreateTypes, driveCollectionId,
   } = useApp();
 
   const [pendingType, setPendingType] = useState<string | null>(null);
@@ -1075,6 +1076,11 @@ export function CDCreate() {
     navigate('cd-creator');
   };
 
+  /** The tiles this session may actually use. See the note by the grid. */
+  const visibleTiles = driveCreateMode && driveCreateTypes !== null
+    ? TILES.filter((t) => driveCreateTypes.includes(t.id))
+    : TILES;
+
   return (
     <div className="px-4 sm:px-6 py-5 sm:py-6 w-full">
       <div className="mb-6">
@@ -1086,8 +1092,34 @@ export function CDCreate() {
         </p>
       </div>
 
+      {/*
+        CONFINED TO WHAT THEY WERE PERMITTED.
+
+        A drive's create permission carries a list of object types (0014), and
+        this is where it lands. Filtered rather than disabled-in-place: a tile
+        somebody may never use is noise, not information, and on a phone it is
+        noise that costs a whole row.
+
+        Null means unrestricted. An empty list means NONE, and the two must not
+        collapse -- an empty permission is somebody deciding, and the screen says
+        so rather than rendering a bare grid.
+      */}
+      {driveCreateMode && visibleTiles.length === 0 && (
+        <div
+          className="rounded-2xl border p-4 mb-8"
+          style={{ borderColor: 'rgba(0,0,0,0.08)', background: '#fff' }}
+        >
+          <p style={{ fontSize: 14, fontWeight: 650, color: '#0B1220' }}>
+            Nothing to create here yet
+          </p>
+          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
+            You have a drive, but no content types have been turned on for it. Whoever manages the
+            Content Library can change that.
+          </p>
+        </div>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-        {TILES.map((tile, i) => (
+        {visibleTiles.map((tile, i) => (
           <motion.button
             key={tile.id}
             initial={{ opacity: 0, y: 10 }}
@@ -1118,7 +1150,9 @@ export function CDCreate() {
         ))}
       </div>
 
-      <div className="mb-2">
+      {/* Studio extras. A drive session was granted a list of OBJECT types, and
+          these are not on it — offering them would be granting by omission. */}
+      <div className="mb-2" style={{ display: driveCreateMode ? 'none' : undefined }}>
         <p style={{ fontSize: 12, fontWeight: 600, color: '#6B7280', marginBottom: 10 }}>
           Specialized blocks — Bridge program
         </p>

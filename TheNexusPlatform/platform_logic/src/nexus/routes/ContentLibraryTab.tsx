@@ -58,6 +58,7 @@ import {
 } from "@/app/components/ui/dialog";
 import { ShareContentDialog } from "@/nexus/routes/ShareContentDialog";
 import { PipelineStudioDialog } from "@/nexus/routes/PipelineStudioDialog";
+import { DrivesPanel } from "@/nexus/routes/DrivesPanel";
 import { PublishContentDialog } from "@/nexus/routes/PublishContentDialog";
 import { AddLibraryFileDialog } from "@/nexus/routes/AddLibraryFileDialog";
 
@@ -235,7 +236,7 @@ export function ContentLibraryTab() {
 
   const canManageFolders = can("learning.library.folder_manage");
 
-  const [view, setView] = useState<"content" | "roles">("content");
+  const [view, setView] = useState<"content" | "roles" | "drives">("content");
   const [objects, setObjects] = useState<LibraryObject[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -506,7 +507,7 @@ export function ContentLibraryTab() {
           <>
             {canDelegate && (
               <div className="flex rounded-lg border p-0.5">
-                {(["content", "roles"] as const).map((v) => (
+                {(["content", "roles", "drives"] as const).map((v) => (
                   <button
                     key={v}
                     type="button"
@@ -519,7 +520,7 @@ export function ContentLibraryTab() {
                         : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    {v === "content" ? "Content" : "Sub-roles"}
+                    {v === "content" ? "Content" : v === "roles" ? "Sub-roles" : "Drives"}
                   </button>
                 ))}
               </div>
@@ -560,7 +561,9 @@ export function ContentLibraryTab() {
         }
       />
 
-      {view === "roles" ? (
+      {view === "drives" ? (
+        <DrivesPanel programId={programId} />
+      ) : view === "roles" ? (
         <div className="min-h-0 flex-1 overflow-y-auto">
           <SubRolesPanel programId={programId} />
         </div>

@@ -213,6 +213,11 @@ export interface AppState {
    * editor is not doing, and offer one library save instead.
    */
   pipelineEditMode: boolean;
+  /** True when this session is the Create screen confined to one drive. */
+  driveCreateMode: boolean;
+  /** Types this session may author. Null = unrestricted; [] = none. */
+  driveCreateTypes: string[] | null;
+  driveCollectionId: string | null;
   /** Ask that the NEXT save be a committed version. Called by the Save button. */
   requestPipelineCommit: () => void;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
@@ -366,6 +371,10 @@ function StudioApp() {
   const pipelineEditRef = useRef(false);
   /** Any pipeline embed, review or edit -- the confinement applies to both. */
   const pipelineEmbedRef = useRef(false);
+  /** Authoring into one drive: the Create screen, filtered, filed into that drive. */
+  const [driveCreateMode, setDriveCreateMode] = useState(false);
+  const [driveCreateTypes, setDriveCreateTypes] = useState<string[] | null>(null);
+  const [driveCollectionId, setDriveCollectionId] = useState<string | null>(null);
   const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
   const [pipelineSaveError, setPipelineSaveError] = useState<string | null>(null);
   const [pipelineSaving, setPipelineSaving] = useState(false);
@@ -653,9 +662,32 @@ function StudioApp() {
        * enforces the same thing from the folder grant's level; this is the screen
        * not offering what the server would reject.
        */
+      /**
+       * DRIVE CREATE EMBED: the Create screen, confined to one drive.
+       *
+       *   ?create=1&drive=<collectionId>&types=quiz,flashcard-set
+       *
+       * Same shape as the pipeline embed and for the same reason: somebody with a
+       * drive may author into it WITHOUT being given the Content Studio. The real
+       * Create screen renders, filtered to the types they were permitted, and what
+       * they make is filed into their drive rather than a browser folder.
+       *
+       * `types` absent means unrestricted; PRESENT AND EMPTY means none, and the
+       * two must not collapse -- an empty permission is a decision.
+       */
+      const driveCreate = bootParams.get('create') === '1';
+      const driveId = bootParams.get('drive');
+      const rawTypes = bootParams.get('types');
+      if (driveCreate) {
+        setDriveCreateMode(true);
+        setDriveCollectionId(driveId);
+        setDriveCreateTypes(
+          rawTypes === null ? null : rawTypes.split(',').map((t) => t.trim()).filter(Boolean),
+        );
+      }
       const pipelineMode = bootParams.get('pipeline');
       const pipelineEmbed = pipelineMode === 'edit' || pipelineMode === 'review';
-      const chromeless = embedBoot || pipelineEmbed || bootParams.get('chrome') === 'none';
+      const chromeless = embedBoot || pipelineEmbed || driveCreate || bootParams.get('chrome') === 'none';
       if (chromeless) setEmbedMode(true);
       if (pipelineEmbed) {
         setPipelineReadOnly(pipelineMode === 'review');
@@ -717,6 +749,15 @@ function StudioApp() {
           wanted && (isAdmin || (caps?.length ? canAccessScreen(caps, wanted) : false));
         setCurrentScreen(allowed ? wanted : isAdmin ? 'admin-overview' : memberLanding);
         setIsLoggedIn(true);
+        if (driveCreate) {
+          // The folder to file into is decided BEFORE anything is authored, so a
+          // save cannot land in the Studio's own folders -- which is exactly how
+          // content used to end up in bb-tutorials.
+          if (driveId) setCreateCollectionIds([driveId], { pinned: true });
+          setCurrentScreen('cd-create');
+          setBooting(false);
+          return;
+        }
         if (deepLinkObjectId && pipelineEmbed && embedObjectPromise) {
           // The creator restores its draft from createdObjects + editingObjectId
           // + creatorObjectType, so seed exactly those three and send it there.
@@ -1392,6 +1433,7 @@ function StudioApp() {
     syncFailure,
     pipelineReadOnly, pipelineVersion, pipelineSaveError, pipelineSaving,
     pipelineEditMode: pipelineEditRef.current,
+    driveCreateMode, driveCreateTypes, driveCollectionId,
     requestPipelineCommit: () => { pipelineCommitRef.current = true; },
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,
