@@ -3666,6 +3666,108 @@ platformRouter.put("/learning/collections/:id/shares", async (c) => {
   return c.json({ ok: true });
 });
 
+// ── Drives ─────────────────────────────────────────────────────────────────
+//
+// A drive is a collection root with an owner (0014): a person's, a coach's, a
+// club's or an app's. "Personal" and "shared" are the same object with different
+// owners, so there is one set of endpoints rather than two.
+
+const _drivePermsSchema = z.object({
+  program_id: z.string().optional(),
+  subject_type: z.enum(["profile", "coach", "club", "app"]),
+  subject_id: z.string().min(1),
+  has_drive: z.boolean(),
+  can_create: z.boolean(),
+  /**
+   * Which object types they may author. Null is "unrestricted"; [] is "none",
+   * and the difference is load-bearing -- an empty list is somebody deciding,
+   * a null is nobody having decided.
+   */
+  create_types: z.array(z.string()).nullable().optional(),
+  /** Studio surface ids reachable inside the drive. Null = the default set. */
+  surfaces: z.array(z.string()).nullable().optional(),
+  /** Shown as the drive's name. Only used when one is created. */
+  name: z.string().trim().min(1).max(120).optional(),
+});
+
+/** Who has drive permissions in this program. Governors only — it is granting. */
+platformRouter.get("/learning/drives", async (c) => {
+  const programId = c.req.query("program_id") ?? null;
+  const { access, eff } = await _libraryReader(c, programId);
+  if (!_governsLibrary(eff) && access.level !== "admin") {
+    throw new HttpError(403, "Missing capability: learning.library.folder_manage");
+  }
+  const perms = await graph.listDrivePermissions(access.orgId, access.programId);
+  const withDrives = await Promise.all(
+    perms.map(async (p) => {
+      const drive = await graph.getDriveFor(access.orgId, access.programId, p.subjectType, p.subjectId);
+      return {
+        subject_type: p.subjectType,
+        subject_id: p.subjectId,
+        has_drive: p.hasDrive,
+        can_create: p.canCreate,
+        create_types: p.createTypes,
+        surfaces: p.surfaces,
+        drive_id: drive ? String(drive.id) : null,
+        drive_name: drive ? String(drive.name) : null,
+      };
+    }),
+  );
+  return c.json({ drives: withDrives });
+});
+
+platformRouter.put("/learning/drives", async (c) => {
+  const req = parseBody(_drivePermsSchema, await c.req.json());
+  const { access, eff } = await _libraryReader(c, req.program_id ?? null);
+  if (!_governsLibrary(eff) && access.level !== "admin") {
+    throw new HttpError(403, "Missing capability: learning.library.folder_manage");
+  }
+  const { driveId } = await graph.setDrivePermissions(
+    access.orgId,
+    access.programId,
+    {
+      subjectType: req.subject_type,
+      subjectId: req.subject_id,
+      hasDrive: req.has_drive,
+      canCreate: req.can_create,
+      createTypes: req.create_types ?? null,
+      surfaces: req.surfaces ?? null,
+    },
+    access.profileId ?? null,
+    req.name ?? "My drive",
+  );
+  return c.json({ ok: true, drive_id: driveId });
+});
+
+/**
+ * THE CALLER'S OWN DRIVE, and what they may do in it.
+ *
+ * Answered for the person themselves rather than read off a roster, because this
+ * is what the Studio and the app both boot against: "do I have a drive, may I
+ * create in it, which types, which tabs". A subject with no permissions row gets
+ * has_drive false rather than an error -- not having a drive is an ordinary
+ * state, not a failure.
+ */
+platformRouter.get("/learning/drives/mine", async (c) => {
+  const programId = c.req.query("program_id") ?? null;
+  const { access } = await _libraryReader(c, programId);
+  if (!access.profileId) return c.json({ has_drive: false });
+  const p = await graph.getDrivePermissions(
+    access.orgId, access.programId, "profile", access.profileId,
+  );
+  const drive = p?.hasDrive
+    ? await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId)
+    : null;
+  return c.json({
+    has_drive: p?.hasDrive === true,
+    can_create: p?.canCreate === true,
+    create_types: p?.createTypes ?? null,
+    surfaces: p?.surfaces ?? null,
+    drive_id: drive ? String(drive.id) : null,
+    drive_name: drive ? String(drive.name) : null,
+  });
+});
+
 // ── Reviewing and editing one object, without the Content Studio ────────────
 //
 // A folder grant carries a LEVEL (0012): 'view' is review access — open a piece

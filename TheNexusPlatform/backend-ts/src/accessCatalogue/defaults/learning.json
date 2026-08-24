@@ -334,6 +334,26 @@
         "learning_composition"
       ],
       "supportsResourceConstraints": true
+    },
+    {
+      "id": "learning.drive.own",
+      "label": "Have a drive",
+      "description": "A private space of their own in this program — folders and content that belong to them rather than to the shared library. Granting this creates the drive; without it they have none, which is different from having an empty one.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_collection"
+      ],
+      "supportsResourceConstraints": false
+    },
+    {
+      "id": "learning.drive.create",
+      "label": "Create content in their drive",
+      "description": "Author new content inside their own drive, through a Content Studio window confined to that drive. Carries the list of object types they may make, so a coach can be allowed drills and flashcards without being handed the whole authoring app. Separate from Studio access and from creating in the shared library.",
+      "group": "library_governance",
+      "resourceTypes": [
+        "learning_object"
+      ],
+      "supportsResourceConstraints": true
     }
   ],
   "resourceTypes": [
@@ -693,7 +713,9 @@
         "learning.library.upload",
         "learning.library.folder_manage",
         "learning.library.file_content",
-        "learning.studio.access"
+        "learning.studio.access",
+        "learning.drive.own",
+        "learning.drive.create"
       ],
       "uiSurfaceIds": [
         "learning.library_console"

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Org-graph services — Nexus v0.4 Slice 11.
  *
@@ -4801,5 +4802,149 @@ export async function getProfileName(orgId: string, profileId: string): Promise<
       where organization_id = ${orgId}::uuid and id = ${profileId}::uuid limit 1`);
     const row = (rows as unknown as Row[])[0];
     return row ? ((row.n as string) ?? null) : null;
+  });
+}
+
+// ── Drives ─────────────────────────────────────────────────────────────────
+//
+// A drive is a collection ROOT with an owner (0014). Everything that already
+// works on folders — inheritance, view/edit levels, sharing, confinement — works
+// on a drive unchanged, because a drive IS a folder that happens to say who it
+// belongs to.
+
+export interface DrivePermissions {
+  subjectType: "profile" | "coach" | "club" | "app";
+  subjectId: string;
+  hasDrive: boolean;
+  canCreate: boolean;
+  /** Object types they may author. Null = unrestricted; [] = none, deliberately. */
+  createTypes: string[] | null;
+  /** Studio surface ids reachable inside the drive. Null = the default set. */
+  surfaces: string[] | null;
+}
+
+/** What one subject may do with a drive. Null when nobody has said. */
+export async function getDrivePermissions(
+  orgId: string,
+  programId: string | null,
+  subjectType: string,
+  subjectId: string,
+): Promise<DrivePermissions | null> {
+  return asPrivileged(async (tx) => {
+    const rows = await tx.execute(sql`
+      select subject_type, subject_id, has_drive, can_create, create_types, surfaces
+      from learning_drive_permissions
+      where organization_id = ${orgId}::uuid
+        and program_id is not distinct from ${programId}::uuid
+        and subject_type = ${subjectType} and subject_id = ${subjectId}
+      limit 1`);
+    const r = (rows as unknown as Row[])[0];
+    if (!r) return null;
+    return {
+      subjectType: String(r.subject_type) as DrivePermissions["subjectType"],
+      subjectId: String(r.subject_id),
+      hasDrive: r.has_drive === true,
+      canCreate: r.can_create === true,
+      createTypes: Array.isArray(r.create_types) ? (r.create_types as string[]) : null,
+      surfaces: Array.isArray(r.surfaces) ? (r.surfaces as string[]) : null,
+    };
+  });
+}
+
+/** Everyone in this program who has been given drive permissions. */
+export async function listDrivePermissions(
+  orgId: string,
+  programId: string | null,
+): Promise<DrivePermissions[]> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select subject_type, subject_id, has_drive, can_create, create_types, surfaces
+      from learning_drive_permissions
+      where organization_id = ${orgId}::uuid
+        and program_id is not distinct from ${programId}::uuid
+      order by subject_type, subject_id`)) as unknown as Row[];
+    return rows.map((r) => ({
+      subjectType: String(r.subject_type) as DrivePermissions["subjectType"],
+      subjectId: String(r.subject_id),
+      hasDrive: r.has_drive === true,
+      canCreate: r.can_create === true,
+      createTypes: Array.isArray(r.create_types) ? (r.create_types as string[]) : null,
+      surfaces: Array.isArray(r.surfaces) ? (r.surfaces as string[]) : null,
+    }));
+  });
+}
+
+/**
+ * Set what a subject may do, and make the drive exist to match.
+ *
+ * Granting has_drive CREATES the drive root, because a permission to have
+ * something that does not exist is a promise nobody kept. Revoking it does NOT
+ * delete the drive: the content is still somebody's work, and the failure mode
+ * of an over-eager delete here is unrecoverable. The drive is simply unreachable
+ * until the permission comes back.
+ */
+export async function setDrivePermissions(
+  orgId: string,
+  programId: string | null,
+  p: DrivePermissions,
+  grantedBy: string | null,
+  driveName: string,
+): Promise<{ driveId: string | null }> {
+  return asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_drive_permissions
+        (organization_id, program_id, subject_type, subject_id, has_drive, can_create,
+         create_types, surfaces, granted_by)
+      values (${orgId}::uuid, ${programId}::uuid, ${p.subjectType}, ${p.subjectId},
+              ${p.hasDrive}, ${p.canCreate},
+              ${p.createTypes === null ? null : JSON.stringify(p.createTypes)}::jsonb,
+              ${p.surfaces === null ? null : JSON.stringify(p.surfaces)}::jsonb,
+              ${grantedBy}::uuid)
+      on conflict (organization_id, program_id, subject_type, subject_id) do update set
+        has_drive = excluded.has_drive, can_create = excluded.can_create,
+        create_types = excluded.create_types, surfaces = excluded.surfaces,
+        updated_at = now()`);
+
+    if (!p.hasDrive) {
+      const existing = (await tx.execute(sql`
+        select id from learning_collections
+        where organization_id = ${orgId}::uuid
+          and program_id is not distinct from ${programId}::uuid
+          and owner_subject_type = ${p.subjectType} and owner_subject_id = ${p.subjectId}
+        limit 1`)) as unknown as Row[];
+      return { driveId: existing[0] ? String(existing[0].id) : null };
+    }
+
+    const id = `lcol-${randomUUID()}`;
+    const rows = (await tx.execute(sql`
+      insert into learning_collections
+        (id, organization_id, program_id, name, parent_id, created_by,
+         owner_subject_type, owner_subject_id)
+      values (${id}, ${orgId}::uuid, ${programId}::uuid, ${driveName}, null, ${grantedBy}::uuid,
+              ${p.subjectType}, ${p.subjectId})
+      on conflict (organization_id, program_id, owner_subject_type, owner_subject_id)
+        where owner_subject_type is not null
+        do update set name = learning_collections.name
+      returning id`)) as unknown as Row[];
+    return { driveId: rows[0] ? String(rows[0].id) : null };
+  });
+}
+
+/** The drive belonging to one subject, if it exists. */
+export async function getDriveFor(
+  orgId: string,
+  programId: string | null,
+  subjectType: string,
+  subjectId: string,
+): Promise<Row | null> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select id, name, owner_subject_type, owner_subject_id
+      from learning_collections
+      where organization_id = ${orgId}::uuid
+        and program_id is not distinct from ${programId}::uuid
+        and owner_subject_type = ${subjectType} and owner_subject_id = ${subjectId}
+      limit 1`)) as unknown as Row[];
+    return rows[0] ?? null;
   });
 }
