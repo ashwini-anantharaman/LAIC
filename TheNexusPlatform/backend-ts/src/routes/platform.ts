@@ -5342,6 +5342,81 @@ platformRouter.patch("/orgs/:org_id/name", async (c) => {
   return c.json({ id: org.id, name: org.name, slug: org.slug });
 });
 
+/**
+ * Delete an organization and everything under it.
+ *
+ * PLATFORM ADMINS ONLY. An org owner can rename their org and remove its people;
+ * they cannot remove the org itself, because the blast radius is every program,
+ * club, member and piece of content it ever held, and the person best placed to
+ * be sure that is intended is not the one inside it.
+ *
+ * Guarded by the org's own NAME. A typed name is a second, deliberate act -- an
+ * id in a URL is not, and this is the one endpoint where a mis-click is
+ * unrecoverable.
+ */
+platformRouter.delete("/orgs/:org_id", async (c) => {
+  const user = await getCurrentUser(c);
+  if (user.role !== "platform_admin") {
+    throw new HttpError(403, "Deleting an organization needs a platform administrator");
+  }
+  const orgId = c.req.param("org_id");
+  const org = await db.getOrganization(orgId).catch(() => null);
+  if (!org) throw new HttpError(404, "Organization not found");
+  const confirm = c.req.query("confirm_name") ?? "";
+  if (confirm.trim() !== String(org.name).trim()) {
+    throw new HttpError(
+      400,
+      `To delete this organization, pass confirm_name exactly as "${org.name}"`,
+    );
+  }
+  const removed = await graph.deleteOrganizationDeeply(orgId);
+  await db.recordAuditEvent("organization.deleted", {
+    orgId: null, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { name: org.name, removed },
+  });
+  return c.json({ ok: true, name: org.name, removed });
+});
+
+/** Rename a program or club. */
+platformRouter.patch("/programs/:program_id/name", async (c) => {
+  const user = await getCurrentUser(c);
+  const programId = c.req.param("program_id");
+  const req = parseBody(z.object({ name: z.string().trim().min(1).max(160) }), await c.req.json());
+  const prog = await db.getProgram(programId).catch(() => null);
+  if (!prog) throw new HttpError(404, "Program not found");
+  const orgId = String(prog.org_id);
+  await _requireOrgArea(user, orgId, "programs", "edit");
+  const ok = await graph.renameProgram(orgId, programId, req.name);
+  if (!ok) throw new HttpError(404, "Program not found");
+  await db.recordAuditEvent("program.renamed", {
+    orgId, actorUserId: user.id, scopeType: "program", scopeId: programId,
+    metadata: { name: req.name },
+  });
+  return c.json({ ok: true, id: programId, name: req.name });
+});
+
+/**
+ * Deactivate a person, or bring them back.
+ *
+ * Not a delete: a profile is referenced by everything they authored, reviewed,
+ * coached or were granted, so removing the row either breaks those references or
+ * rewrites history to say nobody did it. Access stops, authorship survives, and
+ * unlike a delete this can be undone.
+ */
+platformRouter.patch("/orgs/:org_id/people/:profile_id/active", async (c) => {
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  const req = parseBody(z.object({ active: z.boolean() }), await c.req.json());
+  await _requireOrgArea(user, orgId, "team", "edit");
+  const ok = await graph.setProfileActive(orgId, c.req.param("profile_id"), req.active);
+  if (!ok) throw new HttpError(404, "Person not found in this organization");
+  await db.recordAuditEvent(req.active ? "person.reactivated" : "person.deactivated", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: { profile_id: c.req.param("profile_id") },
+  });
+  return c.json({ ok: true, active: req.active });
+});
+
 function _integrationResponse(r: Row): Row {
   return {
     id: r.id,

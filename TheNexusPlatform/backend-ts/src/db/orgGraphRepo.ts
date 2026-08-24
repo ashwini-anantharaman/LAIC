@@ -5064,3 +5064,115 @@ export async function listCoachesWithLearners(
     return [...byCoach.values()];
   });
 }
+
+/**
+ * Delete an organization and everything that belonged to it.
+ *
+ * WHY THIS IS NOT JUST `delete from organizations`. Thirty of the thirty-four
+ * foreign keys into organizations cascade, so most of the graph does look after
+ * itself. Eight tables do NOT have a foreign key at all -- the whole learning
+ * side (objects, collections, assets, roles, app targets) plus gates and
+ * app_user_data carry an organization_id as a plain column. Deleting the org row
+ * alone leaves every one of them behind, still readable, pointing at an
+ * organization that no longer exists.
+ *
+ * So those are cleared explicitly, children before parents, and the cascades are
+ * left to do the rest. Returns what it removed, because "deleted" with no count
+ * is indistinguishable from "matched nothing".
+ */
+export async function deleteOrganizationDeeply(
+  orgId: string,
+): Promise<Record<string, number>> {
+  return asPrivileged(async (tx) => {
+    const removed: Record<string, number> = {};
+    const n = async (label: string, q: Promise<unknown>) => {
+      const rows = (await q) as unknown as Row[];
+      if (rows?.length) removed[label] = rows.length;
+    };
+
+    // Grants and versions key on an OBJECT or COLLECTION id, not on the org, so
+    // they have to go before the rows that identify them do.
+    await n("object_grants", tx.execute(sql`
+      delete from learning_object_grants where object_id in
+        (select id from learning_objects where organization_id = ${orgId}::uuid) returning object_id`));
+    await n("object_versions", tx.execute(sql`
+      delete from learning_object_versions where organization_id = ${orgId}::uuid returning id`));
+    await n("app_targets", tx.execute(sql`
+      delete from learning_object_app_targets where organization_id = ${orgId}::uuid returning id`));
+    await n("collection_grants", tx.execute(sql`
+      delete from learning_collection_grants where collection_id in
+        (select id from learning_collections where organization_id = ${orgId}::uuid) returning collection_id`));
+    await n("drive_permissions", tx.execute(sql`
+      delete from learning_drive_permissions where organization_id = ${orgId}::uuid returning id`));
+    await n("collections", tx.execute(sql`
+      delete from learning_collections where organization_id = ${orgId}::uuid returning id`));
+    await n("objects", tx.execute(sql`
+      delete from learning_objects where organization_id = ${orgId}::uuid returning id`));
+    await n("assets", tx.execute(sql`
+      delete from learning_assets where organization_id = ${orgId}::uuid returning id`));
+    await n("learning_role_assignments", tx.execute(sql`
+      delete from learning_role_assignments where organization_id = ${orgId}::uuid returning id`));
+    await n("learning_roles", tx.execute(sql`
+      delete from learning_roles where organization_id = ${orgId}::uuid returning id`));
+    await n("gates", tx.execute(sql`
+      delete from gates where organization_id = ${orgId}::uuid returning id`));
+    await n("app_user_data", tx.execute(sql`
+      delete from app_user_data where organization_id = ${orgId}::uuid returning id`));
+
+    // …and the org itself, which cascades the other thirty.
+    await n("organization", tx.execute(sql`
+      delete from organizations where id = ${orgId}::uuid returning id`));
+    return removed;
+  });
+}
+
+/**
+ * Rename a program or club.
+ *
+ * Its own function rather than a general patch: a program's name is the one field
+ * safe to change from a console, and a broad update here would let a rename carry
+ * an org move or a parent change with it.
+ */
+export async function renameProgram(
+  orgId: string,
+  programId: string,
+  name: string,
+): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      update programs set name = ${name}
+      where id = ${programId}::uuid and org_id = ${orgId}::uuid
+      returning id`)) as unknown as Row[];
+    return rows.length > 0;
+  });
+}
+
+/**
+ * Deactivate a person, or bring them back.
+ *
+ * NOT A DELETE, deliberately. A profile is referenced by everything they ever
+ * authored, reviewed, coached or was granted; removing the row either breaks
+ * those references or silently rewrites history to say nobody did it. So the
+ * account is marked inactive and its memberships suspended -- access stops,
+ * authorship survives, and the decision is reversible, which a delete never is.
+ */
+export async function setProfileActive(
+  orgId: string,
+  profileId: string,
+  active: boolean,
+): Promise<boolean> {
+  return asPrivileged(async (tx) => {
+    const status = active ? "active" : "inactive";
+    const rows = (await tx.execute(sql`
+      update profiles set status = ${status}, updated_at = now()
+      where id = ${profileId}::uuid and organization_id = ${orgId}::uuid
+      returning id`)) as unknown as Row[];
+    if (!rows.length) return false;
+    await tx.execute(sql`
+      update org_memberships set status = ${status}
+      where org_id = ${orgId}::uuid and profile_id in (
+        select id from profiles where id = ${profileId}::uuid
+        union select auth_user_id from profiles where id = ${profileId}::uuid and auth_user_id is not null)`);
+    return true;
+  });
+}
