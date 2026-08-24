@@ -15,7 +15,7 @@
  * drifts from it.
  */
 import { useCallback, useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams } from "react-router";
 import { FolderTree, HardDrive, Loader2, Plus, SquarePen } from "lucide-react";
 import { toast } from "sonner";
 

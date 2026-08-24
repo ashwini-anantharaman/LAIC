@@ -3202,8 +3202,28 @@ platformRouter.get("/learning/clubs", async (c) => {
       };
     }),
   );
+  /**
+   * COACHES, as their own grouping.
+   *
+   * A coach is not a third kind of person — they are somebody in this program who
+   * has learners assigned. But "share this with Milind's learners" is a real thing
+   * to want and was unsayable: the dialog knew clubs and it knew individuals, and a
+   * coaching relationship is neither, so fifteen assigned learners had nowhere to
+   * appear. Drawn from the assignment table rather than a role, so it stays true
+   * as assignments change.
+   */
+  const coaches = await graph
+    .listCoachesWithLearners(access.orgId, programId)
+    .catch(() => []);
+
   return c.json({
     clubs,
+    coaches: coaches.map((c2) => ({
+      profile_id: c2.profileId,
+      display_name: c2.displayName,
+      email: c2.email,
+      learners: c2.learners.map((l) => ({ profile_id: l.profileId, display_name: l.displayName })),
+    })),
     // Everyone in the program. The client shows under "Program members" whoever is
     // not already listed inside a club, so the two sections never repeat a person;
     // sending the complete set keeps that decision in one place rather than making

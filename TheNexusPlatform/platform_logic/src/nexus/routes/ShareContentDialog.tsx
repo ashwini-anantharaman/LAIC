@@ -32,6 +32,7 @@ import { toast } from "sonner";
 
 import {
   listShareTargets,
+  type ShareableCoach,
   setContentShares,
   setFolderShares,
   type FolderAccessLevel,
@@ -157,6 +158,17 @@ export function ShareContentDialog({
   const [clubs, setClubs] = useState<ShareableClub[] | null>(null);
   /** People in the program who are in no club — reachable only through this list. */
   const [loners, setLoners] = useState<ClubMember[]>([]);
+  /**
+   * Coaches, with their learners.
+   *
+   * A grouping, not a role: somebody is a coach here exactly when learners are
+   * assigned to them. Ticking a COACH grants the coach; their learners are listed
+   * beneath and tick individually, the same as club members -- so "give this to
+   * Milind" and "give this to Milind's fifteen learners" stay separate decisions
+   * rather than one implying the other.
+   */
+  const [coaches, setCoaches] = useState<ShareableCoach[]>([]);
+  const [openCoach, setOpenCoach] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [saving, setSaving] = useState(false);
@@ -191,9 +203,10 @@ export function ShareContentDialog({
   useEffect(() => {
     let live = true;
     listShareTargets(programId)
-      .then(({ clubs: cs, programMembers }) => {
+      .then(({ clubs: cs, coaches: co, programMembers }) => {
         if (!live) return;
         setClubs(cs);
+        setCoaches(co);
         // Shown under "Program members": whoever is not already listed inside a
         // club, so the two sections never repeat a person.
         const inClubs = new Set(cs.flatMap((c) => c.members.map((m) => m.profile_id)));
@@ -484,6 +497,105 @@ export function ShareContentDialog({
                   </div>
                 );
               })}
+
+              {/* COACHES. A coaching relationship is neither a club nor an
+                  individual, so fifteen assigned learners had nowhere to appear
+                  and "share this with Milind's learners" could not be said. */}
+              {canShareMembers && coaches.length > 0 && (
+                <div className="mt-3">
+                  <p className="mb-1.5 px-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                    Coaches
+                  </p>
+                  {coaches.map((co) => {
+                    const isOpen = openCoach === co.profile_id;
+                    return (
+                      <div key={`coach-${co.profile_id}`}>
+                        <div className="flex w-full items-center gap-2">
+                          <button
+                            type="button"
+                            aria-label={isOpen ? "Hide learners" : "Show learners"}
+                            aria-expanded={isOpen}
+                            onClick={() => setOpenCoach(isOpen ? null : co.profile_id)}
+                            className="rounded p-1 text-muted-foreground hover:text-foreground"
+                          >
+                            <ChevronRight
+                              className={cn("size-3.5 transition-transform", isOpen && "rotate-90")}
+                            />
+                          </button>
+                          <button
+                            type="button"
+                            aria-pressed={peopleState.get(co.profile_id) === "on"}
+                            onClick={() => toggle(peopleState, setPeopleState, co.profile_id)}
+                            className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
+                          >
+                            <Box state={peopleState.get(co.profile_id) ?? "off"} />
+                            <User className="size-3.5 text-muted-foreground" />
+                            <span className="truncate text-sm">{co.display_name}</span>
+                            <span className="ml-auto shrink-0 text-[11px] text-muted-foreground">
+                              {co.learners.length} learner{co.learners.length === 1 ? "" : "s"}
+                            </span>
+                          </button>
+                          {folder && peopleState.get(co.profile_id) === "on" && (
+                            <LevelPicker
+                              value={levelOf(co.profile_id)}
+                              onChange={(l) => setLevel(co.profile_id, l)}
+                            />
+                          )}
+                        </div>
+
+                        {isOpen && (
+                          <>
+                            {/* Ticking the coach does NOT tick their learners.
+                                Two different decisions, and collapsing them would
+                                hand fifteen people content somebody meant for one. */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const allOn = co.learners.every(
+                                  (l) => peopleState.get(l.profile_id) === "on",
+                                );
+                                setPeopleState((m) => {
+                                  const n = new Map(m);
+                                  for (const l of co.learners) n.set(l.profile_id, allOn ? "off" : "on");
+                                  return n;
+                                });
+                              }}
+                              className="ml-8 mb-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                            >
+                              {co.learners.every((l) => peopleState.get(l.profile_id) === "on")
+                                ? "Clear all learners"
+                                : "Select all learners"}
+                            </button>
+                            {co.learners.map((l) => (
+                              <div
+                                key={`${co.profile_id}-${l.profile_id}`}
+                                className="ml-8 flex w-[calc(100%-2rem)] items-center gap-2"
+                              >
+                                <button
+                                  type="button"
+                                  aria-pressed={peopleState.get(l.profile_id) === "on"}
+                                  onClick={() => toggle(peopleState, setPeopleState, l.profile_id)}
+                                  className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50"
+                                >
+                                  <Box state={peopleState.get(l.profile_id) ?? "off"} />
+                                  <User className="size-3.5 text-muted-foreground" />
+                                  <span className="truncate text-sm">{l.display_name}</span>
+                                </button>
+                                {folder && peopleState.get(l.profile_id) === "on" && (
+                                  <LevelPicker
+                                    value={levelOf(l.profile_id)}
+                                    onChange={(lv) => setLevel(l.profile_id, lv)}
+                                  />
+                                )}
+                              </div>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* PEOPLE WITH NO CLUB. A club is a grouping within the program, not
                   the only way to belong to it — a coach or an administrator who

@@ -1738,18 +1738,39 @@ export async function deleteLibraryAsset(programId: string, assetId: string): Pr
   );
 }
 
+/**
+ * A coach, with the learners assigned to them.
+ *
+ * Not a third kind of person — a grouping drawn from the coaching assignments, so
+ * "share this with Milind's learners" becomes sayable. It was not: the dialog knew
+ * clubs and it knew individuals, and a coaching relationship is neither.
+ */
+export interface ShareableCoach {
+  profile_id: string;
+  display_name: string;
+  email: string | null;
+  learners: { profile_id: string; display_name: string }[];
+}
+
 export interface ShareTargets {
   clubs: ShareableClub[];
+  coaches: ShareableCoach[];
   /** Everyone in the program. A club is a grouping within it, not the only way to
    *  belong — so people in no club are reachable through this list. */
   programMembers: ClubMember[];
 }
 
 export async function listShareTargets(programId: string): Promise<ShareTargets> {
-  const r = await request<{ clubs?: ShareableClub[]; program_members?: ClubMember[] }>(
-    `/api/platform/learning/clubs?program_id=${encodeURIComponent(programId)}`,
-  );
-  return { clubs: r.clubs ?? [], programMembers: r.program_members ?? [] };
+  const r = await request<{
+    clubs?: ShareableClub[];
+    coaches?: ShareableCoach[];
+    program_members?: ClubMember[];
+  }>(`/api/platform/learning/clubs?program_id=${encodeURIComponent(programId)}`);
+  return {
+    clubs: r.clubs ?? [],
+    coaches: r.coaches ?? [],
+    programMembers: r.program_members ?? [],
+  };
 }
 
 /** Clubs alone, for callers that only need the scope picker. */

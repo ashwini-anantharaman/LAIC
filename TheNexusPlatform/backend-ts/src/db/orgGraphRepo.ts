@@ -5007,3 +5007,60 @@ export async function collectionSubtreeIdsPublic(
 ): Promise<string[]> {
   return collectionSubtreeIds(orgId, roots);
 }
+
+/**
+ * Coaches in this program, with the learners assigned to each.
+ *
+ * A COACH IS NOT A THIRD KIND OF PERSON — they are somebody in the program who
+ * appears in bridge_learner_coaches as a coach. So this is a grouping, drawn from
+ * the assignment table, rather than a role somebody was given: a person is a coach
+ * here exactly when a learner has been assigned to them.
+ *
+ * Learners are resolved to PROFILE ids where they have one. A participant without
+ * a profile cannot be granted to (a grant keys on profile_id), so they are dropped
+ * rather than listed as an option that would fail on save.
+ */
+export async function listCoachesWithLearners(
+  orgId: string,
+  programId: string | null,
+): Promise<{ profileId: string; displayName: string; email: string | null;
+             learners: { profileId: string; displayName: string }[] }[]> {
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select
+        c.id            as coach_id,
+        coalesce(c.display_name, c.name, c.email) as coach_name,
+        c.email         as coach_email,
+        lp.id           as learner_id,
+        coalesce(lp.display_name, lp.name, lp.email) as learner_name
+      from bridge_learner_coaches x
+      join profiles c on c.id = x.coach_profile_id
+      left join participants pa on pa.id = x.participant_id
+      left join profiles lp on lp.auth_user_id = pa.user_id or lp.id = pa.user_id
+      where x.organization_id = ${orgId}::uuid
+        and x.program_id is not distinct from ${programId}::uuid
+      order by coach_name, learner_name`)) as unknown as Row[];
+
+    const byCoach = new Map<string, { profileId: string; displayName: string; email: string | null;
+                                      learners: { profileId: string; displayName: string }[] }>();
+    for (const r of rows) {
+      const id = String(r.coach_id);
+      if (!byCoach.has(id)) {
+        byCoach.set(id, {
+          profileId: id,
+          displayName: (r.coach_name as string) ?? "Coach",
+          email: (r.coach_email as string | null) ?? null,
+          learners: [],
+        });
+      }
+      if (r.learner_id) {
+        const entry = byCoach.get(id)!;
+        const lid = String(r.learner_id);
+        if (!entry.learners.some((l) => l.profileId === lid)) {
+          entry.learners.push({ profileId: lid, displayName: (r.learner_name as string) ?? "Learner" });
+        }
+      }
+    }
+    return [...byCoach.values()];
+  });
+}
