@@ -4926,7 +4926,32 @@ export async function setDrivePermissions(
         where owner_subject_type is not null
         do update set name = learning_collections.name
       returning id`)) as unknown as Row[];
-    return { driveId: rows[0] ? String(rows[0].id) : null };
+    const driveId = rows[0] ? String(rows[0].id) : null;
+
+    /**
+     * THE OWNER IS GRANTED THEIR OWN DRIVE, explicitly.
+     *
+     * Owning a folder and being granted it are different rows, and every reader
+     * -- folder confinement, the library scope, the pipeline access check --
+     * asks about the GRANT. Without this the drive existed and its owner could
+     * not see it: a folder with their name on it, invisible to them.
+     *
+     * At 'edit', because it is theirs. And through the ordinary grants table
+     * rather than a special case in each reader, so a drive stays exactly as
+     * legible to the rest of the system as any other folder. The owner subject
+     * types are the same four the grants table already knows, so a club's drive
+     * lands as a club grant and an app's as an app grant, with no new vocabulary.
+     */
+    if (driveId) {
+      await tx.execute(sql`
+        insert into learning_collection_grants
+          (collection_id, subject_type, subject_id, level, granted_by)
+        values (${driveId}, ${p.subjectType === "coach" ? "profile" : p.subjectType},
+                ${p.subjectId}, 'edit', ${grantedBy}::uuid)
+        on conflict (collection_id, subject_type, subject_id)
+          do update set level = 'edit'`);
+    }
+    return { driveId };
   });
 }
 
