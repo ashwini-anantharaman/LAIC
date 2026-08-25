@@ -5347,3 +5347,65 @@ export async function upsertDriveObject(
         updated_at = now()`);
   });
 }
+
+/**
+ * Take these collections off every object, putting it in `fallback` instead.
+ *
+ * Used when a drive folder is deleted: the folder goes, the work in it does not.
+ * An object filed elsewhere as well keeps those other folders — only the doomed
+ * ones are removed, and the fallback is added only if nothing else is left.
+ */
+export async function unfileObjectsFromCollections(
+  orgId: string,
+  collectionIds: string[],
+  fallbackId: string,
+  fallbackName: string,
+): Promise<number> {
+  if (!collectionIds.length) return 0;
+  return asPrivileged(async (tx) => {
+    const rows = (await tx.execute(sql`
+      select id, collection_ids, collection_names from learning_objects
+      where organization_id = ${orgId} and collection_ids ?| ${sql.raw(
+        `array[${collectionIds.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")}]`,
+      )}`)) as unknown as Row[];
+    let n = 0;
+    for (const r of rows) {
+      const ids = Array.isArray(r.collection_ids) ? (r.collection_ids as string[]) : [];
+      const names = Array.isArray(r.collection_names) ? (r.collection_names as string[]) : [];
+      const keptIds: string[] = [];
+      const keptNames: string[] = [];
+      ids.forEach((id, i) => {
+        if (collectionIds.includes(String(id))) return;
+        keptIds.push(String(id));
+        keptNames.push(names[i] ?? "Folder");
+      });
+      if (!keptIds.length) { keptIds.push(fallbackId); keptNames.push(fallbackName); }
+      await tx.execute(sql`
+        update learning_objects
+        set collection_ids = ${JSON.stringify(keptIds)}::jsonb,
+            collection_names = ${JSON.stringify(keptNames)}::jsonb,
+            updated_at = now()
+        where organization_id = ${orgId} and id = ${String(r.id)}`);
+      n += 1;
+    }
+    return n;
+  });
+}
+
+/** Remove these collections and their grants. */
+export async function deleteCollections(orgId: string, ids: string[]): Promise<number> {
+  if (!ids.length) return 0;
+  return asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      delete from learning_collection_grants where collection_id in ${sql.raw(
+        `(${ids.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`,
+      )}`);
+    const rows = (await tx.execute(sql`
+      delete from learning_collections
+      where organization_id = ${orgId}::uuid and id in ${sql.raw(
+        `(${ids.map((c) => `'${c.replace(/'/g, "''")}'`).join(",")})`,
+      )}
+      returning id`)) as unknown as Row[];
+    return rows.length;
+  });
+}

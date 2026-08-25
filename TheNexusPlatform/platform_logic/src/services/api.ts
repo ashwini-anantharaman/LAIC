@@ -2048,6 +2048,22 @@ export async function createMyDriveFolder(
   });
 }
 
+/**
+ * Delete a folder from your own drive.
+ *
+ * The CONTENT survives: its items move to the drive root rather than going with
+ * it. Removing a folder is tidying shelves, not throwing away the work on them.
+ */
+export async function deleteMyDriveFolder(
+  programId: string,
+  folderId: string,
+): Promise<{ folders_removed: number; content_moved: number }> {
+  return request(
+    `/api/platform/learning/drives/mine/folders/${encodeURIComponent(folderId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "DELETE" },
+  );
+}
+
 /** Remove something from your own drive. */
 export async function deleteMyDriveObject(
   programId: string,

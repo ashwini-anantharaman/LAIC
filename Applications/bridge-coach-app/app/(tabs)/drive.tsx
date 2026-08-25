@@ -30,7 +30,7 @@ import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../../constants/t
 import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import {
-  createMyDriveFolder, deleteMyDriveObject, fetchLearningLaunch, fetchMyDrive,
+  createMyDriveFolder, deleteMyDriveFolder, deleteMyDriveObject, fetchLearningLaunch, fetchMyDrive,
   fetchMyDriveFolders, fetchMyDriveObjects, type LearningObject, type MyDrive,
 } from "../../lib/nexus";
 
@@ -99,6 +99,34 @@ export default function DriveScreen() {
     } finally {
       setBusyId(null);
     }
+  };
+
+  const removeFolder = (f: { id: string; name: string }) => {
+    Alert.alert(
+      `Delete "${f.name}"?`,
+      "Anything inside moves to your drive — it is not deleted.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              if (!token) return;
+              setBusyId(f.id);
+              try {
+                await deleteMyDriveFolder(token, f.id, drive?.program_id ?? undefined);
+                await load();
+              } catch (e) {
+                Alert.alert("Couldn't delete", e instanceof Error ? e.message : "Try again.");
+              } finally {
+                setBusyId(null);
+              }
+            })();
+          },
+        },
+      ],
+    );
   };
 
   const remove = (o: LearningObject) => {
@@ -361,6 +389,18 @@ export default function DriveScreen() {
                       {inside.length} {inside.length === 1 ? "item" : "items"}
                     </Text>
                   </Pressable>
+                  {/* Its own row, not inside the toggle: a delete on the control
+                      that opens the folder is one mis-tap from the wrong thing. */}
+                  <Pressable
+                    style={styles.folderDelete}
+                    onPress={() => removeFolder(f)}
+                    disabled={busyId === f.id}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.folderDeleteLabel}>
+                      {busyId === f.id ? "Deleting…" : "Delete folder"}
+                    </Text>
+                  </Pressable>
                   {open && inside.map((o) => (
                     <ContentCard
                       key={o.id}
@@ -491,6 +531,8 @@ const styles = StyleSheet.create({
   },
   savedText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: "#065F46" },
   folderBlock: { marginBottom: 4 },
+  folderDelete: { alignSelf: "flex-end", paddingVertical: 4, paddingHorizontal: 6, marginBottom: 6 },
+  folderDeleteLabel: { fontFamily: Fonts.bodySemibold, fontSize: 12, color: "#B42318" },
   chevron: { fontFamily: Fonts.body, fontSize: 13, color: Brand.ink, opacity: 0.5, marginRight: 8 },
   cardActions: {
     flexDirection: "row",

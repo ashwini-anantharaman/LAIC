@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 
 import {
-  createMyDriveFolder, deleteMyDriveObject, getContentLibrary, getDriveFolders,
+  createMyDriveFolder, deleteMyDriveFolder, deleteMyDriveObject, getContentLibrary, getDriveFolders,
   getMyDrive, launchLearningPlatform, type LibraryFolder, type LibraryObject,
 } from "@/services/api";
 import { PageHeader } from "@/nexus/ui/kit";
@@ -117,6 +117,26 @@ export function MyDriveTab() {
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Couldn't make that folder");
+    }
+  }
+
+  async function removeFolder(f: LibraryFolder) {
+    if (!window.confirm(
+      `Delete the folder "${f.name}"? Anything inside moves to your drive, it is not deleted.`,
+    )) return;
+    setBusyId(f.id);
+    try {
+      const r = await deleteMyDriveFolder(scope, f.id);
+      toast.success(
+        r.content_moved
+          ? `Deleted "${f.name}" — ${r.content_moved} item(s) moved to your drive`
+          : `Deleted "${f.name}"`,
+      );
+      await load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't delete that folder");
+    } finally {
+      setBusyId(null);
     }
   }
 
@@ -261,7 +281,7 @@ export function MyDriveTab() {
                 const inside = objects.filter((o) => (o.collection_ids ?? []).includes(f.id));
                 const isOpen = open[f.id] ?? false;
                 return (
-                  <div key={f.id} className="rounded-xl border">
+                  <div key={f.id} className="relative rounded-xl border">
                     <button
                       type="button"
                       onClick={() => setOpen((m) => ({ ...m, [f.id]: !isOpen }))}
@@ -273,6 +293,20 @@ export function MyDriveTab() {
                         {inside.length} {inside.length === 1 ? "item" : "items"}
                       </span>
                     </button>
+                    {/* Outside the toggle: a delete nested in the row that opens
+                        the folder is one mis-tap from the wrong outcome. */}
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="absolute right-10 top-1.5"
+                      title={`Delete ${f.name}`}
+                      disabled={busyId === f.id}
+                      onClick={() => void removeFolder(f)}
+                    >
+                      {busyId === f.id
+                        ? <Loader2 className="size-3.5 animate-spin" />
+                        : <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />}
+                    </Button>
                     {isOpen && (
                       <ul className="space-y-2 border-t p-3">
                         {inside.length === 0 ? (

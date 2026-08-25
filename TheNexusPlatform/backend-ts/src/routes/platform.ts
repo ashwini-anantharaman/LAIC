@@ -3915,6 +3915,39 @@ platformRouter.delete("/learning/drives/mine/objects/:object_id", async (c) => {
 });
 
 /**
+ * Delete a folder from your own drive.
+ *
+ * THE CONTENT SURVIVES. Its items are unfiled to the drive root rather than
+ * deleted with it: somebody removing a folder is tidying their shelves, not
+ * throwing away the work on them, and the two acts should never be one click.
+ * Deleting the content is the per-item delete, which asks first.
+ *
+ * Nested folders go with it — a subtree is what the person is looking at when
+ * they delete the thing containing it.
+ */
+platformRouter.delete("/learning/drives/mine/folders/:folder_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(
+    user, "learning", c.req.query("program_id") ?? null,
+  );
+  if (!access.profileId) throw new HttpError(403, "No profile for this session");
+  const drive = await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId);
+  if (!drive) throw new HttpError(403, "You do not have a drive");
+
+  const folderId = c.req.param("folder_id");
+  if (folderId === String(drive.id)) {
+    throw new HttpError(400, "That is the drive itself, not a folder in it");
+  }
+  const inside = new Set(await graph.collectionSubtreeIdsPublic(access.orgId, [String(drive.id)]));
+  if (!inside.has(folderId)) throw new HttpError(403, "That folder is not in your drive");
+
+  const doomed = await graph.collectionSubtreeIdsPublic(access.orgId, [folderId]);
+  const moved = await graph.unfileObjectsFromCollections(access.orgId, doomed, String(drive.id), String(drive.name));
+  const removed = await graph.deleteCollections(access.orgId, doomed);
+  return c.json({ ok: true, folders_removed: removed, content_moved: moved });
+});
+
+/**
  * Make a folder inside your own drive.
  *
  * Its own endpoint because creating a folder in the PROGRAM library needs
