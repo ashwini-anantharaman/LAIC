@@ -106,7 +106,18 @@ export default function TabsLayout() {
       <BridgeSessionWarmer />
       <SwipeTabs
       tabBarPosition="bottom"
-      tabBar={(props) => (inNestedScreen ? null : <BrandTabBar {...props} onOpenMenu={open} />)}
+      tabBar={(props) =>
+        inNestedScreen ? null : (
+          <BrandTabBar
+            {...props}
+            onOpenMenu={open}
+            // The route exists either way -- expo-router registers every file in
+            // this folder -- so the bar is where "do they have a drive?" is
+            // actually answered.
+            hiddenRoutes={hasDrive ? [] : ["drive"]}
+          />
+        )
+      }
       screenOptions={{
         // Swiping between tabs is a NATIVE gesture. In a mobile browser it
         // fights Safari's own edge-swipes — and worse, the pager's gesture
@@ -133,8 +144,11 @@ export default function TabsLayout() {
       <SwipeTabs.Screen name="learn" options={{ title: "Learn" }} />
       <SwipeTabs.Screen name="coach" options={{ title: "Coach" }} />
       <SwipeTabs.Screen name="club" options={{ title: "Club" }} />
-      {/* Last: a personal space is a side room, not a destination the app is for. */}
-      {hasDrive && <SwipeTabs.Screen name="drive" options={{ title: "My Drive" }} />}
+      {/* Last: a personal space is a side room, not a destination the app is for.
+          Always declared -- the route is registered by the file either way, and
+          conditionally omitting the Screen only lost its title while the bar
+          went on deciding visibility for itself. */}
+      <SwipeTabs.Screen name="drive" options={{ title: "My Drive" }} />
       </SwipeTabs>
 
       {/* The Menu drawer — over the tabs, so it survives switching between them. */}

@@ -39,6 +39,7 @@ import {
 import { SvgXml } from "react-native-svg";
 
 import {
+  ICON_ASSIGNMENTS,
   ICON_CLUB,
   ICON_COACH,
   ICON_HOME,
@@ -78,6 +79,17 @@ const TABS: Record<string, { label: string; icon: string; w: number; h: number }
   play: { label: "Play", icon: tintSvg(ICON_PLAY, Brand.iconDark), w: 33, h: 33 },
   coach: { label: "Coach", icon: tintSvg(ICON_COACH, Brand.iconDark), w: 33, h: 33 },
   club: { label: "Club", icon: tintSvg(ICON_CLUB, Brand.iconDark), w: 24, h: 17.45 },
+  /**
+   * MY DRIVE — a personal space, shown only to somebody who has one.
+   *
+   * A route in app/(tabs)/ is registered by expo-router whether or not this
+   * layout declares a <Screen> for it, and THIS BAR is what actually decides
+   * what a person sees: an entry missing from TABS is dropped silently by the
+   * `if (!meta) return null` below. So the tab was invisible no matter what the
+   * layout or the server said -- the gate everybody was reasoning about was not
+   * the gate doing the work.
+   */
+  drive: { label: "My Drive", icon: tintSvg(ICON_ASSIGNMENTS, Brand.iconDark), w: 29, h: 32.22 },
 };
 
 /**
@@ -97,7 +109,15 @@ export function BrandTabBar({
   navigation,
   /** Opens the Menu drawer. The Menu slot is a button, not a destination. */
   onOpenMenu,
-}: MaterialTopTabBarProps & { onOpenMenu?: () => void }) {
+  /**
+   * Route names to leave out — the gate for tabs that depend on a grant.
+   *
+   * Passed in rather than read here, because whether somebody has a drive is a
+   * server answer and a tab bar has no business asking. One list, so the next
+   * conditional tab does not invent a second mechanism.
+   */
+  hiddenRoutes,
+}: MaterialTopTabBarProps & { onOpenMenu?: () => void; hiddenRoutes?: string[] }) {
   const { width } = useWindowDimensions();
   const s = width / DESIGN_WIDTH;
 
@@ -163,6 +183,7 @@ export function BrandTabBar({
         {state.routes.map((route, i) => {
           const meta = TABS[route.name];
           if (!meta) return null;
+          if (hiddenRoutes?.includes(route.name)) return null;
 
           // Fade with the swipe too, so icons brighten as their page arrives.
           const opacity = position.interpolate({
