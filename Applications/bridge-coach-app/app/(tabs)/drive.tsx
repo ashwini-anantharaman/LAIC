@@ -29,7 +29,10 @@ import { TabLoading } from "../../components/tab-loading";
 import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../../constants/theme";
 import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
-import { createMyDriveFolder, fetchMyDrive, type LearningObject, type MyDrive } from "../../lib/nexus";
+import {
+  createMyDriveFolder, fetchLearningLaunch, fetchMyDrive,
+  type LearningObject, type MyDrive,
+} from "../../lib/nexus";
 import { getLearningObjects } from "../../lib/learning";
 
 const LEARNING_URL = process.env.EXPO_PUBLIC_LEARNING_URL ?? "";
@@ -46,6 +49,39 @@ export default function DriveScreen() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [makingFolder, setMakingFolder] = useState(false);
+  /** The framed Studio's URL, built only after a launch token exists. */
+  const [studioUrl, setStudioUrl] = useState<string | null>(null);
+  const [opening, setOpening] = useState(false);
+
+  /**
+   * Open the Studio, confined to this drive.
+   *
+   * The launch token is minted FIRST and the sheet opens only once it exists --
+   * the Studio establishes its session from that token alone, and without one it
+   * silently falls back to a demo session showing a stranger's local folders.
+   */
+  const openCreator = async () => {
+    if (!token || !drive?.drive_id) return;
+    setOpening(true);
+    try {
+      const l = await fetchLearningLaunch(token, clubProgramId ?? undefined);
+      if (!l.launch_url) throw new Error("The Content Studio is not configured here.");
+      const q = new URLSearchParams({
+        launch_token: l.launch_token,
+        create: "1",
+        drive: drive.drafts_id ?? drive.drive_id,
+        chrome: "none",
+      });
+      if (drive.create_types != null) q.set("types", drive.create_types.join(","));
+      if (clubProgramId) q.set("program_id", clubProgramId);
+      setStudioUrl(`${l.launch_url}/?${q.toString()}`);
+      setCreating(true);
+    } catch (e) {
+      Alert.alert("Couldn't open the creator", e instanceof Error ? e.message : "Try again.");
+    } finally {
+      setOpening(false);
+    }
+  };
 
   /**
    * A drive you cannot make a folder in is a list, not a drive.
@@ -106,43 +142,21 @@ export default function DriveScreen() {
    * the title collided with the clock. It covers the tab bar deliberately: this
    * is a task you finish and close, not a place you browse from.
    */
-  if (creating && drive?.drive_id) {
-    const q = new URLSearchParams({
-      create: "1",
-      // Drafts, not the drive root: everything made here lands in one named
-      // place, so "where did it go?" has an answer. The root stays somewhere
-      // they arrange rather than a pile that grows on its own.
-      drive: drive.drafts_id ?? drive.drive_id,
-      /**
-       * NO SKIN, deliberately.
-       *
-       * `embed=1` dresses the page in the club app's cream, which is right for
-       * the READER -- a tutorial rendered for a learner -- and wrong for an
-       * authoring screen. The Studio's own surfaces are already light, so
-       * forcing cream on top left cream text on cream panels: the Collections
-       * screen came out unreadable, every label a ghost.
-       *
-       * `chrome=none` gives what is actually wanted: no sidebar, no topbar, and
-       * the Studio's own legible palette. The maroon bar above supplies the
-       * brand framing.
-       */
-      chrome: "none",
-    });
-    if (drive.create_types != null) q.set("types", drive.create_types.join(","));
-    if (token) q.set("token", token);
+  if (creating && studioUrl) {
     return (
       <View style={styles.fill}>
         <View style={[styles.sheetBar, { paddingTop: insets.top + 8 }]}>
           <Text style={styles.sheetTitle}>New content</Text>
-          <Pressable onPress={() => { setCreating(false); void load(); }} hitSlop={12}>
+          <Pressable
+            onPress={() => { setCreating(false); setStudioUrl(null); void load(); }}
+            hitSlop={12}
+          >
             <Text style={styles.sheetDone}>Done</Text>
           </Pressable>
         </View>
         <WebView
-          source={{ uri: `${LEARNING_URL}/?${q.toString()}` }}
+          source={{ uri: studioUrl }}
           style={styles.fill}
-          // The Studio sizes itself against the viewport; without this it lays
-          // out at desktop width and everything runs off the screen.
           scalesPageToFit
           contentInsetAdjustmentBehavior="never"
         />
@@ -150,8 +164,7 @@ export default function DriveScreen() {
           THE TAB BAR RENDERS OVER THIS SCREEN.
           A sheet returned from inside a tab still sits under the navigator's bar,
           so the web page's own bottom -- a dialog footer, a Continue button --
-          was being covered by it. The web view cannot know that, so the space is
-          reserved here instead: the page ends where the bar begins.
+          was being covered by it. The space is reserved here instead.
         */}
         <View style={{ height: TAB_BAR_CLEARANCE, backgroundColor: Brand.cream }} />
       </View>
@@ -190,10 +203,10 @@ export default function DriveScreen() {
               <View style={styles.actions}>
                 <Pressable
                   style={({ pressed }) => [styles.newButton, pressed && styles.newButtonPressed]}
-                  onPress={() => setCreating(true)}
+                  onPress={() => void openCreator()}
                 >
                   <Text style={styles.newPlus}>+</Text>
-                  <Text style={styles.newLabel}>New</Text>
+                  <Text style={styles.newLabel}>{opening ? "Opening…" : "New"}</Text>
                 </Pressable>
                 <Pressable
                   style={({ pressed }) => [styles.folderButton, pressed && styles.newButtonPressed]}

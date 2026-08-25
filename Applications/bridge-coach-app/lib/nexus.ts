@@ -251,6 +251,26 @@ export type MyDrive = {
   drafts_id?: string | null;
 };
 
+/**
+ * A single-use LAUNCH TOKEN for the Content Studio.
+ *
+ * The Studio does not accept this app's bearer token: it establishes its own
+ * session from `?launch_token=`, and anything else is ignored. Passing the
+ * bearer token meant no session was created at all -- so the Studio fell back to
+ * its DEMO session, showed that browser's local folders (bb-tutorials, My
+ * content, flashcards…), and every folder made in it was written to storage
+ * nobody would ever read again.
+ */
+export function fetchLearningLaunch(
+  token: string,
+  programId?: string,
+): Promise<{ launch_url: string | null; launch_token: string }> {
+  return request<{ launch_url: string | null; launch_token: string }>(
+    `/api/programs/${programId ?? PROGRAM_ID}/learning-platform/launch`,
+    { token, method: "POST" },
+  );
+}
+
 /** Make a folder inside your own drive. */
 export function createMyDriveFolder(
   token: string,
