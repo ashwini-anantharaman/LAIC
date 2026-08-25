@@ -279,6 +279,25 @@ export function fetchLearningLaunch(
   );
 }
 
+/**
+ * The CONTENT of your own drive.
+ *
+ * Not getLearningObjects: that is the club's published learner feed, and a drive
+ * save is a draft published nowhere. Asking it for drive content returns nothing
+ * however much has been saved -- which is how "Saved into Drafts" and "0 items"
+ * came to be true at the same time.
+ */
+export function fetchMyDriveObjects(
+  token: string,
+  driveId: string,
+  programId?: string,
+): Promise<{ objects?: LearningObject[] }> {
+  return request(
+    `/api/platform/learning/library?program_id=${programId ?? PROGRAM_ID}&scope=drive&drive=${encodeURIComponent(driveId)}`,
+    { token },
+  );
+}
+
 /** The folders inside your own drive. */
 export function fetchMyDriveFolders(
   token: string,

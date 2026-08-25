@@ -31,9 +31,8 @@ import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import {
   createMyDriveFolder, fetchLearningLaunch, fetchMyDrive, fetchMyDriveFolders,
-  type LearningObject, type MyDrive,
+  fetchMyDriveObjects, type LearningObject, type MyDrive,
 } from "../../lib/nexus";
-import { getLearningObjects } from "../../lib/learning";
 
 const LEARNING_URL = process.env.EXPO_PUBLIC_LEARNING_URL ?? "";
 
@@ -125,20 +124,23 @@ export default function DriveScreen() {
       const d = await fetchMyDrive(token, clubProgramId ?? undefined);
       setDrive(d);
       if (d.has_drive && d.drive_id) {
-        const [all, tree] = await Promise.all([
-          getLearningObjects(token, {
-            refresh: true,
-            ...(clubProgramId ? { programId: clubProgramId } : {}),
-          }).catch(() => []),
-          fetchMyDriveFolders(token, d.drive_id, d.program_id ?? undefined).catch(
+        /**
+         * BOTH READS USE THE DRIVE'S OWN SCOPE, and both ask the drive.
+         *
+         * The counts used to come from the club's published learner feed, which
+         * a draft in a drive is not in and never will be -- so the folders were
+         * right and every count was zero. One endpoint, one scope, one answer.
+         */
+        const scope = d.program_id ?? undefined;
+        const [lib, tree] = await Promise.all([
+          fetchMyDriveObjects(token, d.drive_id, scope).catch(() => ({ objects: [] })),
+          fetchMyDriveFolders(token, d.drive_id, scope).catch(
             () => ({ folders: [] as { id: string; name: string; parent_id: string | null }[] }),
           ),
         ]);
         // Every folder in the drive EXCEPT the root, which is the drive itself.
-        const fs = (tree.folders ?? []).filter((f) => f.id !== d.drive_id);
-        setFolders(fs);
-        const inDrive = new Set([d.drive_id, ...fs.map((f) => f.id)]);
-        setItems(all.filter((o) => (o.collection_ids ?? []).some((c) => inDrive.has(c))));
+        setFolders((tree.folders ?? []).filter((f) => f.id !== d.drive_id));
+        setItems(lib.objects ?? []);
       } else {
         setItems([]);
         setFolders([]);
@@ -269,22 +271,44 @@ export default function DriveScreen() {
               </View>
             )}
 
-            {/* Folders first, and always shown — a folder you just made must be
-                visible even while it is empty, or making one looks like it
-                failed. */}
+            {/*
+              ONE LIST: each folder, then what is in it.
+              Folders render even when empty -- a folder you just made must be
+              visible or the act that created it has no result -- and their
+              contents sit under them rather than in a second list repeating the
+              same headings.
+            */}
             {folders.map((f) => {
-              const n = items.filter((o) => (o.collection_ids ?? []).includes(f.id)).length;
+              const inside = items.filter((o) => (o.collection_ids ?? []).includes(f.id));
               return (
-                <View key={f.id} style={styles.folderRow}>
-                  <Text style={styles.folderRowName}>{f.name}</Text>
-                  <Text style={styles.folderRowCount}>
-                    {n} {n === 1 ? "item" : "items"}
-                  </Text>
+                <View key={f.id} style={styles.folderBlock}>
+                  <View style={styles.folderRow}>
+                    <Text style={styles.folderRowName}>{f.name}</Text>
+                    <Text style={styles.folderRowCount}>
+                      {inside.length} {inside.length === 1 ? "item" : "items"}
+                    </Text>
+                  </View>
+                  {inside.map((o) => (
+                    <View key={o.id} style={styles.card}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
+                      <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
+                    </View>
+                  ))}
                 </View>
               );
             })}
 
-            {items.length === 0 && folders.length > 0 ? null : items.length === 0 ? (
+            {/* Anything sitting in the drive root rather than a folder. */}
+            {items
+              .filter((o) => !folders.some((f) => (o.collection_ids ?? []).includes(f.id)))
+              .map((o) => (
+                <View key={o.id} style={styles.card}>
+                  <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
+                  <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
+                </View>
+              ))}
+
+            {folders.length === 0 && items.length === 0 && (
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>Nothing here yet</Text>
                 <Text style={styles.emptyBody}>
@@ -293,28 +317,6 @@ export default function DriveScreen() {
                     : "Content shared into your drive will appear here."}
                 </Text>
               </View>
-            ) : (
-              /* Grouped by the folder each piece is in, so Drafts reads as a
-                 place rather than the list happening to start with new things. */
-              Object.entries(
-                items.reduce<Record<string, LearningObject[]>>((acc, o) => {
-                  const name = (o.collection_names ?? [])[0] ?? "In your drive";
-                  (acc[name] ??= []).push(o);
-                  return acc;
-                }, {}),
-              ).map(([folder, list]) => (
-                <View key={folder}>
-                  <Text style={styles.folder}>
-                    {folder} <Text style={styles.folderCount}>{list.length}</Text>
-                  </Text>
-                  {list.map((o) => (
-                    <View key={o.id} style={styles.card}>
-                      <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
-                      <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
-                    </View>
-                  ))}
-                </View>
-              ))
             )}
           </>
         )}
@@ -407,6 +409,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   savedText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: "#065F46" },
+  folderBlock: { marginBottom: 4 },
   folderRow: {
     flexDirection: "row",
     alignItems: "center",
