@@ -566,8 +566,63 @@ export async function bulkImportRegistrations(
   return request(`/api/offerings/${offeringId}/registrations/bulk-import`, { method: "POST", body: JSON.stringify({ rows }) });
 }
 
-export async function deleteProgram(programId: string): Promise<void> {
-  await request(`/api/platform/programs/${programId}`, { method: "DELETE" });
+/**
+ * Delete a program or club and everything in it.
+ *
+ * `confirmName` must equal the program's own name. The server checks it too --
+ * this is not a client-side nicety but the same guard on both sides, because an
+ * id in a URL is not a deliberate act and this takes the whole library with it.
+ */
+export async function deleteProgram(
+  programId: string,
+  confirmName: string,
+): Promise<{ name: string; removed: Record<string, number> }> {
+  return request(
+    `/api/platform/programs/${programId}?confirm_name=${encodeURIComponent(confirmName)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** Rename a program or club. */
+export async function renameProgram(programId: string, name: string): Promise<void> {
+  await request(`/api/platform/programs/${programId}/name`, {
+    method: "PATCH",
+    body: JSON.stringify({ name }),
+  });
+}
+
+/**
+ * Delete an organization and everything under it. Platform administrators only.
+ *
+ * Thirty of the thirty-four foreign keys cascade; eight learning tables have none
+ * at all, so the server clears those explicitly. See deleteOrganizationDeeply.
+ */
+export async function deleteOrganization(
+  orgId: string,
+  confirmName: string,
+): Promise<{ name: string; removed: Record<string, number> }> {
+  return request(
+    `/api/platform/orgs/${orgId}?confirm_name=${encodeURIComponent(confirmName)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * Deactivate a person, or bring them back.
+ *
+ * Not a delete: a profile is referenced by everything they authored, reviewed,
+ * coached or were granted. Access stops, authorship survives, and it can be
+ * undone.
+ */
+export async function setPersonActive(
+  orgId: string,
+  profileId: string,
+  active: boolean,
+): Promise<void> {
+  await request(`/api/platform/orgs/${orgId}/people/${profileId}/active`, {
+    method: "PATCH",
+    body: JSON.stringify({ active }),
+  });
 }
 
 // ── Org-defined program categories (Settings → Categories) ──────────────────
@@ -765,7 +820,9 @@ export interface TeamPerson {
   username?: string | null;
   display_name: string | null;
   membership_role: string;
-  status: "active" | "invited";
+  /** The account, not the membership — deactivating suspends the account. */
+  profile_id?: string | null;
+  status: "active" | "invited" | "inactive";
   role_id: string | null;
   role_name: string | null;
 }

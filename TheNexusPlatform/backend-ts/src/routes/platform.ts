@@ -5229,15 +5229,26 @@ platformRouter.delete("/programs/:program_id", async (c) => {
   if (!program) throw new HttpError(404, "Program not found");
   await _requireOrgArea(user, program.org_id, "programs", "edit");
   await _requireOrgCap(user, program.org_id, "org.programs.delete");
-  await db.deleteProgram(programId);
+  /**
+   * The program's NAME, typed back. Same reason as deleting an organization: an
+   * id in a URL is not a deliberate act, and this takes the program's whole
+   * library with it.
+   */
+  const confirm = c.req.query("confirm_name") ?? "";
+  if (confirm.trim() !== String(program.name).trim()) {
+    throw new HttpError(400, `To delete this program, pass confirm_name exactly as "${program.name}"`);
+  }
+  // Deep: the learning side has no foreign key to programs, so the old delete
+  // left every object, collection and asset behind, unreachable and still counted.
+  const removed = await graph.deleteProgramDeeply(String(program.org_id), programId);
   await db.recordAuditEvent("program.deleted", {
     orgId: program.org_id,
     actorUserId: user.id,
     scopeType: "program",
     scopeId: programId,
-    metadata: { name: program.name },
+    metadata: { name: program.name, removed },
   });
-  return c.json({ ok: true });
+  return c.json({ ok: true, name: program.name, removed });
 });
 
 // Which feature-areas are accessible inside a program (§3.5). Editable from

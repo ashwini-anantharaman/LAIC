@@ -6,7 +6,8 @@
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
-import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Lock, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
+import { ConfirmByName } from "@/nexus/ui/ConfirmByName";
+import { ChevronLeft, ChevronRight, Copy, ImageIcon, Layers, LayoutGrid, Lock, Pencil, Plus, SlidersHorizontal, Trash2, UserCog, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/app/components/ui/button";
@@ -26,6 +27,7 @@ import {
   createPartner,
   createProgram,
   deleteProgram,
+  renameProgram,
   getOrgCapabilities,
   listOrgCategories,
   listProgramAdministrators,
@@ -134,20 +136,82 @@ export function Programs() {
   // concern handled inside the program workspace, not here.)
   const canEnterProgram = !caps || caps.adminsEnterPrograms !== false;
 
+  /** The program queued for deletion — confirmed by typing its name. */
+  const [pendingDelete, setPendingDelete] = useState<Program | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  /** The program being renamed, and the name being typed. */
+  const [renaming, setRenaming] = useState<Program | null>(null);
+  const [newName, setNewName] = useState("");
+
   async function remove(p: Program) {
+    setDeleting(true);
     try {
-      await deleteProgram(p.id);
-      toast.success(`Removed "${p.name}"`);
+      const r = await deleteProgram(p.id, p.name);
+      const bits = Object.entries(r.removed ?? {})
+        .filter(([k]) => k !== "program")
+        .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`);
+      toast.success(
+        bits.length ? `Deleted "${p.name}" — also removed ${bits.join(", ")}` : `Deleted "${p.name}"`,
+      );
+      setPendingDelete(null);
       void load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to remove program");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function rename(p: Program, name: string) {
+    try {
+      await renameProgram(p.id, name);
+      toast.success(`Renamed to "${name}"`);
+      setRenaming(null);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to rename");
     }
   }
 
   if (!programs) return <Spinner />;
 
+  const dialogs = (
+    <>
+      {pendingDelete && (
+        <ConfirmByName
+          name={pendingDelete.name}
+          what="program"
+          consequences="its offerings, apps, groups, registrations, roles and its whole content library go with it"
+          busy={deleting}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => void remove(pendingDelete)}
+        />
+      )}
+      {renaming && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-2xl border bg-background p-5 shadow-2xl">
+            <p className="text-base font-semibold">Rename program</p>
+            <Input
+              className="mt-3"
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === "Enter" && newName.trim()) void rename(renaming, newName.trim()); }}
+            />
+            <div className="mt-4 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setRenaming(null)}>Cancel</Button>
+              <Button disabled={!newName.trim() || newName.trim() === renaming.name}
+                      onClick={() => void rename(renaming, newName.trim())}>Rename</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div>
+      {dialogs}
       <PageHeader
         title="Programs"
         actions={
@@ -180,7 +244,8 @@ export function Programs() {
               canEnter={canEnterProgram}
               onAssign={() => setAssigning(p)}
               onEditFeatures={() => setEditingFeatures(p)}
-              onRemove={() => remove(p)}
+              onRemove={() => setPendingDelete(p)}
+              onRename={() => { setRenaming(p); setNewName(p.name); }}
             />
           ))}
         </div>
@@ -213,7 +278,8 @@ export function Programs() {
                   canEnter={canEnterProgram}
                   onAssign={() => setAssigning(p)}
                   onEditFeatures={() => setEditingFeatures(p)}
-                  onRemove={() => remove(p)}
+                  onRemove={() => setPendingDelete(p)}
+                  onRename={() => { setRenaming(p); setNewName(p.name); }}
                 />
               ))}
           </div>
@@ -289,6 +355,7 @@ function ProgramCard({
   onAssign,
   onEditFeatures,
   onRemove,
+  onRename,
 }: {
   orgId: string;
   program: Program;
@@ -296,6 +363,7 @@ function ProgramCard({
   onAssign: () => void;
   onEditFeatures: () => void;
   onRemove: () => void;
+  onRename: () => void;
 }) {
   const [admins, setAdmins] = useState<ProgramAdministrator[]>([]);
   // Cover lives in the program's branding; keep it in local state so an
@@ -392,15 +460,29 @@ function ProgramCard({
                 {c}
               </span>
             ))}
-            <ConfirmButton
-              title={`Remove the "${p.name}" program?`}
-              description="This deletes the program and everything inside it — offerings, app shells, registrations, groups, and roles. This can't be undone."
-              actionLabel="Remove program"
-              onConfirm={onRemove}
-              buttonTitle="Remove program"
+            {/* Rename beside delete: they are the two things you come here to do
+                to a program that already exists, and hiding one inside the
+                workspace meant opening the program to change its name. */}
+            <button
+              type="button"
+              title="Rename program"
+              aria-label={`Rename ${p.name}`}
+              onClick={onRename}
+              className="rounded p-1 opacity-70 hover:opacity-100"
+            >
+              <Pencil className="size-3.5" />
+            </button>
+            {/* No inline confirm: this one asks for the name to be typed, because
+                it takes the program's whole library with it. */}
+            <button
+              type="button"
+              title="Delete program"
+              aria-label={`Delete ${p.name}`}
+              onClick={onRemove}
+              className="rounded p-1 opacity-70 hover:opacity-100"
             >
               <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
-            </ConfirmButton>
+            </button>
           </div>
         </div>
         <div className="mt-auto flex items-center justify-between gap-2 pt-4">

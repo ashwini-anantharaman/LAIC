@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router";
-import { Copy, Eye, Layers, LayoutGrid, Plus, Trash2 } from "lucide-react";
+import { Copy, Eye, Layers, LayoutGrid, Plus, Trash2, UserCheck, UserX } from "lucide-react";
 import { toast } from "sonner";
 
 import { CredentialsButton } from "@/nexus/people/CredentialsButton";
@@ -36,6 +36,7 @@ import {
   type GroupsModel,
   type ScopedRole,
   type TeamPerson,
+  setPersonActive,
 } from "@/services/api";
 import { DEV_ENABLED } from "@/nexus/dev/personas";
 import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
@@ -113,6 +114,30 @@ export function OrgTeam() {
       privilegedLabel: p.membership_role === "owner" ? "Super Admin" : "Admin",
     })) ?? null;
 
+  /**
+   * Suspend or restore an account.
+   *
+   * Not a delete: a profile is referenced by everything they authored, reviewed,
+   * coached or were granted, so removing the row either breaks those references
+   * or rewrites history to say nobody did it.
+   */
+  async function toggleActive(p: {
+    profile_id?: string | null;
+    status?: string | null;
+    display_name?: string | null;
+    email?: string | null;
+  }) {
+    if (!p.profile_id) return;
+    const next = p.status === "inactive";
+    try {
+      await setPersonActive(orgId, p.profile_id, next);
+      toast.success(`${p.display_name ?? p.email} ${next ? "reactivated" : "deactivated"}`);
+      void load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not change that");
+    }
+  }
+
   const renderActions = (m: RosterMember) => {
     const p = team?.find((x) => (x.membership_id ?? x.invitation_id ?? x.email) === m.key);
     if (!p) return null;
@@ -129,6 +154,17 @@ export function OrgTeam() {
         {DEV_ENABLED && p.email ? (
           <Button size="sm" variant="ghost" onClick={() => testAs(p)} title="Sign in as this person (dev)">
             <Eye className="size-3.5" /> Test as
+          </Button>
+        ) : null}
+        {p.profile_id && p.membership_role !== "owner" ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            title={p.status === "inactive" ? "Reactivate this person" : "Deactivate: keeps their work, stops their access"}
+            onClick={() => void toggleActive(p)}
+          >
+            {p.status === "inactive" ? <UserCheck className="size-3.5" /> : <UserX className="size-3.5" />}
+            {p.status === "inactive" ? "Reactivate" : "Deactivate"}
           </Button>
         ) : null}
         {p.membership_role !== "owner" &&

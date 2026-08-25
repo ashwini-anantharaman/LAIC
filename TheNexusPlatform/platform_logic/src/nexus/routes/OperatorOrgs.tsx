@@ -37,13 +37,18 @@ import { ConfirmButton } from "@/nexus/ui/ConfirmButton";
 import { Switch } from "@/app/components/ui/switch";
 import { EmptyState, PageHeader, Pill, Spinner, StatPill, statusTone } from "@/nexus/ui/kit";
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
+import { ConfirmByName } from "@/nexus/ui/ConfirmByName";
 import { toast } from "sonner";
+import { deleteOrganization } from "@/services/api";
 
 /** Mirrors the backend slug rule so the preview matches the real URL. */
 const slugify = (s: string) =>
   s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
 
 export function OperatorOrgs() {
+  /** The org queued for deletion — confirmed by typing its name. */
+  const [pendingDelete, setPendingDelete] = useState<OrgSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const [orgs, setOrgs] = useState<OrgSummary[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
@@ -109,6 +114,17 @@ export function OperatorOrgs() {
                     <Button size="sm" variant="ghost" onClick={() => setGovern(o)}>
                       <Pencil className="size-3.5" /> Edit
                     </Button>
+                    {/* The only place an organization can be removed. Platform
+                        administrators only, and it asks for the name — this takes
+                        every program, club, member and piece of content with it. */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title={`Delete ${o.name}`}
+                      onClick={() => setPendingDelete(o)}
+                    >
+                      <Trash2 className="size-3.5 text-red-600 dark:text-red-400" />
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
@@ -119,6 +135,37 @@ export function OperatorOrgs() {
 
       <ProvisionDialog open={open} onOpenChange={setOpen} onDone={load} />
       <EditOrgDialog org={govern} onClose={() => setGovern(null)} />
+      {pendingDelete && (
+        <ConfirmByName
+          name={String(pendingDelete.name)}
+          what="organization"
+          consequences="every program, club, member and piece of content inside it goes too"
+          busy={deleting}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            void (async () => {
+              setDeleting(true);
+              try {
+                const r = await deleteOrganization(String(pendingDelete.id), String(pendingDelete.name));
+                const bits = Object.entries(r.removed ?? {})
+                  .filter(([k]) => k !== "organization")
+                  .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`);
+                toast.success(
+                  bits.length
+                    ? `Deleted "${r.name}" — also removed ${bits.join(", ")}`
+                    : `Deleted "${r.name}"`,
+                );
+                setPendingDelete(null);
+                void load();
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Couldn't delete that organization");
+              } finally {
+                setDeleting(false);
+              }
+            })();
+          }}
+        />
+      )}
     </div>
   );
 }

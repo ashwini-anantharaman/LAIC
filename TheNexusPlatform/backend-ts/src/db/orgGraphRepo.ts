@@ -223,8 +223,16 @@ export async function listOrgTeam(orgId: string): Promise<Row[]> {
       const asg = byEmail.get(email);
       return {
         membership_id: m.id, invitation_id: null as string | null,
+        // The PROFILE id, not only the membership id. Deactivating suspends the
+        // account, which is a different row from the membership -- without this
+        // the roster could remove somebody from an org but never suspend them.
+        profile_id: (pr?.id as string | null) ?? null,
         email: pr?.email ?? null, display_name: pr?.displayName ?? pr?.name ?? null,
-        membership_role: m.role, status: "active",
+        membership_role: m.role,
+        // The account's real status, so a deactivated person reads as deactivated
+        // rather than as an ordinary member. Hardcoding "active" made the one
+        // state the roster exists to show invisible.
+        status: (pr?.status as string | null) === "inactive" ? "inactive" : "active",
         role_id: asg?.role_id ?? null, role_name: asg?.role_name ?? null,
       };
     });
@@ -5174,5 +5182,86 @@ export async function setProfileActive(
         select id from profiles where id = ${profileId}::uuid
         union select auth_user_id from profiles where id = ${profileId}::uuid and auth_user_id is not null)`);
     return true;
+  });
+}
+
+/**
+ * Delete a program or club, and everything that belonged to it.
+ *
+ * The existing deleteProgram clears offerings, registrations, participants,
+ * apps, stage nodes and memberships — but the LEARNING side has no foreign key
+ * to programs at all (objects, collections, assets, roles, app targets, gates,
+ * app_user_data all carry program_id as a plain column). Deleting a program
+ * without them leaves its whole library behind, unreachable and still counted.
+ *
+ * ORPHANS ARE DEACTIVATED, NOT DELETED. Somebody whose ONLY membership was in
+ * this program now belongs to nothing, and leaving them active leaves an account
+ * with access to a program that no longer exists. Deactivating keeps their
+ * authorship intact and can be undone; deleting them could not. Anyone with
+ * another membership is left completely alone.
+ */
+export async function deleteProgramDeeply(
+  orgId: string,
+  programId: string,
+): Promise<Record<string, number>> {
+  return asPrivileged(async (tx) => {
+    const removed: Record<string, number> = {};
+    const n = async (label: string, q: Promise<unknown>) => {
+      const rows = (await q) as unknown as Row[];
+      if (rows?.length) removed[label] = rows.length;
+    };
+
+    // Who would be left with nothing — worked out BEFORE the memberships go.
+    const orphanRows = (await tx.execute(sql`
+      select distinct m.profile_id from org_memberships m
+      where m.program_id = ${programId}::uuid
+        and not exists (
+          select 1 from org_memberships o
+          where o.profile_id = m.profile_id
+            and o.program_id is distinct from ${programId}::uuid)`)) as unknown as Row[];
+    const orphans = orphanRows.map((r) => String(r.profile_id));
+
+    await n("object_grants", tx.execute(sql`
+      delete from learning_object_grants where object_id in
+        (select id from learning_objects where program_id = ${programId}::uuid) returning object_id`));
+    await n("object_versions", tx.execute(sql`
+      delete from learning_object_versions where object_id in
+        (select id from learning_objects where program_id = ${programId}::uuid) returning id`));
+    await n("app_targets", tx.execute(sql`
+      delete from learning_object_app_targets where object_id in
+        (select id from learning_objects where program_id = ${programId}::uuid) returning id`));
+    await n("collection_grants", tx.execute(sql`
+      delete from learning_collection_grants where collection_id in
+        (select id from learning_collections where program_id = ${programId}::uuid) returning collection_id`));
+    await n("drive_permissions", tx.execute(sql`
+      delete from learning_drive_permissions where program_id = ${programId}::uuid returning id`));
+    await n("collections", tx.execute(sql`
+      delete from learning_collections where program_id = ${programId}::uuid returning id`));
+    await n("objects", tx.execute(sql`
+      delete from learning_objects where program_id = ${programId}::uuid returning id`));
+    await n("assets", tx.execute(sql`
+      delete from learning_assets where program_id = ${programId}::uuid returning id`));
+    await n("learning_role_assignments", tx.execute(sql`
+      delete from learning_role_assignments where program_id = ${programId}::uuid returning id`));
+    await n("learning_roles", tx.execute(sql`
+      delete from learning_roles where program_id = ${programId}::uuid returning id`));
+    await n("coach_links", tx.execute(sql`
+      delete from bridge_learner_coaches where program_id = ${programId}::uuid returning id`));
+    await n("gates", tx.execute(sql`
+      delete from gates where program_id = ${programId}::uuid returning id`));
+    await n("memberships", tx.execute(sql`
+      delete from org_memberships where program_id = ${programId}::uuid returning id`));
+    await n("program", tx.execute(sql`
+      delete from programs where id = ${programId}::uuid and org_id = ${orgId}::uuid returning id`));
+
+    if (orphans.length) {
+      const r = (await tx.execute(sql`
+        update profiles set status = 'inactive', updated_at = now()
+        where status = 'active' and (id in ${sql.raw(`(${orphans.map((o) => `'${o}'`).join(",")})`)}
+           or auth_user_id in ${sql.raw(`(${orphans.map((o) => `'${o}'`).join(",")})`)})
+        returning id`)) as unknown as Row[];
+      if (r.length) removed.people_deactivated = r.length;
+    }
+    return removed;
   });
 }

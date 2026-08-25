@@ -602,11 +602,21 @@ export function ProgramDetail({
 
   async function handleDelete() {
     if (!onDeleted) return;
-    if (!window.confirm(`Delete "${program.name}"? This permanently removes the program and all its offerings, apps, groups, and registrations. This cannot be undone.`)) return;
+    // The NAME typed back, not a yes/no. The server demands the same thing, so a
+    // dialog that only asked "are you sure?" would fail on save anyway -- and
+    // this removes the program's whole library along with it.
+    const typed = window.prompt(
+      `Delete "${program.name}"? This permanently removes the program and all its offerings, apps, groups, registrations and content. This cannot be undone.\n\nType the program's name to confirm:`,
+    );
+    if (typed === null) return;
+    if (typed.trim() !== program.name.trim()) {
+      setError("That name did not match, so nothing was deleted.");
+      return;
+    }
     setDeleting(true);
     setError("");
     try {
-      await deleteProgram(program.id);
+      await deleteProgram(program.id, program.name);
       onDeleted();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete program");
