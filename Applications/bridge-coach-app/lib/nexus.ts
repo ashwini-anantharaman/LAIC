@@ -298,6 +298,18 @@ export function fetchMyDriveObjects(
   );
 }
 
+/** Remove something from your own drive. */
+export function deleteMyDriveObject(
+  token: string,
+  objectId: string,
+  programId?: string,
+): Promise<{ removed: boolean; unfiled?: boolean }> {
+  return request(
+    `/api/platform/learning/drives/mine/objects/${encodeURIComponent(objectId)}?program_id=${programId ?? PROGRAM_ID}`,
+    { token, method: "DELETE" },
+  );
+}
+
 /** The folders inside your own drive. */
 export function fetchMyDriveFolders(
   token: string,

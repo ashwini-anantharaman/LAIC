@@ -3869,6 +3869,52 @@ platformRouter.get("/learning/drives/mine", async (c) => {
 });
 
 /**
+ * Remove something from your own drive.
+ *
+ * Its own endpoint for the same reason the save is: deleting from the PROGRAM
+ * library is a governing act, and a drive owner is not governing anything — they
+ * are throwing away their own draft.
+ *
+ * Only if it is actually theirs. An object filed in a drive folder AND somewhere
+ * shared is not deleted, only unfiled from the drive: the copy somebody else was
+ * given must not vanish because its author tidied up.
+ */
+platformRouter.delete("/learning/drives/mine/objects/:object_id", async (c) => {
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(
+    user, "learning", c.req.query("program_id") ?? null,
+  );
+  if (!access.profileId) throw new HttpError(403, "No profile for this session");
+  const drive = await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId);
+  if (!drive) throw new HttpError(403, "You do not have a drive");
+
+  const objectId = c.req.param("object_id");
+  const object = await graph.getLearningObject(access.orgId, objectId);
+  if (!object) throw new HttpError(404, "Content not found");
+
+  const inside = new Set(await graph.collectionSubtreeIdsPublic(access.orgId, [String(drive.id)]));
+  const ids = Array.isArray(object.collection_ids) ? (object.collection_ids as string[]) : [];
+  if (!ids.some((i) => inside.has(String(i)))) {
+    throw new HttpError(403, "That content is not in your drive");
+  }
+  const outside = ids.filter((i) => !inside.has(String(i)));
+  if (outside.length) {
+    // Shared elsewhere too: unfile it from the drive and leave the rest standing.
+    const names = Array.isArray(object.collection_names)
+      ? (object.collection_names as string[])
+      : [];
+    const keptNames = outside.map((id2) => {
+      const at = ids.indexOf(id2);
+      return at >= 0 && names[at] ? names[at] : "Folder";
+    });
+    await graph.setLearningObjectFolders(access.orgId, objectId, outside, keptNames);
+    return c.json({ ok: true, removed: false, unfiled: true });
+  }
+  await graph.deleteLearningObject(access.orgId, access.programId, objectId);
+  return c.json({ ok: true, removed: true });
+});
+
+/**
  * Make a folder inside your own drive.
  *
  * Its own endpoint because creating a folder in the PROGRAM library needs

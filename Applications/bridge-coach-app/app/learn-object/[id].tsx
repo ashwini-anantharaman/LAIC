@@ -25,7 +25,16 @@ import { getCachedObject } from "../../lib/learning";
  * way out.
  */
 export default function LearnContentScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  /**
+   * `program` and `title` are optional, and both exist for My Drive.
+   *
+   * A drive lives under the PARENT program, so launching as the club — right for
+   * club curriculum — reads a scope the object is not in. And a drive object is
+   * never in the learner cache, so the header would say "Learn" for something
+   * the person just made.
+   */
+  const { id, program, title: titleParam } =
+    useLocalSearchParams<{ id: string; program?: string; title?: string }>();
   const { token } = useAuth();
   // Launch and read as the CLUB — the app-wide program gives a club's people no
   // standing, which is what made this 403 for them.
@@ -33,21 +42,21 @@ export default function LearnContentScreen() {
   const [url, setUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const title = (id && getCachedObject(id)?.title) || "Learn";
+  const title = titleParam || (id && getCachedObject(id)?.title) || "Learn";
 
   const load = useCallback(async () => {
     if (!token || !id) return;
     setError(null);
     setUrl(null);
     try {
-      const launch = await takeLaunch(token, "learning", clubId ?? undefined);
+      const launch = await takeLaunch(token, "learning", program || clubId || undefined);
       // Dev override: launch_url points at the team's default port, which is
       // contested locally — use our known-good instance. When the platform is
       // deployed, switch back to preferring launch.launch_url.
       const base = LEARNING_PLATFORM_URL || launch.launch_url;
       const params = new URLSearchParams({
         launch_token: launch.launch_token,
-        program_id: clubId ?? PROGRAM_ID,
+        program_id: program || clubId || PROGRAM_ID,
         object: id,
         embed: "1", // content only — the app owns the surrounding navigation
       });
@@ -55,7 +64,7 @@ export default function LearnContentScreen() {
     } catch {
       setError("Couldn't open this content. Check that the learning platform is running.");
     }
-  }, [token, id, clubId]);
+  }, [token, id, clubId, program]);
 
   useEffect(() => {
     load();

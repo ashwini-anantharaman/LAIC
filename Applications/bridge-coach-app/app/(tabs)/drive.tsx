@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Alert, Pressable, ScrollView, StyleSheet, Text, View,
 } from "react-native";
-import { useFocusEffect } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
 
@@ -30,8 +30,8 @@ import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../../constants/t
 import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import {
-  createMyDriveFolder, fetchLearningLaunch, fetchMyDrive, fetchMyDriveFolders,
-  fetchMyDriveObjects, type LearningObject, type MyDrive,
+  createMyDriveFolder, deleteMyDriveObject, fetchLearningLaunch, fetchMyDrive,
+  fetchMyDriveFolders, fetchMyDriveObjects, type LearningObject, type MyDrive,
 } from "../../lib/nexus";
 
 const LEARNING_URL = process.env.EXPO_PUBLIC_LEARNING_URL ?? "";
@@ -55,6 +55,75 @@ export default function DriveScreen() {
   const [opening, setOpening] = useState(false);
   /** Named right after a save, so the answer to "where did it go?" is on screen. */
   const [savedInto, setSavedInto] = useState<string | null>(null);
+  /**
+   * Which folders are open.
+   *
+   * Collapsed by default so a drive with several folders is a short list rather
+   * than a scroll -- the folder names are the map, and the contents are what you
+   * open when you want them.
+   */
+  const [openFolders, setOpenFolders] = useState<Record<string, boolean>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  /** Open the finished thing, exactly as the Learn tab renders it. */
+  const view = (o: LearningObject) =>
+    router.push({
+      pathname: "/learn-object/[id]",
+      params: {
+        id: o.id,
+        title: o.title,
+        // A drive lives under the parent program, so the reader must launch in
+        // that scope rather than the club's.
+        ...(drive?.program_id ? { program: drive.program_id } : {}),
+      },
+    });
+
+  /** Reopen this object's own pipeline in the Studio, confined to it. */
+  const edit = async (o: LearningObject) => {
+    if (!token || !drive?.drive_id) return;
+    setBusyId(o.id);
+    try {
+      const l = await fetchLearningLaunch(token, drive.program_id ?? undefined);
+      if (!l.launch_url) throw new Error("The Content Studio is not configured here.");
+      const q = new URLSearchParams({
+        launch_token: l.launch_token,
+        pipeline: "edit",
+        object: o.id,
+        chrome: "none",
+      });
+      if (drive.program_id) q.set("program_id", drive.program_id);
+      setStudioUrl(`${l.launch_url}/?${q.toString()}`);
+      setCreating(true);
+    } catch (e) {
+      Alert.alert("Couldn't open it", e instanceof Error ? e.message : "Try again.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const remove = (o: LearningObject) => {
+    Alert.alert(`Delete "${o.title}"?`, "This cannot be undone.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            if (!token) return;
+            setBusyId(o.id);
+            try {
+              await deleteMyDriveObject(token, o.id, drive?.program_id ?? undefined);
+              await load();
+            } catch (e) {
+              Alert.alert("Couldn't delete", e instanceof Error ? e.message : "Try again.");
+            } finally {
+              setBusyId(null);
+            }
+          })();
+        },
+      },
+    ]);
+  };
 
   /**
    * Open the Studio, confined to this drive.
@@ -272,27 +341,35 @@ export default function DriveScreen() {
             )}
 
             {/*
-              ONE LIST: each folder, then what is in it.
-              Folders render even when empty -- a folder you just made must be
-              visible or the act that created it has no result -- and their
-              contents sit under them rather than in a second list repeating the
-              same headings.
+              COLLAPSIBLE FOLDERS. Collapsed by default: the folder names are the
+              map, and a drive with several folders should be a short list rather
+              than a scroll. Folders show even when empty -- one you just made has
+              to be visible, or the act that created it has no result.
             */}
             {folders.map((f) => {
               const inside = items.filter((o) => (o.collection_ids ?? []).includes(f.id));
+              const open = openFolders[f.id] ?? false;
               return (
                 <View key={f.id} style={styles.folderBlock}>
-                  <View style={styles.folderRow}>
+                  <Pressable
+                    style={styles.folderRow}
+                    onPress={() => setOpenFolders((m) => ({ ...m, [f.id]: !open }))}
+                  >
+                    <Text style={styles.chevron}>{open ? "\u25be" : "\u25b8"}</Text>
                     <Text style={styles.folderRowName}>{f.name}</Text>
                     <Text style={styles.folderRowCount}>
                       {inside.length} {inside.length === 1 ? "item" : "items"}
                     </Text>
-                  </View>
-                  {inside.map((o) => (
-                    <View key={o.id} style={styles.card}>
-                      <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
-                      <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
-                    </View>
+                  </Pressable>
+                  {open && inside.map((o) => (
+                    <ContentCard
+                      key={o.id}
+                      o={o}
+                      busy={busyId === o.id}
+                      onView={() => view(o)}
+                      onEdit={() => void edit(o)}
+                      onDelete={() => remove(o)}
+                    />
                   ))}
                 </View>
               );
@@ -302,10 +379,14 @@ export default function DriveScreen() {
             {items
               .filter((o) => !folders.some((f) => (o.collection_ids ?? []).includes(f.id)))
               .map((o) => (
-                <View key={o.id} style={styles.card}>
-                  <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
-                  <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
-                </View>
+                <ContentCard
+                  key={o.id}
+                  o={o}
+                  busy={busyId === o.id}
+                  onView={() => view(o)}
+                  onEdit={() => void edit(o)}
+                  onDelete={() => remove(o)}
+                />
               ))}
 
             {folders.length === 0 && items.length === 0 && (
@@ -410,17 +491,28 @@ const styles = StyleSheet.create({
   },
   savedText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: "#065F46" },
   folderBlock: { marginBottom: 4 },
+  chevron: { fontFamily: Fonts.body, fontSize: 13, color: Brand.ink, opacity: 0.5, marginRight: 8 },
+  cardActions: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(31,31,31,0.08)",
+    paddingTop: 10,
+  },
+  cardAction: { paddingVertical: 4, paddingHorizontal: 10, borderRadius: Radius.button, borderWidth: 1, borderColor: "rgba(84,16,21,0.25)" },
+  cardActionLabel: { fontFamily: Fonts.bodySemibold, fontSize: 13, color: Brand.maroon },
+  cardActionDanger: { color: "#B42318" },
   folderRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     backgroundColor: "rgba(84,16,21,0.06)",
     borderRadius: Radius.card,
     paddingVertical: 14,
     paddingHorizontal: 16,
     marginBottom: 10,
   },
-  folderRowName: { fontFamily: Fonts.heading, fontSize: 16, color: Brand.ink },
+  folderRowName: { fontFamily: Fonts.heading, fontSize: 16, color: Brand.ink, flex: 1 },
   folderRowCount: { fontFamily: Fonts.body, fontSize: 12.5, color: Brand.ink, opacity: 0.55 },
   folder: {
     fontFamily: Fonts.heading,
@@ -451,3 +543,44 @@ const styles = StyleSheet.create({
   sheetTitle: { fontFamily: Fonts.displayMedium, fontSize: 17, color: Brand.cream },
   sheetDone: { fontFamily: Fonts.bodySemibold, fontSize: 15, color: Brand.cream },
 });
+
+/**
+ * One piece of content, with the three things you can do to it.
+ *
+ * View opens the finished thing exactly as a learner sees it — the same reader
+ * the Learn tab uses, not a second preview that would drift from it. Edit
+ * reopens its own pipeline. Delete is destructive and confirms.
+ */
+function ContentCard({
+  o,
+  busy,
+  onView,
+  onEdit,
+  onDelete,
+}: {
+  o: LearningObject;
+  busy: boolean;
+  onView: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <View style={styles.card}>
+      <Pressable onPress={onView}>
+        <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
+        <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
+      </Pressable>
+      <View style={styles.cardActions}>
+        <Pressable style={styles.cardAction} onPress={onView} disabled={busy}>
+          <Text style={styles.cardActionLabel}>View</Text>
+        </Pressable>
+        <Pressable style={styles.cardAction} onPress={onEdit} disabled={busy}>
+          <Text style={styles.cardActionLabel}>{busy ? "Opening\u2026" : "Edit"}</Text>
+        </Pressable>
+        <Pressable style={styles.cardAction} onPress={onDelete} disabled={busy}>
+          <Text style={[styles.cardActionLabel, styles.cardActionDanger]}>Delete</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
