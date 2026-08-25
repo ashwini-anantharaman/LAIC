@@ -1016,6 +1016,26 @@ export function CDCreate() {
   const orgDefaultTutorialV3Name = getTutorialV3Template(orgDefaultTutorialV3Id).name;
 
   const openCollectionPicker = (typeId: string) => {
+    /**
+     * A DRIVE SESSION HAS ALREADY CHOSEN ITS FOLDER.
+     *
+     * The drive was pinned as the destination before anything was authored, so
+     * asking "which collection?" offers a choice that has been made -- and the
+     * picker is a desktop-sized modal that runs off a phone screen while doing it.
+     * Straight to the authoring path instead.
+     */
+    if (driveCreateMode) {
+      if (PATH_PICKER_TYPES.includes(typeId)) {
+        setPendingType(typeId);
+        setPathChoice(null);
+        setShowPathPicker(true);
+        return;
+      }
+      setPendingType(null);
+      setCreatorObjectType(typeId);
+      navigate(typeId === 'course' ? 'cd-wizard' : 'cd-creator');
+      return;
+    }
     setPendingType(typeId);
     setShowPathPicker(false);
     setPathChoice(null);
