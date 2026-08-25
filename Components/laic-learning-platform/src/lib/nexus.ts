@@ -476,6 +476,33 @@ export async function savePipelineToLibrary(
   return { version_number: body.version_number ?? null };
 }
 
+/**
+ * Save something into your own drive's Drafts folder.
+ *
+ * Not the ordinary publish path, which asks whether you may author in the
+ * PROGRAM -- somebody with a drive may not, and the drive is exactly where they
+ * can. The server checks the two things that actually apply: create rights on the
+ * drive, and whether this TYPE is one they were permitted.
+ */
+export async function saveToMyDrive(o: {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  blocks?: unknown[];
+  pipeline_draft?: unknown;
+}): Promise<{ drafts_id: string; drive_id: string }> {
+  const res = await nexusFetch('/api/platform/learning/drives/mine/objects', {
+    method: 'PUT',
+    body: JSON.stringify({ program_id: pid(), ...o }),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
+    throw new Error(detail || `Couldn't save to your drive (${res.status})`);
+  }
+  return (await res.json()) as { drafts_id: string; drive_id: string };
+}
+
 /** Which apps an object is published to. */
 export async function listObjectAppTargets(objectId: string): Promise<AppTarget[]> {
   const res = await nexusFetch(

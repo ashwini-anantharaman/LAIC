@@ -3836,6 +3836,14 @@ platformRouter.get("/learning/drives/mine", async (c) => {
   const drive = p?.hasDrive
     ? await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId)
     : null;
+  // The Drafts folder, made on first need. Everything authored from the app lands
+  // there rather than loose in the root, so "where did the thing I just made go?"
+  // has an answer with a name in it.
+  const draftsId = drive
+    ? await graph
+        .ensureDriveDraftsFolder(access.orgId, access.programId, String(drive.id))
+        .catch(() => null)
+    : null;
   return c.json({
     has_drive: p?.hasDrive === true,
     can_create: p?.canCreate === true,
@@ -3843,7 +3851,65 @@ platformRouter.get("/learning/drives/mine", async (c) => {
     surfaces: p?.surfaces ?? null,
     drive_id: drive ? String(drive.id) : null,
     drive_name: drive ? String(drive.name) : null,
+    drafts_id: draftsId,
   });
+});
+
+const _driveObjectSchema = z.object({
+  program_id: z.string().optional(),
+  id: z.string().min(1),
+  type: z.string().min(1),
+  title: z.string().trim().min(1).max(300),
+  description: z.string().max(4000).optional(),
+  blocks: z.array(z.any()).optional(),
+  pipeline_draft: z.any().optional(),
+});
+
+/**
+ * Save something into your own drive's Drafts folder.
+ *
+ * ITS OWN ENDPOINT, and its own question. The ordinary publish path asks whether
+ * you may author in the PROGRAM -- somebody with a drive may not, and a drive is
+ * precisely the place they can. What applies here is whether they were granted
+ * create rights on their drive and whether THIS TYPE is one they were permitted.
+ *
+ * The type check is the point. Until now the permitted-types list was enforced by
+ * hiding tiles in the UI, which is not enforcement: it is a suggestion that a
+ * crafted request ignores.
+ */
+platformRouter.put("/learning/drives/mine/objects", async (c) => {
+  const req = parseBody(_driveObjectSchema, await c.req.json());
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(
+    user, "learning", req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  if (!access.profileId) throw new HttpError(403, "No profile for this session");
+
+  const perms = await graph.getDrivePermissions(
+    access.orgId, access.programId, "profile", access.profileId,
+  );
+  if (!perms?.hasDrive) throw new HttpError(403, "You do not have a drive");
+  if (!perms.canCreate) throw new HttpError(403, "You may not create content in your drive");
+  if (perms.createTypes !== null && !perms.createTypes.includes(req.type)) {
+    throw new HttpError(403, `You may not create ${req.type} in your drive`);
+  }
+  const drive = await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId);
+  if (!drive) throw new HttpError(404, "Your drive could not be found");
+  const draftsId = await graph.ensureDriveDraftsFolder(
+    access.orgId, access.programId, String(drive.id),
+  );
+  await graph.upsertDriveObject(access.orgId, access.programId, {
+    id: req.id,
+    type: req.type,
+    title: req.title,
+    description: req.description,
+    blocks: req.blocks,
+    pipelineDraft: req.pipeline_draft,
+    ownerName: await graph.getProfileName(access.orgId, access.profileId).catch(() => null),
+    collectionId: draftsId,
+    collectionName: "Drafts",
+  });
+  return c.json({ ok: true, drafts_id: draftsId, drive_id: String(drive.id) });
 });
 
 // ── Reviewing and editing one object, without the Content Studio ────────────

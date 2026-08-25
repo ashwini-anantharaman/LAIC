@@ -5265,3 +5265,85 @@ export async function deleteProgramDeeply(
     return removed;
   });
 }
+
+/**
+ * The Drafts folder inside somebody's drive, created on first need.
+ *
+ * WHY A FOLDER AND NOT THE DRIVE ROOT. Everything authored from the app lands
+ * here, so the root stays a place somebody arranges rather than a pile that grows
+ * on its own. It also gives "where did the thing I just made go?" an answer with
+ * a name in it, which the root alone never had.
+ *
+ * Created lazily: a drive nobody has authored into has no Drafts folder, and an
+ * empty folder appearing the moment a drive is granted would be furniture nobody
+ * asked for.
+ */
+export async function ensureDriveDraftsFolder(
+  orgId: string,
+  programId: string | null,
+  driveId: string,
+): Promise<string> {
+  return asPrivileged(async (tx) => {
+    const found = (await tx.execute(sql`
+      select id from learning_collections
+      where organization_id = ${orgId}::uuid
+        and parent_id = ${driveId}
+        and lower(name) = 'drafts'
+      limit 1`)) as unknown as Row[];
+    if (found[0]) return String(found[0].id);
+    const id = `lcol-${randomUUID()}`;
+    await tx.execute(sql`
+      insert into learning_collections (id, organization_id, program_id, name, parent_id)
+      values (${id}, ${orgId}::uuid, ${programId}::uuid, 'Drafts', ${driveId})`);
+    return id;
+  });
+}
+
+/**
+ * Create or update one object inside somebody's own drive.
+ *
+ * Deliberately separate from the ordinary publish path, which asks whether you
+ * may author in the PROGRAM. Somebody with a drive may not — a drive is the one
+ * place they can author, and the question that applies is whether they were
+ * given create rights on it and whether this TYPE is one they were permitted.
+ * Both are checked by the caller; this writes.
+ */
+export async function upsertDriveObject(
+  orgId: string,
+  programId: string | null,
+  o: {
+    id: string;
+    type: string;
+    title: string;
+    description?: string;
+    blocks?: unknown[];
+    pipelineDraft?: unknown;
+    ownerName?: string | null;
+    collectionId: string;
+    collectionName: string;
+  },
+): Promise<void> {
+  await asPrivileged(async (tx) => {
+    await tx.execute(sql`
+      insert into learning_objects
+        (id, organization_id, program_id, type, title, owner_name, status, scope,
+         reuse_count, description, blocks, tags, source_ids, pipeline_draft,
+         collection_ids, collection_names, created_at, updated_at)
+      values (${o.id}, ${orgId}::uuid, ${programId}::uuid, ${o.type}, ${o.title},
+              ${o.ownerName ?? "You"}, 'draft', 'bridge', 0, ${o.description ?? ""},
+              ${JSON.stringify(o.blocks ?? [])}::jsonb, '[]'::jsonb, '[]'::jsonb,
+              ${o.pipelineDraft != null ? JSON.stringify(o.pipelineDraft) : null}::jsonb,
+              ${JSON.stringify([o.collectionId])}::jsonb,
+              ${JSON.stringify([o.collectionName])}::jsonb, now(), now())
+      on conflict (id) do update set
+        title = excluded.title, type = excluded.type, blocks = excluded.blocks,
+        description = excluded.description, pipeline_draft = excluded.pipeline_draft,
+        -- The drive folder is ADDED, never swapped in: an object that has since
+        -- been filed somewhere else as well keeps both.
+        collection_ids = learning_apply_studio_folders(
+          learning_objects.collection_ids, excluded.collection_ids, excluded.collection_names) -> 'ids',
+        collection_names = learning_apply_studio_folders(
+          learning_objects.collection_ids, excluded.collection_ids, excluded.collection_names) -> 'names',
+        updated_at = now()`);
+  });
+}

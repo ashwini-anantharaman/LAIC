@@ -33,6 +33,7 @@ interface Drive {
   create_types?: string[] | null;
   drive_id?: string | null;
   drive_name?: string | null;
+  drafts_id?: string | null;
 }
 
 export function MyDriveTab() {
@@ -72,7 +73,8 @@ export function MyDriveTab() {
       const u = new URL(l.launch_url);
       u.searchParams.set("launch_token", l.launch_token);
       u.searchParams.set("create", "1");
-      u.searchParams.set("drive", drive.drive_id);
+      // Drafts, not the root: everything authored lands in one named place.
+      u.searchParams.set("drive", drive.drafts_id ?? drive.drive_id);
       u.searchParams.set("program_id", programId);
       // Absent means unrestricted; present-and-empty means none. Sending the
       // list only when there IS one keeps that difference intact across the URL.
@@ -147,6 +149,8 @@ export function MyDriveTab() {
             </div>
           ) : (
             <ul className="space-y-2">
+              {/* Grouped by folder, so Drafts reads as a place rather than the
+                  list happening to begin with the newest thing. */}
               {objects.map((o) => (
                 <li key={o.id} className="flex items-center gap-3 rounded-xl border p-3">
                   <span className="min-w-0 flex-1">

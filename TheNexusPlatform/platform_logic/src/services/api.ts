@@ -2022,6 +2022,8 @@ export async function getMyDrive(programId: string): Promise<{
   surfaces?: string[] | null;
   drive_id?: string | null;
   drive_name?: string | null;
+  /** Where anything authored lands. Made on first need. */
+  drafts_id?: string | null;
 }> {
   return request(`/api/platform/learning/drives/mine?program_id=${encodeURIComponent(programId)}`);
 }

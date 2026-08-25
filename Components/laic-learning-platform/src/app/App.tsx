@@ -153,6 +153,7 @@ import {
   signOutToNexus,
   listProgramFolders,
   savePipelineToLibrary,
+  saveToMyDrive,
 } from '../lib/nexus';
 import { navItemsForPerms, type AreaLevel } from '../lib/learningAreas';
 import { canAccessScreen, defaultScreenForCapabilities } from '../lib/roleAccess';
@@ -373,6 +374,10 @@ function StudioApp() {
   const pipelineEmbedRef = useRef(false);
   /** Authoring into one drive: the Create screen, filtered, filed into that drive. */
   const [driveCreateMode, setDriveCreateMode] = useState(false);
+  // addObject has its own dependency list; a ref keeps the drive save correct
+  // without rebuilding every save path when the flag lands.
+  const driveCreateModeRef = useRef(false);
+  useEffect(() => { driveCreateModeRef.current = driveCreateMode; }, [driveCreateMode]);
   const [driveCreateTypes, setDriveCreateTypes] = useState<string[] | null>(null);
   const [driveCollectionId, setDriveCollectionId] = useState<string | null>(null);
   const [pipelineVersion, setPipelineVersion] = useState<number | null>(null);
@@ -971,6 +976,35 @@ function StudioApp() {
      * The local update below still runs, so the creator's own screen reflects the
      * edit without a refetch.
      */
+    /**
+     * A DRIVE SESSION SAVES INTO ITS DRAFTS FOLDER, and says whether it worked.
+     *
+     * The ordinary path is a debounced background publish that asks whether you
+     * may author in the program -- somebody with a drive may not, so it could
+     * fail silently and leave nothing anywhere. Authoring from a drive goes
+     * straight to the endpoint that asks the question that applies, and reports
+     * the answer.
+     */
+    if (driveCreateModeRef.current && partial.id) {
+      const anyPartial = partial as Record<string, unknown>;
+      const draft: Record<string, unknown> = {};
+      for (const k of ['structuredV2Draft', 'tutorialV3Draft', 'tutorialV2Draft']) {
+        if (anyPartial[k]) draft[k] = anyPartial[k];
+      }
+      setPipelineSaveError(null);
+      setPipelineSaving(true);
+      void saveToMyDrive({
+        id: partial.id,
+        type: partial.type,
+        title: partial.title || 'Untitled',
+        ...(partial.description !== undefined ? { description: partial.description } : {}),
+        ...(partial.blocks ? { blocks: partial.blocks } : {}),
+        ...(Object.keys(draft).length ? { pipeline_draft: draft } : {}),
+      })
+        .then(() => setPipelineVersion((v) => v ?? 1))
+        .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'))
+        .finally(() => setPipelineSaving(false));
+    }
     if (pipelineEditRef.current && partial.id) {
       const anyPartial = partial as Record<string, unknown>;
       const draft: Record<string, unknown> = {};

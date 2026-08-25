@@ -247,6 +247,8 @@ export type MyDrive = {
   surfaces?: string[] | null;
   drive_id?: string | null;
   drive_name?: string | null;
+  /** Where anything authored from the app lands. Made on first need. */
+  drafts_id?: string | null;
 };
 
 export function fetchMyDrive(token: string, programId?: string): Promise<MyDrive> {

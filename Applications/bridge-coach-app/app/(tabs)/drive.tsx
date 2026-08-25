@@ -78,7 +78,10 @@ export default function DriveScreen() {
   if (creating && drive?.drive_id) {
     const q = new URLSearchParams({
       create: "1",
-      drive: drive.drive_id,
+      // Drafts, not the drive root: everything made here lands in one named
+      // place, so "where did it go?" has an answer. The root stays somewhere
+      // they arrange rather than a pile that grows on its own.
+      drive: drive.drafts_id ?? drive.drive_id,
       // The app's own cream-and-Neco skin, so the framed Studio does not arrive
       // wearing a different app's clothes.
       embed: "1",
@@ -164,15 +167,30 @@ export default function DriveScreen() {
                 <Text style={styles.emptyTitle}>Nothing here yet</Text>
                 <Text style={styles.emptyBody}>
                   {canCreate
-                    ? "Make something and it lands here, not in the club's library."
+                    ? "Make something and it lands in Drafts."
                     : "Content shared into your drive will appear here."}
                 </Text>
               </View>
             ) : (
-              items.map((o) => (
-                <View key={o.id} style={styles.card}>
-                  <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
-                  <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
+              /* Grouped by the folder each piece is in, so Drafts reads as a
+                 place rather than the list happening to start with new things. */
+              Object.entries(
+                items.reduce<Record<string, LearningObject[]>>((acc, o) => {
+                  const name = (o.collection_names ?? [])[0] ?? "In your drive";
+                  (acc[name] ??= []).push(o);
+                  return acc;
+                }, {}),
+              ).map(([folder, list]) => (
+                <View key={folder}>
+                  <Text style={styles.folder}>
+                    {folder} <Text style={styles.folderCount}>{list.length}</Text>
+                  </Text>
+                  {list.map((o) => (
+                    <View key={o.id} style={styles.card}>
+                      <Text style={styles.cardTitle} numberOfLines={2}>{o.title}</Text>
+                      <Text style={styles.cardMeta}>{String(o.type).replace(/-/g, " ")}</Text>
+                    </View>
+                  ))}
                 </View>
               ))
             )}
@@ -251,6 +269,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 10,
   },
+  folder: {
+    fontFamily: Fonts.heading,
+    fontSize: Type.sectionHeading,
+    color: Brand.ink,
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  folderCount: { fontFamily: Fonts.body, fontSize: 13, opacity: 0.5 },
   cardTitle: { fontFamily: Fonts.heading, fontSize: 16, color: Brand.ink },
   cardMeta: {
     fontFamily: Fonts.body,
