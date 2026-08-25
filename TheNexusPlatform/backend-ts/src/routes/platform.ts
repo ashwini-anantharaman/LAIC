@@ -3855,6 +3855,57 @@ platformRouter.get("/learning/drives/mine", async (c) => {
   });
 });
 
+/**
+ * Make a folder inside your own drive.
+ *
+ * Its own endpoint because creating a folder in the PROGRAM library needs
+ * library.folder_manage -- a governing capability somebody with a drive has no
+ * reason to hold. Arranging your own space is not governing the library, and a
+ * drive that you cannot make a folder in is a list, not a drive.
+ *
+ * The parent must be inside YOUR drive. Passing another folder's id is the
+ * obvious way to try to write into somebody else's space, so the subtree is
+ * checked rather than trusted.
+ */
+platformRouter.post("/learning/drives/mine/folders", async (c) => {
+  const req = parseBody(
+    z.object({
+      program_id: z.string().optional(),
+      name: z.string().trim().min(1).max(120),
+      parent_id: z.string().optional(),
+    }),
+    await c.req.json(),
+  );
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(
+    user, "learning", req.program_id ?? c.req.query("program_id") ?? null,
+  );
+  if (!access.profileId) throw new HttpError(403, "No profile for this session");
+  const perms = await graph.getDrivePermissions(
+    access.orgId, access.programId, "profile", access.profileId,
+  );
+  if (!perms?.hasDrive) throw new HttpError(403, "You do not have a drive");
+  const drive = await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId);
+  if (!drive) throw new HttpError(404, "Your drive could not be found");
+
+  let parent = String(drive.id);
+  if (req.parent_id && req.parent_id !== parent) {
+    const inside = await graph.collectionSubtreeIdsPublic(access.orgId, [String(drive.id)]);
+    if (!inside.includes(req.parent_id)) {
+      throw new HttpError(403, "That folder is not in your drive");
+    }
+    parent = req.parent_id;
+  }
+  const folder = await graph.createLearningCollection(access.orgId, access.programId, {
+    id: `lcol-${crypto.randomUUID()}`,
+    name: req.name,
+    parentId: parent,
+    createdBy: access.profileId,
+  });
+  if (!folder) throw new HttpError(500, "The folder could not be created");
+  return c.json({ ok: true, id: String(folder.id), name: req.name });
+});
+
 const _driveObjectSchema = z.object({
   program_id: z.string().optional(),
   id: z.string().min(1),

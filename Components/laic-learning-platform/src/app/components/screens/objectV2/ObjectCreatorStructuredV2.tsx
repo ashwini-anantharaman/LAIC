@@ -99,6 +99,7 @@ export function ObjectCreatorStructuredV2() {
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
     listObjectVersions, objectVersionsTick,
     pipelineEditMode,
+  driveCreateMode,
 } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -354,7 +355,9 @@ export function ObjectCreatorStructuredV2() {
      * than the program folder the content lives in, and offers a trip the embed
      * cannot take. The embed reports the save itself, with the version.
      */
-    if (pipelineEditMode) return false;
+    // A drive session has no folder dialog either: the Drafts folder was decided
+    // before authoring began, and the trip it offers leads to the Studio's library.
+    if (pipelineEditMode || driveCreateMode) return false;
     const continueEditing = await confirm({
       title: 'Saved',
       description: `Saved in folder ${label}. Open Content Library and go to that folder to find and continue this content.`,

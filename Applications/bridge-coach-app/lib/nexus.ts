@@ -251,6 +251,19 @@ export type MyDrive = {
   drafts_id?: string | null;
 };
 
+/** Make a folder inside your own drive. */
+export function createMyDriveFolder(
+  token: string,
+  name: string,
+  programId?: string,
+): Promise<{ id: string; name: string }> {
+  return request<{ id: string; name: string }>("/api/platform/learning/drives/mine/folders", {
+    token,
+    method: "POST",
+    body: { program_id: programId ?? PROGRAM_ID, name },
+  });
+}
+
 export function fetchMyDrive(token: string, programId?: string): Promise<MyDrive> {
   return request<MyDrive>(
     `/api/platform/learning/drives/mine?program_id=${programId ?? PROGRAM_ID}`,

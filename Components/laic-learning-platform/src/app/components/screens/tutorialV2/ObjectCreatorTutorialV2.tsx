@@ -151,6 +151,7 @@ export function ObjectCreatorTutorialV2() {
     objectCollections: objectCollectionsRaw, setActiveObjectCollectionId,
     listObjectVersions, objectVersionsTick,
     pipelineEditMode,
+  driveCreateMode,
 } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
@@ -488,7 +489,9 @@ export function ObjectCreatorTutorialV2() {
      * The embed already reports the save where it happened: the button says
      * "Saved - v6", naming the version the library now carries.
      */
-    if (pipelineEditMode) return false;
+    // A drive session has no folder dialog either: the Drafts folder was decided
+    // before authoring began, and the trip it offers leads to the Studio's library.
+    if (pipelineEditMode || driveCreateMode) return false;
     const continueEditing = await confirm({
       title: 'Saved',
       description: `Saved in folder ${label}. Open Content Library and go to that folder to find and continue this content.`,

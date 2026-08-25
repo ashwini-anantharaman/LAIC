@@ -893,6 +893,20 @@ function StudioApp() {
      * honest response to "go elsewhere" is nothing at all.
      */
     if (pipelineEmbedRef.current && screen !== 'cd-creator') return;
+    /**
+     * A DRIVE SESSION CANNOT LEAVE ITS OWN AUTHORING FLOW EITHER.
+     *
+     * The creator navigates to cd-library after a save, which is the STUDIO's
+     * collections -- bb-tutorials, My content, flashcards, every browser-local
+     * folder this person has ever had. In a drive that is exactly the wrong
+     * place: a drive exists to be a fresh space, and landing in the Studio's
+     * library after making one thing says the opposite.
+     *
+     * Only the two screens this session is for: pick a type, author it.
+     */
+    if (driveCreateModeRef.current && !['cd-create', 'cd-creator', 'cd-wizard'].includes(screen)) {
+      return;
+    }
     if (screen === 'cd-library') {
       const folderId = opts && 'libraryFolderId' in opts ? (opts.libraryFolderId || null) : null;
       setPendingLibraryFolderId(folderId);
