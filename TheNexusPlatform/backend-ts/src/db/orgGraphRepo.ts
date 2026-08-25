@@ -5464,6 +5464,44 @@ export async function renameProfile(
         update profiles set display_name = ${patch.displayName}, name = ${patch.displayName},
                             updated_at = now()
         where id = ${profileId}::uuid`);
+
+      /**
+       * THE THINGS NAMED AFTER THEM ARE RENAMED TOO.
+       *
+       * A drive's folder is labelled "<their name>'s drive" when it is created and
+       * was never revisited, so renaming somebody left a folder still carrying the
+       * old name — and worse, still OCCUPYING it: the next person with that name
+       * got "(2)" because a stale label held the original.
+       *
+       * A name is not an identity here (the owner is), so the label is safe to
+       * rewrite. Only labels that still match the old pattern are touched — a drive
+       * somebody deliberately renamed keeps the name they chose.
+       */
+      const drives = (await tx.execute(sql`
+        select id, name, program_id from learning_collections
+        where organization_id = ${orgId}::uuid
+          and owner_subject_type = 'profile' and owner_subject_id = ${profileId}`)) as unknown as Row[];
+      for (const d of drives) {
+        const current = String(d.name ?? "");
+        if (!/'s drive( \(\d+\))?$/i.test(current)) continue;
+        let next = `${patch.displayName}'s drive`;
+        for (let n = 2; n < 50; n += 1) {
+          const clash = (await tx.execute(sql`
+            select 1 from learning_collections
+            where organization_id = ${orgId}::uuid
+              and program_id is not distinct from ${d.program_id}
+              and parent_id is null
+              and lower(btrim(name)) = ${next.trim().toLowerCase()}
+              and id <> ${String(d.id)}
+            limit 1`)) as unknown as Row[];
+          if (!clash.length) break;
+          next = `${patch.displayName}'s drive (${n})`;
+        }
+        if (next !== current) {
+          await tx.execute(sql`
+            update learning_collections set name = ${next} where id = ${String(d.id)}`);
+        }
+      }
     }
     if (patch.email !== undefined && patch.email !== previousEmail) {
       await tx.execute(sql`
