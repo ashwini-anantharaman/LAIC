@@ -8,13 +8,20 @@ import { Link, useParams } from "react-router";
 import { listAuditEvents, listPrograms } from "@/services/api";
 import type { AuditEvent, Program } from "@/types/platform";
 import { EmptyState, PageHeader, Section, Spinner, StatPill } from "@/nexus/ui/kit";
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, Trash2 } from "lucide-react";
+import { toast } from "sonner";
+
+import { deleteProgram } from "@/services/api";
+import { ConfirmByName } from "@/nexus/ui/ConfirmByName";
 
 export function OrgDashboard() {
   const { orgId = "" } = useParams();
   const [programs, setPrograms] = useState<Program[] | null>(null);
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
+  /** The program queued for deletion — confirmed by typing its name. */
+  const [pendingDelete, setPendingDelete] = useState<Program | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let live = true;
@@ -56,20 +63,33 @@ export function OrgDashboard() {
           ) : (
             <div className="space-y-2">
               {programs.map((p) => (
-                <Link
+                /* The card is a Link, so the delete cannot be inside it — a
+                   button nested in a link navigates on click in some browsers,
+                   which on a delete is the worst possible place to find out. */
+                <div
                   key={p.id}
-                  to={`/o/${orgId}/p/${p.id}`}
                   className="flex items-center gap-3 glass-card px-4 py-3 hover:border-foreground/20 transition-colors"
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="font-medium text-foreground truncate">{p.name}</div>
-                    {p.description ? (
-                      <div className="text-xs text-muted-foreground truncate">{p.description}</div>
-                    ) : null}
-                  </div>
-                  <span className="text-xs text-muted-foreground capitalize">{p.category}</span>
-                  <ChevronRight className="size-4 text-muted-foreground" />
-                </Link>
+                  <Link to={`/o/${orgId}/p/${p.id}`} className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-foreground truncate">{p.name}</div>
+                      {p.description ? (
+                        <div className="text-xs text-muted-foreground truncate">{p.description}</div>
+                      ) : null}
+                    </div>
+                    <span className="text-xs text-muted-foreground capitalize">{p.category}</span>
+                    <ChevronRight className="size-4 text-muted-foreground" />
+                  </Link>
+                  <button
+                    type="button"
+                    title={`Delete ${p.name}`}
+                    aria-label={`Delete ${p.name}`}
+                    onClick={() => setPendingDelete(p)}
+                    className="shrink-0 rounded p-1.5 opacity-60 hover:opacity-100"
+                  >
+                    <Trash2 className="size-4 text-red-600 dark:text-red-400" />
+                  </button>
+                </div>
               ))}
             </div>
           )}
@@ -90,6 +110,35 @@ export function OrgDashboard() {
           </div>
         </Section>
       </div>
+      {pendingDelete && (
+        <ConfirmByName
+          name={pendingDelete.name}
+          what="program"
+          consequences="its offerings, apps, groups, registrations, roles and its whole content library go with it, and anyone whose only membership was here is deactivated"
+          busy={deleting}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            void (async () => {
+              setDeleting(true);
+              try {
+                const r = await deleteProgram(pendingDelete.id, pendingDelete.name);
+                const bits = Object.entries(r.removed ?? {})
+                  .filter(([k]) => k !== "program")
+                  .map(([k, v]) => `${v} ${k.replace(/_/g, " ")}`);
+                toast.success(
+                  bits.length ? `Deleted "${r.name}" — also removed ${bits.join(", ")}` : `Deleted "${r.name}"`,
+                );
+                setPendingDelete(null);
+                setPrograms((ps) => (ps ?? []).filter((x) => x.id !== pendingDelete.id));
+              } catch (e) {
+                toast.error(e instanceof Error ? e.message : "Couldn't delete that program");
+              } finally {
+                setDeleting(false);
+              }
+            })();
+          }}
+        />
+      )}
     </div>
   );
 }

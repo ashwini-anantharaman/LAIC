@@ -822,6 +822,26 @@ function StudioApp() {
         setBooting(false);
         return;
       }
+      /**
+       * A DRIVE OR PIPELINE EMBED NEVER FALLS BACK TO THE DEMO SESSION.
+       *
+       * The demo session is a real session with real local folders -- somebody's
+       * browser library, seeded content, an Export button. Dropping into it
+       * because a launch did not take is how a drive came to show bb-tutorials,
+       * My content and flashcards: not the person's drive, not even their
+       * account, just whatever that browser happened to hold.
+       *
+       * These embeds are opened FOR one person and one place. Without a session
+       * there is no such place, so the honest answer is to say so.
+       */
+      if (driveCreate || pipelineEmbed) {
+        setLaunchFailed({
+          reason: 'refused',
+          detail: 'This needs a signed-in session. Close and open it again.',
+        } as LearningContextFailure);
+        setBooting(false);
+        return;
+      }
       // No Nexus session — restore the demo session if present.
       const uid = readSessionUserId();
       const user = uid ? USERS.find((u) => u.id === uid) : undefined;
