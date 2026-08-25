@@ -103,6 +103,12 @@ export function ObjectCreatorStructuredV2() {
 } = useApp();
   const createdObjects = createdObjectsRaw || [];
   const objectCollections = objectCollectionsRaw || [];
+  /**
+   * "Submit as..." means a review queue and version targets -- Studio things a
+   * drive author is not doing. What they are deciding is which of their own
+   * folders this belongs in, so the button opens that instead.
+   */
+  const [drivePicker, setDrivePicker] = useState(false);
   const confirm = useConfirm();
 
   const typeId: StructuredObjectType = isStructuredV2Type(creatorObjectType) ? creatorObjectType : 'quiz';

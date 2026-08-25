@@ -18,6 +18,8 @@ import { SlotEditor } from './XV2UnitWorkspace';
 import { XV2RefineSidebar } from './XV2RefineSidebar';
 import type { LearningObject, Version, VideoScriptContent } from '../../../../lib/types';
 import { SubmitVersionMenu, type SubmitTarget } from '../SubmitVersionMenu';
+import { DriveSavePicker } from '../../DriveSavePicker';
+import { useApp } from '../../../App';
 
 export function XV2ReviewEditor({
   draft,
@@ -52,6 +54,9 @@ export function XV2ReviewEditor({
     title: draft.title || 'Preview',
     blocks,
   } as unknown as LearningObject), [draft, blocks]);
+
+  const { driveCreateMode, driveCollectionId, setDriveSaveTarget } = useApp();
+  const [drivePicker, setDrivePicker] = useState(false);
 
   return (
     <div className="min-h-full flex flex-col md:flex-row" style={{ background: 'linear-gradient(180deg, #F4F6FB 0%, #EEF1F8 100%)' }}>
@@ -94,12 +99,27 @@ export function XV2ReviewEditor({
               >
                 Save draft
               </button>
-              <SubmitVersionMenu
-                versions={submitVersions}
-                canSubmit={blocks.length > 0}
-                onSubmit={onSubmit}
-                disabledTitle={canSubmit ? 'Submit for review' : 'Some required parts are still empty'}
-              />
+              {/* In a drive, "Submit as..." would offer a review queue and version
+                  targets -- neither of which a drive author is doing. The decision
+                  they actually have is which of their own folders this goes in. */}
+              {driveCreateMode ? (
+                <button
+                  type="button"
+                  disabled={blocks.length === 0}
+                  onClick={() => setDrivePicker(true)}
+                  className="px-3.5 py-1.5 rounded-full"
+                  style={{ fontSize: 12.5, fontWeight: 650, color: '#fff', background: '#0B0F1A', opacity: blocks.length ? 1 : 0.45 }}
+                >
+                  Save to folder…
+                </button>
+              ) : (
+                <SubmitVersionMenu
+                  versions={submitVersions}
+                  canSubmit={blocks.length > 0}
+                  onSubmit={onSubmit}
+                  disabledTitle={canSubmit ? 'Submit for review' : 'Some required parts are still empty'}
+                />
+              )}
             </div>
           </div>
           {rail}
@@ -189,6 +209,20 @@ export function XV2ReviewEditor({
           onChangeDraft={onChangeDraft}
           selectedSlotId={selectedSlotId}
           onSelectSlot={(id) => { setSelectedSlotId(id); if (id) setRefineOpen(true); }}
+        />
+      )}
+      {drivePicker && driveCollectionId && (
+        <DriveSavePicker
+          driveId={driveCollectionId}
+          driveName="your drive"
+          onCancel={() => setDrivePicker(false)}
+          onChoose={(id) => {
+            // Aim the next save, then run the ordinary save path: one write, one
+            // place, and the host closes the sheet when it lands.
+            setDriveSaveTarget(id);
+            setDrivePicker(false);
+            onSave();
+          }}
         />
       )}
     </div>

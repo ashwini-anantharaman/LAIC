@@ -491,7 +491,9 @@ export async function saveToMyDrive(o: {
   description?: string;
   blocks?: unknown[];
   pipeline_draft?: unknown;
-}): Promise<{ drafts_id: string; drive_id: string }> {
+  /** Which folder in the drive. Absent means Drafts. */
+  collection_id?: string;
+}): Promise<{ drafts_id: string; drive_id: string; collection_id: string; collection_name: string }> {
   const res = await nexusFetch('/api/platform/learning/drives/mine/objects', {
     method: 'PUT',
     body: JSON.stringify({ program_id: pid(), ...o }),
@@ -500,7 +502,34 @@ export async function saveToMyDrive(o: {
     const detail = await res.json().then((b) => (b as { detail?: string }).detail).catch(() => null);
     throw new Error(detail || `Couldn't save to your drive (${res.status})`);
   }
-  return (await res.json()) as { drafts_id: string; drive_id: string };
+  return (await res.json()) as {
+    drafts_id: string; drive_id: string; collection_id: string; collection_name: string;
+  };
+}
+
+/** The folders inside the caller's own drive, for a save-to picker. */
+export async function listMyDriveFolders(
+  driveId: string,
+): Promise<{ id: string; name: string; parent_id: string | null }[]> {
+  const res = await nexusFetch(
+    `/api/platform/learning/collections?program_id=${encodeURIComponent(pid() ?? '')}&scope=drive&drive=${encodeURIComponent(driveId)}`,
+  );
+  if (!res.ok) return [];
+  const body = (await res.json()) as { folders?: { id: string; name: string; parent_id: string | null }[] };
+  return body.folders ?? [];
+}
+
+/** Make a folder inside the caller's own drive. */
+export async function createMyDriveFolder(
+  name: string,
+  parentId?: string,
+): Promise<{ id: string; name: string }> {
+  const res = await nexusFetch('/api/platform/learning/drives/mine/folders', {
+    method: 'POST',
+    body: JSON.stringify({ program_id: pid(), name, ...(parentId ? { parent_id: parentId } : {}) }),
+  });
+  if (!res.ok) throw new Error(`Couldn't make that folder (${res.status})`);
+  return (await res.json()) as { id: string; name: string };
 }
 
 /** Which apps an object is published to. */

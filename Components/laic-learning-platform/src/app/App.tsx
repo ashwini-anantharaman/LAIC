@@ -219,6 +219,8 @@ export interface AppState {
   /** Types this session may author. Null = unrestricted; [] = none. */
   driveCreateTypes: string[] | null;
   driveCollectionId: string | null;
+  /** Aim the next drive save at a folder (null = Drafts). Used by the save picker. */
+  setDriveSaveTarget: (collectionId: string | null) => void;
   /** Ask that the NEXT save be a committed version. Called by the Save button. */
   requestPipelineCommit: () => void;
   /** Admin "Test as" a role: preview the app confined to that role's perms. */
@@ -377,6 +379,8 @@ function StudioApp() {
   // addObject has its own dependency list; a ref keeps the drive save correct
   // without rebuilding every save path when the flag lands.
   const driveCreateModeRef = useRef(false);
+  /** The folder a drive save should go to. Null means Drafts. */
+  const driveSaveTargetRef = useRef<string | null>(null);
   useEffect(() => { driveCreateModeRef.current = driveCreateMode; }, [driveCreateMode]);
   const [driveCreateTypes, setDriveCreateTypes] = useState<string[] | null>(null);
   const [driveCollectionId, setDriveCollectionId] = useState<string | null>(null);
@@ -1034,8 +1038,25 @@ function StudioApp() {
         ...(partial.description !== undefined ? { description: partial.description } : {}),
         ...(partial.blocks ? { blocks: partial.blocks } : {}),
         ...(Object.keys(draft).length ? { pipeline_draft: draft } : {}),
+        ...(driveSaveTargetRef.current ? { collection_id: driveSaveTargetRef.current } : {}),
       })
-        .then(() => setPipelineVersion((v) => v ?? 1))
+        .then((r) => {
+          setPipelineVersion((v) => v ?? 1);
+          /**
+           * TELL THE HOST IT LANDED.
+           *
+           * This runs inside a WebView the app owns, and the app is the only
+           * thing that can put the person back on My Drive so they can see the
+           * folder their work went into. A web page cannot close its own sheet,
+           * so it says what happened and lets the host decide.
+           *
+           * Harmless in a browser: postMessage to a window with no listener is
+           * a no-op, so the same build serves both.
+           */
+          const rn = (window as unknown as { ReactNativeWebView?: { postMessage(m: string): void } })
+            .ReactNativeWebView;
+          rn?.postMessage(JSON.stringify({ type: 'drive-saved', folder: r.collection_name }));
+        })
         .catch((e) => setPipelineSaveError(e instanceof Error ? e.message : 'Save failed'))
         .finally(() => setPipelineSaving(false));
     }
@@ -1502,6 +1523,7 @@ function StudioApp() {
     pipelineReadOnly, pipelineVersion, pipelineSaveError, pipelineSaving,
     pipelineEditMode: pipelineEditRef.current,
     driveCreateMode, driveCreateTypes, driveCollectionId,
+    setDriveSaveTarget: (id: string | null) => { driveSaveTargetRef.current = id; },
     requestPipelineCommit: () => { pipelineCommitRef.current = true; },
     previewName, startRolePreview, stopRolePreview,
     nexusProgramName, nexusClubName, nexusUserName, nexusUserRole,

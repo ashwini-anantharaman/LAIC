@@ -30,7 +30,7 @@ import { Brand, Fonts, Radius, TAB_BAR_CLEARANCE, Type } from "../../constants/t
 import { useAuth } from "../../lib/auth-context";
 import { useSelectedClubId } from "../../lib/club-context";
 import {
-  createMyDriveFolder, fetchLearningLaunch, fetchMyDrive,
+  createMyDriveFolder, fetchLearningLaunch, fetchMyDrive, fetchMyDriveFolders,
   type LearningObject, type MyDrive,
 } from "../../lib/nexus";
 import { getLearningObjects } from "../../lib/learning";
@@ -46,12 +46,16 @@ export default function DriveScreen() {
   const insets = useSafeAreaInsets();
   const [drive, setDrive] = useState<MyDrive | null>(null);
   const [items, setItems] = useState<LearningObject[]>([]);
+  /** The drive's own folders, so a new one is visible the moment it is made. */
+  const [folders, setFolders] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [makingFolder, setMakingFolder] = useState(false);
   /** The framed Studio's URL, built only after a launch token exists. */
   const [studioUrl, setStudioUrl] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  /** Named right after a save, so the answer to "where did it go?" is on screen. */
+  const [savedInto, setSavedInto] = useState<string | null>(null);
 
   /**
    * Open the Studio, confined to this drive.
@@ -73,7 +77,9 @@ export default function DriveScreen() {
         chrome: "none",
       });
       if (drive.create_types != null) q.set("types", drive.create_types.join(","));
-      if (clubProgramId) q.set("program_id", clubProgramId);
+      // The drive's own scope, so the Studio files into the same place the
+      // folder list was read from.
+      if (drive.program_id) q.set("program_id", drive.program_id);
       setStudioUrl(`${l.launch_url}/?${q.toString()}`);
       setCreating(true);
     } catch (e) {
@@ -119,13 +125,23 @@ export default function DriveScreen() {
       const d = await fetchMyDrive(token, clubProgramId ?? undefined);
       setDrive(d);
       if (d.has_drive && d.drive_id) {
-        const all = await getLearningObjects(token, {
-          refresh: true,
-          ...(clubProgramId ? { programId: clubProgramId } : {}),
-        }).catch(() => []);
-        setItems(all.filter((o) => (o.collection_ids ?? []).includes(d.drive_id!)));
+        const [all, tree] = await Promise.all([
+          getLearningObjects(token, {
+            refresh: true,
+            ...(clubProgramId ? { programId: clubProgramId } : {}),
+          }).catch(() => []),
+          fetchMyDriveFolders(token, d.drive_id, d.program_id ?? undefined).catch(
+            () => ({ folders: [] as { id: string; name: string; parent_id: string | null }[] }),
+          ),
+        ]);
+        // Every folder in the drive EXCEPT the root, which is the drive itself.
+        const fs = (tree.folders ?? []).filter((f) => f.id !== d.drive_id);
+        setFolders(fs);
+        const inDrive = new Set([d.drive_id, ...fs.map((f) => f.id)]);
+        setItems(all.filter((o) => (o.collection_ids ?? []).some((c) => inDrive.has(c))));
       } else {
         setItems([]);
+        setFolders([]);
       }
     } finally {
       setLoading(false);
@@ -159,6 +175,26 @@ export default function DriveScreen() {
           style={styles.fill}
           scalesPageToFit
           contentInsetAdjustmentBehavior="never"
+          /**
+           * The Studio says when a save lands, and THIS closes the sheet.
+           *
+           * A web page cannot dismiss a native sheet, so the person was left
+           * looking at the editor with no sign of where their work went. Coming
+           * straight back to My Drive answers that: the folder it went into is
+           * right there.
+           */
+          onMessage={(e) => {
+            try {
+              const m = JSON.parse(e.nativeEvent.data) as { type?: string; folder?: string };
+              if (m.type !== "drive-saved") return;
+              setCreating(false);
+              setStudioUrl(null);
+              setSavedInto(m.folder ?? "Drafts");
+              void load();
+            } catch {
+              /* Not ours — the Studio posts other things too. */
+            }
+          }}
         />
         {/*
           THE TAB BAR RENDERS OVER THIS SCREEN.
@@ -182,6 +218,11 @@ export default function DriveScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.title}>My Drive</Text>
+        {savedInto && (
+          <Pressable style={styles.saved} onPress={() => setSavedInto(null)}>
+            <Text style={styles.savedText}>Saved into {savedInto}</Text>
+          </Pressable>
+        )}
         <Text style={styles.sub}>
           {drive?.has_drive
             ? "Yours. Nothing here reaches anyone else until you share it out."
@@ -228,7 +269,22 @@ export default function DriveScreen() {
               </View>
             )}
 
-            {items.length === 0 ? (
+            {/* Folders first, and always shown — a folder you just made must be
+                visible even while it is empty, or making one looks like it
+                failed. */}
+            {folders.map((f) => {
+              const n = items.filter((o) => (o.collection_ids ?? []).includes(f.id)).length;
+              return (
+                <View key={f.id} style={styles.folderRow}>
+                  <Text style={styles.folderRowName}>{f.name}</Text>
+                  <Text style={styles.folderRowCount}>
+                    {n} {n === 1 ? "item" : "items"}
+                  </Text>
+                </View>
+              );
+            })}
+
+            {items.length === 0 && folders.length > 0 ? null : items.length === 0 ? (
               <View style={styles.empty}>
                 <Text style={styles.emptyTitle}>Nothing here yet</Text>
                 <Text style={styles.emptyBody}>
@@ -343,6 +399,26 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     marginBottom: 10,
   },
+  saved: {
+    backgroundColor: "rgba(5,150,105,0.14)",
+    borderRadius: Radius.card,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    marginTop: 10,
+  },
+  savedText: { fontFamily: Fonts.bodySemibold, fontSize: 13.5, color: "#065F46" },
+  folderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "rgba(84,16,21,0.06)",
+    borderRadius: Radius.card,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginBottom: 10,
+  },
+  folderRowName: { fontFamily: Fonts.heading, fontSize: 16, color: Brand.ink },
+  folderRowCount: { fontFamily: Fonts.body, fontSize: 12.5, color: Brand.ink, opacity: 0.55 },
   folder: {
     fontFamily: Fonts.heading,
     fontSize: Type.sectionHeading,

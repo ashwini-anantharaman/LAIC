@@ -249,6 +249,14 @@ export type MyDrive = {
   drive_name?: string | null;
   /** Where anything authored from the app lands. Made on first need. */
   drafts_id?: string | null;
+  /**
+   * The scope the drive lives in — the parent program, not the club.
+   *
+   * Use this for the follow-up folder and content reads: those resolve a club id
+   * as the club, where no drive exists, so asking them with the club id returns
+   * nothing while this endpoint happily found the drive.
+   */
+  program_id?: string | null;
 };
 
 /**
@@ -268,6 +276,18 @@ export function fetchLearningLaunch(
   return request<{ launch_url: string | null; launch_token: string }>(
     `/api/programs/${programId ?? PROGRAM_ID}/learning-platform/launch`,
     { token, method: "POST" },
+  );
+}
+
+/** The folders inside your own drive. */
+export function fetchMyDriveFolders(
+  token: string,
+  driveId: string,
+  programId?: string,
+): Promise<{ folders?: { id: string; name: string; parent_id: string | null }[] }> {
+  return request(
+    `/api/platform/learning/collections?program_id=${programId ?? PROGRAM_ID}&scope=drive&drive=${encodeURIComponent(driveId)}`,
+    { token },
   );
 }
 

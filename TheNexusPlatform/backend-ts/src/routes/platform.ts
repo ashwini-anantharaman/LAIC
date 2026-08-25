@@ -3852,6 +3852,19 @@ platformRouter.get("/learning/drives/mine", async (c) => {
     drive_id: drive ? String(drive.id) : null,
     drive_name: drive ? String(drive.name) : null,
     drafts_id: draftsId,
+    /**
+     * THE SCOPE THE DRIVE ACTUALLY LIVES IN, so callers stop guessing.
+     *
+     * A drive belongs to the parent PROGRAM. Ask this endpoint with a club id and
+     * it still resolves the parent and finds the drive -- but /learning/collections
+     * and /learning/library resolve a club id as the CLUB, and a drive is not in
+     * it, so those came back empty while this one worked. The app was asking two
+     * different questions and getting a consistent answer from neither.
+     *
+     * Returned rather than inferred: the caller uses this id for the follow-up
+     * reads and the three agree by construction.
+     */
+    program_id: access.programId,
   });
 });
 
@@ -3914,6 +3927,14 @@ const _driveObjectSchema = z.object({
   description: z.string().max(4000).optional(),
   blocks: z.array(z.any()).optional(),
   pipeline_draft: z.any().optional(),
+  /**
+   * Where to file it. Absent means Drafts.
+   *
+   * Checked against the caller's own drive subtree rather than trusted: a folder
+   * id is the obvious thing to change in a request to write into somebody else's
+   * space.
+   */
+  collection_id: z.string().optional(),
 });
 
 /**
@@ -3949,6 +3970,18 @@ platformRouter.put("/learning/drives/mine/objects", async (c) => {
   const draftsId = await graph.ensureDriveDraftsFolder(
     access.orgId, access.programId, String(drive.id),
   );
+  let target = draftsId;
+  let targetName = "Drafts";
+  if (req.collection_id && req.collection_id !== draftsId) {
+    const inside = await graph.collectionSubtreeIdsPublic(access.orgId, [String(drive.id)]);
+    if (!inside.includes(req.collection_id)) {
+      throw new HttpError(403, "That folder is not in your drive");
+    }
+    const all = await graph.listLearningCollections(access.orgId, access.programId).catch(() => []);
+    const hit = all.find((f) => String(f.id) === req.collection_id);
+    target = req.collection_id;
+    targetName = hit ? String(hit.name) : "Folder";
+  }
   await graph.upsertDriveObject(access.orgId, access.programId, {
     id: req.id,
     type: req.type,
@@ -3957,10 +3990,13 @@ platformRouter.put("/learning/drives/mine/objects", async (c) => {
     blocks: req.blocks,
     pipelineDraft: req.pipeline_draft,
     ownerName: await graph.getProfileName(access.orgId, access.profileId).catch(() => null),
-    collectionId: draftsId,
-    collectionName: "Drafts",
+    collectionId: target,
+    collectionName: targetName,
   });
-  return c.json({ ok: true, drafts_id: draftsId, drive_id: String(drive.id) });
+  return c.json({
+    ok: true, drafts_id: draftsId, drive_id: String(drive.id),
+    collection_id: target, collection_name: targetName,
+  });
 });
 
 // ── Reviewing and editing one object, without the Content Studio ────────────
