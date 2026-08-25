@@ -6,7 +6,7 @@
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
-import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2 } from "lucide-react";
+import { ChevronRight, Copy, Eye, Layers, LayoutGrid, Pencil, Plus, Trash2, UserPen } from "lucide-react";
 import { toast } from "sonner";
 
 import { CredentialsButton } from "@/nexus/people/CredentialsButton";
@@ -748,6 +748,21 @@ export function ProgramTeam() {
                 programId={programId}
                 group={g}
                 canManageGroups={hasPlacementGroups}
+                // The same rename the program table offers, so the two lists of
+                // the same people behave alike.
+                onRename={(pm) =>
+                  renameMember({
+                    membership_id: pm.membership_id,
+                    profile_id: pm.profile_id ?? null,
+                    invitation_id: pm.invitation_id,
+                    email: pm.email,
+                    display_name: pm.display_name,
+                    membership_role: "member",
+                    status: pm.status,
+                    role_id: null,
+                    role_name: null,
+                  })
+                }
                 onManageGroups={(pm) =>
                   setManagingGroups({
                     membership_id: pm.membership_id,
@@ -1505,6 +1520,7 @@ function PlatformGroup({
   onTestAs,
   onRemoved,
   onManageGroups,
+  onRename,
   canManageGroups,
 }: {
   programId: string;
@@ -1512,6 +1528,7 @@ function PlatformGroup({
   onTestAs: (email: string) => void;
   onRemoved: () => void;
   onManageGroups: (m: PlatformGroupMember) => void;
+  onRename: (m: PlatformGroupMember) => void;
   canManageGroups: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -1575,6 +1592,21 @@ function PlatformGroup({
                 </div>
               </div>
               <div className="flex items-center gap-1 shrink-0">
+                {/* Rename, beside Add-to-groups and not instead of it. The
+                    pencil here has always meant groups; a second pencil meaning
+                    something else would be a coin toss, so this one says what it
+                    does. */}
+                {m.email ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 px-1.5"
+                    onClick={() => void onRename(m)}
+                    title="Edit this person's name and email"
+                  >
+                    <UserPen className="size-3.5" />
+                  </Button>
+                ) : null}
                 {canManageGroups && m.email ? (
                   <Button
                     size="sm"

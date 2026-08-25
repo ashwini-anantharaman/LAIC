@@ -1497,6 +1497,8 @@ export async function getProgramTeamSummary(programId: string): Promise<ProgramT
 
 export interface PlatformGroupMember {
   membership_id: string | null;
+  /** The ACCOUNT. Renaming and changing an email act on this. */
+  profile_id?: string | null;
   invitation_id: string | null;
   email: string | null;
   display_name: string | null;

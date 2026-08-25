@@ -568,6 +568,10 @@ export async function listPlatformGroupMembers(
       const inv = invByEmail.get(email);
       return {
         membership_id: m?.id ?? null,
+        // The ACCOUNT id. Renaming and changing an email act on the profile, not
+        // on a membership — without this the roster could show a person and offer
+        // no way to edit them.
+        profile_id: pr?.id ?? null,
         invitation_id: m ? null : inv?.id ?? null,
         email: pr?.email ?? inv?.email ?? email,
         display_name: pr?.displayName ?? pr?.name ?? inv?.displayName ?? null,
