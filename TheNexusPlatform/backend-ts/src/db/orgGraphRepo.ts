@@ -5409,3 +5409,53 @@ export async function deleteCollections(orgId: string, ids: string[]): Promise<n
     return rows.length;
   });
 }
+
+/**
+ * Rename a person, and/or move them to a new email.
+ *
+ * EVERY PLACE THE OLD EMAIL WAS WRITTEN DOWN moves with it. An email is used as
+ * an identity across several tables — learning role assignments, platform role
+ * assignments and pending invitations all key on the string, not on the profile
+ * id — so changing the profile alone would silently strip somebody of their role
+ * the moment their address changed. That is the failure this function exists to
+ * prevent, and it is why the update is a transaction rather than a single row.
+ */
+export async function renameProfile(
+  orgId: string,
+  profileId: string,
+  patch: { displayName?: string; email?: string },
+): Promise<{ email: string | null; previousEmail: string | null } | null> {
+  return asPrivileged(async (tx) => {
+    const found = (await tx.execute(sql`
+      select id, email from profiles
+      where id = ${profileId}::uuid and organization_id = ${orgId}::uuid
+      limit 1`)) as unknown as Row[];
+    if (!found[0]) return null;
+    const previousEmail = (found[0].email as string | null) ?? null;
+
+    if (patch.displayName !== undefined) {
+      await tx.execute(sql`
+        update profiles set display_name = ${patch.displayName}, name = ${patch.displayName},
+                            updated_at = now()
+        where id = ${profileId}::uuid`);
+    }
+    if (patch.email !== undefined && patch.email !== previousEmail) {
+      await tx.execute(sql`
+        update profiles set email = ${patch.email}, updated_at = now()
+        where id = ${profileId}::uuid`);
+      if (previousEmail) {
+        // The three tables that key on the STRING rather than the profile.
+        await tx.execute(sql`
+          update learning_role_assignments set email = ${patch.email}
+          where organization_id = ${orgId}::uuid and lower(email) = ${previousEmail.toLowerCase()}`);
+        await tx.execute(sql`
+          update platform_role_assignments set email = ${patch.email}
+          where organization_id = ${orgId}::uuid and lower(email) = ${previousEmail.toLowerCase()}`);
+        await tx.execute(sql`
+          update invitations set email = ${patch.email}
+          where organization_id = ${orgId}::uuid and lower(email) = ${previousEmail.toLowerCase()}`);
+      }
+    }
+    return { email: patch.email ?? previousEmail, previousEmail };
+  });
+}

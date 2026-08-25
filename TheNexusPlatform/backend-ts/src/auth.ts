@@ -307,6 +307,46 @@ export async function setAuthUserPassword(email: string, password: string): Prom
 }
 
 /**
+ * Change the email an account signs in with.
+ *
+ * THE AUTH USER, not just the profile row. An email is an identity here, not a
+ * label: it is what the login form takes, what invitations key on, and what
+ * learning role assignments are recorded against. Renaming the profile alone
+ * would leave somebody looking at their new address on screen and unable to sign
+ * in with it — the worst kind of half-change, because it looks like it worked.
+ *
+ * `email_confirm` is set so the new address is usable immediately: an admin
+ * changing it on somebody's behalf cannot click a confirmation link sent to an
+ * address that person may not read.
+ */
+export async function setAuthUserEmail(currentEmail: string, nextEmail: string): Promise<Row> {
+  if (await demoMode()) {
+    // The demo/local stores key on email; nothing to move but the row itself.
+    return { id: null, email: nextEmail };
+  }
+  const client = requireAdminClient();
+  const { data: list, error: listErr } = await client.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (listErr) throw new HttpError(502, `Could not look up the account: ${listErr.message}`);
+  const users = list?.users ?? [];
+  const taken = users.find((u) => (u.email ?? "").toLowerCase() === nextEmail.toLowerCase());
+  const target = users.find((u) => (u.email ?? "").toLowerCase() === currentEmail.toLowerCase());
+  if (taken && (!target || taken.id !== target.id)) {
+    throw new HttpError(409, "Another account already uses that email");
+  }
+  if (!target) {
+    // No auth user yet — an invited person who has never signed in. The profile
+    // rename is the whole change, and there is nothing to keep in step.
+    return { id: null, email: nextEmail };
+  }
+  const { error } = await client.auth.admin.updateUserById(target.id, {
+    email: nextEmail,
+    email_confirm: true,
+  });
+  if (error) throw new HttpError(400, `Could not change the email: ${error.message}`);
+  return { id: target.id, email: nextEmail };
+}
+
+/**
  * Bearer-token auth for /api/hook/* — a per-app API key, verified against
  * registered_apps.api_key_hash. Separate from getCurrentUser by design.
  * Per-app rate limiting is applied at the hook route layer (see routes/hook.ts

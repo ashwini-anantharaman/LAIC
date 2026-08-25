@@ -42,6 +42,7 @@ import {
   removeMember,
   revokeInvitation,
   setProgramMemberGroups,
+  renamePerson,
   setProgramMemberName,
   setProgramMemberRole,
   updateProgramRole,
@@ -278,19 +279,54 @@ export function ProgramTeam() {
    * phone shows: the app labels its roster, leaderboard and chat from the session
    * user's display name.
    */
+  /**
+   * Edit a person's name and the email they sign in with.
+   *
+   * The email is the interesting half. It is an identity here, not a label — the
+   * login form takes it, invitations key on it, and role assignments are recorded
+   * against it — so the server moves the auth account and those rows together.
+   * Without a profile (somebody invited who has never signed in) there is no
+   * account to move, so only the name can change.
+   */
   async function renameMember(m: ProgramMember) {
     if (!m.email) return;
-    const next = window.prompt(`Name for ${m.email}`, m.display_name ?? "");
-    // Cancel returns null; an empty string would be a deletion, which this is not.
-    if (next === null) return;
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === (m.display_name ?? "").trim()) return;
+    const nextName = window.prompt(`Name for ${m.email}`, m.display_name ?? "");
+    if (nextName === null) return;
+    const name = nextName.trim();
+    if (!name) return;
+
+    let email = m.email;
+    if (m.profile_id) {
+      const asked = window.prompt(
+        `Email for ${name}\n\nThis is what they sign in with. Changing it moves their account and their roles.`,
+        m.email,
+      );
+      if (asked === null) return;
+      email = asked.trim() || m.email;
+    }
+
+    const nameChanged = name !== (m.display_name ?? "").trim();
+    const emailChanged = email.toLowerCase() !== m.email.toLowerCase();
+    if (!nameChanged && !emailChanged) return;
+
     try {
-      await setProgramMemberName(programId, m.email, trimmed);
-      toast.success("Name updated — it will show in the app too");
+      if (m.profile_id) {
+        await renamePerson(orgId, m.profile_id, {
+          ...(nameChanged ? { display_name: name } : {}),
+          ...(emailChanged ? { email } : {}),
+        });
+        toast.success(
+          emailChanged
+            ? `Updated — they now sign in as ${email}`
+            : "Name updated — it will show in the app too",
+        );
+      } else {
+        await setProgramMemberName(programId, m.email, name);
+        toast.success("Name updated — it will show in the app too");
+      }
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to rename");
+      toast.error(e instanceof Error ? e.message : "Failed to update");
     }
   }
 
@@ -367,7 +403,7 @@ export function ProgramTeam() {
                 variant="ghost"
                 className="h-6 px-1.5"
                 onClick={() => void renameMember(m)}
-                title="Edit this person's name"
+                title="Edit this person's name and email"
               >
                 <Pencil className="size-3" />
               </Button>

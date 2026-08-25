@@ -1440,6 +1440,8 @@ export async function assignProgramAdministrator(
 // ── Program members + custom-role assignment (Team & Roles: People) ─────────
 export interface ProgramMember {
   membership_id: string | null;
+  /** The ACCOUNT. Renaming and changing an email act on this, not the membership. */
+  profile_id?: string | null;
   invitation_id: string | null;
   email: string | null;
   /** Optional second sign-in identifier, set by an admin. */
@@ -2084,6 +2086,25 @@ export async function getDriveFolders(
     `/api/platform/learning/collections?program_id=${encodeURIComponent(programId)}&scope=drive&drive=${encodeURIComponent(driveId)}`,
   );
   return r.folders ?? [];
+}
+
+/**
+ * Rename a person, or move them to a different email.
+ *
+ * An email is an identity, not a label: the server moves the auth account and
+ * every row that recorded the old address (learning and platform role
+ * assignments, pending invitations) in one go, so the person can sign in with the
+ * new one and keeps the role they had.
+ */
+export async function renamePerson(
+  orgId: string,
+  profileId: string,
+  patch: { display_name?: string; email?: string },
+): Promise<{ email: string | null }> {
+  return request(`/api/platform/orgs/${orgId}/people/${profileId}`, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
+  });
 }
 
 /** One object's full pipeline, for reviewing or editing inside Nexus. */

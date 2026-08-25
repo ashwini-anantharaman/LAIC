@@ -10,6 +10,7 @@ import {
   exchangeLaunchToken,
   createAuthUser,
   getCurrentUser,
+  setAuthUserEmail,
   setAuthUserPassword,
   getOptionalUser,
   loadPlatformUser,
@@ -5658,6 +5659,61 @@ platformRouter.patch("/programs/:program_id/name", async (c) => {
  * rewrites history to say nobody did it. Access stops, authorship survives, and
  * unlike a delete this can be undone.
  */
+/**
+ * Rename a person, or move them to a different email.
+ *
+ * AN EMAIL IS AN IDENTITY HERE, not a label. It is what the login form takes,
+ * what invitations key on, and what learning and platform role assignments are
+ * recorded against. So a change has to move three things together — the profile,
+ * the auth account, and every row that wrote the old string down — or the person
+ * ends up looking at their new address on screen, unable to sign in with it and
+ * quietly stripped of their role. The auth account is changed FIRST: if Supabase
+ * refuses (the address is taken, say), nothing else has moved.
+ */
+platformRouter.patch("/orgs/:org_id/people/:profile_id", async (c) => {
+  const req = parseBody(
+    z
+      .object({
+        display_name: z.string().trim().min(1).max(160).optional(),
+        email: z.string().trim().email().max(320).optional(),
+      })
+      .refine((v) => v.display_name !== undefined || v.email !== undefined, {
+        message: "Give a name, an email, or both",
+      }),
+    await c.req.json(),
+  );
+  const user = await getCurrentUser(c);
+  const orgId = c.req.param("org_id");
+  await _requireOrgArea(user, orgId, "team", "edit");
+
+  const profileId = c.req.param("profile_id");
+  const profile = await db.getProfile(profileId).catch(() => null);
+  if (!profile || String(profile.organization_id ?? "") !== orgId) {
+    throw new HttpError(404, "Person not found in this organization");
+  }
+  const currentEmail = (profile.email as string | null) ?? null;
+
+  if (req.email && currentEmail && req.email.toLowerCase() !== currentEmail.toLowerCase()) {
+    // First, so a refusal leaves everything as it was.
+    await setAuthUserEmail(currentEmail, req.email);
+  }
+  const result = await graph.renameProfile(orgId, profileId, {
+    ...(req.display_name !== undefined ? { displayName: req.display_name } : {}),
+    ...(req.email !== undefined ? { email: req.email } : {}),
+  });
+  if (!result) throw new HttpError(404, "Person not found in this organization");
+
+  await db.recordAuditEvent("person.renamed", {
+    orgId, actorUserId: user.id, scopeType: "organization", scopeId: orgId,
+    metadata: {
+      profile_id: profileId,
+      ...(req.display_name !== undefined ? { display_name: req.display_name } : {}),
+      ...(req.email !== undefined ? { email: req.email, previous_email: result.previousEmail } : {}),
+    },
+  });
+  return c.json({ ok: true, email: result.email, display_name: req.display_name ?? null });
+});
+
 platformRouter.patch("/orgs/:org_id/people/:profile_id/active", async (c) => {
   const user = await getCurrentUser(c);
   const orgId = c.req.param("org_id");

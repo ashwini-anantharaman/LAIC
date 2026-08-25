@@ -36,6 +36,11 @@ function profileRow(p: typeof profiles.$inferSelect): Row {
     // auth credential can back several org-scoped profiles (0010). Callers
     // that need a valid session token must use this, not `id`.
     auth_user_id: p.authUserId ?? p.id,
+    // WHICH ORG THIS PROFILE BELONGS TO. Absent here, every caller checking
+    // "is this person in my organization?" read undefined and refused — a
+    // profile that plainly was in the org came back as not found.
+    organization_id: p.organizationId ?? null,
+    status: p.status ?? null,
   };
 }
 function orgRow(o: typeof organizations.$inferSelect): Row {
