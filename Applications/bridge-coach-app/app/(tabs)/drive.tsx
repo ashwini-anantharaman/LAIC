@@ -101,6 +101,14 @@ export default function DriveScreen() {
           scalesPageToFit
           contentInsetAdjustmentBehavior="never"
         />
+        {/*
+          THE TAB BAR RENDERS OVER THIS SCREEN.
+          A sheet returned from inside a tab still sits under the navigator's bar,
+          so the web page's own bottom -- a dialog footer, a Continue button --
+          was being covered by it. The web view cannot know that, so the space is
+          reserved here instead: the page ends where the bar begins.
+        */}
+        <View style={{ height: TAB_BAR_CLEARANCE, backgroundColor: Brand.cream }} />
       </View>
     );
   }
