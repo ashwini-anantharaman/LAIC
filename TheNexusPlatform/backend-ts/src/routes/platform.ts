@@ -3831,9 +3831,66 @@ platformRouter.get("/learning/drives/mine", async (c) => {
   const user = await getCurrentUser(c);
   const access = await resolvePlatformAccess(user, "learning", programId);
   if (!access.profileId) return c.json({ has_drive: false });
-  const p = await graph.getDrivePermissions(
+
+  /**
+   * THE CAPABILITY IS WHAT DECIDES, and the row is how it is remembered.
+   *
+   * Granting learning.drive.own on somebody's role did nothing: a drive existed
+   * only if a manager ALSO ticked them in the Drives tab, so the toggle that says
+   * "Have a drive" was a statement about nothing. Two places to say one thing, and
+   * the one people reach for was the one that did not work.
+   *
+   * Now the capability grants it and the drive is made on first ask. An explicit
+   * row still wins where it exists — a manager who set specific types for one
+   * person meant those types, and inheriting past them would quietly widen what
+   * they allowed.
+   */
+  const eff = await _learningEffective(user, access).catch(() => null);
+  const caps = eff?.capabilities ?? [];
+  const mayOwn = eff?.isAdmin === true || caps.includes("learning.drive.own");
+  const mayCreate = eff?.isAdmin === true || caps.includes("learning.drive.create");
+
+  let p = await graph.getDrivePermissions(
     access.orgId, access.programId, "profile", access.profileId,
   );
+
+  /**
+   * THE CLUB'S ROW AS A DEFAULT, for the type list only.
+   *
+   * A club granted a drive with three types is saying what its people may make.
+   * Read as a default rather than copied, so changing the club's list changes
+   * everybody who never had a list of their own.
+   */
+  let inheritedTypes: string[] | null = null;
+  if (access.partnerProgramId) {
+    const clubPerms = await graph
+      .getDrivePermissions(access.orgId, access.programId, "club", access.partnerProgramId)
+      .catch(() => null);
+    if (clubPerms?.hasDrive) inheritedTypes = clubPerms.createTypes;
+  }
+
+  if (!p?.hasDrive && mayOwn) {
+    const name = (await graph.getProfileName(access.orgId, access.profileId).catch(() => null))
+      ?? "My";
+    await graph.setDrivePermissions(
+      access.orgId,
+      access.programId,
+      {
+        subjectType: "profile",
+        subjectId: access.profileId,
+        hasDrive: true,
+        canCreate: mayCreate,
+        createTypes: p?.createTypes ?? inheritedTypes,
+        surfaces: p?.surfaces ?? null,
+      },
+      access.profileId,
+      `${name}'s drive`,
+    );
+    p = await graph.getDrivePermissions(
+      access.orgId, access.programId, "profile", access.profileId,
+    );
+  }
+
   const drive = p?.hasDrive
     ? await graph.getDriveFor(access.orgId, access.programId, "profile", access.profileId)
     : null;
@@ -3847,8 +3904,9 @@ platformRouter.get("/learning/drives/mine", async (c) => {
     : null;
   return c.json({
     has_drive: p?.hasDrive === true,
-    can_create: p?.canCreate === true,
-    create_types: p?.createTypes ?? null,
+    // The capability can turn creating on for somebody whose row predates it.
+    can_create: p?.canCreate === true || (p?.hasDrive === true && mayCreate),
+    create_types: p?.createTypes ?? inheritedTypes,
     surfaces: p?.surfaces ?? null,
     drive_id: drive ? String(drive.id) : null,
     drive_name: drive ? String(drive.name) : null,

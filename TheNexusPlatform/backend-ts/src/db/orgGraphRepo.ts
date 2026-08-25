@@ -4927,12 +4927,34 @@ export async function setDrivePermissions(
       return { driveId: existing[0] ? String(existing[0].id) : null };
     }
 
+    /**
+     * A FREE NAME, because folder names are unique among siblings.
+     *
+     * Two people called Milind both want "Milind's drive" at the root of the same
+     * program, and the second insert died on idx_learning_collections_sibling_name
+     * -- a 500 on simply opening My Drive. The owner is what makes a drive unique,
+     * not its label, so the label gets a suffix and the drive is still theirs.
+     */
+    let name = driveName;
+    for (let n = 2; n < 50; n += 1) {
+      const clash = (await tx.execute(sql`
+        select 1 from learning_collections
+        where organization_id = ${orgId}::uuid
+          and program_id is not distinct from ${programId}::uuid
+          and parent_id is null
+          and lower(btrim(name)) = ${name.trim().toLowerCase()}
+          and (owner_subject_type is distinct from ${p.subjectType}
+               or owner_subject_id is distinct from ${p.subjectId})
+        limit 1`)) as unknown as Row[];
+      if (!clash.length) break;
+      name = `${driveName} (${n})`;
+    }
     const id = `lcol-${randomUUID()}`;
     const rows = (await tx.execute(sql`
       insert into learning_collections
         (id, organization_id, program_id, name, parent_id, created_by,
          owner_subject_type, owner_subject_id)
-      values (${id}, ${orgId}::uuid, ${programId}::uuid, ${driveName}, null, ${grantedBy}::uuid,
+      values (${id}, ${orgId}::uuid, ${programId}::uuid, ${name}, null, ${grantedBy}::uuid,
               ${p.subjectType}, ${p.subjectId})
       on conflict (organization_id, program_id, owner_subject_type, owner_subject_id)
         where owner_subject_type is not null
