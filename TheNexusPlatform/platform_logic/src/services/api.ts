@@ -2024,8 +2024,50 @@ export async function getMyDrive(programId: string): Promise<{
   drive_name?: string | null;
   /** Where anything authored lands. Made on first need. */
   drafts_id?: string | null;
+  /**
+   * The scope the drive lives in — the parent program, not a club.
+   *
+   * Use it for the follow-up folder and content reads: those resolve a club id as
+   * the CLUB, where no drive exists, so asking them with a club id returns nothing
+   * while this endpoint still finds the drive.
+   */
+  program_id?: string | null;
 }> {
   return request(`/api/platform/learning/drives/mine?program_id=${encodeURIComponent(programId)}`);
+}
+
+/** Make a folder inside your own drive. */
+export async function createMyDriveFolder(
+  programId: string,
+  name: string,
+  parentId?: string,
+): Promise<{ id: string; name: string }> {
+  return request(`/api/platform/learning/drives/mine/folders`, {
+    method: "POST",
+    body: JSON.stringify({ program_id: programId, name, ...(parentId ? { parent_id: parentId } : {}) }),
+  });
+}
+
+/** Remove something from your own drive. */
+export async function deleteMyDriveObject(
+  programId: string,
+  objectId: string,
+): Promise<{ removed: boolean; unfiled?: boolean }> {
+  return request(
+    `/api/platform/learning/drives/mine/objects/${encodeURIComponent(objectId)}?program_id=${encodeURIComponent(programId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** The folders inside a drive. */
+export async function getDriveFolders(
+  programId: string,
+  driveId: string,
+): Promise<LibraryFolder[]> {
+  const r = await request<{ folders?: LibraryFolder[] }>(
+    `/api/platform/learning/collections?program_id=${encodeURIComponent(programId)}&scope=drive&drive=${encodeURIComponent(driveId)}`,
+  );
+  return r.folders ?? [];
 }
 
 /** One object's full pipeline, for reviewing or editing inside Nexus. */
