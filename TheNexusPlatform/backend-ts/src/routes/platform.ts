@@ -3815,8 +3815,20 @@ platformRouter.put("/learning/drives", async (c) => {
  * state, not a failure.
  */
 platformRouter.get("/learning/drives/mine", async (c) => {
+  /**
+   * ITS OWN GATE, not the Content Library's.
+   *
+   * This sat behind _libraryReader, which requires learning.library.console -- a
+   * capability a learner on the app will never hold. So every app user got a 403
+   * and the My Drive tab could never appear for anybody, whatever drive they had.
+   *
+   * Knowing whether YOU have a drive is not reading the program's library. Any
+   * signed-in member of the program may ask, and the answer is only ever about
+   * themselves: no subject id is accepted, so there is nothing here to abuse.
+   */
   const programId = c.req.query("program_id") ?? null;
-  const { access } = await _libraryReader(c, programId);
+  const user = await getCurrentUser(c);
+  const access = await resolvePlatformAccess(user, "learning", programId);
   if (!access.profileId) return c.json({ has_drive: false });
   const p = await graph.getDrivePermissions(
     access.orgId, access.programId, "profile", access.profileId,

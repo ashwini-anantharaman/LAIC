@@ -80,7 +80,12 @@ function orgNav(orgId: string): NavItem[] {
   ];
 }
 
-function programNav(orgId: string, programId: string, isPartner = false): NavItem[] {
+function programNav(
+  orgId: string,
+  programId: string,
+  isPartner = false,
+  hasDrive = false,
+): NavItem[] {
   const base = `/o/${orgId}/p/${programId}`;
   const items: NavItem[] = [
     { to: `${base}`, label: "Overview", icon: LayoutDashboard, end: true },
@@ -94,6 +99,13 @@ function programNav(orgId: string, programId: string, isPartner = false): NavIte
     // is also the one screen where "which clubs see this?" is answered — and an
     // administrator who cannot open the tab cannot check what they granted.
     { to: `${base}/learning/library`, label: "Content Library", icon: FolderTree },
+    ...(hasDrive
+      // THE SAME DOOR AS THE CONFINED NAV. Gating one nav path and not the other
+      // meant an owner or administrator with a drive had nowhere to open it --
+      // the tab existed only for people confined to a role, which is exactly
+      // backwards from how every other permission here works.
+      ? [{ to: `${base}/learning/drive`, label: "My Drive", icon: HardDrive }]
+      : []),
     { to: `${base}/team`, label: "People", icon: KeyRound },
     { to: `${base}/partners`, label: "Partners", icon: Handshake },
     { to: `${base}/settings`, label: "Settings", icon: SettingsIcon },
@@ -699,7 +711,7 @@ export function AppShell() {
     items = confinedProgramNav(orgId, programId, myRolePerms ?? {}, isPartner, _capsOf(myRolePerms), hasDrive).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
   } else if (programId) {
     heading = programName ?? "Program";
-    items = programNav(orgId, programId, isPartner).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
+    items = programNav(orgId, programId, isPartner, hasDrive).filter((it) => featureOn(NAV_FEATURE[navKey(it.to)] ?? ""));
     // Members live inside their program; only org-level admins get the org space.
     if (mode === "org") {
       backLink = (
