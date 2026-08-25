@@ -4732,6 +4732,8 @@ async function _learningEffective(
    */
   let clubContent: { roleName: string | null; capabilities: string[] } | null = null;
   let clubRoleId: string | null = null;
+  /** learning.* ids carried by the club role this person is assigned. */
+  let clubRoleLearningCaps: string[] = [];
   let clubTier = false;
   if (process.env.NEXUS_CLUB_CONTENT_CAPS !== "off" && access.partnerClub && access.partnerProgramId) {
     try {
@@ -4745,6 +4747,32 @@ async function _learningEffective(
       clubRoleId = resolved.roleId;
       clubTier = resolved.structuralTier;
       if (contentCaps.hasContentCaps(resolved.capabilities)) clubContent = resolved;
+      /**
+       * THE CLUB ROLE'S OWN LEARNING IDS, read from the ROLE rather than from
+       * clubAppAccessFor's answer.
+       *
+       * That helper resolves against the CLUB-APP catalogue, so every learning.*
+       * id in the role is dropped before it returns — correct for deciding
+       * club-app access, useless for deciding learning access.
+       *
+       * And nothing else read them either: the learning-role lookup above reads
+       * learning_role_assignments (a different table), and `programRoleCapabilities`
+       * for a club caller is the CLUB'S PROVISIONING ENVELOPE, not this person's
+       * role. So somebody assigned a club role with Content Library ticked saw the
+       * tab — the console reads the role directly — and was refused by the server
+       * with "Missing capability: learning.library.console". The toggle and the
+       * enforcement were reading two different things about the same person.
+       *
+       * The same fix the learning-role lookup already carries: one footing, or
+       * per-club permissions cannot be expressed at all.
+       */
+      const clubRole = await graph
+        .getProgramRoleForEmail(access.partnerProgramId, user.email ?? "")
+        .catch(() => null);
+      const clubRolePerms = (clubRole?.perms as Record<string, unknown> | undefined) ?? {};
+      clubRoleLearningCaps = Array.isArray(clubRolePerms.capabilities)
+        ? (clubRolePerms.capabilities as string[]).filter((id) => id.startsWith("learning."))
+        : [];
     } catch (e) {
       // A club-app failure must not decide a learning question. Falls through to
       // today's branches, which is the answer this person already had.
@@ -4765,6 +4793,14 @@ async function _learningEffective(
       capabilities = _learningCapsForLevel(learningDoc, "admin");
     } else if (Array.isArray(roleCaps) && roleCaps.length) {
       capabilities = roleCaps as string[];
+      fineGrained = true;
+    } else if (clubRoleLearningCaps.length) {
+      // Their club role said so, in the catalogue's own ids. Validated against the
+      // catalogue so a stale id cannot grant anything, and fine-grained because
+      // this IS a deliberate per-person answer, not a level's default.
+      capabilities = await catalogue
+        .validGrantsAcross([{ providerId: "learning" }], clubRoleLearningCaps)
+        .catch(() => clubRoleLearningCaps);
       fineGrained = true;
     } else if (clubContent) {
       // The club role governs CONTENT, the same way it already governs challenges
